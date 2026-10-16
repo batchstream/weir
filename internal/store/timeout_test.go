@@ -31,7 +31,7 @@ func TestRuntimePartiallyCanceledBatchPreservesEachCallOutcome(t *testing.T) {
 	gate := make(chan struct{})
 	close(gate)
 	adapter := &recordBatchAdapter{started: make(chan []*execution.Plan, 1), gate: gate}
-	runtime := newRuntime(adapter, limits)
+	runtime := newRuntime(adapter, limits, nil)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	canceled, stop := context.WithCancel(ctx)

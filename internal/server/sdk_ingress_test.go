@@ -92,7 +92,7 @@ func TestOpenAndRefreshAtApplicationConnectionLimit(t *testing.T) {
 				names[i] = name
 				adapter := &sdkIngressReadAdapter{}
 				limits := store.DefaultLimits()
-				runtime, err := store.New(adapter, limits)
+				runtime, err := store.New(adapter, limits, nil)
 				if err != nil {
 					t.Fatal(err)
 				}

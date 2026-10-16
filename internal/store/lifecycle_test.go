@@ -29,7 +29,7 @@ func TestRuntimeOwnsAdapterExactlyOnce(t *testing.T) {
 		if !valid {
 			limits.QueueOperations = -1
 		}
-		runtime, err := New(a, limits)
+		runtime, err := New(a, limits, nil)
 		if !valid {
 			if err == nil || a.closes.Load() != 1 {
 				t.Fatal("invalid startup leaked adapter")
@@ -88,7 +88,7 @@ func TestForcedCloseUsesConfiguredCleanupBudget(t *testing.T) {
 	adapter := &blockedCleanupAdapter{started: make(chan struct{}), release: make(chan struct{})}
 	limits := DefaultLimits()
 	limits.CleanupTimeout = 30 * time.Millisecond
-	runtime, err := New(adapter, limits)
+	runtime, err := New(adapter, limits, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -121,7 +121,7 @@ func TestForcedCloseCancelsQueuedWorkBehindFullExecutionBudget(t *testing.T) {
 	limits := DefaultLimits()
 	limits.MaxInFlight = 1
 	adapter := &forcedCloseAdapter{started: make(chan struct{})}
-	runtime, err := New(adapter, limits)
+	runtime, err := New(adapter, limits, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -191,7 +191,7 @@ func TestForcedClosePreservesRecordEvidenceUntilAckOrSessionClose(t *testing.T) 
 				limits := DefaultLimits()
 
 				limits.BatchOperations = 1
-				runtime, err := New(adapter, limits)
+				runtime, err := New(adapter, limits, nil)
 				if err != nil {
 					t.Fatal(err)
 				}

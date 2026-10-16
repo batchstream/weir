@@ -36,7 +36,7 @@ func TestZeroInFlightBudgetDoesNotLimitIndependentBatches(t *testing.T) {
 	limits.MaxInFlight = 0
 	const calls = 16
 	adapter := &concurrencyAdapter{started: make(chan []*execution.Plan, calls), finish: make(chan struct{})}
-	runtime, err := New(adapter, limits)
+	runtime, err := New(adapter, limits, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -85,7 +85,7 @@ func TestInFlightBatchesBoundExecutionAndReturnCreditBeforeAck(t *testing.T) {
 	limits.MaxInFlight = 3
 	const calls = 16
 	adapter := &concurrencyAdapter{started: make(chan []*execution.Plan, calls), finish: make(chan struct{})}
-	runtime, err := New(adapter, limits)
+	runtime, err := New(adapter, limits, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -150,7 +150,7 @@ func TestBusyBackendKeepsRequestsQueuedAndFormsFullBatches(t *testing.T) {
 	limits.BatchOperations = 4
 	limits.QueueOperations = 8
 	adapter := &concurrencyAdapter{started: make(chan []*execution.Plan, 4), finish: make(chan struct{})}
-	runtime, err := New(adapter, limits)
+	runtime, err := New(adapter, limits, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -256,7 +256,7 @@ func TestCancellationRetainsCreditUntilAdapterStops(t *testing.T) {
 	limits := DefaultLimits()
 	limits.MaxInFlight = 1
 	adapter := &canceledExecutionAdapter{started: make(chan string, 2), canceled: make(chan struct{}), finish: make(chan struct{})}
-	runtime, err := New(adapter, limits)
+	runtime, err := New(adapter, limits, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -317,7 +317,7 @@ func TestOldestBatchKeyKeepsProgressUnderInFlightLimit(t *testing.T) {
 	limits.BatchWait = 0
 	limits.MaxInFlight = 1
 	limits.BatchOperations = 2
-	runtime := newRuntime(nil, limits)
+	runtime := newRuntime(nil, limits, nil)
 	var tickets []*Ticket
 	for index, batchKey := range []string{"a", "b", "a"} {
 		work := plan(uint64(index), fmt.Sprint(index), false)
@@ -365,13 +365,13 @@ func TestExecutionBudgetIsPerStore(t *testing.T) {
 	limits := DefaultLimits()
 	limits.MaxInFlight = 1
 	busyAdapter := &concurrencyAdapter{started: make(chan []*execution.Plan, 1), finish: make(chan struct{})}
-	busy, err := New(busyAdapter, limits)
+	busy, err := New(busyAdapter, limits, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer busy.Close(context.Background())
 	otherAdapter := &singleExecutionAdapter{}
-	other, err := New(otherAdapter, limits)
+	other, err := New(otherAdapter, limits, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -14,7 +14,7 @@ func TestSparseReadsBypassCollectingNamespacesInRunningScheduler(t *testing.T) {
 	limits.BatchWait = time.Hour
 	limits.MaxInFlight = 1
 	adapter := &crossRequestAdapter{calls: make(chan crossRequestCall, 64)}
-	runtime, err := New(adapter, limits)
+	runtime, err := New(adapter, limits, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -67,7 +67,7 @@ func TestSlowNativeConsumersUseBoundedOutputCapacity(t *testing.T) {
 	limits := DefaultLimits()
 	limits.QueueOperations = 1
 	adapter := &singleExecutionAdapter{}
-	runtime, err := New(adapter, limits)
+	runtime, err := New(adapter, limits, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -107,7 +107,7 @@ func TestSlowNativeConsumersUseBoundedOutputCapacity(t *testing.T) {
 		t.Fatal("bounded Native output consumed every backend slot", event, err)
 	}
 	ticket.Ack()
-	if snapshot := runtime.Snapshot(); snapshot.Active != limits.MaxInFlight-1 || snapshot.Paused != 1 || snapshot.PausedBytes > limits.QueueBytes || snapshot.Pending != 0 {
+	if snapshot := runtime.Snapshot(); snapshot.Active != 0 || snapshot.Paused != limits.MaxInFlight || snapshot.Pending != 0 || runtime.nativeMemory.Snapshot().UsedBytes > runtime.nativeMemory.Snapshot().BudgetBytes {
 		t.Fatal("stalled Native output escaped its separate bounds", snapshot)
 	}
 	for _, session := range sessions {

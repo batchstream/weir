@@ -1,0 +1,26 @@
+{
+  "source": "98ea9adfee65a315ed737c00dad4640364f18648",
+  "binary_sha256": "1089f782c7ba580f06b5818eb80d953719740df6acbd5f6d2f9422bdc28fc214",
+  "exact_clean_CLI_identity_receipts": 16,
+  "driver": "Go1.27.1 offline -race -tags=integration",
+  "driver_test_source_matches_committed_source": {
+    "internal/app/memory_recovery_integration_test.go": "a55dc5822e8852e35a63506d67e2d939167edf22e33b36d5688e5d19d4fc54a9",
+    "internal/app/shared_pressure_integration_test.go": "e3c1db79588f1c4690eef6cd8aced3aaaf0826dd8cc9bb99a9a696c83a8285a8"
+  },
+  "commands": {
+    "matrix": "go test -race -tags=integration ./internal/app -run ^TestCLIBusinessHeapRecovery$ -count=1 -timeout=240s -v",
+    "shared": "go test -race -tags=integration ./internal/app -run ^TestCLISharedMemoryRecoveryProbe$ -count=1 -timeout=45s -v with WEIR_SHARED_PRESSURE_MIB=160/192/344/368 serial"
+  },
+  "raw_sha256": {
+    "native-memory-search-p1-final-recovery-matrix.txt": "f0a2f705f5cc89fe21c5bd60253fa477624a0ab50aab61a3033c7f04929e6ae4",
+    "native-memory-search-p1-final-shared-160.txt": "383c77b890848a7d91c055edd723e71d5c146e0bd95fc3a969b44b29175eefd7",
+    "native-memory-search-p1-final-shared-192.txt": "831c01a32b1ccb0fb29549c4efc08c5f1501dbab37aa6645f32fcacf6cec0fe8",
+    "native-memory-search-p1-final-shared-344.txt": "60a9afa6f6c8f878dfb9bdce8379e66449b87a629c8c46c13cb9ba24484ba87d",
+    "native-memory-search-p1-final-shared-368.txt": "5c49b032a7b28b09bae2a3c9206232289a646836fa5510222b2987582a422101"
+  },
+  "summary": "native-memory-search-p1-final-summary.json",
+  "result": "PASS all12 matrix +4shared, no forcedGC, unchanged gates, all16 exit0/noOOM, ownedCLI absent",
+  "build_receipt": "native-memory-search-p1-final-build.json",
+  "DB_window_returned": true,
+  "historical_failures_retained": "native-memory-final-recovery-matrix.txt and native-memory-final-summary.json remain unchanged; current summary preserves failure-history limitations"
+}

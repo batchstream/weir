@@ -49,7 +49,7 @@ func TestNativeCoalescedRecordsKeepLargeResultsAndRetainedOwners(t *testing.T) {
 	}()
 	limits := DefaultLimits()
 
-	runtime := newRuntime(adapter, limits)
+	runtime := newRuntime(adapter, limits, nil)
 	var tickets []*Ticket
 	for index := range 32 {
 		read := &pb.ReadRequest{Resource: fixture.DB + "/records/s:same"}

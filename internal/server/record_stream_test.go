@@ -530,7 +530,7 @@ func TestRecordInputStopsAtCountBoundBehindSlowOutput(t *testing.T) {
 		t.Run(fmt.Sprint(window), func(t *testing.T) {
 			adapter := newPeerAdapter("records")
 			limits := store.DefaultLimits()
-			local, err := store.New(adapter, limits)
+			local, err := store.New(adapter, limits, nil)
 			if err != nil {
 				t.Fatal(err)
 			}

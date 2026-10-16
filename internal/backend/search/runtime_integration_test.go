@@ -75,7 +75,7 @@ func testSearchCancellationAndDrain(t *testing.T, expression bool) {
 			}
 			limits := store.DefaultLimits()
 			limits.BatchOperations = 2
-			runtime, err := store.New(adapter, limits)
+			runtime, err := store.New(adapter, limits, nil)
 			if err != nil {
 				t.Fatal(err)
 			}

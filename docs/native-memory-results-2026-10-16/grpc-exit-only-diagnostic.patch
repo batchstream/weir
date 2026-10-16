@@ -1,0 +1,29 @@
+--- /Users/liran/go/pkg/mod/google.golang.org/grpc@v1.83.2/internal/transport/controlbuf.go
++++ /Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/native-wire-ownership-overlay/controlbuf-exit-only.go
+@@ -22,6 +22,7 @@
+ 	"bytes"
+ 	"errors"
+ 	"fmt"
++	"log/slog"
+ 	"net"
+ 	"runtime"
+ 	"sync"
+@@ -590,6 +591,18 @@
+ 			l.framer.writer.Flush()
+ 		}
+ 		l.cbuf.finish()
++		for streamID, str := range l.estdStreams {
++			if str.reader.Remaining() > 0 {
++				slog.Warn("diagnostic_loopy_exit_reader_close", "stream", streamID, "remaining", str.reader.Remaining())
++			}
++			_ = str.reader.Close()
++			for head := str.itl.dequeueAll(); head != nil; head = head.next {
++				if df, ok := head.it.(*dataFrame); ok && !df.processing {
++					slog.Warn("diagnostic_loopy_exit_data_free", "stream", streamID, "bytes", df.data.Len())
++					df.data.Free()
++				}
++			}
++		}
+ 	}()
+ 	for {
+ 		it, err := l.cbuf.get(true)

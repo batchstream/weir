@@ -44,7 +44,7 @@ func recordActionPlan(index uint64, key, action string) *execution.Plan {
 func TestRecordActionsBatchSeparatelyByReadAndMutation(t *testing.T) {
 	limits := DefaultLimits()
 	limits.BatchWait = 0
-	r := newRuntime(nil, limits)
+	r := newRuntime(nil, limits, nil)
 	session := r.NewSession()
 	defer session.Close()
 	var tickets []*Ticket
@@ -88,7 +88,7 @@ func TestMutationBatchRespectsBytesKeysAndSessionOrder(t *testing.T) {
 	limits := DefaultLimits()
 	limits.BatchWait = 0
 	limits.BatchOperations = 3
-	r := newRuntime(nil, limits)
+	r := newRuntime(nil, limits, nil)
 	session := r.NewSession()
 	defer session.Close()
 	firstWrite := recordActionPlan(0, "same", "put")
@@ -190,7 +190,7 @@ func TestDispatchContextsDoNotMutateReusablePlans(t *testing.T) {
 	adapter := &recordBatchAdapter{started: make(chan []*execution.Plan, 2), gate: gate}
 	limits := DefaultLimits()
 	limits.BatchWait = 0
-	r := newRuntime(adapter, limits)
+	r := newRuntime(adapter, limits, nil)
 	p := recordActionPlan(0, "same", "replace")
 	firstContext, cancelFirst := context.WithCancel(context.Background())
 	defer cancelFirst()
@@ -248,7 +248,7 @@ func TestAbandonAndSessionCloseCancelFuturePhasesOnly(t *testing.T) {
 			adapter := &recordBatchAdapter{started: make(chan []*execution.Plan, 1), phases: make(chan *execution.Plan, 2), gate: gate}
 			limits := DefaultLimits()
 			limits.BatchWait = 0
-			r := newRuntime(adapter, limits)
+			r := newRuntime(adapter, limits, nil)
 			original, cancel := context.WithCancel(context.Background())
 			defer cancel()
 			var session *Session

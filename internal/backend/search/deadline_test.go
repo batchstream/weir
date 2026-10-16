@@ -79,7 +79,7 @@ func deadlineRuntime(t *testing.T, backend *deadlineBackend) (*Adapter, *store.R
 	}
 	limits := store.DefaultLimits()
 
-	runtime, err := store.New(adapter, limits)
+	runtime, err := store.New(adapter, limits, nil)
 	if err != nil {
 		_ = adapter.Close()
 		t.Fatal(err)

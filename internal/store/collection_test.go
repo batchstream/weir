@@ -20,7 +20,7 @@ func TestReadBypassesCollectionAndSharesReadyBatch(t *testing.T) {
 			limits := DefaultLimits()
 			limits.BatchWait = time.Hour
 			limits.BatchOperations = 3
-			runtime := newRuntime(nil, limits)
+			runtime := newRuntime(nil, limits, nil)
 			base := time.Now()
 			var tickets []*Ticket
 			for i, read := range test.reads {
@@ -59,7 +59,7 @@ func TestReadsPreserveWriteCollectionAndAggregation(t *testing.T) {
 			limits := DefaultLimits()
 			limits.BatchWait = time.Second
 			limits.BatchOperations = 3
-			runtime := newRuntime(nil, limits)
+			runtime := newRuntime(nil, limits, nil)
 			base := time.Now()
 			var reads, writes []*Ticket
 			for i, read := range []bool{readFirst, !readFirst, readFirst, !readFirst} {
@@ -119,7 +119,7 @@ func TestReadyWritesKeepProgressAheadOfLaterReads(t *testing.T) {
 	limits := DefaultLimits()
 	limits.BatchWait = time.Second
 	limits.MaxInFlight = 1
-	runtime := newRuntime(nil, limits)
+	runtime := newRuntime(nil, limits, nil)
 	base := time.Now()
 	var tickets []*Ticket
 	for i, read := range []bool{false, true, false, true} {
@@ -165,7 +165,7 @@ func TestImmediateReadsRespectBatchCountAndByteBounds(t *testing.T) {
 			limits := DefaultLimits()
 			limits.BatchWait = time.Hour
 			limits.BatchOperations, limits.BatchBytes = test.operations, test.bytes
-			runtime := newRuntime(nil, limits)
+			runtime := newRuntime(nil, limits, nil)
 			base := time.Now()
 			var tickets []*Ticket
 			for i := range 3 {
@@ -198,7 +198,7 @@ func TestImmediateReadStillWaitsForExecutionCapacity(t *testing.T) {
 	limits := DefaultLimits()
 	limits.BatchWait = time.Hour
 	limits.MaxInFlight = 1
-	runtime := newRuntime(nil, limits)
+	runtime := newRuntime(nil, limits, nil)
 	base := time.Now()
 	write := plan(0, "write", false)
 	writeTicket, failure, _ := runtime.Submit(t.Context(), write, nil)
@@ -234,7 +234,7 @@ func TestCollectionExpiresFromOldestAdmissionAndFullBatchBypassesWait(t *testing
 	limits := DefaultLimits()
 	limits.BatchWait = time.Second
 	limits.BatchOperations = 3
-	runtime := newRuntime(nil, limits)
+	runtime := newRuntime(nil, limits, nil)
 	base := time.Now()
 	var tickets []*Ticket
 	for i := range 2 {
@@ -271,7 +271,7 @@ func TestReadyNamespaceBypassesAnotherCollectingNamespace(t *testing.T) {
 	limits := DefaultLimits()
 	limits.BatchWait = time.Second
 	limits.BatchOperations = 2
-	runtime := newRuntime(nil, limits)
+	runtime := newRuntime(nil, limits, nil)
 	base := time.Now()
 	var tickets []*Ticket
 	for i, namespace := range []string{"collecting", "ready", "ready"} {
@@ -306,7 +306,7 @@ func TestReadyNamespaceBypassesAnotherCollectingNamespace(t *testing.T) {
 func TestCollectionDoesNotConsumeShortCallerDeadline(t *testing.T) {
 	limits := DefaultLimits()
 	limits.BatchWait = time.Hour
-	runtime := newRuntime(nil, limits)
+	runtime := newRuntime(nil, limits, nil)
 	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
 	defer cancel()
 	work := plan(1, "record", false)
@@ -326,7 +326,7 @@ func TestCollectionFlushesAtByteBoundary(t *testing.T) {
 	limits := DefaultLimits()
 	limits.BatchWait = time.Hour
 	limits.BatchBytes = 1536
-	runtime := newRuntime(nil, limits)
+	runtime := newRuntime(nil, limits, nil)
 	var tickets []*Ticket
 	for i := range 2 {
 		work := plan(uint64(i), string(rune('a'+i)), false)
@@ -355,7 +355,7 @@ func TestCollectionFlushesAtByteBoundary(t *testing.T) {
 func TestNativeBypassesCollection(t *testing.T) {
 	limits := DefaultLimits()
 	limits.BatchWait = time.Hour
-	runtime := newRuntime(nil, limits)
+	runtime := newRuntime(nil, limits, nil)
 	session := runtime.NewSession()
 	work := plan(1, "stream", false)
 	request := &pb.NativeRequest{}
@@ -382,7 +382,7 @@ func TestCollectionTimerDispatchesAndDrainBypassesWait(t *testing.T) {
 				limits.BatchWait = time.Hour
 			}
 			adapter := &crossRequestAdapter{calls: make(chan crossRequestCall, 1)}
-			runtime := newRuntime(adapter, limits)
+			runtime := newRuntime(adapter, limits, nil)
 			var tickets []*Ticket
 			for i := range 2 {
 				work := plan(uint64(i), string(rune('a'+i)), false)
@@ -422,7 +422,7 @@ func TestCollectionTimerDispatchesAndDrainBypassesWait(t *testing.T) {
 func TestCollectionPreservesSameResourceOrderingAndCancellation(t *testing.T) {
 	limits := DefaultLimits()
 	limits.BatchWait = time.Second
-	runtime := newRuntime(nil, limits)
+	runtime := newRuntime(nil, limits, nil)
 	session := runtime.NewSession()
 	defer session.Close()
 	ctx, cancel := context.WithCancel(t.Context())

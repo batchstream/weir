@@ -8,6 +8,7 @@ import (
 
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 	"github.com/batchstream/weir/internal/execution"
+	"github.com/batchstream/weir/internal/testutil/testmetrics"
 )
 
 func TestManySlowNativeOutputsLeaveBackendCreditForReadsAndShortNative(t *testing.T) {
@@ -16,7 +17,7 @@ func TestManySlowNativeOutputsLeaveBackendCreditForReadsAndShortNative(t *testin
 			limits := DefaultLimits()
 			limits.MaxInFlight = maxInFlight
 			adapter := &singleExecutionAdapter{}
-			runtime, err := New(adapter, limits)
+			runtime, err := New(adapter, limits, nil)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -84,12 +85,15 @@ func TestManySlowNativeOutputsLeaveBackendCreditForReadsAndShortNative(t *testin
 	}
 }
 
-func TestOversizedNativeOutputUsesOneReservationAndBackpressuresAtCapacity(t *testing.T) {
+func TestNativeHardCapacityRejectsBeforeBackendAndLeavesTypedHealthy(t *testing.T) {
 	limits := DefaultLimits()
 	limits.MaxInFlight = 1
 	limits.QueueBytes = 1024
+	memory := NewNativeMemory()
+	memory.known, memory.trusted = true, true
+	memory.budget = memory.reserve + 2*(512+2*65536+execution.ResultOverheadBytes) + 4096
 	adapter := &singleExecutionAdapter{}
-	runtime, err := New(adapter, limits)
+	runtime, err := New(adapter, limits, memory)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -106,32 +110,51 @@ func TestOversizedNativeOutputUsesOneReservationAndBackpressuresAtCapacity(t *te
 		session := runtime.NewSession()
 		defer session.Close()
 		work := plan(uint64(index), fmt.Sprint(index), false)
+		work.Bytes = 512
 		work.Command = nativeCall()
 		work.WorkingBytes = 4096
-		if _, failure, _ := runtime.Submit(ctx, work, session); failure != nil {
+		if index == 0 {
+			work.WorkingBytes = defaultNativeIOReserve + 4096
+		}
+		ticket, failure, _ := runtime.Submit(ctx, work, session)
+		if failure != nil {
 			t.Fatal(failure)
 		}
 		select {
-		case <-session.Events:
+		case emission := <-session.Events:
+			if index == 0 {
+				if emission.Event.GetHead() == nil {
+					t.Fatal("first bounded response did not start", emission.Event)
+				}
+			} else {
+				end := emission.Event.GetNativeEnd()
+				if end.GetCompletion() != pb.NativeCompletion_NATIVE_NOT_STARTED || end.Failure.GetCode() != pb.FailureCode_RESOURCE_EXHAUSTED {
+					t.Fatal("full actual budget changed pre-attempt evidence", emission.Event)
+				}
+				emission.Release()
+				marker := <-session.Events
+				marker.Release()
+				ticket.Ack()
+			}
 		case <-ctx.Done():
-			t.Fatal("Native response did not start", runtime.Snapshot())
+			t.Fatal("Native hard capacity became an output wait", runtime.Snapshot())
 		}
 	}
-	snapshot := runtime.Snapshot()
-	if snapshot.Paused != 1 || snapshot.Active != 1 || snapshot.PausedBytes <= limits.QueueBytes || snapshot.WorkingBytes != 8192 {
-		t.Fatal("oversized outputs bypassed their sole paused reservation or backend bound", snapshot)
+	if snapshot := runtime.Snapshot(); snapshot.Active != 0 || snapshot.Paused != 1 {
+		t.Fatal("bounded output still owned backend IO", snapshot)
 	}
-	work := plan(100, "waiting", true)
+	if got := testmetrics.Sum(testmetrics.Gather(t, runtime), "weir_store_executions_total"); got != 1 {
+		t.Fatal("hard capacity rejection invoked the backend", got)
+	}
+	work := plan(100, "healthy", true)
 	ticket, failure, _ := runtime.Submit(ctx, work, nil)
 	if failure != nil {
 		t.Fatal(failure)
 	}
-	select {
-	case <-ticket.ready:
-		t.Fatal("full real output capacity spawned unbounded backend work")
-	case <-time.After(20 * time.Millisecond):
+	if event, err := ticket.Wait(ctx); err != nil || event.GetReadResult() == nil {
+		t.Fatal("full Native budget blocked typed work", event, err)
 	}
-	ticket.Abandon()
+	ticket.Ack()
 }
 
 type nativeResumeAdapter struct {
@@ -150,7 +173,13 @@ func (adapter *nativeResumeAdapter) Execute(ctx context.Context, plans []*execut
 		if err := emit(work, event); err != nil {
 			return
 		}
+		if err := work.NativeIO.BeginIO(ctx, 4096); err != nil {
+			return
+		}
 		adapter.entered <- "resume-native"
+		if err := work.NativeIO.EndIO(work.WorkingBytes, 0); err != nil {
+			return
+		}
 		end := &pb.NativeEnd{Completion: pb.NativeCompletion_RESPONSE_COMPLETE}
 		endValue := &pb.Event_NativeEnd{NativeEnd: end}
 		endEvent := &pb.Event{Value: endValue}
@@ -171,7 +200,7 @@ func TestNativeResumeSharesFIFOWithNewBackendExecutions(t *testing.T) {
 	adapter := &nativeResumeAdapter{entered: make(chan string, 8), gate: gate}
 	limits := DefaultLimits()
 	limits.MaxInFlight, limits.BatchOperations = 1, 1
-	runtime, err := New(adapter, limits)
+	runtime, err := New(adapter, limits, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -267,7 +296,7 @@ func TestDeliveredNativeEndCompletesWithoutReacquiringBusyBackendSlot(t *testing
 	adapter := &nativeResumeAdapter{entered: make(chan string, 8), gate: gate}
 	limits := DefaultLimits()
 	limits.MaxInFlight, limits.BatchOperations = 1, 1
-	runtime, err := New(adapter, limits)
+	runtime, err := New(adapter, limits, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -377,7 +406,7 @@ func TestNativeTerminalOutputUsesCurrentWorkingSetInsteadOfReleasedPeak(t *testi
 	limits := DefaultLimits()
 	limits.MaxInFlight, limits.QueueBytes = 1, 128<<10
 	adapter := &nativeWorkingSetAdapter{}
-	runtime, err := New(adapter, limits)
+	runtime, err := New(adapter, limits, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -414,7 +443,7 @@ func TestNativeTerminalOutputUsesCurrentWorkingSetInsteadOfReleasedPeak(t *testi
 		}
 	}
 	snapshot := runtime.Snapshot()
-	if snapshot.Paused != 32 || snapshot.Active != 0 || snapshot.WorkingBytes != 32*execution.EntryOverheadBytes || snapshot.PausedBytes > limits.QueueBytes {
+	if snapshot.Paused != 0 || snapshot.Active != 0 || snapshot.WorkingBytes != 0 || snapshot.Publishers != 32 || runtime.nativeMemory.Snapshot().Terminal != 32 {
 		t.Fatal("terminal output retained peak working reservations", snapshot)
 	}
 	work := plan(100, "healthy", true)

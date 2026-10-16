@@ -1,0 +1,4 @@
+PR79 exact HEAD9d62ad1696670f7da5ecd6e1399c5e6445b22203 transport lifecycle real HTTP2 race checks
+Command: /Users/liran/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.1.darwin-arm64/bin/go test -race -count=3 -timeout=120s ./internal/server -run TestEncodedResponse|TestCanceledOutputWatchdog|TestZeroWindowReader|TestNativeContinuousSlowProgress|TestNativeOutputStalls|TestPlaintextPrefaceAndHeaderLifetime|TestPartialHTTP2DataFrameCannotRetainConnection
+ok  	github.com/batchstream/weir/internal/server	13.205s
+REVIEW_EXIT_CODE=0

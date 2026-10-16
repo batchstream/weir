@@ -1,0 +1,151 @@
+clean_artifact_source=adc4daab1dff2d369246801e416bb64183af63ae SHA256=789e15b5688725ed313abc9e9fea239e8adc8b8d37173514feb32eac13ccde2b kind=real_typed_Read_12MiB host_driver=race Go=1.27.1
+=== RUN   TestCLIBusinessHeapRecovery
+    memory_recovery_integration_test.go:52: driver Go=go1.27.1 host=darwin/arm64 engine=29.7.2 kernel=7.0.12-linuxkit linux/aarch64 cgroup=2 image=linux/arm64 sha256:ad4f11f7c85f87c0a6d6c0fe492ad53f9cdcff6e8c88b881360c70eff701c67b
+=== RUN   TestCLIBusinessHeapRecovery/256MiB/automatic=true/round=1
+    memory_recovery_integration_test.go:79: automatic Go soft limit=1.4716502e+08
+{"identity": {"dirty": "false", "go": "go1.27.1", "product": "weir", "revision": "adc4daab1dff2d369246801e416bb64183af63ae", "state": "clean-commit", "target": "linux/arm64", "version": "local-adc4daab1dff2d369246801e416bb64183af63ae"}, "identity_watcher": "weir-memory-recovery-51502-1792160329587702000", "valid": true}
+    memory_recovery_integration_test.go:82: steady offered=20ops/s completed=60 throughput=19.84ops/s p50=6.160584ms p99=39.943166ms max=39.943166ms CPU=0.160000s GC_count=2 GC_pause=0.000293s RSS=22966272 working_set=30593024 heap=1428920
+    memory_recovery_integration_test.go:83: live pressure kind=typed_Read response_document=12MiB requests=8 RSS=223408128 working_set=236212224 heap=202782200 latch=1
+    memory_recovery_integration_test.go:83: recovered=146.5ms overload_rejections=0 RSS=150872064 working_set=164847616 heap=1498144
+    memory_recovery_integration_test.go:85: steady offered=20ops/s completed=60 throughput=19.90ops/s p50=6.032291ms p99=43.176291ms max=43.176291ms CPU=0.160000s GC_count=2 GC_pause=0.000263s RSS=23306240 working_set=36040704 heap=2069688
+    memory_recovery_integration_test.go:187: CLI logs=Weir listening on [[::]:7447]; local execution and peer directory discovery
+        Diagnostics listening on [::]:7449
+        2026/10/16 14:18:58 INFO backend_connections_closed backend=mongo store=mongo0 owned=0 peak=2 dialing=0 closing=0 acquired=2 released=2
+    memory_recovery_integration_test.go:201: CLI exit=false 0
+=== RUN   TestCLIBusinessHeapRecovery/256MiB/automatic=true/round=2
+    memory_recovery_integration_test.go:79: automatic Go soft limit=1.47145359e+08
+{"identity": {"dirty": "false", "go": "go1.27.1", "product": "weir", "revision": "adc4daab1dff2d369246801e416bb64183af63ae", "state": "clean-commit", "target": "linux/arm64", "version": "local-adc4daab1dff2d369246801e416bb64183af63ae"}, "identity_watcher": "weir-memory-recovery-51502-1792160339002397000", "valid": true}
+    memory_recovery_integration_test.go:82: steady offered=20ops/s completed=60 throughput=19.85ops/s p50=9.569583ms p99=39.402084ms max=39.402084ms CPU=0.140000s GC_count=2 GC_pause=0.000162s RSS=22368256 working_set=30883840 heap=1440368
+    memory_recovery_integration_test.go:83: live pressure kind=typed_Read response_document=12MiB requests=8 RSS=224923648 working_set=238407680 heap=202698232 latch=1
+    memory_recovery_integration_test.go:83: recovered=141.686083ms overload_rejections=1 RSS=153497600 working_set=166805504 heap=1429776
+    memory_recovery_integration_test.go:85: steady offered=20ops/s completed=60 throughput=19.89ops/s p50=9.636084ms p99=41.993583ms max=41.993583ms CPU=0.170000s GC_count=2 GC_pause=0.000385s RSS=24616960 working_set=35549184 heap=1842536
+    memory_recovery_integration_test.go:187: CLI logs=Weir listening on [[::]:7447]; local execution and peer directory discovery
+        Diagnostics listening on [::]:7449
+        2026/10/16 14:19:08 INFO backend_connections_closed backend=mongo store=mongo0 owned=0 peak=2 dialing=0 closing=0 acquired=2 released=2
+    memory_recovery_integration_test.go:201: CLI exit=false 0
+=== RUN   TestCLIBusinessHeapRecovery/256MiB/automatic=true/round=3
+    memory_recovery_integration_test.go:79: automatic Go soft limit=1.46942197e+08
+{"identity": {"dirty": "false", "go": "go1.27.1", "product": "weir", "revision": "adc4daab1dff2d369246801e416bb64183af63ae", "state": "clean-commit", "target": "linux/arm64", "version": "local-adc4daab1dff2d369246801e416bb64183af63ae"}, "identity_watcher": "weir-memory-recovery-51502-1792160348265692000", "valid": true}
+    memory_recovery_integration_test.go:82: steady offered=20ops/s completed=60 throughput=19.84ops/s p50=4.9605ms p99=40.294792ms max=40.294792ms CPU=0.150000s GC_count=2 GC_pause=0.000200s RSS=22835200 working_set=30924800 heap=1378240
+    memory_recovery_integration_test.go:83: live pressure kind=typed_Read response_document=12MiB requests=8 RSS=223768576 working_set=238370816 heap=202709768 latch=1
+    memory_recovery_integration_test.go:83: recovered=146.202416ms overload_rejections=1 RSS=148836352 working_set=166993920 heap=1458456
+    memory_recovery_integration_test.go:85: steady offered=20ops/s completed=60 throughput=19.93ops/s p50=4.292208ms p99=41.83475ms max=41.83475ms CPU=0.130000s GC_count=2 GC_pause=0.000201s RSS=23232512 working_set=35700736 heap=1901680
+    memory_recovery_integration_test.go:187: CLI logs=Weir listening on [[::]:7447]; local execution and peer directory discovery
+        Diagnostics listening on [::]:7449
+        2026/10/16 14:19:17 INFO backend_connections_closed backend=mongo store=mongo0 owned=0 peak=2 dialing=0 closing=0 acquired=2 released=2
+    memory_recovery_integration_test.go:201: CLI exit=false 0
+=== RUN   TestCLIBusinessHeapRecovery/256MiB/automatic=false/round=1
+{"identity": {"dirty": "false", "go": "go1.27.1", "product": "weir", "revision": "adc4daab1dff2d369246801e416bb64183af63ae", "state": "clean-commit", "target": "linux/arm64", "version": "local-adc4daab1dff2d369246801e416bb64183af63ae"}, "identity_watcher": "weir-memory-recovery-51502-1792160357718764000", "valid": true}
+    memory_recovery_integration_test.go:82: steady offered=20ops/s completed=60 throughput=19.87ops/s p50=4.434042ms p99=41.107208ms max=41.107208ms CPU=0.130000s GC_count=2 GC_pause=0.000127s RSS=21241856 working_set=28393472 heap=1392896
+    memory_recovery_integration_test.go:83: live pressure kind=typed_Read response_document=12MiB requests=7 RSS=227778560 working_set=235663360 heap=206924656 latch=1
+    memory_recovery_integration_test.go:83: explicit off control still latched after fixed 5s: RSS=240693248 working_set=248504320 heap=219109024 latch=1
+    memory_recovery_integration_test.go:187: CLI logs=Weir listening on [[::]:7447]; local execution and peer directory discovery
+        Diagnostics listening on [::]:7449
+        2026/10/16 14:19:28 INFO backend_connections_closed backend=mongo store=mongo0 owned=0 peak=2 dialing=0 closing=0 acquired=2 released=2
+    memory_recovery_integration_test.go:201: CLI exit=false 0
+=== RUN   TestCLIBusinessHeapRecovery/256MiB/automatic=false/round=2
+{"identity": {"dirty": "false", "go": "go1.27.1", "product": "weir", "revision": "adc4daab1dff2d369246801e416bb64183af63ae", "state": "clean-commit", "target": "linux/arm64", "version": "local-adc4daab1dff2d369246801e416bb64183af63ae"}, "identity_watcher": "weir-memory-recovery-51502-1792160368843990000", "valid": true}
+    memory_recovery_integration_test.go:82: steady offered=20ops/s completed=60 throughput=19.87ops/s p50=26.123542ms p99=93.702792ms max=93.702792ms CPU=0.150000s GC_count=2 GC_pause=0.000192s RSS=23056384 working_set=31027200 heap=1351160
+    memory_recovery_integration_test.go:83: live pressure kind=typed_Read response_document=12MiB requests=7 RSS=227786752 working_set=236130304 heap=206967728 latch=1
+    memory_recovery_integration_test.go:83: explicit off control still latched after fixed 5s: RSS=240476160 working_set=248975360 heap=219066608 latch=1
+    memory_recovery_integration_test.go:187: CLI logs=Weir listening on [[::]:7447]; local execution and peer directory discovery
+        Diagnostics listening on [::]:7449
+        2026/10/16 14:19:39 INFO backend_connections_closed backend=mongo store=mongo0 owned=0 peak=2 dialing=0 closing=0 acquired=2 released=2
+    memory_recovery_integration_test.go:201: CLI exit=false 0
+=== RUN   TestCLIBusinessHeapRecovery/256MiB/automatic=false/round=3
+{"identity": {"dirty": "false", "go": "go1.27.1", "product": "weir", "revision": "adc4daab1dff2d369246801e416bb64183af63ae", "state": "clean-commit", "target": "linux/arm64", "version": "local-adc4daab1dff2d369246801e416bb64183af63ae"}, "identity_watcher": "weir-memory-recovery-51502-1792160379930985000", "valid": true}
+    memory_recovery_integration_test.go:82: steady offered=20ops/s completed=60 throughput=19.87ops/s p50=5.3955ms p99=41.12725ms max=41.12725ms CPU=0.140000s GC_count=2 GC_pause=0.000251s RSS=23060480 working_set=30900224 heap=1428296
+    memory_recovery_integration_test.go:83: live pressure kind=typed_Read response_document=12MiB requests=7 RSS=227659776 working_set=235507712 heap=206952128 latch=1
+    memory_recovery_integration_test.go:83: explicit off control still latched after fixed 5s: RSS=240480256 working_set=248332288 heap=219152560 latch=1
+    memory_recovery_integration_test.go:187: CLI logs=Weir listening on [[::]:7447]; local execution and peer directory discovery
+        Diagnostics listening on [::]:7449
+        2026/10/16 14:19:50 INFO backend_connections_closed backend=mongo store=mongo0 owned=0 peak=2 dialing=0 closing=0 acquired=2 released=2
+    memory_recovery_integration_test.go:201: CLI exit=false 0
+=== RUN   TestCLIBusinessHeapRecovery/512MiB/automatic=true/round=1
+    memory_recovery_integration_test.go:79: automatic Go soft limit=2.97472491e+08
+{"identity": {"dirty": "false", "go": "go1.27.1", "product": "weir", "revision": "adc4daab1dff2d369246801e416bb64183af63ae", "state": "clean-commit", "target": "linux/arm64", "version": "local-adc4daab1dff2d369246801e416bb64183af63ae"}, "identity_watcher": "weir-memory-recovery-51502-1792160390915200000", "valid": true}
+    memory_recovery_integration_test.go:82: steady offered=20ops/s completed=60 throughput=19.81ops/s p50=4.340333ms p99=41.235833ms max=41.235833ms CPU=0.150000s GC_count=2 GC_pause=0.000177s RSS=22384640 working_set=30605312 heap=1852008
+    memory_recovery_integration_test.go:83: live pressure kind=typed_Read response_document=12MiB requests=16 RSS=425775104 working_set=440737792 heap=404290832 latch=1
+    memory_recovery_integration_test.go:83: recovered=154.207541ms overload_rejections=1 RSS=296726528 working_set=316719104 heap=1486328
+    memory_recovery_integration_test.go:85: steady offered=20ops/s completed=60 throughput=19.85ops/s p50=5.559625ms p99=37.103042ms max=37.103042ms CPU=0.140000s GC_count=2 GC_pause=0.000153s RSS=23240704 working_set=40349696 heap=2442728
+    memory_recovery_integration_test.go:187: CLI logs=Weir listening on [[::]:7447]; local execution and peer directory discovery
+        Diagnostics listening on [::]:7449
+        2026/10/16 14:20:01 INFO backend_connections_closed backend=mongo store=mongo1 owned=0 peak=2 dialing=0 closing=0 acquired=2 released=2
+        2026/10/16 14:20:01 INFO backend_connections_closed backend=mongo store=mongo2 owned=0 peak=2 dialing=0 closing=0 acquired=2 released=2
+        2026/10/16 14:20:01 INFO backend_connections_closed backend=mongo store=mongo0 owned=0 peak=2 dialing=0 closing=0 acquired=2 released=2
+    memory_recovery_integration_test.go:201: CLI exit=false 0
+=== RUN   TestCLIBusinessHeapRecovery/512MiB/automatic=true/round=2
+    memory_recovery_integration_test.go:79: automatic Go soft limit=2.97488875e+08
+{"identity": {"dirty": "false", "go": "go1.27.1", "product": "weir", "revision": "adc4daab1dff2d369246801e416bb64183af63ae", "state": "clean-commit", "target": "linux/arm64", "version": "local-adc4daab1dff2d369246801e416bb64183af63ae"}, "identity_watcher": "weir-memory-recovery-51502-1792160401965567000", "valid": true}
+    memory_recovery_integration_test.go:82: steady offered=20ops/s completed=60 throughput=19.85ops/s p50=4.787917ms p99=42.817ms max=42.817ms CPU=0.140000s GC_count=2 GC_pause=0.000155s RSS=22646784 working_set=30683136 heap=1864208
+    memory_recovery_integration_test.go:83: live pressure kind=typed_Read response_document=12MiB requests=16 RSS=425312256 working_set=440532992 heap=404322664 latch=1
+    memory_recovery_integration_test.go:83: recovered=148.746666ms overload_rejections=1 RSS=295669760 working_set=314400768 heap=1558824
+    memory_recovery_integration_test.go:85: steady offered=20ops/s completed=60 throughput=19.86ops/s p50=3.728042ms p99=40.745375ms max=40.745375ms CPU=0.140000s GC_count=3 GC_pause=0.000289s RSS=22634496 working_set=40230912 heap=1322872
+    memory_recovery_integration_test.go:187: CLI logs=Weir listening on [[::]:7447]; local execution and peer directory discovery
+        Diagnostics listening on [::]:7449
+        2026/10/16 14:20:12 INFO backend_connections_closed backend=mongo store=mongo2 owned=0 peak=2 dialing=0 closing=0 acquired=2 released=2
+        2026/10/16 14:20:12 INFO backend_connections_closed backend=mongo store=mongo1 owned=0 peak=2 dialing=0 closing=0 acquired=2 released=2
+        2026/10/16 14:20:12 INFO backend_connections_closed backend=mongo store=mongo0 owned=0 peak=2 dialing=0 closing=0 acquired=2 released=2
+    memory_recovery_integration_test.go:201: CLI exit=false 0
+=== RUN   TestCLIBusinessHeapRecovery/512MiB/automatic=true/round=3
+    memory_recovery_integration_test.go:79: automatic Go soft limit=2.97472491e+08
+{"identity": {"dirty": "false", "go": "go1.27.1", "product": "weir", "revision": "adc4daab1dff2d369246801e416bb64183af63ae", "state": "clean-commit", "target": "linux/arm64", "version": "local-adc4daab1dff2d369246801e416bb64183af63ae"}, "identity_watcher": "weir-memory-recovery-51502-1792160413169023000", "valid": true}
+    memory_recovery_integration_test.go:82: steady offered=20ops/s completed=60 throughput=19.84ops/s p50=11.189ms p99=39.423125ms max=39.423125ms CPU=0.130000s GC_count=2 GC_pause=0.000157s RSS=20561920 working_set=28524544 heap=1886392
+    memory_recovery_integration_test.go:83: live pressure kind=typed_Read response_document=12MiB requests=16 RSS=425828352 working_set=442806272 heap=404289776 latch=1
+    memory_recovery_integration_test.go:83: recovered=147.725667ms overload_rejections=1 RSS=280457216 working_set=299585536 heap=1571296
+    memory_recovery_integration_test.go:85: steady offered=20ops/s completed=60 throughput=19.87ops/s p50=7.072791ms p99=37.92375ms max=37.92375ms CPU=0.140000s GC_count=2 GC_pause=0.000219s RSS=23531520 working_set=42213376 heap=2495688
+    memory_recovery_integration_test.go:187: CLI logs=Weir listening on [[::]:7447]; local execution and peer directory discovery
+        Diagnostics listening on [::]:7449
+        2026/10/16 14:20:24 INFO backend_connections_closed backend=mongo store=mongo1 owned=0 peak=2 dialing=0 closing=0 acquired=2 released=2
+        2026/10/16 14:20:24 INFO backend_connections_closed backend=mongo store=mongo0 owned=0 peak=2 dialing=0 closing=0 acquired=2 released=2
+        2026/10/16 14:20:24 INFO backend_connections_closed backend=mongo store=mongo2 owned=0 peak=2 dialing=0 closing=0 acquired=2 released=2
+    memory_recovery_integration_test.go:201: CLI exit=false 0
+=== RUN   TestCLIBusinessHeapRecovery/512MiB/automatic=false/round=1
+{"identity": {"dirty": "false", "go": "go1.27.1", "product": "weir", "revision": "adc4daab1dff2d369246801e416bb64183af63ae", "state": "clean-commit", "target": "linux/arm64", "version": "local-adc4daab1dff2d369246801e416bb64183af63ae"}, "identity_watcher": "weir-memory-recovery-51502-1792160424247891000", "valid": true}
+    memory_recovery_integration_test.go:82: steady offered=20ops/s completed=60 throughput=19.87ops/s p50=5.375292ms p99=40.368666ms max=40.368666ms CPU=0.150000s GC_count=2 GC_pause=0.000294s RSS=20799488 working_set=28741632 heap=1758304
+    memory_recovery_integration_test.go:83: live pressure kind=typed_Read response_document=12MiB requests=14 RSS=454512640 working_set=462606336 heap=357480808 latch=1
+    memory_recovery_integration_test.go:83: explicit off control still latched after fixed 5s: RSS=454643712 working_set=463355904 heap=373135376 latch=1
+    memory_recovery_integration_test.go:187: CLI logs=Weir listening on [[::]:7447]; local execution and peer directory discovery
+        Diagnostics listening on [::]:7449
+        2026/10/16 14:20:36 INFO backend_connections_closed backend=mongo store=mongo0 owned=0 peak=2 dialing=0 closing=0 acquired=2 released=2
+        2026/10/16 14:20:36 INFO backend_connections_closed backend=mongo store=mongo2 owned=0 peak=2 dialing=0 closing=0 acquired=2 released=2
+        2026/10/16 14:20:36 INFO backend_connections_closed backend=mongo store=mongo1 owned=0 peak=2 dialing=0 closing=0 acquired=2 released=2
+    memory_recovery_integration_test.go:201: CLI exit=false 0
+=== RUN   TestCLIBusinessHeapRecovery/512MiB/automatic=false/round=2
+{"identity": {"dirty": "false", "go": "go1.27.1", "product": "weir", "revision": "adc4daab1dff2d369246801e416bb64183af63ae", "state": "clean-commit", "target": "linux/arm64", "version": "local-adc4daab1dff2d369246801e416bb64183af63ae"}, "identity_watcher": "weir-memory-recovery-51502-1792160436745098000", "valid": true}
+    memory_recovery_integration_test.go:82: steady offered=20ops/s completed=60 throughput=19.84ops/s p50=6.13775ms p99=40.403959ms max=40.403959ms CPU=0.150000s GC_count=2 GC_pause=0.000272s RSS=20623360 working_set=28459008 heap=1867792
+    memory_recovery_integration_test.go:83: live pressure kind=typed_Read response_document=12MiB requests=14 RSS=454463488 working_set=462827520 heap=357594576 latch=1
+    memory_recovery_integration_test.go:83: explicit off control still latched after fixed 5s: RSS=454463488 working_set=463343616 heap=373079296 latch=1
+    memory_recovery_integration_test.go:187: CLI logs=Weir listening on [[::]:7447]; local execution and peer directory discovery
+        Diagnostics listening on [::]:7449
+        2026/10/16 14:20:48 INFO backend_connections_closed backend=mongo store=mongo0 owned=0 peak=2 dialing=0 closing=0 acquired=2 released=2
+        2026/10/16 14:20:48 INFO backend_connections_closed backend=mongo store=mongo1 owned=0 peak=2 dialing=0 closing=0 acquired=2 released=2
+        2026/10/16 14:20:48 INFO backend_connections_closed backend=mongo store=mongo2 owned=0 peak=2 dialing=0 closing=0 acquired=2 released=2
+    memory_recovery_integration_test.go:201: CLI exit=false 0
+=== RUN   TestCLIBusinessHeapRecovery/512MiB/automatic=false/round=3
+{"identity": {"dirty": "false", "go": "go1.27.1", "product": "weir", "revision": "adc4daab1dff2d369246801e416bb64183af63ae", "state": "clean-commit", "target": "linux/arm64", "version": "local-adc4daab1dff2d369246801e416bb64183af63ae"}, "identity_watcher": "weir-memory-recovery-51502-1792160449177073000", "valid": true}
+    memory_recovery_integration_test.go:82: steady offered=20ops/s completed=60 throughput=19.88ops/s p50=3.952667ms p99=40.627875ms max=40.627875ms CPU=0.150000s GC_count=2 GC_pause=0.000243s RSS=20627456 working_set=28786688 heap=1907760
+    memory_recovery_integration_test.go:83: live pressure kind=typed_Read response_document=12MiB requests=14 RSS=454414336 working_set=463204352 heap=357592152 latch=1
+    memory_recovery_integration_test.go:83: explicit off control still latched after fixed 5s: RSS=454414336 working_set=463200256 heap=373335328 latch=1
+    memory_recovery_integration_test.go:187: CLI logs=Weir listening on [[::]:7447]; local execution and peer directory discovery
+        Diagnostics listening on [::]:7449
+        2026/10/16 14:21:01 INFO backend_connections_closed backend=mongo store=mongo0 owned=0 peak=2 dialing=0 closing=0 acquired=2 released=2
+        2026/10/16 14:21:01 INFO backend_connections_closed backend=mongo store=mongo1 owned=0 peak=2 dialing=0 closing=0 acquired=2 released=2
+        2026/10/16 14:21:01 INFO backend_connections_closed backend=mongo store=mongo2 owned=0 peak=2 dialing=0 closing=0 acquired=2 released=2
+    memory_recovery_integration_test.go:201: CLI exit=false 0
+--- PASS: TestCLIBusinessHeapRecovery (132.71s)
+    --- PASS: TestCLIBusinessHeapRecovery/256MiB/automatic=true/round=1 (9.41s)
+    --- PASS: TestCLIBusinessHeapRecovery/256MiB/automatic=true/round=2 (9.26s)
+    --- PASS: TestCLIBusinessHeapRecovery/256MiB/automatic=true/round=3 (9.45s)
+    --- PASS: TestCLIBusinessHeapRecovery/256MiB/automatic=false/round=1 (11.13s)
+    --- PASS: TestCLIBusinessHeapRecovery/256MiB/automatic=false/round=2 (11.09s)
+    --- PASS: TestCLIBusinessHeapRecovery/256MiB/automatic=false/round=3 (10.98s)
+    --- PASS: TestCLIBusinessHeapRecovery/512MiB/automatic=true/round=1 (11.05s)
+    --- PASS: TestCLIBusinessHeapRecovery/512MiB/automatic=true/round=2 (11.20s)
+    --- PASS: TestCLIBusinessHeapRecovery/512MiB/automatic=true/round=3 (11.08s)
+    --- PASS: TestCLIBusinessHeapRecovery/512MiB/automatic=false/round=1 (12.50s)
+    --- PASS: TestCLIBusinessHeapRecovery/512MiB/automatic=false/round=2 (12.43s)
+    --- PASS: TestCLIBusinessHeapRecovery/512MiB/automatic=false/round=3 (12.42s)
+PASS
+ok  	github.com/batchstream/weir/internal/app	134.510s
+{"expected_receipts": 12, "identity_receipts": 12, "invalid": [], "matrix_exit_code": 0}

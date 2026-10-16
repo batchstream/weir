@@ -14,7 +14,16 @@ import (
 )
 
 // Native retains the driver wire response while publishing copied output chunks.
-const nativeWorkingBytes = 24 << 20
+const nativeWorkingBytes = 48_000_000
+
+// The driver allocates one complete, uncompressed wire message. Compression is
+// disabled at Open. Its negotiated MaxMessageSize is checked before business I/O.
+func (a *Adapter) nativeReplyBytes() int {
+	if a.maxMessageBytes > 0 {
+		return a.maxMessageBytes
+	}
+	return nativeWorkingBytes
+}
 
 func (a *Adapter) prepareNative(request *pb.NativeRequest) (*execution.Plan, *pb.Failure) {
 	if f := protocol.ValidateNative(request); f != nil {
@@ -37,7 +46,8 @@ func (a *Adapter) prepareNative(request *pb.NativeRequest) (*execution.Plan, *pb
 		Key:          request.Resource,
 		Bytes:        proto.Size(request) + execution.EntryOverheadBytes,
 		ResultBytes:  protocol.NativeChunk + execution.ResultOverheadBytes,
-		WorkingBytes: nativeWorkingBytes,
+		WorkingBytes: a.nativeReplyBytes() + 2*len(request.Request.Data) + 8192,
+		IOReserve:    a.nativeReplyBytes() + 2*protocol.NativeChunk + 8192,
 	}
 	return p, nil
 }
@@ -86,6 +96,7 @@ func (a *Adapter) executeNative(ctx context.Context, work *execution.Plan, emit 
 		return protocol.NativeFailure(false, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "Native requires a resource database or $db"))
 	}
 	var reply bsoncore.Document
+	beforeSendBudget := false
 	retry := driver.RetryNone
 	operation := driver.Operation{
 		Database:       database,
@@ -96,7 +107,19 @@ func (a *Adapter) executeNative(ctx context.Context, work *execution.Plan, emit 
 		Type:          driver.Write,
 		RetryMode:     &retry,
 		OmitMaxTimeMS: true,
-		CommandFn: func(dst []byte, _ description.SelectedServer) ([]byte, error) {
+		CommandFn: func(dst []byte, server description.SelectedServer) ([]byte, error) {
+			if work.NativeIO != nil {
+				maximum := int(server.MaxMessageSize)
+				if maximum == 0 {
+					maximum = nativeWorkingBytes
+				}
+				work.IOReserve = maximum + 2*protocol.NativeChunk + 8192
+				working := maximum + 2*len(raw) + 8192
+				if err := work.NativeIO.GrowIO(working); err != nil {
+					beforeSendBudget = true
+					return nil, err
+				}
+			}
 			dst = append(dst, prefix...)
 			return append(dst, suffix...), nil
 		},
@@ -111,6 +134,14 @@ func (a *Adapter) executeNative(ctx context.Context, work *execution.Plan, emit 
 	// The response is now finite and retained locally. Small replies must not
 	// reserve the largest legal MongoDB reply while waiting on a slow caller.
 	work.WorkingBytes = cap(reply) + execution.EntryOverheadBytes
+	if beforeSendBudget {
+		return protocol.NativeFailure(false, protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "Native working memory capacity exhausted"))
+	}
+	if work.NativeIO != nil {
+		if err := work.NativeIO.EndIO(work.WorkingBytes, 0); err != nil {
+			return protocol.NativeFailure(true, protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "Native working memory capacity exhausted"))
+		}
+	}
 	failure := backendFailure(ctx, err)
 	// Raw is the actual driver-retained wire response, including ok:0 and write
 	// errors. Never reconstruct BSON from the Go error or normalize write effects.

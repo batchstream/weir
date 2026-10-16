@@ -4,7 +4,9 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -12,7 +14,6 @@ import (
 	"runtime"
 	"slices"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -22,7 +23,9 @@ import (
 	"github.com/batchstream/weir/internal/testutil/testmongo"
 	dto "github.com/prometheus/client_model/go"
 	"go.mongodb.org/mongo-driver/v2/bson"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
 )
 
@@ -56,14 +59,6 @@ func TestCLIBusinessHeapRecovery(t *testing.T) {
 	if _, err := fixture.Admin.Database(fixture.DB).Collection("records").InsertOne(ctx, document); err != nil {
 		t.Fatal(err)
 	}
-	filter := bson.D{{Key: "_id", Value: "large"}}
-	command := bson.D{{Key: "find", Value: "records"}, {Key: "filter", Value: filter}, {Key: "limit", Value: 1}, {Key: "singleBatch", Value: true}}
-	raw, err := bson.Marshal(command)
-	if err != nil {
-		t.Fatal(err)
-	}
-	input := &pb.Document{ContentType: "application/bson", Data: raw}
-	native := &pb.NativeRequest{Resource: fixture.DB, Request: input}
 	for _, capacity := range []int{256, 512} {
 		for _, automatic := range []bool{true, false} {
 			for round := range 3 {
@@ -86,7 +81,7 @@ func TestCLIBusinessHeapRecovery(t *testing.T) {
 					}
 					resource := fixture.DB + "/records/s:health"
 					memoryRecoverySteady(t, service, client, resource)
-					memoryRecoveryBurst(t, service, client, native)
+					memoryRecoveryBurst(t, service, fixture.DB+"/records/s:large")
 					if testmetrics.Sum(service.sample(t), "weir_memory_latched") == 0 {
 						memoryRecoverySteady(t, service, client, resource)
 					}
@@ -101,6 +96,7 @@ type memoryRecoveryOptions struct {
 	capacityMiB     int
 	sharedMemoryMiB int
 	automatic       bool
+	config          *Config
 }
 
 type memoryRecoveryCLI struct {
@@ -118,25 +114,40 @@ func startMemoryRecoveryCLI(t *testing.T, opts memoryRecoveryOptions) *memoryRec
 	}
 	owner := fmt.Sprintf("weir-memory-recovery-%d-%d", os.Getpid(), time.Now().UnixNano())
 	cfg := DefaultConfig()
+	if opts.config != nil {
+		cfg = *opts.config
+	}
 	cfg.Basic.Listeners.Application = "0.0.0.0:7447"
 	cfg.Basic.Diagnostics.Address, cfg.Basic.Diagnostics.AllowIntranet = "0.0.0.0:7449", true
-	cfg.Basic.Discovery.Advertise = []string{"127.0.0.1:7447"}
+	reservation, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	applicationAddress := reservation.Addr().String()
+	if err := reservation.Close(); err != nil {
+		t.Fatal(err)
+	}
+	cfg.Basic.Discovery.Advertise = []string{applicationAddress}
 	stores := 1
 	if opts.capacityMiB == 512 {
 		stores = 3
 	}
-	for index := range stores {
-		backend := &Mongo{URI: "mongodb://host.docker.internal:27028/?directConnection=true&serverMonitoringMode=poll"}
-		connection := BackendConfig{MongoDB: backend}
-		local := &Local{Backend: connection}
-		definition := StoreConfig{Name: fmt.Sprintf("mongo%d", index), Local: local}
-		cfg.Routing.Stores = append(cfg.Routing.Stores, definition)
+	if opts.config == nil {
+		for index := range stores {
+			backend := &Mongo{URI: "mongodb://host.docker.internal:27028/?directConnection=true&serverMonitoringMode=poll"}
+			connection := BackendConfig{MongoDB: backend}
+			local := &Local{Backend: connection}
+			definition := StoreConfig{Name: fmt.Sprintf("mongo%d", index), Local: local}
+			cfg.Routing.Stores = append(cfg.Routing.Stores, definition)
+		}
+	} else {
+		stores = len(cfg.Routing.Stores)
 	}
 	writeConfigFiles(t, filepath.Join(directory, "node.yaml"), cfg, 0644)
 	args := []string{"create", "--name", owner, "--label", "weir.owner=" + owner, "--platform=linux/arm64", "--pull=never",
 		"--read-only", "--cap-drop=ALL", "--security-opt=no-new-privileges", "--user=65532:65532",
 		fmt.Sprintf("--memory=%dm", opts.capacityMiB), fmt.Sprintf("--memory-swap=%dm", opts.capacityMiB), "--cpus=2", "--pids-limit=96",
-		"--publish", "127.0.0.1::7447", "--publish", "127.0.0.1::7449",
+		"--publish", applicationAddress + ":7447", "--publish", "127.0.0.1::7449",
 		"--mount", "type=bind,src=" + directory + ",dst=/fixture,readonly", "--mount", "type=bind,src=" + opts.binary + ",dst=/weir,readonly"}
 	if !opts.automatic {
 		args = append(args, "--env=GOMEMLIMIT=off")
@@ -207,6 +218,9 @@ func startMemoryRecoveryCLI(t *testing.T, opts memoryRecoveryOptions) *memoryRec
 	packagedDocker(t, "start", owner)
 	service := &memoryRecoveryCLI{name: owner, capacity: float64(opts.capacityMiB << 20), automatic: opts.automatic, stores: stores}
 	service.address = strings.TrimSpace(packagedDocker(t, "port", owner, "7447/tcp"))
+	if service.address != applicationAddress {
+		t.Fatal("Docker published address differs from the real advertised endpoint", service.address, applicationAddress)
+	}
 	service.diagnostic = strings.TrimSpace(packagedDocker(t, "port", owner, "7449/tcp"))
 	deadline := time.Now().Add(7 * time.Second)
 	probe := &http.Client{Timeout: 300 * time.Millisecond}
@@ -288,14 +302,24 @@ func memoryRecoverySteady(t *testing.T, service *memoryRecoveryCLI, client pb.St
 		testmetrics.Sum(after, "process_resident_memory_bytes"), testmetrics.Sum(after, "weir_memory_cgroup_working_set_bytes"), testmetrics.Sum(after, "go_memstats_heap_alloc_bytes"))
 }
 
-func memoryRecoveryBurst(t *testing.T, service *memoryRecoveryCLI, client pb.StoreServiceClient, native *pb.NativeRequest) {
+// Typed Read responses exercise real business heap pressure independently of
+// Native's separate working-memory protection. Static flow-control windows keep
+// each complete 12 MiB document resident without retaining it in the host driver.
+func memoryRecoveryBurst(t *testing.T, service *memoryRecoveryCLI, resource string) {
 	t.Helper()
+	parts := strings.SplitN(resource, "/", 2)
+	if len(parts) != 2 {
+		t.Fatal("owned typed Read resource must include its database")
+	}
+	dialOptions := []grpc.DialOption{grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithNoProxy(), grpc.WithDisableRetry(), grpc.WithDisableServiceConfig(), grpc.WithStaticStreamWindowSize(64 << 10), grpc.WithStaticConnWindowSize(4 << 20)}
+	connection, err := grpc.NewClient("passthrough:///"+service.address, dialOptions...)
+	if err != nil {
+		t.Fatal(err)
+	}
 	ctx, cancel := context.WithCancel(t.Context())
-	var calls sync.WaitGroup
-	defer func() {
-		cancel()
-		calls.Wait()
-	}()
+	defer func() { cancel(); _ = connection.Close() }()
+	blockedClient := pb.NewStoreServiceClient(connection)
+	var streams []grpc.BidiStreamingClient[pb.ExecuteRequest, pb.ExecuteResponse]
 	metrics := service.sample(t)
 	count := 0
 	for testmetrics.Sum(metrics, "weir_memory_latched") == 0 {
@@ -303,43 +327,60 @@ func memoryRecoveryBurst(t *testing.T, service *memoryRecoveryCLI, client pb.Sto
 		if working+float64(32<<20) > service.capacity || count >= 40 {
 			t.Fatal("safe business-pressure headroom exhausted before reaching overload", count, working, service.capacity)
 		}
-		ready := make(chan struct{})
-		done := make(chan error, 1)
-		store := fmt.Sprintf("mongo%d", count%service.stores)
-		calls.Add(1)
-		go func() {
-			defer calls.Done()
-			first := true
-			consume := func(ctx context.Context, _ *weirclient.NativeResponse, _ []byte) error {
-				if first {
-					first = false
-					close(ready)
-				}
-				<-ctx.Done()
-				return ctx.Err()
-			}
-			options := weirclient.NativeOptions{StoreName: store, Request: native, Consume: consume}
-			result, err := weirclient.Native(ctx, client, options)
-			if err == nil {
-				err = fmt.Errorf("pressure call ended before cancellation: %v", result)
-			}
-			done <- err
-		}()
-		select {
-		case <-ready:
-			count++
-		case err := <-done:
+		before := testmetrics.Sum(metrics, "weir_ingress_queued_response_bytes")
+		required := float64((count + 1) * (12 << 20))
+		maxWire := before
+		memoryRecoveryWireDiagnostic(t, metrics, fmt.Sprintf("before_read count=%d before=%.0f required=%.0f maxwire=%.0f", count, before, required, maxWire), false)
+		streamContext, stopStream := context.WithCancel(ctx)
+		defer stopStream()
+		stream, err := blockedClient.Execute(streamContext)
+		if err != nil {
+			t.Fatal(err)
+		}
+		read := &pb.ReadRequest{Resource: resource}
+		operation := &pb.Command_Read{Read: read}
+		command := &pb.Command{Operation: operation}
+		request := &pb.ExecuteRequest{StoreName: fmt.Sprintf("mongo%d", count%service.stores), Index: 1, Command: command}
+		if err := stream.Send(request); err != nil {
+			t.Fatal(err)
+		}
+		if err := stream.CloseSend(); err != nil {
+			t.Fatal(err)
+		}
+		streams = append(streams, stream)
+		deadline := time.Now().Add(3 * time.Second)
+		for {
 			metrics = service.sample(t)
-			if testmetrics.Sum(metrics, "weir_memory_latched") == 0 {
-				t.Fatal("Native call failed below the pressure threshold", err)
+			wire := testmetrics.Sum(metrics, "weir_ingress_queued_response_bytes")
+			if wire > maxWire {
+				maxWire = wire
+				memoryRecoveryWireDiagnostic(t, metrics, fmt.Sprintf("new_max count=%d before=%.0f required=%.0f maxwire=%.0f", count, before, required, maxWire), false)
 			}
-		case <-time.After(3 * time.Second):
-			t.Fatal("Native business pressure did not reach first output")
+			// Every preceding large message is still blocked on this dedicated
+			// static-window connection. Compare their cumulative ownership,
+			// because unrelated healthy-response bytes can be freed after before.
+			// Small failures and framing overhead cannot replace a 12 MiB reply.
+			if wire >= required {
+				memoryRecoveryWireDiagnostic(t, metrics, fmt.Sprintf("threshold_satisfied count=%d before=%.0f required=%.0f maxwire=%.0f", count, before, required, maxWire), false)
+				count++
+				break
+			}
+			if testmetrics.Sum(metrics, "weir_memory_latched") == 1 {
+				memoryRecoveryWireDiagnostic(t, metrics, fmt.Sprintf("latched_before_threshold count=%d before=%.0f required=%.0f maxwire=%.0f", count, before, required, maxWire), false)
+				break
+			}
+			if time.Now().After(deadline) {
+				memoryRecoveryWireDiagnostic(t, metrics, fmt.Sprintf("threshold_timeout count=%d before=%.0f required=%.0f maxwire=%.0f", count, before, required, maxWire), true)
+				memoryRecoveryWireFailureReceive(t, stream, stopStream)
+				t.Fatal("typed business pressure did not retain its full response", count)
+			}
+			time.Sleep(20 * time.Millisecond)
 		}
 		time.Sleep(120 * time.Millisecond)
 		metrics = service.sample(t)
 	}
-	read := &weirclient.ReadRequest{Resource: native.Resource + "/records/s:health"}
+	client := endpointProcessClient(t, service.address)
+	read := &weirclient.ReadRequest{Resource: parts[0] + "/records/s:health"}
 	readOptions := weirclient.ReadOneOptions{StoreName: "mongo0", Request: read}
 	probe, stop := context.WithTimeout(t.Context(), 300*time.Millisecond)
 	result, err := weirclient.ReadOne(probe, client, readOptions)
@@ -350,15 +391,16 @@ func memoryRecoveryBurst(t *testing.T, service *memoryRecoveryCLI, client pb.Sto
 	for range 10 {
 		metrics = service.sample(t)
 		if testmetrics.Sum(metrics, "weir_memory_latched") != 1 {
-			t.Fatal("live Native replies manufactured memory recovery")
+			t.Fatal("live typed Read replies manufactured memory recovery")
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
-	t.Logf("live pressure requests=%d RSS=%.0f working_set=%.0f heap=%.0f latch=1", count,
+	t.Logf("live pressure kind=typed_Read response_document=12MiB requests=%d RSS=%.0f working_set=%.0f heap=%.0f latch=1", count,
 		testmetrics.Sum(metrics, "process_resident_memory_bytes"), testmetrics.Sum(metrics, "weir_memory_cgroup_working_set_bytes"), testmetrics.Sum(metrics, "go_memstats_heap_alloc_bytes"))
 	released := time.Now()
+	runtime.KeepAlive(streams)
 	cancel()
-	calls.Wait()
+	_ = connection.Close()
 	rejections := 0
 	for {
 		metrics = service.sample(t)
@@ -391,5 +433,58 @@ func memoryRecoveryBurst(t *testing.T, service *memoryRecoveryCLI, client pb.Sto
 			return
 		}
 		time.Sleep(100 * time.Millisecond)
+	}
+}
+
+// Record owned response bytes without changing the three-second pressure bound.
+// Full metric families are emitted only after that assertion has failed.
+func memoryRecoveryWireDiagnostic(t *testing.T, metrics map[string]*dto.MetricFamily, phase string, full bool) {
+	t.Helper()
+	names := []string{"weir_ingress_queued_response_bytes", "process_resident_memory_bytes", "weir_memory_cgroup_working_set_bytes", "weir_memory_cgroup_limit_bytes", "weir_memory_latched", "weir_memory_unknown", "weir_store_active_executions", "weir_store_working_reserved_bytes", "weir_store_pending_entries", "weir_store_result_reserved_entries", "weir_store_result_reserved_bytes", "weir_store_retained_result_reserved_bytes", "weir_store_publishers", "weir_ingress_sessions", "weir_backend_connections_owned", "go_memstats_heap_alloc_bytes", "go_memstats_last_gc_time_seconds", "weir_watchdog_expirations_total"}
+	values := make(map[string]float64)
+	for _, name := range names {
+		values[name] = testmetrics.Sum(metrics, name)
+	}
+	gc := metrics["go_gc_duration_seconds"].GetMetric()
+	if len(gc) > 0 {
+		values["go_gc_cycles"] = float64(gc[0].GetSummary().GetSampleCount())
+	}
+	raw, err := json.Marshal(values)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("wire_threshold_diagnostic phase=%s metrics=%s", phase, raw)
+	if full {
+		raw, err = json.Marshal(metrics)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Logf("wire_threshold_diagnostic timeout_all_metric_families=%s", raw)
+	}
+}
+
+func memoryRecoveryWireFailureReceive(t *testing.T, stream grpc.BidiStreamingClient[pb.ExecuteRequest, pb.ExecuteResponse], cancel context.CancelFunc) {
+	t.Helper()
+	type receivedResponse struct {
+		response *pb.ExecuteResponse
+		err      error
+	}
+	received := make(chan receivedResponse, 1)
+	started := time.Now()
+	go func() {
+		response, err := stream.Recv()
+		result := receivedResponse{response: response, err: err}
+		received <- result
+	}()
+	timer := time.NewTimer(time.Second)
+	defer timer.Stop()
+	select {
+	case result := <-received:
+		response := result.response
+		read := response.GetEvent().GetReadResult()
+		t.Logf("wire_threshold_diagnostic failure_only_Recv elapsed=%s response_type=%T index=%d document_bytes=%d content_type=%s failure_code=%s transport_status=%s transport_error=%v", time.Since(started), response.GetEvent().GetValue(), response.GetIndex(), len(read.GetDocument().GetData()), read.GetDocument().GetContentType(), read.GetFailure().GetCode(), status.Code(result.err), result.err)
+	case <-timer.C:
+		cancel()
+		t.Logf("wire_threshold_diagnostic failure_only_Recv elapsed=%s timed_out_1s=true stream_canceled=true", time.Since(started))
 	}
 }

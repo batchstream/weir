@@ -247,7 +247,7 @@ func TestNativeOutputStallsPreserveSiblingProgressBeforeWatchdogAbort(t *testing
 	adapter.documents = make(map[string]*pb.Document)
 	adapter.seen = make(chan context.Context, 64)
 	storeLimits := store.DefaultLimits()
-	local, err := store.New(adapter, storeLimits)
+	local, err := store.New(adapter, storeLimits, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

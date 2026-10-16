@@ -3,9 +3,22 @@ package execution
 
 import (
 	"context"
+	"errors"
 
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 )
+
+var ErrNativeMemory = errors.New("Native working memory capacity exhausted")
+
+// NativeIO is the runtime's serial Native lifecycle boundary. GrowIO reserves
+// total working bytes before allocation. EndIO transfers that reservation to
+// held working bytes and an encoded event window, releasing the backend slot.
+// BeginIO reacquires FIFO execution credit and a transient allocation window.
+type NativeIO interface {
+	BeginIO(context.Context, int) error
+	EndIO(int, int) error
+	GrowIO(int) error
+}
 
 type Plan struct {
 	ID                 uint64
@@ -15,6 +28,8 @@ type Plan struct {
 	// Native adapters update WorkingBytes before each serial Emit to describe
 	// the response working set they still retain. Emit synchronizes accounting.
 	WorkingBytes int
+	IOReserve    int
+	NativeIO     NativeIO
 	Context      context.Context
 	Backend      any
 }

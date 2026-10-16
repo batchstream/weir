@@ -1,0 +1,42 @@
+{
+  "opensearch_write_stats": {
+    "nodes": {
+      "F9i0lqkaQwul_dlSfzSQYA": {
+        "thread_pool": {
+          "write": {
+            "threads": 1,
+            "queue": 0,
+            "active": 0,
+            "rejected": 24,
+            "largest": 1,
+            "completed": 34
+          }
+        }
+      }
+    }
+  },
+  "remaining_owned_test_indexes": [],
+  "owned_OS_identity": "4b458740e1496ca6532654811c8fd5d796de5d8582cf0fbc86a1d46a010b5ba7 weir-search-local opensearchproject/opensearch@sha256:d96afaf6cbd2a6a3695aeb2f1d48c9a16ad5c8918eb849e5cbf43475f0f8e146 true false",
+  "normal_ES_identity_after_tests": "0a8037715b19fd64c43641f9fc448bf917a608410b252b1ddb591c51bb91349b weir-search-local docker.elastic.co/elasticsearch/elasticsearch@sha256:c2a3ed5f968be6d59c960aa0c60cfdaee667b6bc8211142021a41d0e85b43237 true 172.17.0.2",
+  "normal_ES_write_pool": {
+    "nodes": {
+      "LBgdKMW8QYm61JisZrbcOg": {
+        "thread_pool": {
+          "write": {
+            "type": "fixed",
+            "size": 2,
+            "queue_size": 10000
+          }
+        }
+      }
+    }
+  },
+  "source_sha256_after": {
+    "internal/backend/search/native.go": "53ce7078b4ce859b5b6948e387ef078a61179f24d1ea4f1144ba5e4a1ca3f629",
+    "internal/backend/search/native_memory.go": "02b7454737a22fa8d66e88d0856dee0122146e2bea7951756983c4c5e6960e60",
+    "internal/backend/search/native_request_memory_test.go": "7798c6497ec20e011ef5461a3c1d2d40c73d4de81589875a626a1652d4a61856",
+    "internal/backend/search/expression_integration_test.go": "ea6623b3d787338bc182b74ade88588f54d3c2e08a00db0b8a7bd27b13289da3",
+    "internal/backend/search/congestion_integration_test.go": "e50a01d2c492efa6628d667ffb60bb37b3f1debf417d5e50dab6f83efa93f3e3"
+  },
+  "source_unchanged_during_run": true
+}

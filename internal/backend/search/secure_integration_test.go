@@ -269,7 +269,7 @@ func secureReplyFault(t *testing.T, fixture *testsearch.SecureFixture, operation
 		var replies []*pb.Event
 		if fault == "drain" {
 			limits := store.DefaultLimits()
-			owner, err := store.New(a, limits)
+			owner, err := store.New(a, limits, nil)
 			if err != nil {
 				t.Fatal(err)
 			}

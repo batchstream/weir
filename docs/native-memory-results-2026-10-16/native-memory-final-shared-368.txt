@@ -1,0 +1,15 @@
+{"binary_SHA256": "23556ac9d38837817cf76971d0bd957fbf22855637117bea741be16a7c2b1aef", "driver": "Go1.27.1 race", "matrix_failure_retained": true, "shared_pressure_MiB": 368, "source": "ab48b32720c10ef50250c4ab0010735c5d942be3"}
+=== RUN   TestCLISharedMemoryRecoveryProbe
+    shared_pressure_integration_test.go:57: supplied CLI identity={"product":"weir","version":"local-ab48b32720c10ef50250c4ab0010735c5d942be3","revision":"ab48b32720c10ef50250c4ab0010735c5d942be3","go":"go1.27.1","target":"linux/arm64","state":"clean-commit","dirty":"false"}
+    shared_pressure_integration_test.go:113: low positive/zero recovery allowance probe completed=28 rejected=0
+    shared_pressure_integration_test.go:92: shared pressure final elapsed=3.029323917s shmem=385875968 RSS=20639744 working_set=415367168 heap_live=2400960 heap_idle=3678208 heap_released=3284992 GoLimit=18017156 recovery_allowance=0 recovery_known=1 latch=0 idle=true process_cpu_delta=0.11 GC_cycles=1 GC_pause_sum=0.000159041 GC_CPU=unavailable_in_supplied_binary
+    memory_recovery_integration_test.go:187: CLI logs=Weir listening on [[::]:7447]; local execution and peer directory discovery
+        Diagnostics listening on [::]:7449
+        2026/10/16 14:31:02 INFO backend_connections_closed backend=mongo store=mongo0 owned=0 peak=2 dialing=0 closing=0 acquired=2 released=2
+        2026/10/16 14:31:02 INFO backend_connections_closed backend=mongo store=mongo2 owned=0 peak=2 dialing=0 closing=0 acquired=2 released=2
+        2026/10/16 14:31:02 INFO backend_connections_closed backend=mongo store=mongo1 owned=0 peak=2 dialing=0 closing=0 acquired=2 released=2
+    memory_recovery_integration_test.go:201: CLI exit=false 0
+--- PASS: TestCLISharedMemoryRecoveryProbe (5.00s)
+PASS
+ok  	github.com/batchstream/weir/internal/app	6.587s
+{"absence_verified": true, "go_test_exit": 0, "identity_valid": true, "log": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/native-memory-final-shared-368.txt", "residual_containers": [], "size_MiB": 368}

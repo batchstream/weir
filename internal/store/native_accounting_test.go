@@ -41,7 +41,7 @@ func TestLargeNativePublicationAccountingAndCancellation(t *testing.T) {
 			adapter := &nativeAccountingAdapter{events: []*pb.Event{headEvent, endEvent}}
 			limits := DefaultLimits()
 			limits.MaxInFlight = 1
-			runtime, err := New(adapter, limits)
+			runtime, err := New(adapter, limits, nil)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -88,4 +88,57 @@ func TestLargeNativePublicationAccountingAndCancellation(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestNativeOversizedTerminalUsesFixedFailureInsideFullSharedBudget(t *testing.T) {
+	memory := testNativeMemory(768 << 20)
+	other := plan(0, "held", false)
+	lease, failure := memory.admit(other)
+	if failure != nil {
+		t.Fatal(failure)
+	}
+	defer lease.release()
+	large := protocol.Fail(pb.FailureCode_UNAVAILABLE, strings.Repeat("f", 2<<20))
+	end := protocol.NativeFailure(true, large)
+	value := &pb.Event_NativeEnd{NativeEnd: end}
+	event := &pb.Event{Value: value}
+	adapter := &nativeAccountingAdapter{events: []*pb.Event{event}}
+	limits := DefaultLimits()
+	runtime, err := New(adapter, limits, memory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer runtime.Close(context.Background())
+	session := runtime.NewSession()
+	defer session.Close()
+	work := plan(1, "native", false)
+	work.Command = nativeCall()
+	// The other owner's actual response leaves only the fixed event windows
+	// and IO reserve. The terminal itself must not mint additional capacity.
+	room := uint64(work.Bytes + 2*protocol.NativeChunk + execution.ResultOverheadBytes)
+	if started, _ := lease.start(int(memory.budget-memory.used-room-1024), defaultNativeIOReserve); !started {
+		t.Fatal("could not fill the other owner's reservation")
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+	defer cancel()
+	ticket, failure, _ := runtime.Submit(ctx, work, session)
+	if failure != nil {
+		t.Fatal(failure)
+	}
+	select {
+	case emission := <-session.Events:
+		terminal := emission.Event.GetNativeEnd()
+		if terminal.GetCompletion() != pb.NativeCompletion_RESPONSE_INCOMPLETE || terminal.GetFailure().GetCode() != pb.FailureCode_RESOURCE_EXHAUSTED || proto.Size(emission.Event) >= protocol.NativeChunk {
+			t.Fatal("oversized terminal escaped fixed bounded failure", terminal)
+		}
+		emission.Release()
+	case <-ctx.Done():
+		t.Fatal("bounded terminal was not delivered")
+	}
+	if snapshot := memory.Snapshot(); snapshot.UsedBytes > snapshot.BudgetBytes {
+		t.Fatal("terminal broke the shared ownership bound", snapshot)
+	}
+	session.Close()
+	ticket.Ack()
+	waitReleased(t, runtime)
 }
