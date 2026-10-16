@@ -1,6 +1,6 @@
 {
   "created_at": "2026-10-16T19:24:23.828000+00:00",
-  "purpose": "original failure, causal diagnostics and implementation checks; final runtime qualification pending",
+  "purpose": "original failure, causal diagnostics, implementation checks and failed clean-candidate A512; final qualification remains incomplete",
   "original_files_preserved_without_normalization": true,
   "excluded": "service/host executables, CPU profile binaries and redundant public grpc module copies; hashes and source manifests retained",
   "path_note": "Original receipts/recipes preserve original absolute paths; names in this index map them to this directory. Source copies ending go.txt are inert evidence.",
@@ -792,10 +792,100 @@
       "bytes": 2347
     },
     {
+      "name": "ingress-production-A-command.json",
+      "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-production-A-command.json",
+      "sha256": "dcb7b89799ab6a97aaa6527729f29c3af28636a6a18adf69246180051ddb9172",
+      "bytes": 1604
+    },
+    {
+      "name": "ingress-production-A-driver-buildinfo.txt",
+      "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-production-A-driver-buildinfo.txt",
+      "sha256": "c1dc45af3704fe396d15b4a1f1296ab80bb782e0d4ab454c7d13a9bf5439f62d",
+      "bytes": 2868
+    },
+    {
+      "name": "ingress-production-A-observations.json",
+      "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-production-A-observations.json",
+      "sha256": "22e326c542aed65f2b131d2aefaa00b2649b6e5af18973bcbaab00f381bf8cb8",
+      "bytes": 693848
+    },
+    {
+      "name": "ingress-production-A-process.exit",
+      "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-production-A-process.exit",
+      "sha256": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865",
+      "bytes": 2
+    },
+    {
+      "name": "ingress-production-A-process.txt",
+      "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-production-A-process.txt",
+      "sha256": "29b137d244a7911ffe7a75b042cf8dec4e1827d28f50d01d9621be88bea0ab73",
+      "bytes": 549590
+    },
+    {
+      "name": "ingress-production-build-command.json",
+      "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-production-build-command.json",
+      "sha256": "c252b069d391e05acefe9a7d46173e6c4cc80be6dce60c60c2703ae8c8bfa594",
+      "bytes": 833
+    },
+    {
+      "name": "ingress-production-build.exit",
+      "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-production-build.exit",
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "bytes": 2
+    },
+    {
+      "name": "ingress-production-build.json",
+      "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-production-build.json",
+      "sha256": "29dd53545ecad4eb4c48a4fc0ad507e19dd4e208ad8d97197ad7eb7dc7d41360",
+      "bytes": 1992
+    },
+    {
+      "name": "ingress-production-build.txt",
+      "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-production-build.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "name": "ingress-production-buildinfo.txt",
+      "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-production-buildinfo.txt",
+      "sha256": "2c2c4687ab21b72de26439a48b13c06ae273c62b2fe86145b89fbb81efb63c4c",
+      "bytes": 2828
+    },
+    {
+      "name": "ingress-production-preflight-first-error.json",
+      "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-production-preflight-first-error.json",
+      "sha256": "bdaf4491354c47da8ba84edb73d77206c3e2b802154b823a2b095257dbeae9ee",
+      "bytes": 766
+    },
+    {
       "name": "ingress-production-root-source-audit.json",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-production-root-source-audit.json",
       "sha256": "399ee787aa4e2097ad7a6025363eb2996013aed37ccf9a926060dc7b2d74c184",
       "bytes": 468
+    },
+    {
+      "name": "ingress-production-source-after.json",
+      "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-production-source-after.json",
+      "sha256": "761a1b811745e4aa18b589f64c6febf4114a67fcd265cf1b18618675766bc0d3",
+      "bytes": 114451
+    },
+    {
+      "name": "ingress-production-source-before.json",
+      "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-production-source-before.json",
+      "sha256": "3f0c31f453ff083333622ca2508458488bb79496d6ab9a2a664e76a50f024957",
+      "bytes": 113834
+    },
+    {
+      "name": "ingress-production-source-whitespace.json",
+      "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-production-source-whitespace.json",
+      "sha256": "03f51535cd4d45db5806ecd805acbdde1d105ddceca9a42ec1d4490c4f84234d",
+      "bytes": 851
+    },
+    {
+      "name": "ingress-production-validation.json",
+      "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-production-validation.json",
+      "sha256": "e13e6cd11d39035aaae4315d410fe8107f3e16f5a92033acdeeed10691da869b",
+      "bytes": 31188
     },
     {
       "name": "ingress-support-audit-final.json",

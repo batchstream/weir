@@ -2,7 +2,8 @@
 
 Status: **incomplete**. The original qualification failed. Two subsequent
 instrumented runs localized the failure; neither is qualification or a passing
-production result. Implementation and unchanged-profile acceptance are pending.
+production result. The first clean repair candidate also failed A512; further
+implementation and unchanged-profile acceptance are required.
 
 ## Preserved original failure
 
@@ -143,6 +144,51 @@ exports include the public gRPC Go packages, patch and attribution; build-info
 receipts record the exact local replacement without temporary export paths.
 The 45 script tests passed in normal and optimized Python modes. Clean release
 export/build reproducibility and final runtime qualification are still pending.
+
+## First clean repair candidate: A512 failed
+
+Candidate `ff4b3dbf588ba3d0c621472186126cad2a2479da` was clean and supplied both
+the Linux arm64 CLI and the race driver. The CLI SHA256 was
+`690b57b5a28357ce940e4e331356defc228e0782a53ff1f4fa933b0285921456`;
+the actual race driver SHA256 was
+`adad8bf3ed444fb9dd2ce1574853892524ed95b03fd43e74a366b69c1ac62872`.
+All 926 source hashes and the binary were unchanged before and after the run.
+A preliminary metadata pathname guard mistook the public gRPC package directory
+`credentials` for a secret asset. That preflight failure happened before build
+or runtime testing, was preserved separately, and was narrowed to the already
+reviewed, hash-verified public Go files. No service source or test profile changed.
+
+The first actual candidate run retained 32 exact 12 MiB BSON puts, default
+512 MiB/two CPUs, the common five-second caller budget, and no retries:
+
+| Client evidence | Count | Independent backend oracle |
+| --- | ---: | --- |
+| APPLIED with successful RPC | 10 | All ten IDs, contents, lengths and full hashes correct |
+| Explicit NOT_STARTED/RESOURCE_EXHAUSTED with successful RPC | 15 | All absent |
+| ResourceExhausted without mutation outcome | 5 | All absent; still unconfirmed for the client |
+| ENHANCE_YOUR_CALM reset without mutation outcome | 1 | Absent; still unconfirmed |
+| Canceled without mutation outcome | 1 | Absent; still unconfirmed |
+
+These seven unconfirmed calls are blocking failures; absence in this controlled
+oracle cannot create an acknowledgement. All calls finished before the common
+deadline. The first test error was a 300 ms Docker-observer timeout, also retained
+as an observation failure. It does not explain or excuse the seven business
+failures. Successful metric samples never showed the overload latch set.
+
+There were ten documents in the backend and no unacknowledged applied write.
+Independent-client Read/Native health took 64.062/69.460 ms. Health through the
+original SDK object took 5.927/7.136 ms; its exact TCP identity was not observed.
+After failure, that original SDK successfully performed a small APPLIED put and
+verified its read. Temporary ownership drained in 8.639 ms while two connection
+promises remained; closing the clients returned every owner to zero in 9.935 ms.
+The CLI had no OOM, cgroup final max/oom/kill counters were zero, exited normally,
+and was removed. These recovery results do not turn A512 into a pass.
+
+A1024, B512/B1024 and the Native burst were stopped without running. The
+[candidate receipt](ingress-memory-results-2026-10-17/ingress-production-validation.json)
+and [actual raw output](ingress-memory-results-2026-10-17/ingress-production-A-process.txt)
+preserve this first failure. The next repair must address rejection after receive
+capacity has been promised and must be tested as a new clean candidate.
 
 ## Required acceptance
 
