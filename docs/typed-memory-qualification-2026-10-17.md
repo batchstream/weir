@@ -1,7 +1,8 @@
 # Typed execution, result and network memory qualification
 
-Status: a production blocker is reproduced. The correction is in progress;
-this report does not qualify default production use. Local real backends only.
+Status: this typed-memory milestone passes the fixed local real-backend gates.
+Independent PR review and CI remain required. Overall default-production
+qualification still requires ingress, Lua, sustained-load and fault checks.
 
 ## Preserved failure
 
@@ -278,3 +279,37 @@ record unchanged source hashes and actual exits. The next acceptance step is
 a new clean Linux CLI running the unchanged seven typed-memory cases, mixed
 burst, diagnostics and slow-output regressions. No production qualification
 claim or PR approval follows from these unit checks alone.
+
+## Third clean candidate passes the unchanged milestone gates
+
+Clean source `007bc59ed4c6de59a92e05a667da9b6a8efd6f64`, Linux/arm64 Go
+1.27.1 CLI SHA256
+`adc3f4a07ac381a78fddfb3c04b7a3d60a4f1176b28616259f2317f9e0c1cdf4`,
+passes all original gates without overlays, retries or relaxed limits:
+
+- Seven typed-memory process cases (31.243 s), including 256/512/1024 MiB
+  complete 12 MiB and near-maximum Put/hash/Read/Delete/absence chains, original
+  slow-reader pressure, cross-Store Typed/Native and Search large/many-field data.
+- 2560/2560 mixed small calls (38.248 s), no budget rejection or business
+  failure; independent Mongo 421/421 and Search 431/431 ID/n/pad/cardinality
+  oracles. All logical ownership returned to zero within the original 5 s.
+- 1092-series maximum static diagnostics; five original 32-by-8-MiB slow-Native
+  rounds (21.481 s), healthy small calls 2.567–4.227 ms and cancellation
+  ownership recovery 7.531–13.673 ms; three original small-query repetitions
+  (3.141 s), healthy calls 3.158–8.467 ms.
+
+All thirteen CLI containers independently reported no OOM and exit zero, and
+were removed. Diagnostics and small-query checks use the real backends through
+in-process app assembly; they are not presented as CLI cases. Slow-Native
+rounds prove bounded retention and progress, not complete client-side large
+response hashes. Typed slow-reader full successes do carry the original hash
+and EOF oracle; explicit capacity failures are allowed only under that deliberate
+pressure. All 348 source-file hashes and the binary hash remained unchanged.
+
+The [combined receipt](typed-memory-results-2026-10-17/typed-memory-fixed-r3-validation.json),
+[build identity](typed-memory-results-2026-10-17/typed-memory-fixed-r3-build.json)
+and per-stage raw logs retain actual exits and distinguish all prior failed
+candidates and diagnostic-only runs. This documentation-only evidence commit
+changes no executable source from the clean artifact. Ingress, Lua, the final
+600-second sustained run and fault qualification have not yet run on this
+candidate. Overall production readiness is not claimed by this milestone.

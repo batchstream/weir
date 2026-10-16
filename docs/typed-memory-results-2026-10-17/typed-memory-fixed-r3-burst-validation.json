@@ -1,0 +1,158 @@
+{
+  "status": "PASS",
+  "scope": "Original10x256 real SDK mixed1KiB Linux CLI regression",
+  "raw": "typed-memory-fixed-r3-burst.txt",
+  "raw_sha256": "97ecbe0449bb0d4e1b5dd14e62aa35574557f0030b3460ad9480a6ebd97a9495",
+  "actual_exit": 0,
+  "exit_file": "typed-memory-fixed-r3-burst.exit",
+  "driver_command": [
+    "go",
+    "test",
+    "-race",
+    "-failfast",
+    "-count=1",
+    "-tags",
+    "integration",
+    "-run",
+    "^TestCLINativeSmallBurstPreservesAdmission$",
+    "-timeout",
+    "5m",
+    "-v",
+    "./internal/app"
+  ],
+  "runtime_identities": [
+    {
+      "product": "weir",
+      "version": "local-007bc59ed4c6de59a92e05a667da9b6a8efd6f64",
+      "revision": "007bc59ed4c6de59a92e05a667da9b6a8efd6f64",
+      "go": "go1.27.1",
+      "target": "linux/arm64",
+      "state": "clean-commit",
+      "dirty": "false"
+    }
+  ],
+  "race_reports": 0,
+  "pass_lines": [
+    [
+      "TestCLINativeSmallBurstPreservesAdmission",
+      "36.45s"
+    ]
+  ],
+  "CLI_Docker_after_stop_noOOM_exit0_count": 1,
+  "backend_owned0_close_events": 2,
+  "offered": 2560,
+  "completed": 2560,
+  "business_failures": 0,
+  "budget_rejections": 0,
+  "rounds": [
+    {
+      "round": "0",
+      "offered": "256",
+      "received": "256",
+      "completed": "256",
+      "p50": "65.890583ms",
+      "p99": "97.776375ms",
+      "max": "98.290917ms"
+    },
+    {
+      "round": "1",
+      "offered": "256",
+      "received": "256",
+      "completed": "256",
+      "p50": "320.707041ms",
+      "p99": "353.475916ms",
+      "max": "353.935125ms"
+    },
+    {
+      "round": "2",
+      "offered": "256",
+      "received": "256",
+      "completed": "256",
+      "p50": "27.991625ms",
+      "p99": "41.921084ms",
+      "max": "43.187167ms"
+    },
+    {
+      "round": "3",
+      "offered": "256",
+      "received": "256",
+      "completed": "256",
+      "p50": "28.924542ms",
+      "p99": "48.911875ms",
+      "max": "49.162584ms"
+    },
+    {
+      "round": "4",
+      "offered": "256",
+      "received": "256",
+      "completed": "256",
+      "p50": "26.966167ms",
+      "p99": "48.055917ms",
+      "max": "49.367708ms"
+    },
+    {
+      "round": "5",
+      "offered": "256",
+      "received": "256",
+      "completed": "256",
+      "p50": "35.991166ms",
+      "p99": "44.690583ms",
+      "max": "45.113291ms"
+    },
+    {
+      "round": "6",
+      "offered": "256",
+      "received": "256",
+      "completed": "256",
+      "p50": "31.826916ms",
+      "p99": "50.931458ms",
+      "max": "51.068209ms"
+    },
+    {
+      "round": "7",
+      "offered": "256",
+      "received": "256",
+      "completed": "256",
+      "p50": "26.6395ms",
+      "p99": "46.796792ms",
+      "max": "47.332875ms"
+    },
+    {
+      "round": "8",
+      "offered": "256",
+      "received": "256",
+      "completed": "256",
+      "p50": "30.615625ms",
+      "p99": "41.459625ms",
+      "max": "41.867625ms"
+    },
+    {
+      "round": "9",
+      "offered": "256",
+      "received": "256",
+      "completed": "256",
+      "p50": "37.089458ms",
+      "p99": "48.215084ms",
+      "max": "48.588417ms"
+    }
+  ],
+  "fixed_caller_seconds": 3,
+  "fixed_cleanup_seconds": 5,
+  "Node_Store_RPC_wire_QI_final0": true,
+  "final_independent_oracles": {
+    "Mongo": {
+      "expected": 421,
+      "seen": 421
+    },
+    "Search": {
+      "expected": 431,
+      "seen": 431
+    },
+    "scope": "Every acknowledged ID/n/pad and exact cardinality checked by original oracle; this small-record harness does not record full-document hashes"
+  },
+  "no_replay": true,
+  "source": "007bc59ed4c6de59a92e05a667da9b6a8efd6f64",
+  "binary_sha256": "adc3f4a07ac381a78fddfb3c04b7a3d60a4f1176b28616259f2317f9e0c1cdf4",
+  "source_348_hashes_before_after": "clean identical",
+  "no_source_edits_no_overlay_no_retries": true
+}

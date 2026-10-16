@@ -1,0 +1,90 @@
+{
+  "status": "PASS",
+  "scope": "Goal8 original permanent typed-memory acceptance + ordered fixed regressions only. This is not full-production capacity certification, formal600, ingress or Lua evidence.",
+  "source": "007bc59ed4c6de59a92e05a667da9b6a8efd6f64",
+  "build_receipt": "typed-memory-fixed-r3-build.json",
+  "binary": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/weir-typed-memory-fixed-r3-linux",
+  "binary_sha256": "adc3f4a07ac381a78fddfb3c04b7a3d60a4f1176b28616259f2317f9e0c1cdf4",
+  "source_before": "typed-memory-fixed-r3-source-before.json",
+  "source_after": "typed-memory-fixed-r3-source-after.json",
+  "source_348_hashes_before_after": "clean identical",
+  "toolchain": "Go1.27.1 explicit GOROOT GOENVoff GOTOOLCHAINlocal GOWORKoff GOPROXYoff GOSUMDBoff; driver race CGO1, CLI Linuxarm64 CGO0",
+  "sequential_exclusive_load": true,
+  "groups": {
+    "process": {
+      "status": "PASS",
+      "actual_exit": 0,
+      "raw": "typed-memory-fixed-r3-process.txt",
+      "raw_sha256": "1f3dd66d13462bcaf4ed33a8e6e79eeed61de42e4373178f9191b0bea8d97aea",
+      "manifest": "typed-memory-fixed-r3-process-validation.json",
+      "manifest_sha256": "692dc7f01f85631ce5dcdfec3f21bfdf08bcabfcf6fb3803b16d9bba5e14740d",
+      "scope": "Original843-line seven-case complete Linux CLI typed-memory acceptance"
+    },
+    "burst": {
+      "status": "PASS",
+      "actual_exit": 0,
+      "raw": "typed-memory-fixed-r3-burst.txt",
+      "raw_sha256": "97ecbe0449bb0d4e1b5dd14e62aa35574557f0030b3460ad9480a6ebd97a9495",
+      "manifest": "typed-memory-fixed-r3-burst-validation.json",
+      "manifest_sha256": "7e66652d8e8f5395e7b285763c84988cb90c3421ccd986276046652c229e008e",
+      "scope": "Original10x256 real SDK mixed1KiB Linux CLI regression"
+    },
+    "diagnostics": {
+      "status": "PASS",
+      "actual_exit": 0,
+      "raw": "typed-memory-fixed-r3-diagnostics.txt",
+      "raw_sha256": "0cc546ac3538ae2f1cd29da044583a7cf96982d6f2267709db585ad08686c9e6",
+      "manifest": "typed-memory-fixed-r3-diagnostics-validation.json",
+      "manifest_sha256": "fc02198d5bf97cddd2b0f6a7fa6481d916c8481d46ec2be88e54385fcbdf2dac",
+      "scope": "Real Mongo in-process app maximum-series check; not Linux CLI execution"
+    },
+    "output": {
+      "status": "PASS",
+      "actual_exit": 0,
+      "raw": "typed-memory-fixed-r3-output.txt",
+      "raw_sha256": "de7618c9286d39ddb96d5b6b282d3d50273188d83a9348f8d0f016098e3fe099",
+      "manifest": "typed-memory-fixed-r3-output-validation.json",
+      "manifest_sha256": "4db96e9f1be724fe02c9ed496165702d7c8336a4f4f8a5373f8686bdfe908e92",
+      "scope": "Five fresh1GiB Linux CLI cases holding32 real8MiB Native replies, health progress and cancellation recovery"
+    },
+    "small": {
+      "status": "PASS",
+      "actual_exit": 0,
+      "raw": "typed-memory-fixed-r3-small.txt",
+      "raw_sha256": "5c1b796bad296ad1c2cea806451c2ec7416ce69e7639c79a600500271ae42af5",
+      "manifest": "typed-memory-fixed-r3-small-validation.json",
+      "manifest_sha256": "9b90814a783d20e406eebd5b9d7dd1cd3951eb9944d3147ecb5761e0cc566552",
+      "scope": "Real Mongo valid/early-invalid and Search small-reply in-process server regressions; not Linux CLI execution"
+    }
+  },
+  "cleanup": {
+    "owned_CLI_query": [
+      "docker",
+      "ps",
+      "-a",
+      "--filter",
+      "name=weir-memory-recovery-",
+      "--format",
+      "{{.ID}} {{.Names}} {{.Label \"weir.owner\"}} {{.Status}}"
+    ],
+    "query_actual_exit": 0,
+    "query_output": "",
+    "owned_CLI_remaining": 0,
+    "total_CLI_Docker_noOOM_exit0": 13,
+    "scope": "7typed+1burst+5output selected Docker stopped/OOM/exit/removal checks. Diagnostics/small are in-process tests, without CLI Docker state or cgroup claims. All reported backend owned connections closed to0. Shared Mongo and ES fixtures preserved."
+  },
+  "not_run": [
+    "primary ingress A/B",
+    "primary Lua memory probe",
+    "formal600 pure soak",
+    "formal fault suite",
+    "auto/off12+4 historical matrix"
+  ],
+  "original_failure_and_diagnostic_artifacts_preserved_sha256": {
+    "typed-memory-fixed-process.txt": "5bbd3193a9231a4307e1dc71b236f52f3eea3b73c1073ff3bbdca9d3aead43be",
+    "typed-memory-fixed-r2-burst.txt": "951b39b9f720a9d87183b62e1fe5a389583029a401e24b5697b7e519c4745d51",
+    "typed-memory-fixed-r2-validation.json": "684caa7123a8956279ca2186e3105a83f007cd5d14c35ec9193d7756079a38ec",
+    "typed-memory-r2-burst-causal-manifest.json": "29b114f8d54c940ccd27968baf48ea03ab0253f4abd4bc025bab892c616a14b2"
+  },
+  "at_utc": "2026-10-16T17:37:29.214714+00:00"
+}
