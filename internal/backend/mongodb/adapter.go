@@ -12,7 +12,6 @@ import (
 	"github.com/batchstream/weir-protocol/api/protocol"
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 	"github.com/batchstream/weir/internal/backend"
-	"github.com/batchstream/weir/internal/backend/targetcache"
 	"github.com/batchstream/weir/internal/execution"
 	"github.com/batchstream/weir/internal/luaengine"
 	"github.com/batchstream/weir/internal/value"
@@ -49,7 +48,7 @@ type Adapter struct {
 	config           Config
 	once             sync.Once
 	closeErr         error
-	targets          targetcache.Cache[namespace, struct{}]
+	targets          targetCache
 }
 
 type plan struct {
@@ -140,7 +139,8 @@ func Open(ctx context.Context, cfg Config) (*Adapter, error) {
 		commandMonitor: opts.Monitor,
 		config:         cfg,
 	}
-	a.targets.SetCapacity(settings.MetadataCacheEntries)
+	a.targets.entries = make(map[namespace]*targetCheck)
+	a.targets.capacity = settings.MetadataCacheEntries
 	if err = a.qualify(ctx); err != nil {
 		_ = a.Close()
 		return nil, err
