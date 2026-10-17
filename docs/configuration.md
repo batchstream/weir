@@ -77,7 +77,7 @@ Hosting a Store requires an application listener.
 | `backend` | Connection establishment, exchange targets, authentication and trust roots |
 | `backend.mongodb` | URI, target metadata caching, connection creation and confirmed-abort retries |
 | `backend.search` | Origin URL, idle connection expiry and confirmed-conflict retries |
-| `queue` | Waiting count and bytes, plus Native output pause capacity |
+| `queue` | Waiting input count and bytes; dispatch returns capacity |
 | `batching` | Aggregation count, bytes, write collection wait and active execution limit |
 
 MongoDB uses direct primary access, majority acknowledgement and no automatic

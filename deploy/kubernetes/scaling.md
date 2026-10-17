@@ -29,15 +29,14 @@ can wait for an occupied execution slot. A full queue waits for dispatch or call
 cancellation, and dispatch immediately returns its capacity. An active request
 does not hold waiting queue capacity. Use integration measurements to select
 execution and replica budgets for the actual workload.
-Native consumer waits can borrow bounded output pause credit while releasing
-execution slots, then fairly regain a slot before continuing backend work.
-The pause count and retained bytes have separate capacities derived from queue
-configuration; one larger stream can occupy an empty pause budget alone. The
-Node execution-memory account also covers retained output across Stores. Full
-pause capacity retains the execution slot and applies backpressure. Paused HTTP
-responses can retain upstream sockets; observe paused output, shared memory and
-actual connections alongside executions. Consume responses promptly. Separate
-Stores provide independent scheduling budgets with additional backend connections.
+Native output releases execution slots while retained replies and publication
+remain charged to the Node execution-memory account across Stores. Further
+backend work fairly reacquires a slot. The Node bounds Native invocations to
+1024; queue settings do not impose another output pause limit. Memory exhaustion
+returns an explicit capacity failure. Paused HTTP responses can retain upstream
+sockets; observe paused output, shared memory and actual connections alongside
+executions. Consume responses promptly. Separate Stores provide independent
+scheduling budgets with additional backend connections.
 The transport stall watchdog closes a connection that stops output progress,
 affecting other RPCs on that connection. Continuously progressing streams have
 no total lifetime bound without a caller deadline.

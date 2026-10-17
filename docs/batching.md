@@ -34,10 +34,12 @@ selection.
 
 An execution includes metadata checks, pre-reads, Lua, writes and requested query
 visibility waits. Completion returns its slot independently of result consumption.
-Slow Native consumers can release a slot while retaining bounded output pause
-credit, then fairly reacquire a slot before further backend reads. Pause count
-and bytes use separate capacities derived from the queue settings. When those
-are full, output retains the execution slot and applies backpressure.
+Native output releases its execution slot while retained replies and publication
+remain charged to the Node's shared execution-memory account. Further backend
+reads fairly reacquire a slot through the same scheduler. The Node also bounds
+Native invocations to 1024. Store paused count/bytes are observations, with no
+separate queue-derived output limit. Memory exhaustion returns an explicit
+capacity failure rather than retaining an execution slot behind a slow consumer.
 
 ## Backend grouping
 
