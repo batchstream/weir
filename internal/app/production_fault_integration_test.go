@@ -824,6 +824,9 @@ type processFaultHTTPProxy struct {
 	offline  bool
 }
 
+// The fixture must not manufacture EOF inside the shorter business gates.
+const processFaultProxyTimeout = 20 * time.Second
+
 func startProcessFaultHTTPProxy(t *testing.T, upstream string) *processFaultHTTPProxy {
 	t.Helper()
 	listener, err := net.Listen("tcp", "0.0.0.0:0")
@@ -831,9 +834,9 @@ func startProcessFaultHTTPProxy(t *testing.T, upstream string) *processFaultHTTP
 		t.Fatal(err)
 	}
 	transport := &http.Transport{Proxy: nil, DisableCompression: true, DisableKeepAlives: true, MaxConnsPerHost: 32}
-	client := &http.Client{Transport: transport, Timeout: 5 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	client := &http.Client{Transport: transport, Timeout: processFaultProxyTimeout, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	proxy := &processFaultHTTPProxy{listener: listener, client: client, upstream: upstream, done: make(chan struct{}), conns: make(map[net.Conn]struct{})}
-	proxy.server = &http.Server{Handler: http.HandlerFunc(proxy.serve), ReadHeaderTimeout: time.Second, ReadTimeout: 5 * time.Second, WriteTimeout: 5 * time.Second, ConnState: proxy.connectionState}
+	proxy.server = &http.Server{Handler: http.HandlerFunc(proxy.serve), ReadHeaderTimeout: time.Second, ReadTimeout: processFaultProxyTimeout, WriteTimeout: processFaultProxyTimeout, ConnState: proxy.connectionState}
 	go func() { _ = proxy.server.Serve(listener) }()
 	t.Cleanup(func() {
 		close(proxy.done)
@@ -905,7 +908,7 @@ func (proxy *processFaultHTTPProxy) wait(ctx context.Context, gate <-chan struct
 		return true
 	case <-ctx.Done():
 	case <-proxy.done:
-	case <-time.After(5 * time.Second):
+	case <-time.After(processFaultProxyTimeout):
 	}
 	return false
 }

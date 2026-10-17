@@ -41,6 +41,10 @@ type ProxyFault struct {
 	Drop         bool
 }
 
+// Keep the observer alive beyond the caller's cancellation and recovery gates.
+// Its own timeout must not release a held reply to make those assertions pass.
+const proxyFaultTimeout = 20 * time.Second
+
 type Proxy struct {
 	backendAddress string
 	uri            string
@@ -158,7 +162,7 @@ func (p *Proxy) waitGate(gate <-chan struct{}) bool {
 	case <-gate:
 		return true
 	case <-p.done:
-	case <-time.After(5 * time.Second):
+	case <-time.After(proxyFaultTimeout):
 	}
 	return false
 }
@@ -251,8 +255,8 @@ func (p *Proxy) relay(client net.Conn) {
 		p.mu.Unlock()
 	}()
 	for {
-		_ = client.SetDeadline(time.Now().Add(5 * time.Second))
-		_ = backend.SetDeadline(time.Now().Add(5 * time.Second))
+		_ = client.SetDeadline(time.Now().Add(proxyFaultTimeout))
+		_ = backend.SetDeadline(time.Now().Add(proxyFaultTimeout))
 		request, err := readMessage(client)
 		if err != nil {
 			return
