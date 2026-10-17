@@ -1,0 +1,45 @@
+{
+  "reviewer": "/root/rpc_expiry_audit",
+  "reviewed_at_utc": "2026-10-17T04:23:00.537790+00:00",
+  "decision": "APPROVE_TEST_SCOPE",
+  "reviewed_source": "internal/server/rpc_isolation_test.go",
+  "reviewed_source_sha256": "4a720fd2d3cd14bd2a317cfc7eab8c747b9dbbae4d3c0fcd70fcc0e82ad92a0f",
+  "reviewed_diff_sha256": "c4ae7cea09779cfea73959432b440b514541ec2dc40c2244eef145e8f624ca34",
+  "original_ci_failure": {
+    "path": ".testdata/reliability-2026-10-16/pr83-ci-first-failed.log",
+    "sha256": "24bcb0108845266a1d1a37e8ee77410c1f940ffe24a7e354f7bd1996dced6c61",
+    "observation": "CGO0 Linux caller-deadline returned Canceled/context canceled at displayed 0.25s; original CI did not record caller context cause or precise return timestamp."
+  },
+  "public_upstream": {
+    "module": "google.golang.org/grpc",
+    "version": "v1.83.2",
+    "file": "internal/transport/http2_server.go",
+    "sha256": "84ad3bde6a86be6ab86af02adc250ae04418fb24aafa628292141fb6fc9ed093",
+    "manifest_base_sha256_verified": true,
+    "code_level_proof": [
+      "Server context uses context.WithTimeout for grpc-timeout.",
+      "An independent native timeout timer calls closeStream with RST_CANCEL.",
+      "closeStream invokes stream cancel before marking stream done. A concurrently awakened handler can therefore observe cancellation and attempt a Canceled trailer; this is a code-level possibility, not an empirically reproduced cause.",
+      "Client handleRSTStream normalizes expired RST_CANCEL to DeadlineExceeded, whereas native status trailers preserve their supplied status."
+    ]
+  },
+  "review_findings": [],
+  "preserved_or_strengthened_oracles": [
+    "Recv observer starts before opening the second RPC and records its terminal return timestamp.",
+    "Caller-deadline wire Canceled is accepted only with original caller context DeadlineExceeded and terminal timestamp at or after the original deadline and at most one second after it.",
+    "Initial-input-stall and idle-input-stall still require Canceled.",
+    "Original same-connection check, surviving mutation APPLIED confirmation, no replay and connection-open checks remain.",
+    "No production cancellation source is modified by this diff."
+  ],
+  "validation_limits": [
+    "This is a source-only independent review; no Go tests or live backends were run for this review.",
+    "Prior public upstream loopback diagnostic: 1000 attempts, all DeadlineExceeded; no Canceled reproduction.",
+    "Prior existing Weir diagnostic overlay: 80 caller-deadline attempts passed; no Canceled reproduction.",
+    "Goroutine return timestamps measure observer execution time; they cannot prove instruction-level cancellation ordering under arbitrary scheduler starvation.",
+    "The local context check is an observed completion bound, not instrumentation of the internal runtime deadline timer."
+  ],
+  "diagnostic_evidence": [
+    ".testdata/reliability-2026-10-16/rpc-expiry-upstream-second.json",
+    ".testdata/reliability-2026-10-16/rpc-expiry-overlay-first.txt"
+  ]
+}

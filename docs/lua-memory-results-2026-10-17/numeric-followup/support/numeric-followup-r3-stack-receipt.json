@@ -1,0 +1,341 @@
+{
+  "time": "2026-10-17T04:31:08.741739+00:00",
+  "source": "9c23c4f58f789aa54b0162b59234f77e5cb0c6a5",
+  "scope": "R3 compiler frame comparison and conservative additive numeric-helper headroom; no new execution or arbitrary Go heap proof",
+  "frame_receipt_sha256": "a7afce5e681b25cbe6b5859eadc5cb1ae3fbddb0958c8be3e923b0ef9b322c18",
+  "prior_boundary": {
+    "measured": [
+      "luaengine.Evaluate",
+      "Budget.RequireArray/RequireAllocation/Require",
+      "Ticket.SetWorking",
+      "executionLease.setWorking",
+      "ExecutionMemory.signalLocked",
+      "real Go sort and Lua/native callback wrappers"
+    ],
+    "backend_callbacks_source_checked": [
+      "internal/backend/mongodb/program.go Reserve closure -> programWorking -> reserveRecordWorking -> owner.SetWorking",
+      "internal/backend/search/program.go Reserve closure -> programWorking -> reserveSearchScratch -> recordMemory.set -> owner.SetWorking"
+    ],
+    "backend_wrappers": "Nonrecursive scalar arithmetic, context lookup and direct owner call. Their exact backend frames are outside this build command; the explicit1024-byte wrapper margin and external bounded Weir ancestry assumption remain part of the contract.",
+    "runtime_guard": "928 for non-race Linux/Darwin arm64/amd64:800 NOSPLIT base+128 small-frame guard.",
+    "caller_assumption": "RPC/backend ancestors and context chain are the existing bounded Weir service path, not an arbitrary caller-provided deep Go stack or arbitrary Reserve callback."
+  },
+  "evidence_boundary": [
+    "This receipt closes pending vendor/native/sort numeric stack bounds for the restricted Weir call graph and documented fixed margins. It is not a universal Go heap or allocator sandbox proof.",
+    "Go runtime caches/GC metadata, goroutine startup, transport/backend baseline and arbitrary external caller allocation are outside exact per-Lua accounting.",
+    "Race/debug/sanitizer stack layouts are separate from the four release-target frame proofs.",
+    "Root reports alloffline six packages and nested six-package race PASS; this static receipt does not independently rerun those tests or claim a CLI/OS OOM result.",
+    "Final unchanged-source constrained CLI process qualification remains the production boundary evidence."
+  ],
+  "targets": [
+    {
+      "target": "linux-arm64",
+      "functions": 2668,
+      "parser": {
+        "guarded_chain": [
+          "github.com/iceisfun/golua/parser.(*parser).parseForStmt",
+          "github.com/iceisfun/golua/parser.(*parser).parseForInStmt",
+          "github.com/iceisfun/golua/parser.(*parser).parseBlock",
+          "github.com/iceisfun/golua/parser.(*parser).parseStatement",
+          "github.com/iceisfun/golua/parser.(*parser).parseExprStat",
+          "github.com/iceisfun/golua/parser.(*parser).parseSuffixedExpr",
+          "github.com/iceisfun/golua/parser.(*parser).continueSuffixedExpr",
+          "github.com/iceisfun/golua/parser.(*parser).parseFuncArgs",
+          "github.com/iceisfun/golua/parser.(*parser).parseTableConstructor",
+          "github.com/iceisfun/golua/parser.(*parser).parseField",
+          "github.com/iceisfun/golua/parser.(*parser).parseExpr",
+          "github.com/iceisfun/golua/parser.(*parser).parseSubExpr"
+        ],
+        "bytes": 4240,
+        "limit": 5120,
+        "pass": true
+      },
+      "compiler": {
+        "guarded_chain": [
+          "github.com/iceisfun/golua/compiler.(*compiler).compileForInStmt",
+          "github.com/iceisfun/golua/compiler.(*funcState).checkVarLimitAt",
+          "github.com/iceisfun/golua/compiler.(*compiler).error"
+        ],
+        "bytes": 1752,
+        "limit": 2560,
+        "pass": true
+      },
+      "nested_sort": {
+        "recursive_bytes": 9576,
+        "wrapper_bytes": 5792,
+        "four_times_total": 61472,
+        "two_peak_credits": 82048,
+        "pass": true
+      },
+      "numeric_additive_headroom": {
+        "prior_callback_with_margins": 4248,
+        "all_27_numeric_function_frames_once_sum": 2288,
+        "conservative_additive_total": 6536,
+        "tail_allowance": 8192,
+        "function_names": [
+          "github.com/iceisfun/golua/stdlib.luaToNumber",
+          "github.com/iceisfun/golua/vm.stringToNumericValue",
+          "github.com/iceisfun/golua/stdlib.parseHexFloat",
+          "github.com/iceisfun/golua/vm.Value.toNumber",
+          "github.com/iceisfun/golua/vm.Value.toInt",
+          "github.com/iceisfun/golua/vm.parseHexFloat",
+          "github.com/iceisfun/golua/vm.parseNumericInt",
+          "github.com/iceisfun/golua/vm.parseNumericUint",
+          "github.com/iceisfun/golua/vm.parseNumericFloat",
+          "github.com/iceisfun/golua/vm.(*VM).ToInt",
+          "github.com/iceisfun/golua/vm.(*VM).ToNumber",
+          "github.com/iceisfun/golua/vm.Value.ToNumber",
+          "github.com/iceisfun/golua/vm.Value.ToInt",
+          "github.com/iceisfun/golua/vm.(*Value).ToInt",
+          "github.com/iceisfun/golua/vm.(*Value).ToNumber",
+          "github.com/iceisfun/golua/vm.(*Value).toInt",
+          "github.com/iceisfun/golua/vm.(*Value).toNumber",
+          "github.com/iceisfun/golua/vm.reserveNumericParse",
+          "github.com/iceisfun/golua/vm.(*VM).StringToNumericValue",
+          "github.com/iceisfun/golua/vm.(*VM).ParseInt",
+          "github.com/iceisfun/golua/vm.(*VM).ParseUint",
+          "github.com/iceisfun/golua/vm.(*VM).ParseFloat",
+          "github.com/iceisfun/golua/vm.(*VM).ParseHexFloat",
+          "github.com/iceisfun/golua/vm.StringToNumericValue",
+          "github.com/iceisfun/golua/vm.ParseHexFloat",
+          "github.com/iceisfun/golua/stdlib.coerceToNumber",
+          "github.com/iceisfun/golua/stdlib.hexCharToInt"
+        ],
+        "assumption": "The private numeric conversion family has no recursive backedge. This adds every family frame once, including mutually exclusive wrappers, above the existing callback-tail allowance. Unmeasured backend/context and standard-library/runtime ancestry remain the prior explicit bounded Weir assumptions.",
+        "pass": true
+      }
+    },
+    {
+      "target": "linux-amd64",
+      "functions": 2668,
+      "parser": {
+        "guarded_chain": [
+          "github.com/iceisfun/golua/parser.(*parser).parseForStmt",
+          "github.com/iceisfun/golua/parser.(*parser).parseForInStmt",
+          "github.com/iceisfun/golua/parser.(*parser).parseBlock",
+          "github.com/iceisfun/golua/parser.(*parser).parseStatement",
+          "github.com/iceisfun/golua/parser.(*parser).parseExprStat",
+          "github.com/iceisfun/golua/parser.(*parser).parseSuffixedExpr",
+          "github.com/iceisfun/golua/parser.(*parser).continueSuffixedExpr",
+          "github.com/iceisfun/golua/parser.(*parser).parseFuncArgs",
+          "github.com/iceisfun/golua/parser.(*parser).parseTableConstructor",
+          "github.com/iceisfun/golua/parser.(*parser).parseField",
+          "github.com/iceisfun/golua/parser.(*parser).parseExpr",
+          "github.com/iceisfun/golua/parser.(*parser).parseSubExpr"
+        ],
+        "bytes": 4616,
+        "limit": 5120,
+        "pass": true
+      },
+      "compiler": {
+        "guarded_chain": [
+          "github.com/iceisfun/golua/compiler.(*compiler).compileForInStmt",
+          "github.com/iceisfun/golua/compiler.(*funcState).checkVarLimitAt",
+          "github.com/iceisfun/golua/compiler.(*compiler).error"
+        ],
+        "bytes": 1744,
+        "limit": 2560,
+        "pass": true
+      },
+      "nested_sort": {
+        "recursive_bytes": 10080,
+        "wrapper_bytes": 5800,
+        "four_times_total": 63520,
+        "two_peak_credits": 82048,
+        "pass": true
+      },
+      "numeric_additive_headroom": {
+        "prior_callback_with_margins": 4216,
+        "all_27_numeric_function_frames_once_sum": 2144,
+        "conservative_additive_total": 6360,
+        "tail_allowance": 8192,
+        "function_names": [
+          "github.com/iceisfun/golua/stdlib.luaToNumber",
+          "github.com/iceisfun/golua/vm.stringToNumericValue",
+          "github.com/iceisfun/golua/stdlib.parseHexFloat",
+          "github.com/iceisfun/golua/vm.Value.toNumber",
+          "github.com/iceisfun/golua/vm.parseHexFloat",
+          "github.com/iceisfun/golua/vm.Value.toInt",
+          "github.com/iceisfun/golua/vm.parseNumericInt",
+          "github.com/iceisfun/golua/vm.parseNumericUint",
+          "github.com/iceisfun/golua/vm.parseNumericFloat",
+          "github.com/iceisfun/golua/vm.(*VM).ToInt",
+          "github.com/iceisfun/golua/vm.(*VM).ToNumber",
+          "github.com/iceisfun/golua/vm.Value.ToNumber",
+          "github.com/iceisfun/golua/vm.Value.ToInt",
+          "github.com/iceisfun/golua/vm.(*Value).ToInt",
+          "github.com/iceisfun/golua/vm.(*Value).ToNumber",
+          "github.com/iceisfun/golua/vm.(*Value).toInt",
+          "github.com/iceisfun/golua/vm.(*Value).toNumber",
+          "github.com/iceisfun/golua/vm.(*VM).ParseInt",
+          "github.com/iceisfun/golua/vm.(*VM).ParseUint",
+          "github.com/iceisfun/golua/vm.reserveNumericParse",
+          "github.com/iceisfun/golua/vm.(*VM).StringToNumericValue",
+          "github.com/iceisfun/golua/vm.(*VM).ParseFloat",
+          "github.com/iceisfun/golua/vm.(*VM).ParseHexFloat",
+          "github.com/iceisfun/golua/vm.StringToNumericValue",
+          "github.com/iceisfun/golua/vm.ParseHexFloat",
+          "github.com/iceisfun/golua/stdlib.coerceToNumber",
+          "github.com/iceisfun/golua/stdlib.hexCharToInt"
+        ],
+        "assumption": "The private numeric conversion family has no recursive backedge. This adds every family frame once, including mutually exclusive wrappers, above the existing callback-tail allowance. Unmeasured backend/context and standard-library/runtime ancestry remain the prior explicit bounded Weir assumptions.",
+        "pass": true
+      }
+    },
+    {
+      "target": "darwin-arm64",
+      "functions": 2668,
+      "parser": {
+        "guarded_chain": [
+          "github.com/iceisfun/golua/parser.(*parser).parseForStmt",
+          "github.com/iceisfun/golua/parser.(*parser).parseForInStmt",
+          "github.com/iceisfun/golua/parser.(*parser).parseBlock",
+          "github.com/iceisfun/golua/parser.(*parser).parseStatement",
+          "github.com/iceisfun/golua/parser.(*parser).parseExprStat",
+          "github.com/iceisfun/golua/parser.(*parser).parseSuffixedExpr",
+          "github.com/iceisfun/golua/parser.(*parser).continueSuffixedExpr",
+          "github.com/iceisfun/golua/parser.(*parser).parseFuncArgs",
+          "github.com/iceisfun/golua/parser.(*parser).parseTableConstructor",
+          "github.com/iceisfun/golua/parser.(*parser).parseField",
+          "github.com/iceisfun/golua/parser.(*parser).parseExpr",
+          "github.com/iceisfun/golua/parser.(*parser).parseSubExpr"
+        ],
+        "bytes": 4240,
+        "limit": 5120,
+        "pass": true
+      },
+      "compiler": {
+        "guarded_chain": [
+          "github.com/iceisfun/golua/compiler.(*compiler).compileForInStmt",
+          "github.com/iceisfun/golua/compiler.(*funcState).checkVarLimitAt",
+          "github.com/iceisfun/golua/compiler.(*compiler).error"
+        ],
+        "bytes": 1752,
+        "limit": 2560,
+        "pass": true
+      },
+      "nested_sort": {
+        "recursive_bytes": 9576,
+        "wrapper_bytes": 5792,
+        "four_times_total": 61472,
+        "two_peak_credits": 82048,
+        "pass": true
+      },
+      "numeric_additive_headroom": {
+        "prior_callback_with_margins": 4248,
+        "all_27_numeric_function_frames_once_sum": 2288,
+        "conservative_additive_total": 6536,
+        "tail_allowance": 8192,
+        "function_names": [
+          "github.com/iceisfun/golua/stdlib.luaToNumber",
+          "github.com/iceisfun/golua/vm.stringToNumericValue",
+          "github.com/iceisfun/golua/stdlib.parseHexFloat",
+          "github.com/iceisfun/golua/vm.Value.toNumber",
+          "github.com/iceisfun/golua/vm.Value.toInt",
+          "github.com/iceisfun/golua/vm.parseHexFloat",
+          "github.com/iceisfun/golua/vm.parseNumericInt",
+          "github.com/iceisfun/golua/vm.parseNumericUint",
+          "github.com/iceisfun/golua/vm.parseNumericFloat",
+          "github.com/iceisfun/golua/vm.(*VM).ToInt",
+          "github.com/iceisfun/golua/vm.(*VM).ToNumber",
+          "github.com/iceisfun/golua/vm.Value.ToNumber",
+          "github.com/iceisfun/golua/vm.Value.ToInt",
+          "github.com/iceisfun/golua/vm.(*Value).ToInt",
+          "github.com/iceisfun/golua/vm.(*Value).ToNumber",
+          "github.com/iceisfun/golua/vm.(*Value).toInt",
+          "github.com/iceisfun/golua/vm.(*Value).toNumber",
+          "github.com/iceisfun/golua/vm.reserveNumericParse",
+          "github.com/iceisfun/golua/vm.(*VM).StringToNumericValue",
+          "github.com/iceisfun/golua/vm.(*VM).ParseInt",
+          "github.com/iceisfun/golua/vm.(*VM).ParseUint",
+          "github.com/iceisfun/golua/vm.(*VM).ParseFloat",
+          "github.com/iceisfun/golua/vm.(*VM).ParseHexFloat",
+          "github.com/iceisfun/golua/vm.StringToNumericValue",
+          "github.com/iceisfun/golua/vm.ParseHexFloat",
+          "github.com/iceisfun/golua/stdlib.coerceToNumber",
+          "github.com/iceisfun/golua/stdlib.hexCharToInt"
+        ],
+        "assumption": "The private numeric conversion family has no recursive backedge. This adds every family frame once, including mutually exclusive wrappers, above the existing callback-tail allowance. Unmeasured backend/context and standard-library/runtime ancestry remain the prior explicit bounded Weir assumptions.",
+        "pass": true
+      }
+    },
+    {
+      "target": "darwin-amd64",
+      "functions": 2668,
+      "parser": {
+        "guarded_chain": [
+          "github.com/iceisfun/golua/parser.(*parser).parseForStmt",
+          "github.com/iceisfun/golua/parser.(*parser).parseForInStmt",
+          "github.com/iceisfun/golua/parser.(*parser).parseBlock",
+          "github.com/iceisfun/golua/parser.(*parser).parseStatement",
+          "github.com/iceisfun/golua/parser.(*parser).parseExprStat",
+          "github.com/iceisfun/golua/parser.(*parser).parseSuffixedExpr",
+          "github.com/iceisfun/golua/parser.(*parser).continueSuffixedExpr",
+          "github.com/iceisfun/golua/parser.(*parser).parseFuncArgs",
+          "github.com/iceisfun/golua/parser.(*parser).parseTableConstructor",
+          "github.com/iceisfun/golua/parser.(*parser).parseField",
+          "github.com/iceisfun/golua/parser.(*parser).parseExpr",
+          "github.com/iceisfun/golua/parser.(*parser).parseSubExpr"
+        ],
+        "bytes": 4616,
+        "limit": 5120,
+        "pass": true
+      },
+      "compiler": {
+        "guarded_chain": [
+          "github.com/iceisfun/golua/compiler.(*compiler).compileForInStmt",
+          "github.com/iceisfun/golua/compiler.(*funcState).checkVarLimitAt",
+          "github.com/iceisfun/golua/compiler.(*compiler).error"
+        ],
+        "bytes": 1744,
+        "limit": 2560,
+        "pass": true
+      },
+      "nested_sort": {
+        "recursive_bytes": 10080,
+        "wrapper_bytes": 5800,
+        "four_times_total": 63520,
+        "two_peak_credits": 82048,
+        "pass": true
+      },
+      "numeric_additive_headroom": {
+        "prior_callback_with_margins": 4216,
+        "all_27_numeric_function_frames_once_sum": 2144,
+        "conservative_additive_total": 6360,
+        "tail_allowance": 8192,
+        "function_names": [
+          "github.com/iceisfun/golua/stdlib.luaToNumber",
+          "github.com/iceisfun/golua/vm.stringToNumericValue",
+          "github.com/iceisfun/golua/stdlib.parseHexFloat",
+          "github.com/iceisfun/golua/vm.Value.toNumber",
+          "github.com/iceisfun/golua/vm.parseHexFloat",
+          "github.com/iceisfun/golua/vm.Value.toInt",
+          "github.com/iceisfun/golua/vm.parseNumericInt",
+          "github.com/iceisfun/golua/vm.parseNumericUint",
+          "github.com/iceisfun/golua/vm.parseNumericFloat",
+          "github.com/iceisfun/golua/vm.(*VM).ToInt",
+          "github.com/iceisfun/golua/vm.(*VM).ToNumber",
+          "github.com/iceisfun/golua/vm.Value.ToNumber",
+          "github.com/iceisfun/golua/vm.Value.ToInt",
+          "github.com/iceisfun/golua/vm.(*Value).ToInt",
+          "github.com/iceisfun/golua/vm.(*Value).ToNumber",
+          "github.com/iceisfun/golua/vm.(*Value).toInt",
+          "github.com/iceisfun/golua/vm.(*Value).toNumber",
+          "github.com/iceisfun/golua/vm.(*VM).ParseInt",
+          "github.com/iceisfun/golua/vm.(*VM).ParseUint",
+          "github.com/iceisfun/golua/vm.reserveNumericParse",
+          "github.com/iceisfun/golua/vm.(*VM).StringToNumericValue",
+          "github.com/iceisfun/golua/vm.(*VM).ParseFloat",
+          "github.com/iceisfun/golua/vm.(*VM).ParseHexFloat",
+          "github.com/iceisfun/golua/vm.StringToNumericValue",
+          "github.com/iceisfun/golua/vm.ParseHexFloat",
+          "github.com/iceisfun/golua/stdlib.coerceToNumber",
+          "github.com/iceisfun/golua/stdlib.hexCharToInt"
+        ],
+        "assumption": "The private numeric conversion family has no recursive backedge. This adds every family frame once, including mutually exclusive wrappers, above the existing callback-tail allowance. Unmeasured backend/context and standard-library/runtime ancestry remain the prior explicit bounded Weir assumptions.",
+        "pass": true
+      }
+    }
+  ],
+  "status": "PASS within the stated compiler-frame comparison scope"
+}

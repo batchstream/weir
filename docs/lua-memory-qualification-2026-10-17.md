@@ -1,7 +1,9 @@
 # Lua memory qualification, 2026-10-17
 
-Status: **allocation repair passes offline, constrained CLI and shipping-artifact
-qualification**. The original OOM baseline remains failed. The ingress objective was merged as
+Status: **allocation repair, including the independent review's numeric-conversion
+fix, passes offline, constrained CLI and shipping-artifact qualification**. The
+latest qualified source is `9c23c4f58f789aa54b0162b59234f77e5cb0c6a5`.
+The original OOM baseline remains failed. The ingress objective was merged as
 PR #82; it does not bound arbitrary allocations inside the existing Lua VM.
 Overall production-readiness acceptance is incomplete.
 
@@ -107,7 +109,7 @@ closure VM entries, nested Lua comparators through Go sort, and the host/ledger
 tail. Its limits and compiler-frame evidence are preserved; it does not claim
 that this library is an arbitrary Go heap sandbox.
 
-## Constrained process and shipping artifact
+## First allocation repair qualification
 
 The clean qualified source is
 `a01d523e6fab728d0e48f3ff84d908710559aa65`. Complete source/provenance inventories
@@ -153,6 +155,58 @@ and containers were independently absent after cleanup.
 preserves the first failed supplement, cleanup, corrected candidate, reproducible
 packages and exact shipping artifact runs. Large raw logs are gzip-compressed
 without changing their decompressed bytes; the index records both hashes.
+
+## Independent review follow-up and latest qualified artifact
+
+The independent runtime reviewer found an additional allocation omission on
+`4f3f90fa0ecb43f978925d49447df24028cc3c68`: numeric `for` and table.concat
+coercions could repeatedly invoke strconv without reserving its error-input
+copies. With a 65,539-byte numeric string, 128 conversions and a one-MiB quota,
+the old code returned Keep while charging below 660 KiB and allocating about
+9.5 MiB. This is evidence of an allocation-budget bypass, not an observed OOM.
+That request-changes review and its original reproduction are preserved.
+
+The final repair uses one private numeric parser for both public unbudgeted
+values and VM-owned values. Each actual strconv attempt reserves its possible
+input clone and NumError before the call; the hexadecimal suffix is reserved
+only when that fallback runs. All reachable loop, arithmetic, index, select,
+ipairs, format, helper and concat coercions use the owned path. Duplicate broad
+reservations and a needless whole-string lowercase copy were removed. Regression
+tests cover strict quota rejection, protected-call termination, wide-quota
+success, unchanged Lua semantics and cancellation.
+
+The final clean source `9c23c4f58f789aa54b0162b59234f77e5cb0c6a5` passed all six
+root checks, nested race checks and four-platform frame builds, with 1,055
+recorded source/provenance hashes unchanged during root checks. The normal
+benchmark medians were 18.732 microseconds for one field and 74.826 for 100 fields;
+all samples and earlier measurements remain available.
+
+The actual CLI supplement now adds numeric-for and numeric-concat, bringing it
+to eight cases per backend, 16 in total. The candidate and exact shipping binary
+both passed the original unchanged OOM probe and all 16 cases with original
+three-second callers, full raw oracles, same-SDK recovery, final zero owners,
+normal exit, zero OOM counters and independently absent fixtures/containers.
+Two fresh exports again reproduced all four binaries and archives. The latest
+qualified Linux arm64 shipping SHA256 is
+`16669a2cd593d523a8bb52446a1140ea157a9224613ee5a34f37fdcbbe8d16d6`.
+Its original probe safely rejected in 33.383 ms; its four numeric cases rejected
+in 189.735–242.556 ms. The Linux CI for this exact source passed all stages.
+
+The first Linux CI failure concerned a raw gRPC deadline assertion. The test now
+starts Recv immediately and records the termination time before opening the
+other RPC. It requires the original caller's DeadlineExceeded cause and a return
+within the original deadline through one second afterward before accepting
+native wire Canceled. Early cancellation, other statuses and late completion fail.
+Both stall cases still require Canceled, and connection survival, APPLIED and
+no-replay checks are unchanged. Production cancellation code was not changed.
+Public upstream source shows the competing timer path; 1,000 upstream attempts
+and 80 existing-test diagnostic iterations did not reproduce the CI event, so
+the record does not claim an experimentally established cause.
+
+[Numeric follow-up evidence](lua-memory-results-2026-10-17/numeric-followup/evidence-index.json)
+contains the original review finding, first CI failure, independent test review,
+root regression checks, complete candidate/package/shipping qualification and
+compiler-frame comparison with its stated boundaries.
 
 Final 600-second sustained load, latency SLOs and fault qualification remain
 pending. Passing this allocation objective does not complete overall production

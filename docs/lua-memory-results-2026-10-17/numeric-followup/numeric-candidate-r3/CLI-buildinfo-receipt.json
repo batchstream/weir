@@ -1,0 +1,36 @@
+{
+  "args": [
+    "/Users/liran/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.1.darwin-arm64/bin/go",
+    "version",
+    "-m",
+    "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/lua-repair-numeric-candidate-r3/weir-linux-arm64"
+  ],
+  "cwd": "/Users/liran/Projects/liran/go/weir",
+  "elapsed_seconds": 0.009301624988438562,
+  "env": {
+    "DOCKER_CONFIG": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/lua-repair-numeric-candidate-r3/docker-client",
+    "DOCKER_HOST": "unix:///var/run/docker.sock",
+    "GOAMD64": "v1",
+    "GOARM64": "v8.0",
+    "GOENV": "off",
+    "GOEXPERIMENT": "",
+    "GOFLAGS": "",
+    "GOPROXY": "off",
+    "GOROOT": "/Users/liran/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.1.darwin-arm64",
+    "GOSUMDB": "off",
+    "GOTOOLCHAIN": "local",
+    "GOWORK": "off",
+    "MONGOSH_DISABLE_TELEMETRY": "1",
+    "PYTHONDONTWRITEBYTECODE": "1"
+  },
+  "exit_code": 0,
+  "finished_utc": "2026-10-17T04:27:51.965834+00:00",
+  "pid": 23925,
+  "raw": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/lua-repair-numeric-candidate-r3/CLI-buildinfo-process.txt",
+  "raw_bytes": 2834,
+  "raw_sha256": "28d29f1ab27af7959a1fd52e44ac53d119fc6f690eb2c4a8b440be2b44fc5f50",
+  "retry": false,
+  "started_utc": "2026-10-17T04:27:51.956401+00:00",
+  "timed_out": false,
+  "timeout_seconds": 30
+}
