@@ -1,0 +1,112 @@
+{
+  "purpose": "Diagnostic only; not formal production qualification",
+  "toolchain": "go1.27.1/linux/arm64 CGO_ENABLED=0",
+  "probe_schedule": "120s; fixed 15 requests/s per mode; fresh HTTP/1 GET /, caller 3s; connect including DNS 2s; no replay",
+  "baseline": [
+    "Native generic incomplete before Head at 2.004636s; original CLI binary dc48ac91a42903e289ef0b85ee64a496a50f6f0d26c4e1f8ec7e85a94465ffc6"
+  ],
+  "fixture": "owned Elasticsearch 8.19.22; existing 127.0.0.1:19200 published -> bridge 172.17.0.2:9200; host.docker.internal=192.168.65.254",
+  "artifacts": {
+    "native-http-diagnostic-probe.go": {
+      "sha256": "c806b312d2118e95c795a194c296feda531ea851fac9f2d2a3e697887530ec67"
+    },
+    "native-http-diagnostic-probe-linux": {
+      "sha256": "53af52b18f346f203b94d3861b1898716d8e8a0a67713ae8838d9815f116ea78"
+    },
+    "native-http-diagnostic-probe.txt": {
+      "sha256": "b84e69d4963e03123c66bcc5053107941179259b8675cd2533310d8c0cb4c06a"
+    },
+    "native-http-diagnostic-network-probe.go": {
+      "sha256": "0e6761139b5bbaef1bef1935be1e8c2a75fb47423f6999872aa8810e4a50f264"
+    },
+    "native-http-diagnostic-network-probe-linux": {
+      "sha256": "7349af3e4557c5b1a02afcde454ac3faf609366f5a296e8307da14055d869e43"
+    },
+    "weir-native-http-diagnostic-linux": {
+      "sha256": "abb557aff8e70276b37345964adc26b4141bd2fb15b11eeb924abe3e1a9e7d21"
+    },
+    "native-http-diagnostic-network-probe.txt": {
+      "sha256": "cd9b74555b4dc449d575da3bac5b240a77aa19d68d4fa8d28596d18c247c0d5c"
+    },
+    "native-http-diagnostic-es-netstat-before.txt": {
+      "sha256": "fd7137137c06d71eb78afaed0b837a39e5644a228d2265677ab08d410d0e3a80"
+    },
+    "native-http-diagnostic-es-netstat-after.txt": {
+      "sha256": "bc5302a0c6ef067c6bc657c0c8f05d813af456b6c430d794a9c0a873c630c898"
+    }
+  },
+  "overlay": "Only DNS/TCP >25ms or error, Native Do error type/underlying error/duration/caller context logs. No source/configuration/timeout/replay/HTTP semantic changes. Tracked files unchanged by diagnosis agent.",
+  "es_tcp_comparison": {
+    "TcpExt.ListenOverflows": {
+      "before": 0,
+      "after": 0,
+      "delta": 0
+    },
+    "TcpExt.ListenDrops": {
+      "before": 0,
+      "after": 0,
+      "delta": 0
+    },
+    "TcpExt.TCPReqQFullDrop": {
+      "before": 0,
+      "after": 0,
+      "delta": 0
+    },
+    "TcpExt.TCPSynRetrans": {
+      "before": 0,
+      "after": 0,
+      "delta": 0
+    },
+    "Tcp.RetransSegs": {
+      "before": 1,
+      "after": 1,
+      "delta": 0
+    },
+    "Tcp.PassiveOpens": {
+      "before": 4904,
+      "after": 8234,
+      "delta": 3330
+    },
+    "Tcp.CurrEstab": {
+      "before": 0,
+      "after": 0,
+      "delta": 0
+    }
+  },
+  "results": {
+    "dns_vs_hairpin_ip": {
+      "dns": {
+        "requests": 1800,
+        "failures": 114,
+        "p99": "2.004410209s"
+      },
+      "ip": {
+        "requests": 1800,
+        "failures": 100,
+        "p99": "2.003847542s"
+      },
+      "all_failed_stage": "tcp",
+      "max_dns_during_tcp_failure": "6.556916ms"
+    },
+    "direct_bridge_vs_hairpin_ip": {
+      "direct": {
+        "requests": 1800,
+        "failures": 0,
+        "p99": "4.867ms",
+        "max": "44.307459ms"
+      },
+      "hairpin": {
+        "requests": 1800,
+        "failures": 51,
+        "p99": "2.001603418s",
+        "max": "2.008572209s"
+      },
+      "client_active_opens": 3600,
+      "client_retransmitted_segments": 51,
+      "all_failed_stage": "tcp"
+    },
+    "interpretation": "Independent standard HTTP probe without Weir or SDK reproduces 2s TCP connect failures on Docker Desktop host-published hairpin path; direct Linux bridge is healthy under identical load.",
+    "limit": "The original individual Native failure lacked internal exception/stage diagnostics, so attributing that exact request is an inference from the independently reproduced matching failure, not a direct trace.",
+    "recommendation": "Formal qualification should verify owned ES fixture identity and use direct Linux bridge networking. Preserve service defaults and original failures. No timeout increase, replay, or production change is supported by this evidence."
+  }
+}

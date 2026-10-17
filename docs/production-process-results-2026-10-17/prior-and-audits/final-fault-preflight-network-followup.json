@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "reviewed_at_utc": "2026-10-17T04:44:01.648429+00:00",
+  "head": "69349eac568af9993c837fcd05c08337f5743a30",
+  "initial_review_sha256": "b3fb934eca4fc2625ce907033b3ab9ba9f6640a2a6d9d589e311b2aa91b037ba",
+  "tracked_source_changed": false,
+  "go_tests_build_docker_database_operations": false,
+  "remaining_gap": "Both fault gates self-expire after5s, potentially releasing a slow-before-forward operation during the absolute3s cancellation observation after up to two3s health calls and a2s metrics scrape. A5s Before timeout never signals ACK, so ACK absence does not prove the gate is still held.",
+  "network_deadline_note": "Mongo relay sets both downstream and upstream net.Conn deadlines to now+5s before entering the gate. HTTP fixture uses5s read/write/client deadlines. A net.Conn deadline does not itself close a socket while the handler waits on a channel, but once it returns to network IO an already expired deadline can create an observer-produced failure. Keep these fixture IO budgets consistent with the longer finite gate hold, rather than allowing a stale deadline to decide the fault observation.",
+  "minimal_followup_change": {
+    "no_new_config_surface": true,
+    "testmongo": "Introduce one private fixed20s fault/relay timeout constant and reuse for waitGate plus existing client/backend SetDeadline. Keep unrelated1s connect/drop-gate and2s TLS/monitor bounds unchanged.",
+    "suite_http": "Reuse a private fixed20s timeout for owned HTTP proxy wait/client/read/write bounds; keep1s header limit and finite2MiB bodies.",
+    "acceptance_unchanged": "Healthy3s, cancellation+credits3s, recovery5s, SIGTERM8s. Explicit deferred gate release and ctx cancellation remain.",
+    "20s_reason": "Covers the full pre-cancel path: started observation up to3s, metrics up to2s, healthRead3s, healthNative3s, cancellation/credit3s, plus scheduling margin; no gate auto-expiry should help this acceptance pass."
+  },
+  "run_policy": "Freeze all tracked source during active69349ea600s run. After completion make the test-only fault changes in a new clean commit and run final fault independently; verify production runtime hash equivalence so the valid600s runtime result need not be repeated. If current runner executes the older fault suite, retain its result as diagnostic, not final acceptance."
+}

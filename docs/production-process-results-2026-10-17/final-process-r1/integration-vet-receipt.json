@@ -1,0 +1,39 @@
+{
+  "args": [
+    "/Users/liran/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.1.darwin-arm64/bin/go",
+    "vet",
+    "-tags=integration",
+    "./..."
+  ],
+  "cwd": "/Users/liran/Projects/liran/go/weir",
+  "elapsed_seconds": 1.3438064999936614,
+  "env": {
+    "CGO_ENABLED": "1",
+    "DOCKER_CONFIG": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/final-process-r1/docker-client",
+    "DOCKER_HOST": "unix:///var/run/docker.sock",
+    "GOAMD64": "v1",
+    "GOARCH": "arm64",
+    "GOARM64": "v8.0",
+    "GOENV": "off",
+    "GOEXPERIMENT": "",
+    "GOFLAGS": "",
+    "GOOS": "darwin",
+    "GOPROXY": "off",
+    "GOROOT": "/Users/liran/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.1.darwin-arm64",
+    "GOSUMDB": "off",
+    "GOTOOLCHAIN": "local",
+    "GOWORK": "off",
+    "MONGOSH_DISABLE_TELEMETRY": "1",
+    "PYTHONDONTWRITEBYTECODE": "1"
+  },
+  "exit_code": 0,
+  "finished_utc": "2026-10-17T04:42:56.526521+00:00",
+  "pid": 37394,
+  "raw": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/final-process-r1/integration-vet-process.txt",
+  "raw_bytes": 0,
+  "raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "retry": false,
+  "started_utc": "2026-10-17T04:42:55.182492+00:00",
+  "timed_out": false,
+  "timeout_seconds": 120
+}

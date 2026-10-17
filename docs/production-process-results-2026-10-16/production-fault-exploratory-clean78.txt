@@ -1,0 +1,38 @@
+=== RUN   TestProductionProcessFaultQualification
+    production_fault_integration_test.go:90: actual backend profile=elasticsearch-8.19.22 build=3b2a41103de35e0af4064d647974032fcc1bcde9
+    production_fault_integration_test.go:130: qualification=false source=b3672473309638fb60358d95ec828221d7fd9fc6 SHA256=e7fa6e60820af1cb93c4262cdf659b07a73ce9a5ba2b2e8845621bf5fa7ca33a version={"product":"weir","version":"local-b3672473309638fb60358d95ec828221d7fd9fc6","revision":"b3672473309638fb60358d95ec828221d7fd9fc6","go":"go1.27.1","target":"linux/arm64","state":"clean-commit","dirty":"false"} container=weir-memory-recovery-84242-1792158743806327000 PID=12503 capacity=512MiB CPUs=2 default_store_execution=16 default_stall=30s
+    production_fault_integration_test.go:131: predeclared gates: healthy Read/Native <=3s during one held IO; cancellation and all resource credits <=3s; proxy recovery and same-SDK CRUD/Native <=5s; ack-loss native=INCOMPLETE, typed=UNKNOWN, oracle increment/version exactly one; fault SIGTERM <=8s exit=0 no OOM; no forced GC or database failpoints
+=== RUN   TestProductionProcessFaultQualification/mongo
+    production_fault_integration_test.go:134: baseline backend=mongo method=Read elapsed=3.677708ms
+    production_fault_integration_test.go:134: baseline backend=mongo method=Native elapsed=1.448375ms
+    production_fault_integration_test.go:135: ack_loss backend=mongo method=native elapsed=235.897125ms oracle_n=1 version_before=0 version_after=0 writes=1 acks=1 drops=1 no_replay=true
+    production_fault_integration_test.go:136: ack_loss backend=mongo method=typed elapsed=797.191041ms oracle_n=1 version_before=0 version_after=0 writes=1 acks=1 drops=1 no_replay=true
+    production_fault_integration_test.go:137: cancel_after_ack backend=mongo elapsed=600.167375ms caller=Canceled oracle_n=1 version=0 writes=1 acks=1 drops=1 all_credits=0
+    production_fault_integration_test.go:138: one_held_IO backend=mongo healthy_method=Read elapsed=5.850583ms active=1 RSS=23744512 WS=31531008 latch=0
+    production_fault_integration_test.go:138: one_held_IO backend=mongo healthy_method=Native elapsed=1.978333ms active=1 RSS=23744512 WS=31531008 latch=0
+    production_fault_integration_test.go:138: held_IO_cancel backend=mongo elapsed=9.877417ms all_credits=0 observer_gate_released=true
+    production_fault_integration_test.go:139: proxy_unavailable backend=mongo caller_error=rpc error: code = DeadlineExceeded desc = context deadline exceeded backend_continues=true
+    production_fault_integration_test.go:139: proxy_recovered backend=mongo elapsed=473.578334ms same_PID=12503 same_SDK=true healthy_CRUD_and_Native=true
+=== RUN   TestProductionProcessFaultQualification/search
+    production_fault_integration_test.go:134: baseline backend=search method=Read elapsed=11.927917ms
+    production_fault_integration_test.go:134: baseline backend=search method=Native elapsed=5.545125ms
+    production_fault_integration_test.go:135: ack_loss backend=search method=native elapsed=280.119833ms oracle_n=1 version_before=1 version_after=2 writes=1 acks=1 drops=1 no_replay=true
+    production_fault_integration_test.go:136: ack_loss backend=search method=typed elapsed=277.36625ms oracle_n=1 version_before=1 version_after=2 writes=1 acks=1 drops=1 no_replay=true
+    production_fault_integration_test.go:137: cancel_after_ack backend=search elapsed=229.374ms caller=Canceled oracle_n=1 version=2 writes=1 acks=1 drops=1 all_credits=0
+    production_fault_integration_test.go:138: one_held_IO backend=search healthy_method=Read elapsed=10.285333ms active=1 RSS=24322048 WS=31518720 latch=0
+    production_fault_integration_test.go:138: one_held_IO backend=search healthy_method=Native elapsed=6.35475ms active=1 RSS=24322048 WS=31518720 latch=0
+    production_fault_integration_test.go:138: held_IO_cancel backend=search elapsed=19.860625ms all_credits=0 observer_gate_released=true
+    production_fault_integration_test.go:139: proxy_unavailable backend=search caller_error=point read did not return the seeded document: &{<nil> false code:UNAVAILABLE message:"index qualification response unavailable"} backend_continues=true
+    production_fault_integration_test.go:139: proxy_recovered backend=search elapsed=128.190167ms same_PID=12503 same_SDK=true healthy_CRUD_and_Native=true
+=== NAME  TestProductionProcessFaultQualification
+    production_fault_integration_test.go:144: fault_SIGTERM elapsed=201.131209ms exit=0 OOM=false oracle_n=1 observer_sockets=0; owned container removal verified by fixture cleanup
+    memory_recovery_integration_test.go:194: CLI logs=Weir listening on [[::]:7447]; local execution and peer directory discovery
+        Diagnostics listening on [::]:7449
+        2026/10/16 13:52:27 INFO backend_connections_closed backend=search store=search owned=0 peak=3 acquired=10 released=10
+        2026/10/16 13:52:27 INFO backend_connections_closed backend=mongo store=mongo owned=0 peak=3 dialing=0 closing=0 acquired=9 released=9
+    memory_recovery_integration_test.go:208: CLI exit=false 0
+--- PASS: TestProductionProcessFaultQualification (5.18s)
+    --- PASS: TestProductionProcessFaultQualification/mongo (2.56s)
+    --- PASS: TestProductionProcessFaultQualification/search (1.13s)
+PASS
+ok  	github.com/batchstream/weir/internal/app	6.811s

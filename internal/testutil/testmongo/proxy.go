@@ -1,6 +1,7 @@
 package testmongo
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"crypto/tls"
@@ -27,6 +28,23 @@ type WireEvent struct {
 	ReplyDigest  [32]byte
 }
 
+// ProxyFault targets one command on this observer's connections. Match is an
+// exact byte fragment of the owned request, usually its unique document ID.
+// Empty Match is useful only for a strictly serial commitTransaction phase.
+type ProxyFault struct {
+	Command      string
+	Match        []byte
+	Before       <-chan struct{}
+	After        <-chan struct{}
+	Started      chan<- struct{}
+	Acknowledged chan<- struct{}
+	Drop         bool
+}
+
+// Keep the observer alive beyond the caller's cancellation and recovery gates.
+// Its own timeout must not release a held reply to make those assertions pass.
+const proxyFaultTimeout = 20 * time.Second
+
 type Proxy struct {
 	backendAddress string
 	uri            string
@@ -35,11 +53,15 @@ type Proxy struct {
 	listener       net.Listener
 	mu             sync.Mutex
 	events         []WireEvent
+	forwarded      []string
 	conns          map[net.Conn]struct{}
 	group          sync.WaitGroup
 	closed         bool
+	unavailable    bool
 	upstream       int
 	peakUpstream   int
+	fault          *ProxyFault
+	done           chan struct{}
 	DropCommand    string
 	DropGate       <-chan struct{}
 	DropRemaining  atomic.Int64
@@ -50,12 +72,17 @@ type Proxy struct {
 
 type proxyOptions struct {
 	uri                  string
+	listenAddress        string
 	serverTLS, clientTLS *tls.Config
 }
 
 func startProxy(t *testing.T, opts proxyOptions) *Proxy {
 	t.Helper()
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	address := opts.listenAddress
+	if address == "" {
+		address = "127.0.0.1:0"
+	}
+	listener, err := net.Listen("tcp", address)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -63,7 +90,7 @@ func startProxy(t *testing.T, opts proxyOptions) *Proxy {
 	if err != nil {
 		t.Fatal("invalid owned fixture URI")
 	}
-	p := &Proxy{listener: listener, backendAddress: upstream.Host, conns: make(map[net.Conn]struct{})}
+	p := &Proxy{listener: listener, backendAddress: upstream.Host, conns: make(map[net.Conn]struct{}), done: make(chan struct{})}
 	if opts.serverTLS != nil {
 		// Test-only TLS termination observes decrypted commands for fault injection.
 		// Production direct-to-mongod TLS is qualified separately.
@@ -82,6 +109,11 @@ func startProxy(t *testing.T, opts proxyOptions) *Proxy {
 				return
 			}
 			p.mu.Lock()
+			if p.closed || p.unavailable {
+				p.mu.Unlock()
+				_ = conn.Close()
+				continue
+			}
 			p.conns[conn] = struct{}{}
 			p.mu.Unlock()
 			p.group.Add(1)
@@ -92,6 +124,7 @@ func startProxy(t *testing.T, opts proxyOptions) *Proxy {
 		_ = listener.Close()
 		p.mu.Lock()
 		p.closed = true
+		close(p.done)
 		for conn := range p.conns {
 			_ = conn.Close()
 		}
@@ -99,6 +132,39 @@ func startProxy(t *testing.T, opts proxyOptions) *Proxy {
 		p.group.Wait()
 	})
 	return p
+}
+
+// ArmFault replaces a consumed fault only after the caller has observed its
+// completion. Control state is synchronized with the active wire relays.
+func (p *Proxy) ArmFault(fault ProxyFault) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	fault.Match = append([]byte(nil), fault.Match...)
+	p.fault = &fault
+}
+
+func (p *Proxy) takeFault(command string, request []byte) *ProxyFault {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	fault := p.fault
+	if fault == nil || fault.Command != command || !bytes.Contains(request, fault.Match) {
+		return nil
+	}
+	p.fault = nil
+	return fault
+}
+
+func (p *Proxy) waitGate(gate <-chan struct{}) bool {
+	if gate == nil {
+		return true
+	}
+	select {
+	case <-gate:
+		return true
+	case <-p.done:
+	case <-time.After(proxyFaultTimeout):
+	}
+	return false
 }
 
 func (p *Proxy) URI() string {
@@ -111,6 +177,14 @@ func (p *Proxy) Events() []WireEvent {
 	return append([]WireEvent(nil), p.events...)
 }
 
+// ForwardedCommands records complete request writes independently of whether a
+// reply reached this observer. It distinguishes replay attempts from ACK counts.
+func (p *Proxy) ForwardedCommands() []string {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return append([]string(nil), p.forwarded...)
+}
+
 // Sockets counts observer-owned upstream connections. A serial relay can retain
 // one after downstream Close while waiting for a callback or backend reply.
 // Counters bracket Dial/Close and are not atomic OS or database measurements.
@@ -118,6 +192,19 @@ func (p *Proxy) Sockets() (current, peak int) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return p.upstream, p.peakUpstream
+}
+
+// SetUnavailable interrupts only this proxy's connections. The real backend and
+// the listener stay running so the same Weir process can reconnect after recovery.
+func (p *Proxy) SetUnavailable(unavailable bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.unavailable = unavailable
+	if unavailable {
+		for conn := range p.conns {
+			_ = conn.Close()
+		}
+	}
 }
 
 func (p *Proxy) relay(client net.Conn) {
@@ -156,7 +243,7 @@ func (p *Proxy) relay(client net.Conn) {
 		backend = secure
 	}
 	p.mu.Lock()
-	if p.closed {
+	if p.closed || p.unavailable {
 		p.mu.Unlock()
 		return
 	}
@@ -168,8 +255,8 @@ func (p *Proxy) relay(client net.Conn) {
 		p.mu.Unlock()
 	}()
 	for {
-		_ = client.SetDeadline(time.Now().Add(5 * time.Second))
-		_ = backend.SetDeadline(time.Now().Add(5 * time.Second))
+		_ = client.SetDeadline(time.Now().Add(proxyFaultTimeout))
+		_ = backend.SetDeadline(time.Now().Add(proxyFaultTimeout))
 		request, err := readMessage(client)
 		if err != nil {
 			return
@@ -180,6 +267,19 @@ func (p *Proxy) relay(client net.Conn) {
 		if len(elements) > 0 {
 			name = elements[0].Key()
 		}
+		fault := p.takeFault(name, request)
+		if fault != nil {
+			if fault.Started != nil {
+				select {
+				case fault.Started <- struct{}{}:
+				case <-p.done:
+					return
+				}
+			}
+			if !p.waitGate(fault.Before) {
+				return
+			}
+		}
 		if p.Monitor != nil && p.Monitor.Started != nil {
 			e := &event.CommandStartedEvent{CommandName: name, Command: doc}
 			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
@@ -189,6 +289,9 @@ func (p *Proxy) relay(client net.Conn) {
 		if _, err = backend.Write(request); err != nil {
 			return
 		}
+		p.mu.Lock()
+		p.forwarded = append(p.forwarded, name)
+		p.mu.Unlock()
 		response, err := readMessage(backend)
 		if err != nil {
 			return
@@ -210,6 +313,9 @@ func (p *Proxy) relay(client net.Conn) {
 		}
 		e.ReplyDigest = sha256.Sum256(reply)
 		e.Acknowledged = reply.Lookup("ok").AsInt64() == 1
+		if fault != nil && fault.Drop {
+			e.Dropped = true
+		}
 		if name == p.DropCommand && p.DropRemaining.Load() > 0 {
 			e.Dropped = true
 			p.DropRemaining.Add(-1)
@@ -217,6 +323,18 @@ func (p *Proxy) relay(client net.Conn) {
 		p.mu.Lock()
 		p.events = append(p.events, e)
 		p.mu.Unlock()
+		if fault != nil {
+			if fault.Acknowledged != nil {
+				select {
+				case fault.Acknowledged <- struct{}{}:
+				case <-p.done:
+					return
+				}
+			}
+			if !p.waitGate(fault.After) {
+				return
+			}
+		}
 		if e.Dropped {
 			if p.DropGate != nil {
 				select {

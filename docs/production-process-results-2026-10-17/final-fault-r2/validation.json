@@ -1,0 +1,135 @@
+{
+  "CLI": {
+    "binary": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/final-fault-r2/weir-linux-arm64",
+    "binary_sha256": "ea8d8617052a53db7fa676df9b614fd8cfcc973004f1f0451e79539352a15687",
+    "patches": {
+      "github.com/iceisfun/golua": "./third_party/golua",
+      "google.golang.org/grpc": "./third_party/grpc"
+    },
+    "raw_sha256": "9e9c31f4245bbb4d3eeedd1df63595027455e48937b3678f2f2afde693b27da7",
+    "settings": {
+      "-buildmode": "exe",
+      "-compiler": "gc",
+      "-trimpath": "true",
+      "CGO_ENABLED": "0",
+      "GOARCH": "arm64",
+      "GOARM64": "v8.0",
+      "GOOS": "linux",
+      "vcs": "git",
+      "vcs.modified": "false",
+      "vcs.revision": "032fd8b8e2cfa0acf0e65c166d6265c3c30ad87b",
+      "vcs.time": "2026-10-17T04:54:20Z"
+    },
+    "source": "032fd8b8e2cfa0acf0e65c166d6265c3c30ad87b"
+  },
+  "independent": {
+    "mongo": {
+      "absent": true,
+      "name": "weir_test_38535_1"
+    },
+    "owned_containers": [],
+    "owned_containers_status": 200,
+    "search": {
+      "body": {
+        "error": {
+          "index": "weir_search_38535_1",
+          "index_uuid": "_na_",
+          "reason": "no such index [weir_search_38535_1]",
+          "resource.id": "weir_search_38535_1",
+          "resource.type": "index_or_alias",
+          "root_cause": [
+            {
+              "index": "weir_search_38535_1",
+              "index_uuid": "_na_",
+              "reason": "no such index [weir_search_38535_1]",
+              "resource.id": "weir_search_38535_1",
+              "resource.type": "index_or_alias",
+              "type": "index_not_found_exception"
+            }
+          ],
+          "type": "index_not_found_exception"
+        },
+        "status": 404
+      },
+      "raw_bytes": 443,
+      "raw_sha256": "6afb6e479524c69fcb4cbc5b15513974c32588f84464eb4368e72dfff30548f0",
+      "status": 404
+    },
+    "search_index": "weir_search_38535_1"
+  },
+  "problems": [],
+  "race_driver": {
+    "binary": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/final-fault-r2/app-race.test",
+    "binary_sha256": "0b234b65318c6d15fae286a4786e1d84d94300e09c2ba4c086764e6623848c8e",
+    "patches": {
+      "github.com/iceisfun/golua": "./third_party/golua",
+      "google.golang.org/grpc": "./third_party/grpc"
+    },
+    "raw_sha256": "b7eab4e48af9d75167aa1463c83f284d58ce91b19352c7dbc55ffec438e147e7",
+    "settings": {
+      "-buildmode": "exe",
+      "-compiler": "gc",
+      "-race": "true",
+      "-tags": "integration",
+      "-trimpath": "true",
+      "CGO_ENABLED": "1",
+      "GOARCH": "arm64",
+      "GOARM64": "v8.0",
+      "GOOS": "darwin",
+      "vcs": "git",
+      "vcs.modified": "false",
+      "vcs.revision": "032fd8b8e2cfa0acf0e65c166d6265c3c30ad87b",
+      "vcs.time": "2026-10-17T04:54:20Z"
+    },
+    "source": "032fd8b8e2cfa0acf0e65c166d6265c3c30ad87b"
+  },
+  "record": {
+    "args": [
+      "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/final-fault-r2/app-race.test",
+      "-test.v",
+      "-test.failfast",
+      "-test.count=1",
+      "-test.run=^TestProductionProcessFaultQualification$",
+      "-test.timeout=2m"
+    ],
+    "cwd": "/Users/liran/Projects/liran/go/weir",
+    "elapsed_seconds": 6.737706457992317,
+    "env": {
+      "CGO_ENABLED": "1",
+      "DOCKER_CONFIG": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/final-fault-r2/docker-client",
+      "DOCKER_HOST": "unix:///var/run/docker.sock",
+      "GOAMD64": "v1",
+      "GOARCH": "arm64",
+      "GOARM64": "v8.0",
+      "GOENV": "off",
+      "GOEXPERIMENT": "",
+      "GOFLAGS": "",
+      "GOOS": "darwin",
+      "GOPROXY": "off",
+      "GOROOT": "/Users/liran/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.1.darwin-arm64",
+      "GOSUMDB": "off",
+      "GOTOOLCHAIN": "local",
+      "GOWORK": "off",
+      "MONGOSH_DISABLE_TELEMETRY": "1",
+      "PYTHONDONTWRITEBYTECODE": "1",
+      "WEIR_INTEGRATION": "1",
+      "WEIR_PRODUCTION_FAULT_QUALIFICATION": "1",
+      "WEIR_QUALIFICATION_BINARY": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/final-fault-r2/weir-linux-arm64",
+      "WEIR_QUALIFICATION_SHA256": "ea8d8617052a53db7fa676df9b614fd8cfcc973004f1f0451e79539352a15687",
+      "WEIR_QUALIFICATION_SOURCE": "032fd8b8e2cfa0acf0e65c166d6265c3c30ad87b",
+      "WEIR_SEARCH_INTEGRATION": "elasticsearch"
+    },
+    "exit_code": 0,
+    "finished_utc": "2026-10-17T04:55:12.589675+00:00",
+    "pid": 38535,
+    "raw": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/final-fault-r2/fault-process.txt",
+    "raw_bytes": 5464,
+    "raw_sha256": "b05ee96cd6c0c89a18b7ec829d8eac1005d723a008b7bffa6d427dd36f521d4f",
+    "retry": false,
+    "started_utc": "2026-10-17T04:55:05.851750+00:00",
+    "timed_out": false,
+    "timeout_seconds": 150
+  },
+  "source": "032fd8b8e2cfa0acf0e65c166d6265c3c30ad87b",
+  "status": "PASS"
+}
