@@ -1,1 +1,0 @@
-go: overlay contains a replacement for /Users/liran/go/pkg/mod/google.golang.org/grpc@v1.83.2/encoding/proto/proto.go. Files beneath GOMODCACHE (/Users/liran/go/pkg/mod) must not be replaced.

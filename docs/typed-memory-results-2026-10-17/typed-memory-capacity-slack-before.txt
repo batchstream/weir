@@ -1,5 +1,0 @@
---- FAIL: TestExecutionMemoryReadyResultRetainsActualCapacityBeyondEncodedLength (0.00s)
-    execution_memory_ownership_test.go:274: ready result shrank owned backing capacity to its encoded length {536870912 33555509 48401920 33555509 33554432 3073 0 0 0 1024 1 32768 0 0 0 1 0 true 0}
-FAIL
-FAIL	github.com/batchstream/weir/internal/store	0.816s
-FAIL

@@ -1,7 +1,0 @@
-ok  	github.com/batchstream/weir/internal/store	4.300s
-ok  	github.com/batchstream/weir/internal/server	21.181s
---- FAIL: TestRecordDeepResourceChargesDecodedSegmentHeaders (0.00s)
-    record_test.go:64: decoded path metadata was not charged 4 10118
-FAIL
-FAIL	github.com/batchstream/weir/internal/execution	1.237s
-FAIL

@@ -1,2 +1,0 @@
-gofmt_actual_exit=0
-git_diff_check_actual_exit=0

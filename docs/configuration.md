@@ -1,190 +1,122 @@
-# Configuration decisions
+# Configuration
 
-Start with the addresses and backend identity that the process cannot discover:
-
-```yaml
-# weir.yaml
-listeners:
-  application: 127.0.0.1:7447
-```
-
-```yaml
-# routes.yaml
-stores:
-  - name: mongo
-    backend:
-      mongodb:
-        uri: mongodb://127.0.0.1:27017
-```
-
-Every other field may be omitted for this standalone node. The complete
-[process reference](../config/weir.reference.yaml) and
-[Store reference](../config/routes.reference.yaml) document the available controls,
-their units and their defaults. Omission selects a documented default, never a
-second compatibility path.
-
-Copy the reference files to `weir.yaml` and, when hosting local Stores,
-`routes.yaml`. The CLI defaults to `--config ./weir.yaml` and an empty `--routes`;
-it does not discover other files. Both paths resolve from the process working
-directory. An empty routing path reads no Store document and assembles no backend.
-
-Each file contains one YAML mapping with exact lowercase keys. Unknown or
-duplicate keys, multiple documents, anchors, aliases, merge keys and explicit tags
-are rejected. Counts use integers, flags use `true` or `false`, and text, sizes and
-durations use strings. Omission selects a default; YAML null is not omission.
-Process fields cannot be null. Optional routing adapter, authentication and TLS
-blocks can be null; Store entries cannot.
-
-Durations require a unit: `ns`, `us`/`µs`/`μs`, `ms`, `s`, `m` or `h`, including
-combined forms such as `1m30s`. Values must fit a signed 64-bit nanosecond count;
-each field documents whether zero is allowed. Byte sizes use integer `B`, `KiB`,
-`MiB` or `GiB` units. Strings are literal; only `discovery.peer_address_env` reads
-the explicitly named environment variable.
-
-Inspect the resolved policy before startup:
+Weir loads process settings and local Store definitions separately. Copy the
+[process reference](../config/weir.reference.yaml) to `weir.yaml` and the
+[Store reference](../config/routes.reference.yaml) to `routes.yaml`, then edit
+the addresses, backend identities and authentication sources.
 
 ```sh
 weir check --config weir.yaml --routes routes.yaml --effective
+weir serve --config weir.yaml --routes routes.yaml
 ```
 
-One normalization path fills defaults for file loading, programmatic startup and
-inspection. Runtime assembly only maps the resolved fields; inspection only
-redacts the same configuration. This reports `basic`, `routing` and `automatic`. Store queue, batch and
-backend defaults are materialized; Lua call and stack limits show the actual
-native defaults instead of the input sentinel `0`. Explicit overrides remain
-visible. The automatic section identifies values that require startup, such as
-bound ephemeral ports, the standalone replica group and discovered memory
-capacity. Inspection does not bind listeners, resolve DNS, open backend
-connections or read CA files. Normal configuration loading still resolves any
-explicit credential file sources.
+## Loading and validation
 
-Authentication values and CA paths are replaced with `<redacted>`; backend
-addresses, Store names and public discovery addresses remain visible. The output
-is an inspection report, not a replacement configuration file. Configuration
-changes require a restart.
+The CLI defaults to `--config ./weir.yaml` and no Store document. Both CLI paths
+resolve from the process working directory. An omitted `--routes` opens no backend;
+a node without local Stores can still participate in discovery. Changes require
+a restart.
 
-Memory capacity is discovered from visible container limits, physical host memory
-and any finite process address-space limit. Container/OS limits provide the hard
-boundary; overload admission observes actual use against that capacity. There is
-no configurable memory budget or startup reservation.
-Linux cgroup v2 admission compares `memory.current - inactive_file` with each
-visible level's own limit. Only validated `memory.stat` values are subtracted;
-missing, malformed or inconsistent values retain raw `memory.current`.
-`weir_memory_cgroup_current_bytes` preserves raw charge and
-`weir_memory_cgroup_working_set_bytes` reports the corresponding admission usage.
-Freed Go objects may leave resident idle heap above the recovery watermark.
-The CLI enables the standard Go soft memory limit before accepting requests,
-using 80% of the process's recovery allowance. At every finite cgroup level,
-memory outside process RSS is subtracted from that level's low-watermark
-threshold; the smallest remaining allowance is combined with the host/process
-recovery budget. The default upper bound is 56% of discovered capacity, and
-shared memory can make the effective limit lower. Positive targets have a 16 MiB
-floor, capped by the ordinary total-capacity target, to avoid futile GC when the
-remaining share cannot fit the runtime. This leaves room below the recovery line
-for memory outside Go. The existing sampler follows trusted capacity
-changes; unknown samples preserve the previous limit. It never forces GC or
-scavenging on each sample. Actual RSS and cgroup working set still control
-admission, including memory the Go runtime cannot release.
+Each file contains one YAML mapping with exact lowercase keys. Unknown or
+duplicate keys, multiple documents, anchors, aliases, merge keys and explicit tags
+are rejected. Counts use integers, flags use booleans, and text, sizes and
+durations use strings. Null is not omission. Process fields and Store entries
+cannot be null; optional backend, authentication and TLS blocks can be null.
 
-An explicitly present `GOMEMLIMIT` (including `off`) or an already finite runtime
-limit takes precedence. A later external runtime-limit change ends automatic
-ownership. Shutdown restores the prior value only while Weir still owns it.
-`app.Open` leaves this process-wide policy unchanged; embedded callers can
-explicitly opt in through `Node.ManageRuntimeMemoryLimit`. Inspect
-`weir_memory_go_runtime_limit_bytes` and `weir_memory_go_runtime_managed` to
-distinguish the sampled runtime limit from automatic management. MaxInt64 means
-the Go limit is disabled. A zero recovery watermark is rejected because a live
-process cannot return to zero resident bytes after overload.
-`weir_memory_recovery_allowance_bytes` reports the remaining resident allowance,
-with `weir_memory_recovery_allowance_known` distinguishing a known zero from an
-unknown sample. When memory outside the process alone consumes the recovery
-allowance, the policy preserves its prior Go limit instead of installing zero;
-the actual-pressure Guard remains closed until enough memory is released.
+Durations require units such as `ms`, `s`, `m` or `h` and must fit a signed 64-bit
+nanosecond count. Byte sizes use integer `B`, `KiB`, `MiB` or `GiB` units. Fields
+have their own zero-value rules, documented in the references. Strings are literal;
+only `discovery.peer_address_env` reads a named environment variable.
 
-Business RPCs and backend IO inherit caller contexts. Transport progress,
-connection establishment, keepalive and cleanup have separate controls.
-`batching.max_in_flight` controls simultaneous backend executions independently
-for each Store. Omission selects the default of `16`; an explicit
-`0` always means unlimited. Positive integers retain excess work
-in the bounded queue for natural batching and admission backpressure. Execution
-completion returns the credit without waiting for consumer acknowledgement. The
-budget includes Search visibility waits. Native output releases execution credit;
-further HTTP body reads fairly regain it through the same scheduler. Native
-memory is a Node-wide account, independent of each Store's queue configuration:
-1024 invocations share two thirds of the trusted remaining recovery allowance.
-It charges queued input, pre-dispatch reply work, retained responses and terminal
-publication. A protected IO portion lets subsequent work run while output waits.
-Actual budget exhaustion fails explicitly, with NOT_STARTED before dispatch or
-INCOMPLETE after an exchange began; commands are never replayed. Unknown samples
-retain a prior trusted bound; cold unknown capacity returns UNAVAILABLE, and a
-known zero or smaller allowance never discards existing ownership.
-Observe `weir_native_memory_used_bytes`, `budget_bytes`, `resident_bytes`,
-`io_reserve_bytes`, the lease states and `budget_rejections_total` under their
-common `weir_native_memory_` prefix. Store paused output count/bytes remain
-observations, with no per-Store output limit. Actual RSS/cgroup admission still
-protects the process; this Native account is not a hard bound on typed pipeline
-memory. MongoDB clients disable wire compression so reply memory can be reserved
-against the negotiated uncompressed maximum. Use the actual visibility and
-traffic pattern when evaluating execution concurrency `1`, `4` or `16`; a smaller
-budget does not by itself prove lower backend load or higher throughput.
-Diagnostics uses an independent HTTP listener; readiness describes node lifecycle,
-rather than backend health. Directory records carry Store names and public
-endpoints, without backend credentials.
+File loading, programmatic startup and effective inspection share one defaulting
+and validation path. `check` does not bind listeners, resolve DNS or connect to
+backends. It resolves explicit credential files but does not read CA files.
+`--effective` reports resolved `basic`, `routing` and `automatic` settings, with
+authentication and CA paths redacted. It is an inspection report, not a replacement
+configuration file.
 
-Record exchange targets split grouped work into native requests. One item larger
-than the target proceeds alone. MongoDB also respects its advertised BSON command
-boundary, normally `16MiB`; response paging remains controlled by MongoDB, with a
-document-count hint only below that boundary. Search uses the exchange target for
-record request/response groups. Native
-requests follow the backend's own command/message boundaries. Exchange targets
-do not define a Lua workspace budget.
+## Process settings
 
-`batching.max_bytes` bounds both the Store's retained-input estimate and Search's
-final framed NDJSON aggregation. Lua-generated documents count at their actual
-encoded size. Search flushes when the smaller of this target and
-`backend.max_exchange_bytes` is reached, before processing another item. One legal
-item larger than a target is sent alone; these are aggregation targets, not a
-per-document rejection limit. Search also uses `batching.max_bytes` as its
-per-record retained-result estimate when grouping multi-get responses within
-`backend.max_exchange_bytes`. Metadata exchanges retain their own budget. See
-[batching guidance](batching.md) for joint
-batch-size, wait and execution-concurrency calibration.
-
-The configuration review makes these decisions:
-
-| Setting or mechanism | Decision | Reason |
-| --- | --- | --- |
-| `lua.vm` | Remove the wrapper; use `lua.max_instructions`, `lua.max_call_depth`, `lua.max_stack_slots` | There is one in-process Lua engine. The extra group adds no independent responsibility. Old keys are rejected. |
-| MongoDB target cache | Move into `backend.mongodb.metadata_cache_entries` | Search has no cache configuration at all. Ownership follows the adapter rather than an extra validation branch. `0` disables MongoDB caching. |
-| MongoDB pool and adapter retry wrappers | Flatten | Use `backend.mongodb.max_connecting`, adapter `retry_attempts` and MongoDB `retry_backoff`. These fields belong directly to their adapter; single-purpose wrapper types are removed. |
-| Separate directory heartbeat and seed schedules | Remove; renew and visit a bootstrap seed during each synchronization cycle | One cadence controls the same directory lifecycle. There is no independent hidden five-second timer. |
-| `discovery.lease`, `discovery.sync_interval`, `discovery.sync_timeout` | Expose | Operators control announcement lifetime, exchange frequency and unreachable-peer deadlines. Defaults are `60s`, `1s` and `2s`. The lease uses positive whole milliseconds; local interval and timeout accept any positive duration. The relation `lease > 2 * sync_timeout + sync_interval` leaves room for one peer and one seed exchange. There are no fixed policy maximums. |
-| Memory capacity and advertised concrete listener addresses | Discover automatically | The process observes the container/OS limits and actual bound endpoints. Wildcard binds still require explicit reachable advertisements. |
-| `queue`, `batching`, transport windows and progress deadlines | Retain | These govern different retained work and progress boundaries. Removing them would replace useful control with an invisible threshold. |
-| `batching.max_wait` | Expose; default `20ms` | A positive duration bounds write collection from the oldest eligible admission; explicit `0s` disables collection. Reads form separate batches from already queued compatible reads without waiting for future arrivals; they do not flush write collection. Both kinds share the Store queue and execution budget. Full batches, streaming commands, drain and shorter caller deadlines also bypass collection. The resolved value is visible in effective configuration and Store metrics. |
-| `diagnostics.allow_intranet` | Retain | A non-loopback diagnostics bind needs an explicit opt-in because it exposes operational endpoints. |
-| `discovery.peer_address_env` | Retain | Dynamic instances need one explicit public address source, including Kubernetes downward-API values. General string substitution stays unsupported. |
-| Backend authentication and trust roots | Retain | These are deployment identity inputs; inferring them could select an unintended identity or trust boundary. |
-| `lifecycle.cleanup_timeout` | Expose one shared budget | Forced runtime joins and backend session/cursor/disconnect cleanup use one process control, default `2s`. Startup rollback uses the same budget. |
-| MongoDB and Search transform retries | Expose adapter-specific controls | `backend.mongodb.retry_attempts` and `backend.search.retry_attempts` default to `5`; `1` prevents a second attempt. MongoDB also exposes `retry_backoff`, default `5ms`; `0s` skips the pause. Search has no backoff setting. Only confirmed conflicts or aborts allow reevaluation; MongoDB uses the same bound separately to confirm an existing commit without replaying its writes. |
-| Search idle HTTP connections | Expose | `backend.search.idle_timeout` defaults to `30s`; `0s` disables idle connection expiry. |
-| CLI probe deadline | Expose `weir probe --timeout` | The loopback health check has a separate default `750ms` deadline. |
-| MongoDB connection creation workers | Retain | `backend.mongodb.max_connecting` controls connection establishment bursts. The native default of `2` is shared by adapter assembly and effective inspection. |
-
-Some fixed values define the supported execution contract and cannot safely be
-treated as independent tuning controls:
-
-| Boundary | Fixed behavior and rationale |
+| Group | Responsibility |
 | --- | --- |
-| Peer exchange timing | Each direction anchors received lifetimes to its own local pre-send time. Forwarding cannot extend a lease, and the protocol needs no fixed transit deduction or global lease ceiling. Announcement lifetime and synchronization deadlines remain explicit process policy. |
-| Lua source and bytecode | The pinned Lua parser allows `200` syntax nesting levels and `200` local variables per function. The compiler permits `255` registers and `255` upvalues per function, constrained by instruction encoding. These are language implementation boundaries, not hidden workload budgets. |
-| Lua metamethod chains | The VM native limit is `2000`. The sandbox does not expose `setmetatable` or `getmetatable`; client scripts cannot construct arbitrary metamethod chains. Adding a knob for that unreachable mechanism would create ineffective control. |
-| Lua garbage collection | Lua-triggered collection and instruction-triggered global collection are disabled; Go owns process collection. Scripts cannot call `collectgarbage`. |
-| Backend TCP keepalive | Explicit Weir `30s` overrides are removed. Go networking and the operating system own native TCP keepalive; Weir business progress deadlines and Search HTTP idle expiry have their own exposed controls. |
-| MongoDB semantics | The adapter uses direct primary access, majority acknowledgement and no native automatic read/write replay. Pools have no Weir active-connection cap. These choices preserve completion evidence and caller-owned operation deadlines. |
+| `listeners` | Application and peer gRPC bind addresses; at least one is required |
+| `discovery` | Replica group, reachable addresses, bootstrap seeds and lease synchronization |
+| `diagnostics` | Independent HTTP health and metrics listener |
+| `transport` | Handshake, idle, stall, keepalive and stream publication policy |
+| `lifecycle` | Startup, graceful shutdown and cleanup deadlines |
+| `overload.memory` | Actual memory-pressure watermarks and sampling cadence |
+| `lua` | Instruction, call-depth and stack-slot policy for the in-process VM |
 
-Automatic derivation and fixed protocol constraints must stay visible in this
-document or effective inspection. A new threshold that changes workload admission,
-operation size, execution time or progress policy needs an explicit configuration
-field unless it can be derived from an existing control or a backend-advertised
-protocol boundary.
+Bind addresses use explicit IP:port. Port zero requests an ephemeral port.
+Concrete standalone listeners can advertise their bound addresses automatically.
+Wildcard listeners require explicit reachable discovery addresses.
+`peer_address_env` supplies a complete peer host:port and is mutually exclusive
+with `peer_address`. Advertised targets can be IP or DNS host:port values.
+
+Replicas serving equivalent Stores share one `discovery.group`. Seeds are peer
+bootstrap addresses. `discovery.lease`, `sync_interval` and `sync_timeout` default
+to `60s`, `1s` and `2s`; the lease must exceed the interval plus two exchange
+timeouts and use whole milliseconds. See [discovery](discovery-design.md).
+
+The diagnostics listener defaults to disabled. A non-loopback bind requires
+`diagnostics.allow_intranet: true`. Readiness describes Node lifecycle, independent
+of Store pressure or backend health.
+
+Business work inherits caller cancellation and deadlines. Connection setup,
+transport progress and cleanup have independent deadlines. Lua's default
+instruction count is unlimited; zero call-depth and stack-slot settings select
+the VM defaults. See [Lua](lua.md) for allocation ownership and supported functions.
+
+## Store settings
+
+Each Store has a unique name and exactly one `backend.mongodb` or `backend.search`.
+Hosting a Store requires an application listener.
+
+| Group | Responsibility |
+| --- | --- |
+| `backend` | Connection establishment, exchange targets, authentication and trust roots |
+| `backend.mongodb` | URI, target metadata caching, connection creation and confirmed-abort retries |
+| `backend.search` | Origin URL, idle connection expiry and confirmed-conflict retries |
+| `queue` | Waiting count and bytes, plus Native output pause capacity |
+| `batching` | Aggregation count, bytes, write collection wait and active execution limit |
+
+MongoDB uses direct primary access, majority acknowledgement and no automatic
+read/write replay. It requires one explicit replica-set member. Completed target
+metadata checks default to 64 cached collections; zero disables retention while
+concurrent callers still share pending checks. `max_connecting` defaults to 2
+and controls connection creation, not active connection count.
+
+Search uses one HTTP(S) origin with an explicit port. Its idle timeout defaults
+to `30s`; `0s` disables expiry. Each adapter invocation qualifies its distinct
+indexes without retaining metadata between invocations.
+
+Both adapters default to five confirmed-conflict/abort attempts. Setting
+`retry_attempts: 1` prevents another attempt. MongoDB's `retry_backoff` defaults to
+`5ms`; `0s` skips the pause. Possible writes and ambiguous commits are never
+replayed. MongoDB may retry confirmation of the same commit separately.
+
+Queue defaults are 1024 operations and 32 MiB. Batch defaults are 128 operations,
+4 MiB, `20ms` write collection and 16 active executions. Explicit `max_wait: 0s`
+disables collection; explicit `max_in_flight: 0` removes the execution limit.
+Byte settings are grouping targets: one legal larger item proceeds alone when
+its execution memory fits. Backend-advertised document and command limits still
+apply. See [batching](batching.md) for interaction between the controls.
+
+## Authentication and memory
+
+Authentication belongs under `backend.authentication`. Each username/password
+has exactly one explicit value or file source; URI userinfo is rejected. Relative
+credential paths resolve from the Store document directory. Files contain UTF-8
+text and allow one final LF/CRLF. Authentication requires native TLS. A custom
+`backend.tls.ca_file` replaces system roots while retaining hostname verification;
+relative CA paths resolve from the process working directory.
+
+Backend identity and configuration stay local and never enter the peer directory.
+Application and peer listeners require an isolated network.
+
+Memory capacity is discovered from physical host memory, finite process limits
+and visible container limits. The shared execution account covers typed, Native,
+Lua, ingress and output ownership. Actual memory pressure controls overload;
+container/OS limits remain the hard boundary. The CLI also manages the standard
+Go soft memory limit unless an explicit runtime policy takes precedence.
+See [operations](operations.md) for pressure, recovery and metrics.

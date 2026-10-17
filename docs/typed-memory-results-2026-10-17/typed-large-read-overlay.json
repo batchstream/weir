@@ -1,5 +1,0 @@
-{
-  "Replace": {
-    "/Users/liran/Projects/liran/go/weir/internal/app/typed_large_read_diagnostic_integration_test.go": "/Users/liran/Projects/liran/go/weir/.testdata/resource-audit-20261016/typed-large-read-diagnostic.go"
-  }
-}

@@ -1,9 +1,0 @@
-build first linux-amd64
-build first linux-arm64
-build first darwin-amd64
-build first darwin-arm64
-build second linux-amd64
-build second linux-arm64
-build second darwin-amd64
-build second darwin-arm64
-Reproducible artifacts: /Users/liran/.codex/worktrees/native-burst-admission/weir/.testdata/ingress-release-M3-e264138

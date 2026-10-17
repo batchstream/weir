@@ -1,2 +1,0 @@
-{"action":"keep","allocated":9499248,"budgetLimit":1048576,"inputBytes":65539,"memoryRefused":false,"reserved":589540,"source":"return function(_,input) local s=input.n; for i=1,128 do for j=s,0 do end end; return weir.keep() end"}
-{"action":"keep","allocated":9525416,"budgetLimit":1048576,"inputBytes":65539,"memoryRefused":false,"reserved":658163,"source":"return function(_,input) local s=input.n; for i=1,128 do table.concat({},'',s,0) end; return weir.keep() end"}

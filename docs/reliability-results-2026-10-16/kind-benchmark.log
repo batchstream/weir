@@ -1,9 +1,0 @@
-goos: darwin
-goarch: arm64
-pkg: github.com/batchstream/weir/internal/luaengine
-cpu: Apple M2
-BenchmarkBridgeKind/Depth1-8         	 1200824	       299.7 ns/op	     816 B/op	       4 allocs/op
-BenchmarkBridgeKind/Depth100-8       	   14892	     24215 ns/op	   88792 B/op	     217 allocs/op
-BenchmarkBridgeKind/Depth1000-8      	    1296	    264356 ns/op	 1052308 B/op	    2032 allocs/op
-PASS
-ok  	github.com/batchstream/weir/internal/luaengine	1.502s

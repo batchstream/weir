@@ -1,8 +1,0 @@
-goos: darwin
-goarch: arm64
-pkg: github.com/batchstream/weir/internal/store
-cpu: Apple M2
-BenchmarkRuntimeFragmented/read/callers=1-8         	     891	    265077 ns/op	         1.000 calls/op	       265.0 mean-us	      3772 operations/s	         1.000 ops/call	       524.3 p50-upper-us	       524.3 p99-upper-us	    2492 B/op	      32 allocs/op
-BenchmarkRuntimeFragmented/read/callers=256-8       	   14371	     16630 ns/op	         0.06527 calls/op	      4146 mean-us	     60133 operations/s	        15.32 ops/call	      8389 p50-upper-us	      8389 p99-upper-us	    1403 B/op	      14 allocs/op
-BenchmarkRuntimeFragmented/unbatched/callers=256-8  	     928	    257921 ns/op	         1.000 calls/op	     54104 mean-us	      3877 operations/s	         1.000 ops/call	     67109 p50-upper-us	     67109 p99-upper-us	    2555 B/op	      32 allocs/op
-PASS

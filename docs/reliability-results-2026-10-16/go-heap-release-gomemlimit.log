@@ -1,5 +1,0 @@
-=== RUN   TestLinuxReleasedGoHeapRecovers
-    native_integration_test.go:115: live Go heap snapshot={Budget:268435456 Bytes:240603136 Source:linux_rss Observed:true Latched:true ProcessValid:true Unknown:false Cgroup:{Current:244002816 WorkingSet:244002816 Limit:268435456 Capacity:268435456 Levels:1 Finite:true Valid:true State:v2 Scope:leaf}}
-    native_integration_test.go:133: released Go heap remained overloaded after=5.034651419s heap_alloc=1305160 heap_idle=236953600 heap_released=44072960 snapshot={Budget:268435456 Bytes:200044544 Source:linux_rss Observed:true Latched:true ProcessValid:true Unknown:false Cgroup:{Current:204627968 WorkingSet:204611584 Limit:268435456 Capacity:268435456 Levels:1 Finite:true Valid:true State:v2 Scope:leaf}}
---- FAIL: TestLinuxReleasedGoHeapRecovers (5.05s)
-FAIL

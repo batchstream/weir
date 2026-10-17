@@ -1,5 +1,0 @@
---- FAIL: TestIngressIndependentHeaderThenLargeBackingFitsPaidPeak (0.00s)
-    ingress_progress_test.go:75: separate header lost future DATA backing credit execution working memory capacity exhausted {48820956 25308 48795648 25308 0 0 0 0 0 517 25308 1 1 0 0 0 1024 0 32768 0 0 0 0 0 true 1}
-FAIL
-FAIL	github.com/batchstream/weir/internal/store	0.827s
-FAIL

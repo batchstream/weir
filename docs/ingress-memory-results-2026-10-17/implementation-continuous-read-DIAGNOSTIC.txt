@@ -1,4 +1,0 @@
-=== RUN   TestContinuousReadsAcrossConcurrentSessions
---- PASS: TestContinuousReadsAcrossConcurrentSessions (0.70s)
-PASS
-ok  	github.com/batchstream/weir/internal/server	2.660s

@@ -1,4 +1,0 @@
-=== RUN   TestLinuxExplicitOffKeepsReleasedHeapBaseline
-    runtime_memory_linux_integration_test.go:20: explicit-off baseline still rejects after=5.00398621s HeapAlloc=236459088 HeapIdle=1802240 HeapReleased=1802240 snapshot={Budget:268435456 Bytes:243195904 Source:linux_rss Observed:true Latched:true ProcessValid:true Unknown:false Cgroup:{Current:245583872 WorkingSet:245567488 Limit:268435456 Capacity:268435456 Levels:1 Finite:true Valid:true State:v2 Scope:leaf} GoRuntimeLimit:9223372036854775807 GoRuntimeManaged:false}
---- PASS: TestLinuxExplicitOffKeepsReleasedHeapBaseline (5.32s)
-PASS

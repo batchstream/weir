@@ -1,8 +1,0 @@
---- /Users/liran/.codex/worktrees/native-burst-admission/weir/go.mod
-+++ /Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC.mod
-@@ -38,3 +38,5 @@
- 	golang.org/x/text v0.41.0 // indirect
- 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260526163538-3dc84a4a5aaa // indirect
- )
-+
-+replace google.golang.org/grpc v1.83.2 => /Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-grpc-v1.83.2

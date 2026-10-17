@@ -1,9 +1,0 @@
-=== RUN   TestReview81DeclaredTrailerBackingStaysChargedThroughBodyEOF
-    review81_backend_r5_trailer_probe_test.go:151: head=a1fd658a571362f46e70a8c1172507faceca812e declared=4096 populated=300 before={label:before-first-body-read working:65536 peak:273600 names:4096 populated:0 modeledBytes:1081344} EOF={label:after-body-EOF-trailer-parser working:65536 peak:273600 names:4096 populated:300 modeledBytes:1086444} ownerHistory=[65536 65536 65536 75144 107912 140680 173448 206216 238984 271752 273600 65536 65536] calls=1 status=200 raw="{}" err=<nil>
-    review81_backend_r5_trailer_probe_test.go:156: declared Trailer map remains live before body IO after its shared-owner reservation shrank {before-first-body-read 65536 273600 4096 0 1081344}
-    review81_backend_r5_trailer_probe_test.go:159: EOF Trailer map remains live after parser allocation without shared-owner reservation {after-body-EOF-trailer-parser 65536 273600 4096 300 1086444}
-2026/10/17 02:25:59 INFO backend_connections_closed backend=search store=search owned=0 peak=1 acquired=1 released=1
---- FAIL: TestReview81DeclaredTrailerBackingStaysChargedThroughBodyEOF (0.01s)
-FAIL
-FAIL	github.com/batchstream/weir/internal/backend/search	0.896s
-FAIL

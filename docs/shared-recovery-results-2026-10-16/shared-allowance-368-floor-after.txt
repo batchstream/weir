@@ -1,8 +1,0 @@
-WT randy/shared-memory-recovery base8a3d52ef dirty floor candidate, not exact committed qualification
-=== RUN   TestLinuxRuntimeMemoryExternalPressure
-    runtime_memory_linux_integration_test.go:173: external=368MiB elapsed=5.019674253s process_CPU=0.030772999999999995s GC_CPU=0s GC_cycles=0 heap=68460592 Go_memory=73459992 snapshot={Budget:536870912 Bytes:75243520 Source:linux_rss Observed:true Latched:true ProcessValid:true Unknown:false Cgroup:{Current:464220160 WorkingSet:464203776 Limit:536870912 Capacity:536870912 Levels:1 Finite:true Valid:true State:v2 Scope:leaf} GoRuntimeLimit:298799595 GoRuntimeManaged:true RecoveryAllowance:0 RecoveryAllowanceKnown:true}
---- PASS: TestLinuxRuntimeMemoryExternalPressure (5.13s)
-PASS
-
-exit=0 receipt={"Status":"exited","Running":false,"Paused":false,"Restarting":false,"OOMKilled":false,"Dead":false,"Pid":0,"ExitCode":0,"Error":"","StartedAt":"2026-10-16T13:33:42.100975298Z","FinishedAt":"2026-10-16T13:33:47.270332342Z"} {"weir.owner":"weir-shared-recovery"}
-cleanup=weir-owned-floor-368-1792157622033947000

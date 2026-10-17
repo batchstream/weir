@@ -1,6 +1,0 @@
-scenario,records_per_batch,speedup,before_ns_per_batch,after_ns_per_batch,before_exchanges_per_batch,after_exchanges_per_batch,before_bytes_per_batch,after_bytes_per_batch,before_allocations_per_batch,after_allocations_per_batch,samples_per_policy,raw
-distinct_32,32,1.2820598091632345,801872.0,625456.0,5.0,1.0,506614.0,529583.0,1726.0,1151.0,3,final-backend-http.txt
-hot_read_32,32,11.558343734579548,796393.0,68902.0,5.0,1.0,507380.0,28855.0,1713.0,168.0,3,final-backend-http.txt
-indexes_8_distinct_32,32,1.516264982339808,973198.0,641839.0,8.0,1.0,597013.0,535434.0,2164.0,1192.0,3,final-backend-http.txt
-indexes_8_hot_read_128,128,17.104155854525132,3427536.0,200392.0,24.0,1.0,2067895.0,155598.0,7411.0,418.0,3,final-backend-http.txt
-single,1,0.9983526769000375,66665.0,66775.0,1.0,1.0,24824.0,24912.0,161.0,162.0,3,final-backend-http.txt

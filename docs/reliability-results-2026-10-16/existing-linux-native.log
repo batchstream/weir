@@ -1,7 +1,0 @@
-=== RUN   TestLinuxMemoryNative
-    native_integration_test.go:170: native kernel=7.0.12-linuxkit machine=aarch64 Go=go1.27.1 compiled=linux/arm64 PID=1
-    native_integration_test.go:234: high elapsed=67.110625ms snapshot={Budget:134217728 Bytes:113315840 Source:linux_rss Observed:true Latched:true ProcessValid:true Unknown:false Cgroup:{Current:115519488 WorkingSet:115519488 Limit:536870912 Capacity:536870912 Levels:1 Finite:true Valid:true State:v2 Scope:leaf}} smaps_rollup_Rss=113336320 RSS_delta=20480 cgroup_current=115519488 delta=0
-    native_integration_test.go:234: middle elapsed=302.2215ms snapshot={Budget:134217728 Bytes:99713024 Source:linux_rss Observed:true Latched:true ProcessValid:true Unknown:false Cgroup:{Current:101888000 WorkingSet:101888000 Limit:536870912 Capacity:536870912 Levels:1 Finite:true Valid:true State:v2 Scope:leaf}} smaps_rollup_Rss=99713024 RSS_delta=0 cgroup_current=101888000 delta=0
-    native_integration_test.go:234: low elapsed=82.872ms snapshot={Budget:134217728 Bytes:7438336 Source:linux_rss Observed:true Latched:false ProcessValid:true Unknown:false Cgroup:{Current:9347072 WorkingSet:9347072 Limit:536870912 Capacity:536870912 Levels:1 Finite:true Valid:true State:v2 Scope:leaf}} smaps_rollup_Rss=7438336 RSS_delta=0 cgroup_current=9347072 delta=0
---- PASS: TestLinuxMemoryNative (0.51s)
-PASS

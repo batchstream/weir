@@ -31,13 +31,13 @@ does not hold waiting queue capacity. Use integration measurements to select
 execution and replica budgets for the actual workload.
 Native consumer waits can borrow bounded output pause credit while releasing
 execution slots, then fairly regain a slot before continuing backend work.
-The independent pause count and retained byte limits reuse queue configuration;
-one oversized stream may occupy an empty pause budget alone. A full pause budget
-keeps the execution slot and applies backpressure, so output capacity and caller
-deadlines remain relevant. Paused HTTP responses can retain upstream sockets;
-observe paused output bytes/count and actual connections alongside executions.
-Use prompt response consumption. Separate Stores still provide independent
-budgets when workload isolation is needed, with additional backend connections.
+The pause count and retained bytes have separate capacities derived from queue
+configuration; one larger stream can occupy an empty pause budget alone. The
+Node execution-memory account also covers retained output across Stores. Full
+pause capacity retains the execution slot and applies backpressure. Paused HTTP
+responses can retain upstream sockets; observe paused output, shared memory and
+actual connections alongside executions. Consume responses promptly. Separate
+Stores provide independent scheduling budgets with additional backend connections.
 The transport stall watchdog closes a connection that stops output progress,
 affecting other RPCs on that connection. Continuously progressing streams have
 no total lifetime bound without a caller deadline.

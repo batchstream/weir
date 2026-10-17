@@ -1,3 +1,0 @@
-gofmt_actual_exit=0
-git_diff_check_actual_exit=0
-Changed-line manual style audit: named struct arguments and returns; scalar context key; no new function with more than four parameters; no decorative separators or function-variable production seam.
