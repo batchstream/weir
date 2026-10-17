@@ -321,19 +321,20 @@ func processFaultHealthy(t *testing.T, suite *processFaultSuite, backend process
 	id := "health-" + backend.store
 	processFaultSeed(t, backend, id)
 	for _, kind := range []string{"Read", "Native"} {
-		ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
 		start := time.Now()
+		ctx, cancel := context.WithDeadline(t.Context(), start.Add(3*time.Second))
 		var err error
 		if kind == "Read" {
 			err = processFaultRead(ctx, suite.client, backend, id)
 		} else {
 			err = processFaultNativeRead(ctx, suite.client, backend, id)
 		}
+		elapsed := time.Since(start)
 		cancel()
-		if err != nil {
-			t.Fatal("baseline", backend.store, kind, err)
+		if err != nil || elapsed > 3*time.Second {
+			t.Fatal("baseline failed or exceeded 3s", backend.store, kind, elapsed, err)
 		}
-		t.Logf("baseline backend=%s method=%s elapsed=%s", backend.store, kind, time.Since(start))
+		t.Logf("baseline backend=%s method=%s elapsed=%s", backend.store, kind, elapsed)
 	}
 	processFaultCRUD(t, suite, backend, "baseline-crud")
 	processFaultIdle(t, suite.process, 3*time.Second)
@@ -528,8 +529,8 @@ func processFaultCancelAfterAck(t *testing.T, suite *processFaultSuite, backend 
 	case <-time.After(3 * time.Second):
 		t.Fatal("caller cancellation exceeded 3s")
 	}
-	gate.close()
 	processFaultIdle(t, suite.process, max(0, 3*time.Second-time.Since(start)))
+	gate.close()
 	time.Sleep(200 * time.Millisecond)
 	n, actualVersion := processFaultOracle(t, backend, id)
 	counts := processFaultCountsFor(backend, offset, false)
@@ -555,19 +556,20 @@ func processFaultSlowIO(t *testing.T, suite *processFaultSuite, backend processF
 		t.Fatal("one real blocked IO must have active credit without memory pressure")
 	}
 	for _, kind := range []string{"Read", "Native"} {
-		health, stop := context.WithTimeout(t.Context(), 3*time.Second)
 		start := time.Now()
+		health, stop := context.WithDeadline(t.Context(), start.Add(3*time.Second))
 		var err error
 		if kind == "Read" {
 			err = processFaultRead(health, suite.client, backend, "health-"+backend.store)
 		} else {
 			err = processFaultNativeRead(health, suite.client, backend, "health-"+backend.store)
 		}
+		elapsed := time.Since(start)
 		stop()
-		if err != nil {
-			t.Fatal("single slow IO starved healthy work", backend.store, kind, err)
+		if err != nil || elapsed > 3*time.Second {
+			t.Fatal("single slow IO starved healthy work or exceeded 3s", backend.store, kind, elapsed, err)
 		}
-		t.Logf("one_held_IO backend=%s healthy_method=%s elapsed=%s active=%.0f RSS=%.0f WS=%.0f latch=0", backend.store, kind, time.Since(start), testmetrics.Sum(metrics, "weir_store_active_executions"), testmetrics.Sum(metrics, "process_resident_memory_bytes"), testmetrics.Sum(metrics, "weir_memory_cgroup_working_set_bytes"))
+		t.Logf("one_held_IO backend=%s healthy_method=%s elapsed=%s active=%.0f RSS=%.0f WS=%.0f latch=0", backend.store, kind, elapsed, testmetrics.Sum(metrics, "weir_store_active_executions"), testmetrics.Sum(metrics, "process_resident_memory_bytes"), testmetrics.Sum(metrics, "weir_memory_cgroup_working_set_bytes"))
 	}
 	select {
 	case <-gate.ack:
@@ -584,8 +586,8 @@ func processFaultSlowIO(t *testing.T, suite *processFaultSuite, backend processF
 	case <-time.After(3 * time.Second):
 		t.Fatal("held IO caller did not cancel")
 	}
-	gate.close()
 	processFaultIdle(t, suite.process, max(0, 3*time.Second-time.Since(cancelled)))
+	gate.close()
 	t.Logf("held_IO_cancel backend=%s elapsed=%s all_credits=0 observer_gate_released=true", backend.store, time.Since(cancelled))
 }
 

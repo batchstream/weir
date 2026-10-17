@@ -392,12 +392,12 @@ func runQualificationWorkload(t *testing.T, work qualificationWorkload) {
 		for _, name := range []string{"weir_store_pending_entries", "weir_store_pending_reserved_bytes", "weir_store_active_executions", "weir_store_paused_native_outputs", "weir_store_paused_native_reserved_bytes", "weir_store_result_reserved_entries", "weir_store_result_reserved_bytes", "weir_store_retained_result_reserved_bytes", "weir_store_working_reserved_bytes", "weir_store_publishers", "weir_ingress_sessions", "weir_ingress_queued_response_bytes"} {
 			idle = idle && metrics[name] != nil && testmetrics.Sum(metrics, name) == 0
 		}
+		if time.Now().After(deadline) {
+			t.Fatal("fixed 5s final resource recovery bound exceeded")
+		}
 		if idle {
 			t.Logf("final all queue/execution/publication/session/byte gauges=0; Node ExecutionMemory ownership=0; known memory recovered; ExecutionMemory=%v", native)
 			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatal("fixed 5s final resource recovery bound exceeded")
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
@@ -649,7 +649,7 @@ func reportQualificationStats(t *testing.T, stats map[string]*qualificationStats
 		if gate && strings.HasPrefix(key, "steady/") && p99 > limit {
 			t.Errorf("predeclared local p99 gate failed for %s: %s > %s", key, p99, limit)
 		}
-		if gate && strings.HasPrefix(key, "steady/") && entry.latencies[n-1] > 3*time.Second {
+		if gate && entry.latencies[n-1] > 3*time.Second {
 			t.Errorf("fixed end-to-end 3s budget exceeded for %s: %s", key, entry.latencies[n-1])
 		}
 	}
