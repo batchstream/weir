@@ -6,3 +6,11 @@ coverage.out
 
 /dist/
 __pycache__/
+
+# Local runtime configuration and private identity files.
+/weir.yaml
+/routes.yaml
+.env
+.env.*
+*.pem
+*.key
