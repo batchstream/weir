@@ -1,6 +1,0 @@
-=== RUN   TestExecutionMemorySingleOwnerLargeReadCompletesThroughRuntime
-    execution_memory_single_owner_test.go:215: full runtime completion discarded a fitting large Read after the source reservation code:RESOURCE_EXHAUSTED message:"execution working memory capacity exhausted" <nil> {113544396 31589197 48401920 31589197 31589197 3296 0 0 0 1024 1 32768 0 0 0 1 0 true 1}
---- FAIL: TestExecutionMemorySingleOwnerLargeReadCompletesThroughRuntime (0.00s)
-FAIL
-FAIL	github.com/batchstream/weir/internal/store	0.890s
-FAIL

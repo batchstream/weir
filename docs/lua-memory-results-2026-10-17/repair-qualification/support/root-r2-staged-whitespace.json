@@ -1,7 +1,0 @@
-{
-  "excluded_preserved_patch": "third_party/golua/WEIR_PATCH.diff",
-  "raw_sha256": "453cc30259f551b62a31268974eabffe1f2da31320a1d3f56e86d0d11eef8818",
-  "raw_bytes": 196891,
-  "filtered_exit": 0,
-  "filtered_output": ""
-}

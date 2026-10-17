@@ -1,7 +1,0 @@
---- FAIL: TestIngressWaitDoesNotBlockSmallMessageOrFinalFree (0.00s)
-    ingress_memory_test.go:58: execution working memory capacity exhausted
---- FAIL: TestIngressWaitingStopsOnHandlerCloseAndTrustedShrink (0.00s)
-    ingress_memory_test.go:288: execution working memory capacity exhausted
-FAIL
-FAIL	github.com/batchstream/weir/internal/store	0.930s
-FAIL

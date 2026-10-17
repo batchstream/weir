@@ -1,168 +1,85 @@
-# Batching and workload coverage
+# Batching
 
-Weir aggregates independent single-record callers at each Store. Useful batching
-requires compatible arrivals, a bounded collection delay and appropriate execution
-concurrency. Increasing only `max_operations` cannot create arrivals that do not
-exist. Reads and mutations form separate compatibility groups. Ordinary MongoDB
-mutations can share one native `bulkWrite` across collections and databases;
-MongoDB reads and Lua transactions retain their collection boundary. Search
-records can batch across concrete indexes, with visibility modes kept separate.
-Dependent business phases and shared-key writes further limit aggregation.
+Weir aggregates compatible queued records at each Store. Batch size, collection
+wait and execution concurrency govern different parts of this path:
 
-## Flush and admission boundaries
-
-- `batching.max_operations` limits selected operations.
-- `batching.max_bytes` limits the retained-input estimate and the final Search
-  NDJSON body, including action metadata and newlines. Generated Lua output is
-  measured after encoding. Search also uses `backend.max_exchange_bytes`; the
-  smaller write aggregation target wins. A single legal oversized item goes alone.
-- `batching.max_wait` bounds write collection from the oldest eligible admission. It
-  overlaps waiting for an execution slot and is not restarted when a slot opens.
-- Reads dispatch with compatible reads already queued, without waiting for future
-  arrivals. They do not join mutation batches or flush write collection. Both
-  kinds share the Store queue and execution budget, so reads can still wait for
-  an occupied execution slot.
-- Search pure reads deduplicate concrete `(index, id)` pairs and aggregate using
-  actual HTTP response bytes. Multi-record responses exceeding
-  `backend.max_exchange_bytes` are discarded and safely split into smaller read
-  requests. A single large document may exceed that target; final result memory
-  remains soft-accounted. Lua and mutation pre-reads retain their conservative
-  source window and do not use this retry mechanism.
-- Full batches, drain, Native and shorter caller deadlines bypass collection.
-- A positive `batching.max_in_flight` bounds simultaneous backend executions.
-  Excess work stays in the bounded queue, where it can combine or be canceled.
-  Completed execution releases the slot independently of response acknowledgement.
-  Omitting this field selects its default; an explicit `0` means unlimited.
-- A Native output wait may borrow a bounded pause reservation and release its
-  execution slot. Further backend work fairly reacquires a slot through the same
-  scheduler. Output pause count and retained bytes separately use the configured
-  queue bounds, including a single oversized item alone; full pause capacity
-  retains the original execution slot and applies backpressure.
-
-Defaults are 128 operations, 4 MiB, a 20 ms write collection window and 16 backend
-executions per Store. Explicit `max_wait: 0s` disables collection; explicit
-`max_in_flight: 0` removes the execution limit. Reads remain eligible immediately.
-The existing Store queue is the waiting boundary; no extra HTTP queue or worker
-process is introduced.
-
-The measurements below predate read/mutation batch separation. They do not
-establish its database load or throughput effect.
-Current implementation measurements and rejected candidates are recorded in the
-[2026-10-16 batching study](batching-performance-2026-10-16.md).
-
-These values come from the initial preregistered selection among 20
-count/wait/concurrency configurations and a four-point byte anchor in the
-[2026-10-16 tuning evidence](https://github.com/batchstream/weir-tests/blob/98671e066d1a209439a154de9ded7e1397804b6e/results/default-tuning-2026-10-16/README.md),
-with the [selection audit retained at an immutable revision](https://github.com/batchstream/weir-tests/blob/3f47919befc8db3f8e612cc7e0f17feda16ad912/results/default-tuning-2026-10-16/analysis-selection-parser-fix/analysis.json).
-They are a finite workload choice, not a globally optimal value for each control.
-The selection rules were frozen before selection measurements. Actual
-default-path fixtures omit batching entirely and cross-check effective settings
-with all four runtime gauges.
-
-The later preregistered [20/40/80/160 ms study](https://github.com/batchstream/weir-tests/blob/98671e066d1a209439a154de9ded7e1397804b6e/results/default-tuning-2026-10-16/WAIT-SENSITIVITY-RESULT.md)
-holds count, bytes and executions fixed. Its result is inconclusive: the repeated
-20 ms crawler anchor fails backlog stability in round 3, and the 160 ms crawler's
-first round exceeds the three-second drain limit. Although 40 and 80 ms meet
-their individual gates, the registered comparison requires a qualified anchor.
-It proposes no new wait and does not prove that 20 ms beats the longer waits.
-The current 20 ms default remains the original finite selection.
-
-The [independent confirmation results](value-proof.md#default-selection-and-independent-confirmation-2026-10-16)
-retain all 12 passed read guards against legacy Weir, the crawler CPU/latency
-tradeoff, MongoDB normalized comparisons and failed native partial-update cases. At a database
-quota of 0.25 CPU and 512 workers, pure Search writes complete 6.74–8.34 times
-native throughput at nearly the same measured database CPU in all three rounds.
-At comparable completed crawler throughput, actual database CPU falls by
-8.1–42.3%. These pure-write and crawler points pass the declared five-second
-p99 gate; higher crawler tail latency remains part of the result. Passing p99
-alone does not establish stable arrivals, acceptable drain or maximum capacity.
-The 64 KiB payload case observes 47.73–48.82 records per bulk and framed body
-means of 2.990–3.059 MiB; its throughput gain accompanies higher actual database
-CPU. Native access remains faster in the tested Search read cases and MongoDB
-reads with four workers. The [final registered capacity result](https://github.com/batchstream/weir-tests/blob/98671e066d1a209439a154de9ded7e1397804b6e/results/default-tuning-2026-10-16/FINAL-REGISTERED-CAPACITY-RESULT.md)
-fails on an Elasticsearch health request during fixture preparation, before any
-Weir/client process, warmup or timed stage. It produces no new throughput point,
-capacity upper bound or eligible sustained check.
-This finite selection does not establish a universal optimum or maximum
-sustainable throughput, and the five-second gate is not a general service
-guarantee.
-
-An execution slot includes metadata checks, pre-reads, Lua, writes and any requested
-visibility wait. A tiny limit can leave the database idle while writes wait for
-refresh. More slots can increase small concurrent requests and memory consumption.
-Choose the limit with the real completion mode and document sizes.
-
-## Calibrate count, bytes, wait and concurrency separately
-
-The [current local experiments](batching-results-2026-10-16/real-experiments.md)
-include this explicit MongoDB small-write profile:
-
-```yaml
-batching:
-  max_operations: 128
-  max_bytes: 4MiB
-  max_in_flight: 16
-  max_wait: 1ms
+```text
+request -> bounded Store queue -> compatible batch -> backend -> ordered result
 ```
 
-With four client processes and 32 concurrent one-record writers, this profile
-completes about 3,686 operations/s versus 3,632 native, at about 74% less
-estimated database CPU per completed operation. At 256 writers it increases
-throughput by about 9% relative to the default 20 ms collection window, but
-increases database CPU per completed operation by about 51%, with more native
-commands per record. These are finite 1 KiB local MongoDB observations; the
-profile is not a replacement for workload calibration or a universal default.
+## Defaults and boundaries
 
-Use native single-record clients and the same single-record traffic through Weir.
-Keep durability, query visibility, retry budgets and deadlines equal. Start with a
-small bounded set of doubled batch limits, then vary execution concurrency and
-collection delay independently around the selected point. Prefer the smaller
-setting when throughput has plateaued. Elastic's [indexing guidance](https://www.elastic.co/docs/deploy-manage/production-guidance/optimize-performance/indexing-speed)
-recommends measuring both bulk size and concurrency rather than adopting one
-universal batch size. Its [refresh guidance](https://www.elastic.co/docs/reference/elasticsearch/rest-apis/refresh-parameter)
-also explains why query-visible writes should share bulk requests.
+| Setting | Default | Behavior |
+| --- | --- | --- |
+| `queue.max_operations` | 1024 | Waiting prepared operations |
+| `queue.max_bytes` | 32 MiB | Waiting input and scheduler metadata |
+| `batching.max_operations` | 128 | Selected records per batch |
+| `batching.max_bytes` | 4 MiB | Input estimate and final Search NDJSON aggregation target |
+| `batching.max_wait` | 20 ms | Maximum write collection age; explicit zero disables collection |
+| `batching.max_in_flight` | 16 | Simultaneous backend executions; explicit zero is unlimited |
+| `backend.max_exchange_bytes` | 32 MiB | Adapter request/response grouping target |
 
-Record completed throughput, scheduled-to-completed tail latency, rejection,
-timeouts, drain, actual database CPU per completed unit, and actual bulk body
-bytes/record distributions. `weir_search_http_request_body_bytes` observes framed
-attempted request bodies, including failures; it excludes headers and does not
-prove delivery or acknowledgement. Adapter batch size alone does not describe
-the database requests: bounded mget chunks and full-source Lua replacements can
-amplify reads and bytes even when bulk call counts fall.
+A full queue waits for dispatch or caller cancellation. Dispatch returns queue
+capacity immediately. One legal larger item can occupy an empty queue or batch
+alone when its execution peak fits the Node memory account. Byte targets do not
+replace native backend document and command boundaries.
 
-Do not equate equal CPU quotas with equal actual load. Lower CPU at comparable
-completed throughput does not require database saturation. A capacity claim needs
-an independently identified database bottleneck, sufficient load-generator
-headroom and a repeatable throughput plateau. Reject measurements with unknown
-writes, dropped arrivals, excessive generator lag or unmatched persisted fields.
+Reads and mutations form separate batches. Reads use compatible reads already
+queued without waiting for future arrivals; they do not flush write collection.
+Write collection starts at the oldest eligible admission and overlaps waiting for
+an execution slot. It does not restart when a slot becomes available. Full batches,
+Native commands, draining Stores and shorter caller deadlines bypass collection.
+Eligible groups can pass groups still collecting; ready groups retain oldest-first
+selection.
 
-## Coverage boundaries
+An execution includes metadata checks, pre-reads, Lua, writes and requested query
+visibility waits. Completion returns its slot independently of result consumption.
+Native output releases its execution slot while retained replies and publication
+remain charged to the Node's shared execution-memory account. Further backend
+reads fairly reacquire a slot through the same scheduler. The Node also bounds
+Native invocations to 1024. Store paused count/bytes are observations, with no
+separate queue-derived output limit. Memory exhaustion returns an explicit
+capacity failure rather than retaining an execution slot behind a slow consumer.
 
-| Scenario | Required evidence |
-| --- | --- |
-| Pure indexing with application acknowledgement | Single-record native/Weir callers, changed revisions, payload size, full persisted oracle and actual database CPU |
-| Small partial updates to larger documents | Identical patch, matching acknowledgement mode, untouched fields retained, explicit postflight refresh before search verification |
-| Dependent crawler Lua updates with query visibility | Original phase dependencies, all-arrivals latency, mget/bulk/refresh counts and full business-field oracle |
-| Mixed small/large generated documents | Real NDJSON framing, byte-boundary splits and isolated single large entries |
-| Many indexes with skewed arrivals | Separate target results, eligible cold targets progress, actual per-request grouping |
-| Shared-key increments | Persisted counter and native version match APPLIED outcomes; known conflicts are accounted for and uncertain work is not replayed |
-| Sparse and burst arrivals, slow database | Oldest-admission wait bound, no second collection delay after slot waiting, finite executions, cancellation, queue backpressure and drain |
+## Backend grouping
 
-The last four are correctness and scheduling boundaries as well as possible
-performance workloads. Passing an integration test does not establish a
-throughput gain for that distribution. The real Search suite exercises skewed
-eight-index traffic, 1/256 KiB sources and shared increments through four gRPC
-connections with four execution slots and a 20 ms collection window. It is an
-owned loopback correctness fixture, not a distributed-network benchmark.
+MongoDB ordinary mutations can share native `bulkWrite` across namespaces.
+Reads and Lua transactions keep their collection boundary. Commands also respect
+MongoDB's advertised BSON/message limits.
 
-The selector microbenchmark drains 1024 queued operations over 1, 8, 64 and 1024
-compatibility groups. When the oldest group is already eligible, the selector
-avoids constructing groups that cannot win that dispatch. It still scans and
-compacts the bounded queue; the high-cardinality worst case remains quadratic.
+Search bulk writes and real-time multi-gets can span concrete indexes, with
+visibility modes kept separate. Duplicate pure reads share one observation while
+retaining individual results and cancellation. Oversized multi-record read
+responses can safely split into smaller reads; mutation pre-reads do not use
+that retry path.
 
-The [executed batching coverage report](https://github.com/batchstream/weir-tests/blob/17ab0506defcdb9f374aa994e7bb4467d43ebf82/results/batch-coverage-2026-10-15/README.md)
-retains count/wait/concurrency calibration, all three formal workloads and their
-negative observations, raw receipts and independent audits. Its fixed candidate
-was an explicit workload experiment and retained the defaults in effect on
-2026-10-15. The later constrained selection described above determines the current
-defaults.
+Search measures final NDJSON, including metadata, newlines and generated Lua
+output. It flushes at the smaller of `batching.max_bytes` and
+`backend.max_exchange_bytes`. One larger legal item proceeds alone. Full-source
+Lua replacements can generate much more traffic than small incoming patches.
+
+Same-resource mutations within a stream preserve input order. Different streams
+retain backend concurrency semantics. Grouping is not an application transaction:
+a MongoDB Lua transaction may include records from several RPCs, and its physical
+membership varies with arrivals and available capacity.
+
+## Workload calibration
+
+Start with defaults and vary count, bytes, wait and concurrency independently.
+Increasing `max_operations` cannot create compatible arrivals. Longer collection
+can reduce backend calls while increasing latency; more execution slots can keep
+the backend busy while increasing small concurrent requests and retained memory.
+Query-visible Search writes include refresh waits in their execution slots.
+
+Compare equivalent native and Weir traffic with matching durability, visibility,
+retry and deadline requirements. Measure completed throughput, tail latency,
+rejection, timeouts, drain time, actual backend CPU and bytes per completed unit.
+Verify persisted business fields and account for unknown writes. Use the real
+submission pattern, document-size distribution and key/index skew.
+
+Useful cases include pure writes, reads, partial updates to large documents,
+dependent Lua phases, mixed-size generated documents, hot keys, many cold targets,
+sparse arrivals, bursts and slow consumers. Correctness and scheduling tests do
+not establish throughput gains. Defaults are starting values; sustainable capacity
+must be measured for the deployment and workload. Reproducible workload tooling
+lives in [weir-tests](https://github.com/batchstream/weir-tests).

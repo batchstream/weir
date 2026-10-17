@@ -1,6 +1,0 @@
-HTTP/1.1 200 OK
-X-elastic-product: Elasticsearch
-content-type: application/json
-content-length: 21
-
-{"acknowledged":true}

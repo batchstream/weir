@@ -1,6 +1,0 @@
-=== RUN   TestNativeTransientAdmissionWaitsForOtherStoreIOWithoutLostWake
-    native_admission_burst_test.go:105: temporary initial IO reservations became a hard Native rejection {96330752 96265216 48139264 265216 2 1024 2 0 0 0 0 true 0} {96330752 96265216 48139264 265216 2 1024 2 0 0 0 0 true 1} code:RESOURCE_EXHAUSTED message:"Native working memory capacity exhausted" false
---- FAIL: TestNativeTransientAdmissionWaitsForOtherStoreIOWithoutLostWake (0.00s)
-FAIL
-FAIL	github.com/batchstream/weir/internal/store	0.872s
-FAIL

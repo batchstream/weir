@@ -1,2 +1,0 @@
-ok  	github.com/batchstream/weir/internal/store	0.808s [no tests to run]
-ok  	github.com/batchstream/weir/internal/server	1.390s [no tests to run]

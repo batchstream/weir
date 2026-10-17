@@ -1,4 +1,0 @@
-# github.com/batchstream/weir/internal/backend/mongodb [github.com/batchstream/weir/internal/backend/mongodb.test]
-internal/backend/mongodb/record_memory_test.go:62:56: result.Document undefined (type *weirv1.ReadResult has no field or method Document)
-FAIL	github.com/batchstream/weir/internal/backend/mongodb [build failed]
-FAIL

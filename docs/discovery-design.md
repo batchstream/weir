@@ -93,9 +93,7 @@ requires validated input half-close; the initiator additionally requires final
 gRPC OK. A lost final status can leave the receiver's completed merge installed,
 but the initiator installs nothing from a failed exchange.
 Both directions learn membership through the same connection, including when
-only the initiating node has a bootstrap seed. There is no legacy unary fallback,
-reverse connection, challenge registry or persistent exchange session.
-Shutdown attempts withdrawals until its caller's drain deadline, without a fixed
+only the initiating node has a bootstrap seed. Shutdown attempts withdrawals until its caller's drain deadline, without a fixed
 peer-count cutoff. There are no Weir
 message, node, Store or endpoint count quotas. A malformed exchange is rejected
 before partial state mutation. No

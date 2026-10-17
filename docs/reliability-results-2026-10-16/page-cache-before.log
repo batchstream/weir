@@ -1,5 +1,0 @@
-=== RUN   TestLinuxReclaimablePageCacheDoesNotOverload
-    native_integration_test.go:48: file_cache current=251035648 inactive_file=234901504 working_set=16134144 RSS=7798784 snapshot={Budget:268435456 Bytes:7794688 Source:linux_rss Observed:true Latched:true ProcessValid:true Unknown:false Cgroup:{Current:251035648 Limit:268435456 Capacity:268435456 Levels:1 Finite:true Valid:true State:v2 Scope:leaf}}
-    native_integration_test.go:53: reclaimable page cache rejected healthy work {268435456 7794688 linux_rss true true true false {251035648 268435456 268435456 1 true true v2 leaf}}
---- FAIL: TestLinuxReclaimablePageCacheDoesNotOverload (0.13s)
-FAIL

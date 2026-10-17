@@ -1,8 +1,0 @@
-{
-  "corrected_gates": "20s fixture timeout, original3/5/8s business gates, credit0 before manual proxy release",
-  "helper_sha256": "798d58a3f57a1b28a51a97a78baf09ba879df593e77a6a7bce5b43dff0e0d96b",
-  "retry": false,
-  "runner_sha256": "aade760acc0d9d7bdbcb0227ca8fd9eeda3567385f8431fda0531656295ef339",
-  "source": "032fd8b8e2cfa0acf0e65c166d6265c3c30ad87b",
-  "started": "2026-10-17T04:54:53.649503+00:00"
-}

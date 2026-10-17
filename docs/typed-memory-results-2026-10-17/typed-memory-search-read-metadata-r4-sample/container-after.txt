@@ -1,1 +1,0 @@
-0a8037715b19fd64c43641f9fc448bf917a608410b252b1ddb591c51bb91349b weir-search-local docker.elastic.co/elasticsearch/elasticsearch@sha256:c2a3ed5f968be6d59c960aa0c60cfdaee667b6bc8211142021a41d0e85b43237 sha256:a1cc67962f24c058c854acc6aab0d0adaefefc945c0bfaaebb52aba6129de160 172.17.0.2 true

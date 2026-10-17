@@ -119,17 +119,6 @@ demonstrates history deduplication by nested values, tail limits and incoming-fi
 offer priority. It explicitly constructs empty arrays and recognizes typed leaves
 while retaining the original business rules.
 
-The [PSE product](../internal/luaengine/testdata/pse_product.lua) and
-[Offer](../internal/luaengine/testdata/pse_offer.lua) acceptance fixtures preserve
-the actual two-pass merge rules from PSE main
-`283940ef442b479440e45b39c86988351b92d7b5`. Their
-[local helpers](../internal/luaengine/testdata/pse_common.lua) implement the
-business policy with public Weir primitives. Tests cover Unicode brand casing,
-typed structural deduplication, date normalization, history tails, incoming seller
-priority, classifier patches, seller reconciliation and base placeholders.
-The finite date and URL authority rules use byte/sub operations and Lua loops;
-general pattern matching is not required by these rules.
-
 Weir does not impose source, input, current or result byte, node or nesting-depth
 admission limits. Value validation, JSON encoding and value/table conversion use
 explicit stacks and check the caller context; cyclic values and invalid types

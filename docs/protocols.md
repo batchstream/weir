@@ -57,7 +57,7 @@ records a local anchor before the sender forms its snapshot and computes expiry
 as that anchor plus remaining lifetime. The receiver requires validated input
 half-close before installing the snapshot; the initiator requires exactly one
 response and final gRPC OK. It exchanges discovery metadata
-without depending on public business DTOs. There is no unary compatibility path.
+without depending on public business DTOs.
 
 | Internal field | Meaning |
 | --- | --- |
@@ -76,8 +76,7 @@ Same-group endpoints merge; conflicting Store ownership fails ResolveStore.
 Replica groups stay internal and do not appear in its public response.
 Same or older revisions never extend expiry or watermark retention. A withdrawn
 incarnation cannot return to live state. Different origin lease policies are
-accepted; the former fixed `60s` lease and `2s` transit limits are not protocol
-bounds. Only positive millisecond values representable by `time.Duration` and
+accepted. Only positive millisecond values representable by `time.Duration` and
 remaining lifetime no greater than the full origin lease are accepted.
 Application listeners expose only StoreService; peer listeners expose only
 PeerDiscoveryService.

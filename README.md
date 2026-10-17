@@ -1,79 +1,19 @@
 # Weir
 
-Weir discovers logical Stores and combines concurrent client requests into finite
-database batches. Clients initialize
-through any Weir node with `ResolveStore`, then connect directly to the returned business
-targets. Nodes synchronize their Store directory through bounded periodic peer
-exchanges. Business requests execute only local Stores.
+Weir combines concurrent database requests into bounded batches. It supports
+MongoDB, Elasticsearch and OpenSearch, with typed reads and mutations, Lua
+transforms and native backend commands.
 
-`Execute` is a finite bidirectional stream of typed requests and results. SDK
-Read and Mutate calls send one record per request for one Store. The server
-receives through a bounded ticket queue, combines compatible queued records into
-database batches and publishes results in input order. Waiting queue capacity and
-slow consumption apply backpressure. Same-resource mutations within a stream
-execute in input order.
-Native forwards MongoDB commands and Search HTTP requests without operation
-allowlists. A mutation can request `MutationOptions.visibility=QUERY_VISIBLE`;
-successful completion then confirms visibility to subsequent normal queries,
-including Lua transforms. Each adapter implements that completion guarantee.
-Lua runs inside the single Weir process. Unconfirmed writes remain indeterminate
-after transport failure and are never automatically replayed.
-
-See [architecture](docs/architecture.md), [discovery design](docs/discovery-design.md)
-and [payload contracts](docs/payloads.md) for the current contracts.
-The [2026-10-16 implementation study](docs/batching-performance-2026-10-16.md)
-retains scheduler iterations, fragmented-call benchmarks and current database
-validation separately from the historical default-selection results below.
-
-The [current default selection and confirmation](docs/value-proof.md#default-selection-and-independent-confirmation-2026-10-16)
-uses multiple OS client processes submitting native or Weir single-record calls.
-Defaults are 128 operations, 4MiB, 20ms write collection and 16 executions,
-selected by the original finite workload study.
-Pure Search writes at a 0.25-CPU database quota and 512 workers complete
-6.74–8.34 times native throughput at nearly the same measured database CPU,
-with Weir p99 upper bounds of 295–328ms.
-All 12 read guards against legacy Weir pass; native access remains faster in
-the tested Search read cases and MongoDB reads with four workers. At comparable
-completed crawler throughput with a one-CPU database quota, database CPU falls
-by 8.1–42.3%, with higher Weir p99 upper bounds of 3.932–4.194s. These comparison
-points meet the declared five-second p99 gate. MongoDB write/mixed/Lua comparisons
-and invalid partial-update cases remain in the report.
-
-The later [20/40/80/160ms sensitivity study](https://github.com/batchstream/weir-tests/blob/98671e066d1a209439a154de9ded7e1397804b6e/results/default-tuning-2026-10-16/WAIT-SENSITIVITY-RESULT.md)
-is inconclusive because its repeated 20ms crawler anchor fails backlog stability
-in one round. It establishes no winning wait or justified replacement for the
-original default. The [final registered capacity result](https://github.com/batchstream/weir-tests/blob/98671e066d1a209439a154de9ded7e1397804b6e/results/default-tuning-2026-10-16/FINAL-REGISTERED-CAPACITY-RESULT.md)
-fails during fixture preparation, before any Weir/client process, warmup or
-timed stage. It adds no throughput point or capacity upper bound. No sustainable
-maximum for these defaults, universal optimum or general five-second service
-guarantee has been established.
-
-The [historical Linux MongoDB/Search benchmark](docs/value-proof.md#sustained-linux-benchmark-2026-10-15)
-retains 94 paired comparisons, all rounds, raw evidence and grouping ablation.
-It includes preassembled native bulks as boundary evidence; current crawler
-comparisons use independent single-record native callers.
-The [single-record crawler follow-up](docs/value-proof.md#single-record-crawler-follow-up-2026-10-15)
-retains rejected optimizations. The later
-[bounded collection experiment](docs/value-proof.md#bounded-collection-follow-up-2026-10-15)
-measures lower database CPU per completed crawler product in three paired rounds
-with 20ms collection at 68 offered products/s, with completed QPS within 5% of
-native. The effect varies across rounds and does not establish maximum capacity.
-Adoption should compare completed throughput and actual database load using the
-application's submission and visibility requirements.
-
-The [broader batching follow-up](docs/value-proof.md#broader-batching-coverage-2026-10-15)
-adds pure indexing, larger-document partial updates, and multi-index/hot-key
-correctness cases. Its fixed collection/concurrency candidate lowers crawler
-database CPU at similar completed throughput with higher reported p99 latency.
-That experiment retained the defaults in effect on 2026-10-15. The current
-defaults and their calibration scope are described in [batching guidance](docs/batching.md).
+Clients resolve logical Stores through any Weir node, then send business requests
+directly to the owning nodes. Peers exchange an in-memory Store directory. Each
+node runs one process, including Lua evaluation.
 
 ## Build and run
 
-Requires Go **1.27.1**. Typed Read and Mutate require existing backend
-collections/indices; Native can provision them. MongoDB requires direct replica-set
-access and support for the native client `bulkWrite` command used by typed
-mutations. Lua transforms also require transactions.
+Requires Go **1.27.1**. Server builds support Linux and macOS on amd64 and arm64.
+Typed operations require existing collections or indices. MongoDB requires direct
+replica-set access and the native client `bulkWrite` command; Lua transforms also
+require transactions. Native commands can provision backend resources.
 
 ```sh
 go build -o bin/weir ./cmd/weir
@@ -81,8 +21,7 @@ cp config/weir.reference.yaml weir.yaml
 cp config/routes.reference.yaml routes.yaml
 ```
 
-Edit the copied files for your listener addresses, backend endpoints, credentials
-and CA paths, then validate and start the node:
+Edit the copied files for your addresses, backends and authentication, then run:
 
 ```sh
 bin/weir check --config weir.yaml --routes routes.yaml
@@ -90,200 +29,41 @@ bin/weir check --config weir.yaml --routes routes.yaml --effective
 bin/weir serve --config weir.yaml --routes routes.yaml
 ```
 
-The basic process configuration and optional local Store document are separate.
-Both CLI paths resolve from the working directory. `--config` defaults to
-`./weir.yaml`; an omitted `--routes` assembles no backend. Nodes without local
-Stores can participate in discovery and answer ResolveStore for learned Stores.
+`--config` defaults to `./weir.yaml`. Omit `--routes` to run a directory node
+without local Stores. Paths resolve from the working directory. Configuration
+changes require a restart. The effective report shows defaults and automatic
+sources with authentication and trust paths redacted.
 
-A process file:
+A minimal local setup uses two files:
 
 ```yaml
+# weir.yaml
 listeners:
-  application: "127.0.0.1:7447"
-  peer: "127.0.0.1:7448"
-discovery:
-  group: "catalog"
-  peer_address: "127.0.0.1:7448"
-  seeds: ["127.0.0.1:7548"]
-  advertise: ["127.0.0.1:7447"]
+  application: 127.0.0.1:7447
 diagnostics:
-  address: "127.0.0.1:7449"
-transport:
-  timeouts:
-    stall: "30s"
+  address: 127.0.0.1:7449
 ```
 
-The local Store file:
-
 ```yaml
+# routes.yaml
 stores:
-  - name: "mongo"
+  - name: mongo
     backend:
       mongodb:
-        uri: "mongodb://127.0.0.1:27028/?directConnection=true"
-    batching:
-      max_operations: 128
-      max_bytes: 4MiB
-      max_in_flight: 16
-      max_wait: "20ms"
+        uri: mongodb://127.0.0.1:27028/?directConnection=true
 ```
 
-`discovery.group` identifies the replica group providing those Stores.
-`peer_address` is the node's reachable peer address; seeds are bootstrap peer
-addresses, not remote Store mappings. `advertise` contains reachable business
-IP/DNS addresses with explicit ports. Replicas may publish one shared multi-address
-DNS name or their individual business addresses. Wildcard listener addresses need
-explicit reachable advertisements. Concrete standalone listeners can advertise
-their bound addresses automatically.
-For dynamic instance addresses, `peer_address_env` can name one environment variable
-containing the complete peer host:port; it is mutually exclusive with `peer_address`.
-Only this explicit address source is expanded during configuration loading.
+The [process reference](config/weir.reference.yaml) and
+[Store reference](config/routes.reference.yaml) describe every supported field.
+[Configuration](docs/configuration.md) explains file loading, addresses and policy.
 
-The [process reference](config/weir.reference.yaml) and [Store reference](config/routes.reference.yaml)
-document each field's purpose, defaults, bounds and related settings. They are
-templates to copy and edit, and are also included under `config/` in release archives.
-Reference files are not automatically loaded. Both files use strict single-document YAML:
-unknown/duplicate fields, anchors, aliases and explicit tags are rejected.
-`weir check` validates configuration without connecting to
-peers or backends. Configuration changes take effect after a restart.
-`check --effective` shows resolved defaults and automatic sources with
-authentication and trust paths redacted. The [configuration review](docs/configuration.md)
-explains removed fields, retained controls and fixed protocol boundaries.
+## Go client
 
-Store defaults are 128 operations and 4MiB of input per batch. `batching.max_wait`
-defaults to `20ms`; explicit `0s` disables collection. A positive duration collects compatible
-writes until the oldest admission reaches that age. Reads combine compatible reads
-already queued without waiting for future arrivals. Read and mutation batches
-share the Store queue and execution budget, but reads do not flush write collection
-or wait for unrelated writes in the same batch.
-Full batches, Native commands and draining Stores bypass collection.
-A caller deadline before the
-collection deadline also dispatches immediately. Collection uses the existing
-bounded queue and adds no per-request timer. Queued RPCs of the same kind combine by backend compatibility, actual input bytes and
-`batching.max_operations`. Large client batches split into sequential bounded groups.
-Ordinary MongoDB mutations can share a native bulk across namespaces; Search
-bulks and multi-gets can span indexes and duplicate Search reads share one
-observation. MongoDB reads and Lua transactions retain their collection boundary.
-Lua transforms also combine compatible queued requests: MongoDB batches reads and
-writes in a short snapshot transaction, and Search batches real-time reads and
-version-conditional writes. Weir adds no revision fields to business documents.
-Adapters issue their native read and write
-commands for each group. `batching.max_bytes` sets the aggregation window;
-Search also applies it to final framed NDJSON, including generated Lua output.
-One larger legal item executes alone. See the [batching guidance](docs/batching.md)
-for byte/count/wait boundaries, execution backpressure and workload calibration.
-`queue.max_operations` (default 1024) and `queue.max_bytes` (default
-32MiB) bound waiting work, with capacity returned at dispatch. A full queue
-returns an explicit capacity failure; it does not create an unaccounted waiter.
-A larger input can occupy an empty queue alone when its execution peak fits. `batching.max_in_flight` optionally bounds simultaneous
-backend executions per Store; omission selects its default of `16`, and
-explicit `0` leaves them unlimited. A positive budget keeps excess requests in the
-bounded queue, allowing natural batching while
-the backend is busy. Execution completion returns this credit before consumer Ack.
-Search visibility waits retain execution credit. Native output owns memory but
-releases backend execution credit; further HTTP body reads fairly regain credit
-through the Store scheduler. One Node execution-memory account shares two thirds
-of the trusted remaining memory-recovery allowance across all Stores and typed
-or Native operations. Native retains its 1024-invocation bound; total records
-and live network owners have a finite 32768-lease metadata bound, derived from
-32 record credits per stream. The shared byte budget also bounds these owners.
-It charges finite input
-space, backend reply work before IO, actual retained documents and complete
-encoded responses. An application Ack cannot return credit still held by the
-network. Real input, byte or count exhaustion returns an explicit capacity
-failure. Store input queues and execution-slot limits remain independent.
-Backend pools, RPCs and connections have no additional concurrency cap.
-Backend protocols determine document sizes. The fixed
-`weir_execution_memory_*` gauges distinguish input, resident, transient and wire
-ownership; actual RSS remains independently observed. See the
-[typed memory qualification](docs/typed-memory-qualification-2026-10-17.md) and
-[earlier Native ownership qualification](docs/native-memory-qualification-2026-10-16.md)
-for reserved IO workspace and unknown/shrinking-capacity behavior.
+The SDK is an independent module, [weir-go](https://github.com/batchstream/weir-go).
 
-Store settings are grouped by responsibility: `backend` holds connection establishment
-and MongoDB target caching, native exchange chunk sizes, and the shared
-`authentication`/`tls` layout. MongoDB connection workers are under
-`backend.mongodb.max_connecting`. MongoDB target caching belongs to
-`backend.mongodb.metadata_cache_entries`. Store `queue` and `batching` hold waiting
-work and request aggregation. Process `transport` owns
-Execute flow control and independent keepalive/progress settings; process `lua`
-sets VM execution policy for every Store. Business work
-has no default instruction budget or server-selection deadline; native exchanges
-split large batches rather than rejecting their combined input.
-
-Memory capacity is detected from physical host memory, a finite process
-address-space limit, and visible container memory limits. Actual process and
-container memory pressure controls overload admission; no configured budget or
-startup working-set reservation can reject otherwise valid configuration.
-On Linux cgroup v2, container pressure excludes validated reclaimable
-`inactive_file` cache from `memory.current`; missing or inconsistent cache
-statistics retain the raw usage. Metrics expose both current and working-set
-bytes. To release idle Go heap after allocation bursts, the CLI automatically
-sets a standard Go soft limit at 80% of the process's remaining recovery
-allowance after accounting for memory outside its RSS. With default watermarks
-the upper bound is 56% of capacity; positive automatic targets have a 16 MiB floor
-capped by that upper bound. Explicit `GOMEMLIMIT` takes precedence.
-Use container/OS memory limits for the hard boundary.
-The [local reliability verification](docs/production-reliability-2026-10-16.md)
-records the cache regression, real backend read/write observations, and the
-original Native, resident-heap and cleanup latency boundaries.
-The [production reliability milestones](docs/production-readiness.md) track
-subsequent fixes, including bounded Native output progress and cancellation.
-
-A MongoDB Lua transaction can contain records from several RPCs. A database write
-failure rolls back that transaction; a confirmed abort can be retried within the
-original deadline. An uncertain commit cannot start another write attempt. Lua
-keep, reject and evaluation failures have individual results and do not enqueue
-writes. Search retries only items with a confirmed version conflict. Physical
-groups split generated write commands at the configured exchange or native BSON
-boundary, after a confirmed transaction abort; the IO setting is not a Lua workspace cap;
-clients cannot treat Mutate or several RPCs as one application transaction.
-
-Business RPCs and backend execution inherit caller cancellation and deadlines.
-A shared batch uses the latest caller deadline; an unbounded caller keeps that
-batch unbounded, while individual plans retain their own contexts. Canceling
-all callers stops shared backend work. Native uses the same caller
-lifetime. Connection setup, stream stalls and cleanup retain their lifecycle
-timeouts. A sent write whose acknowledgement is lost remains `UNKNOWN` and is
-never replayed automatically.
-
-MongoDB and Search authentication can use explicit `username`/`password` fields
-or `username_file`/`password_file`; each credential has exactly one source. Search
-credentials belong under `backend.authentication`. Files resolve relative to the Store
-document, contain UTF-8 text and permit one final LF/CRLF. URI userinfo is rejected. Authentication and
-backend configuration stay local and are never distributed in the Store directory.
-
-Application and peer listeners use plaintext gRPC on an isolated network. Peer
-metadata is not authentication. Lua uses a fresh restricted VM. Parsing,
-compilation, VM objects, library buffers and document conversion reserve new
-allocations on the shared Node execution-memory account before allocation.
-The reservation conservatively accumulates until evaluation and backend result
-processing finish; it is an allocation budget, not a measurement of live Go heap.
-Reusing existing capacity does not consume the budget again. Exhaustion before
-a write returns NOT_APPLIED/RESOURCE_EXHAUSTED and cannot be suppressed by Lua
-`pcall` or `xpcall`.
-Transforms use `function(current, incoming)` with ordinary Lua tables, precise
-64-bit integers and a fixed operation timestamp; see the [Lua guide](docs/lua.md)
-and [product example](examples/lua/product.lua).
-
-The [public and peer protocols](docs/protocols.md) are independent schemas and
-services. The public schema is suitable for future language-specific bindings.
-The public contract and shared helpers live in
-[weir-protocol](https://github.com/batchstream/weir-protocol), an independent
-module consumed by both Weir and its SDK. The SDK does not depend on this server
-module; server acceptance tests can depend on the SDK without a dependency cycle.
-
-## Client initialization and business calls
-
-The Go SDK lives in the independent [weir-go](https://github.com/batchstream/weir-go)
-repository and module `github.com/batchstream/weir-go` (package `weir`). It resolves
-every requested Store before exposing business methods. It reuses round-robin
-channels, refreshes directory mappings and DNS,
-and drains retired connections without moving an active RPC to another instance.
-Install the versioned SDK with `go get github.com/batchstream/weir-go@v0.16.0`.
-Initialization accepts up to 16 Stores; each Store expands to at most 64 physical
-addresses. Refresh runs at the earlier of the configured interval and one third of
-the remaining ResolveStore TTL.
+```sh
+go get github.com/batchstream/weir-go@v0.16.0
+```
 
 ```go
 // import weir "github.com/batchstream/weir-go"
@@ -296,9 +76,12 @@ if err != nil {
     return err
 }
 defer client.Close()
-first := &weir.ReadRequest{Resource: "database/collection/s:first"}
-second := &weir.ReadRequest{Resource: "database/collection/s:second"}
-readOptions := weir.ReadOptions{StoreName: "mongo", Requests: []*weir.ReadRequest{first, second}}
+
+request := &weir.ReadRequest{Resource: "database/collection/s:first"}
+readOptions := weir.ReadOptions{
+    StoreName: "mongo",
+    Requests: []*weir.ReadRequest{request},
+}
 results, err := client.Read(ctx, readOptions)
 if err != nil {
     return err
@@ -311,47 +94,38 @@ for _, result := range results {
 }
 ```
 
-The SDK [basic](https://github.com/batchstream/weir-go/tree/v0.16.0/examples/basic)
-and [native](https://github.com/batchstream/weir-go/tree/v0.16.0/examples/native) examples
-initialize through a seed. Read and Mutate accept batches for one Store and use
-one bidirectional Execute RPC, with indexed results in input order. There is no
-whole-call byte or item-count limit; each wire request carries one record.
-Resources are canonical relative paths. ReadStream and MutateStream accept an
-incremental producer and consumer so callers can avoid retaining the full input
-and output. The slice convenience methods accumulate results in client memory.
-The SDK also provides ReadOne, Create, Put, Replace, Delete, AtomicTransform
-and Native methods. It pins public protocol v0.14.0. Advanced fixed-owner callers
-can use Dial and package-level business helpers.
+Read and Mutate publish indexed results in input order. Stream variants accept
+incremental producers and consumers. Same-resource mutations within a stream
+execute in input order; Mutate is not an application transaction. Unconfirmed
+writes after transport failure remain indeterminate and are never automatically
+replayed. `QUERY_VISIBLE` requests completion visible to subsequent queries.
+See [payload contracts](docs/payloads.md) for resources, mutation outcomes and
+Native request formats, and the [Lua guide](docs/lua.md) for transforms.
 
-The SDK validates slice inputs before sending them. The server validates each
-request before executing it; an invalid later request does not undo earlier effects.
-Mutate is not a transaction. Confirmed indexed results survive a later stream
-failure; unconfirmed mutations may have applied and must not be retried
-automatically. An APPLIED outcome that includes a Failure preserves application
-evidence while reporting a business failure. A later stream error does not revoke
-an already confirmed successful item.
+## Batching and operation
 
-Native sends one command on a bidirectional Execute RPC and half-closes its input
-before consuming typed result events. Success requires a valid terminal Event and
-final gRPC OK. Queries, counts and traversal use Native with the backend's own
-request and response formats, including its pagination and cursor semantics. See
-the [payload contracts](docs/payloads.md) for Lua and Native semantics.
+Each Store defaults to a waiting queue of 1024 operations / 32 MiB, batches of
+128 operations / 4 MiB, a 20 ms write collection window and 16 active executions.
+Reads combine already queued compatible reads without waiting for new arrivals.
+Full queues apply backpressure until dispatch or caller cancellation.
 
-## Deployment
+The Node shares one execution-memory account across ingress, queued work, backend
+processing, Lua and transport output. Actual process/container pressure controls
+overload admission. Container/OS limits provide the hard memory boundary.
 
-The same discovery and client protocols support local processes, VMs, containers
-and Kubernetes. Every instance publishes its own peer address and Store targets.
-A seed can be an individual node, ordinary DNS name or load-balanced service.
+Application and peer listeners use plaintext gRPC on an isolated network. Backend
+authentication stays local. Each instance advertises reachable peer and business
+addresses; Kubernetes examples use a headless business Service per Store group
+and a shared bootstrap Service.
 
-In Kubernetes, each Store group can use its own Deployment, HPA and headless
-business Service. A normal ClusterIP Service S1 selecting all Weir groups exposes
-application ResolveStore and peer bootstrap ports. A client connects to S1, resolves
-its Store to that group's headless DNS, then load-balances directly across the
-group's Ready Pods. S1 need not be headless. Scaling changes the DNS instance set;
-Store reassignment changes the directory mapping.
-
-See [Kubernetes scaling](deploy/kubernetes/scaling.md) for aggregate backend
-connection demand. Adding Weir replicas does not increase the database's capacity.
+| Guide | Contents |
+| --- | --- |
+| [Architecture](docs/architecture.md) | Ownership, execution, memory and shutdown |
+| [Discovery](docs/discovery-design.md) | Store directory, leases and direct client connections |
+| [Batching](docs/batching.md) | Queue, batch, wait and concurrency tuning |
+| [Operations](docs/operations.md) | Health, metrics, memory pressure and failure handling |
+| [Protocols](docs/protocols.md) | Public and peer contracts and module boundaries |
+| [Kubernetes scaling](deploy/kubernetes/scaling.md) | Replica and backend connection demand |
 
 ## Development
 
@@ -359,84 +133,56 @@ connection demand. Adding Weir replicas does not increase the database's capacit
 go test ./...
 go test -race ./...
 go vet ./...
+go vet -tags=integration ./...
+python3 scripts/check_dependencies.py
 python3 -m unittest discover -s scripts -p '*_test.py'
 ```
 
-Default tests use owned offline/loopback fixtures. Live backend and process tests
-are explicit opt-ins through `scripts/test-integration.sh`. Compile tagged helpers
-and run real backend profiles separately; tagged compilation is not live coverage.
-When several integration packages share one MongoDB fixture, run them sequentially
-or pass `go test -p=1`: fault tests change the instance's global `failCommand`
-failpoint, so concurrent packages can overwrite each other's faults and cleanup.
-Matched direct/Weir benchmarks and current blackbox integration live in the
-independent [weir-tests](https://github.com/batchstream/weir-tests) repository.
+Default tests use offline or owned loopback fixtures. Prepare cached modules
+before using `GOWORK=off GOPROXY=off` for offline checks. CI installs the pinned
+toolchain and modules with `scripts/ci-tools.py`.
 
-The local Search fixture defaults to small write queues for overload tests.
-Positive application and SDK batch tests require normal backend capacity: start
-it with `scripts/search-local.sh start elasticsearch normal` (or `opensearch`).
-The OpenSearch fixture uses 3.3 for native PIT `_shard_doc` traversal across shards.
-Run backend congestion tests separately with the default `overload` profile;
-stop the owned fixture before changing its capacity profile.
+Live backend and process tests require explicit opt-in:
 
-Monitor active executions, queue occupancy and per-record backend outcomes.
-The queue exposes count and byte capacity metrics. `weir_store_active_executions_limit`
-reports `batching.max_in_flight`, with `0` meaning unlimited. Active executions and
-average operations per batch show whether a budget retains enough work to aggregate.
-`weir_store_batch_max_wait_seconds` reports the configured collection wait.
-`weir_store_batch_max_operations` and `weir_store_batch_max_bytes` report the
-resolved count and byte aggregation bounds, including when configuration omits them.
+```sh
+scripts/mongo-local.sh start
+scripts/search-local.sh start elasticsearch normal
+WEIR_SEARCH_INTEGRATION=elasticsearch scripts/test-integration.sh
+```
 
-Search exposes `weir_search_http_requests_total` and
-`weir_search_http_request_duration_seconds` by fixed operation, outcome and
-visibility labels. They cover record exchanges and startup qualification;
-Native relay is excluded. Bulk elapsed time includes `refresh=wait_for`, so it
-does not isolate refresh waiting. `weir_search_http_request_records` reports
-actual framed records per attempted mget/bulk request, including failures.
-`weir_search_lua_evaluation_duration_seconds` measures in-process Lua evaluation
-including its compile/conversion work, excluding external JSON decoding/encoding.
-HTTP success does not imply every bulk item succeeded. Concurrent durations
-overlap and must not be summed as wall time. Labels contain no target or document
-identities.
+The integration runner serializes packages because MongoDB fault injection uses
+a server-global failpoint. Use a separate Search `overload` fixture profile for
+congestion tests; stop the owned fixture before changing profiles. Process and
+memory qualification helpers retain their own explicit environment opt-ins.
+Tagged compilation does not establish backend or process coverage.
 
-Build reproducible archives from a clean commit with
-`python3 scripts/package.py --output dist/local-build`.
+The [weir-tests](https://github.com/batchstream/weir-tests) repository contains
+matched direct/Weir workloads and blackbox integration. Keep generated logs,
+profiles and experiment output under ignored `.testdata/`; documentation describes
+current behavior. Historical experiments remain available in Git history.
+
+The local gRPC and Lua patches are required for allocation ownership. Their
+upstream identities, patch diffs and focused regression tests live under
+[third_party](third_party/README.md). Peer bindings are generated with
+`scripts/generate.sh`; the public schema belongs to
+[weir-protocol](https://github.com/batchstream/weir-protocol).
 
 ## Releases
 
-Publish stable versions through **Verified Weir images** on `main`, supplying a
-canonical `vMAJOR.MINOR.PATCH` release version. The workflow runs default and race
-tests, reproduces the Linux amd64/arm64 image and four platform archives, publishes
-the verified image to GHCR, and confirms an anonymous pull before creating the
-version image tag and GitHub release. Existing version tags and assets cannot be
-replaced with different content.
-
-Server archives support Linux and macOS on amd64 and arm64. Windows server builds
-are unavailable because the current Lua dependency uses Unix process primitives.
-
-Publishing a GitHub release directly also triggers this workflow automatically.
-Its tag must point to a commit already merged into `main`; the workflow builds
-that exact source and fills in verified release assets and the version image.
-Use `ghcr.io/batchstream/weir:vMAJOR.MINOR.PATCH` or pin the image digest from
-`delivery.json`. A release created by another workflow using `GITHUB_TOKEN`
-must invoke this workflow explicitly, because GitHub suppresses subsequent
-release events from that token. The supported manual workflow builds the image
-before it creates the release.
-
-## CLI
-
-| Command | Purpose |
-| --- | --- |
-| `weir serve --config weir.yaml --routes routes.yaml` | Start discovery and configured local Stores from edited reference files. |
-| `weir check --config weir.yaml --routes routes.yaml` | Validate process settings, Stores and credential files. |
-| `weir check --config weir.yaml --routes routes.yaml --effective` | Inspect resolved policy and automatic sources with sensitive values redacted. |
-| `weir version` | Print build identity. |
-| `weir probe live` / `weir probe ready` | Check loopback diagnostics. |
-
-`serve` and `check` accept `-c` for `--config`. `probe --address` selects a loopback
-diagnostic address; `probe --timeout` controls its complete request deadline
-(default `750ms`). The peer examples use their explicit local Store files:
+Build reproducible archives from a clean commit:
 
 ```sh
-weir serve --config examples/peer-a.yaml --routes examples/peer-a.routes.yaml
-weir serve --config examples/peer-b.yaml --routes examples/peer-b.routes.yaml
+python3 scripts/package.py --output dist/local-build
 ```
+
+Run **Verified Weir images** on `main` with a stable `vMAJOR.MINOR.PATCH` release
+version. It tests the source, reproduces Linux amd64/arm64 images and four platform
+archives, publishes verified content to GHCR and checks an anonymous pull before
+creating version tags and release assets. Existing versions cannot be replaced
+with different content. Publishing a GitHub release also triggers verification;
+its tag must identify source already merged into `main`.
+
+Use `ghcr.io/batchstream/weir:vMAJOR.MINOR.PATCH` or pin the image digest from
+`delivery.json`. A release created by another workflow with `GITHUB_TOKEN` must
+invoke the image workflow explicitly. Windows server builds are unavailable
+because the Lua dependency uses Unix process primitives.

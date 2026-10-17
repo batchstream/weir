@@ -1,6 +1,0 @@
-{
-  "at": "2026-10-17T04:53:41.549917+00:00",
-  "error": "formal600 did not qualify: ['missing oracle: oracle backend=mongo', 'missing oracle: oracle backend=search']",
-  "source": "69349eac568af9993c837fcd05c08337f5743a30",
-  "traceback": "Traceback (most recent call last):\n  File \"/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/final-process-runner-r1.py\", line 122, in <module>\n    results.append(validate(label,record))\n                   ~~~~~~~~^^^^^^^^^^^^^^\n  File \"/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/final-process-runner-r1.py\", line 89, in validate\n    h.require(not problems, label + ' did not qualify: ' + str(problems))\n    ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/lua-repair-runner-r3.py\", line 60, in require\n    raise RuntimeError(message)\nRuntimeError: formal600 did not qualify: ['missing oracle: oracle backend=mongo', 'missing oracle: oracle backend=search']\n"
-}

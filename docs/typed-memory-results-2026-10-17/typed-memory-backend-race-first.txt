@@ -1,2 +1,0 @@
-ok  	github.com/batchstream/weir/internal/backend/mongodb	8.976s
-ok  	github.com/batchstream/weir/internal/backend/search	56.209s

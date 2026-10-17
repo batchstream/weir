@@ -53,16 +53,15 @@ func (n namespace) String() string {
 // Collection structure is a deployment prerequisite and stays stable while the
 // Store is open. Actual read/write commands still enforce backend permissions.
 func (a *Adapter) qualifyTarget(ctx context.Context, target namespace) *pb.Failure {
-	lookup, err := a.targets.Acquire(ctx, target)
+	pending, err := a.targets.acquire(ctx, target)
 	if err != nil {
 		return protocol.ContextFailure(ctx)
 	}
-	if lookup.Cached {
+	if pending == nil {
 		return nil
 	}
 	failure := a.inspectTarget(ctx, target)
-	empty := struct{}{}
-	a.targets.Complete(target, lookup, empty, failure == nil && ctx.Err() == nil)
+	a.targets.complete(target, pending, failure == nil && ctx.Err() == nil)
 	if ctx.Err() != nil {
 		return protocol.ContextFailure(ctx)
 	}

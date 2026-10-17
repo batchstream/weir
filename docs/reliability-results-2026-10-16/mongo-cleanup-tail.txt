@@ -1,6 +1,0 @@
-=== RUN   TestAuditMongoCleanupExecutionTail
-    audit_cleanup_integration_test.go:100: lost find replies=1; held killSessions cleanups=1; healthy query pending=1 active=1 failed after=200.191416ms cause=context deadline exceeded
-2026/10/16 20:21:50 INFO backend_connections_closed backend=mongo store=mongo owned=0 peak=2 dialing=0 closing=0 acquired=3 released=3
---- PASS: TestAuditMongoCleanupExecutionTail (0.76s)
-PASS
-ok  	github.com/batchstream/weir/internal/backend/mongodb	1.419s

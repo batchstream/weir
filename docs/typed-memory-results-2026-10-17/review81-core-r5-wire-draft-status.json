@@ -1,7 +1,0 @@
-{
-  "status": "INERT_DRAFT_NOT_COMPILED_OR_RUN",
-  "source": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/review81-core-r5-wire-draft_test.go.txt",
-  "overlay": "review81-core-r5-wire-draft-overlay.json",
-  "requested_execution_window": "Wait for root explicit CPU return",
-  "purpose": "Finite60000000-byteB, real codec buffers, shared Native/typed handoffs, RPCcancel, native refs/ConnEnd, peer healthy Native progress and no replay. No DB."
-}
