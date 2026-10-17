@@ -1,0 +1,12 @@
+{
+  "completed": true,
+  "export_directories": [
+    "/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-package-first-1mkjcrcf/source",
+    "/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-package-second-fno92sp_/source"
+  ],
+  "identical_archives": 4,
+  "identical_binaries": 4,
+  "oci_identical": false,
+  "receipt_sha256": "77fa9353cda0a15d5e4b13865b5f341e645beb1647688e1a6c71f75a3873a64a",
+  "source": "a01d523e6fab728d0e48f3ff84d908710559aa65"
+}

@@ -14,6 +14,17 @@ type recordMemoryKey uint8
 
 const recordMemoryContextKey recordMemoryKey = 0
 
+func programWorking(parts ...int) (int, error) {
+	working := 0
+	for _, bytes := range parts {
+		if bytes < 0 || bytes > math.MaxInt-working {
+			return 0, execution.ErrExecutionMemory
+		}
+		working += bytes
+	}
+	return working, nil
+}
+
 // Empty index/ID strings are expanded by their worst JSON escaping below. The
 // longest supported action/result and normal optional metadata cover both
 // typeless Elasticsearch and OpenSearch replies. All per-item numeric evidence
@@ -190,15 +201,4 @@ func (a *Adapter) validateRecord(ctx context.Context, work *execution.Plan) *pb.
 	}
 	native.validated = true
 	return nil
-}
-
-func jsonValueBytes(current value.Value) int {
-	bytes := 6*len(current.Text) + len(current.Data) + 32
-	for _, field := range current.Fields {
-		bytes += 6*len(field.Name) + jsonValueBytes(field.Value)
-	}
-	for _, item := range current.Items {
-		bytes += jsonValueBytes(item)
-	}
-	return bytes
 }

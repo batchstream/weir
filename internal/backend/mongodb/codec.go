@@ -119,101 +119,106 @@ func decodeValue(ctx context.Context, rv bson.RawValue, depth int) (value.Value,
 	}
 	return v, nil
 }
+
+// Encode appends every scalar and container into one document buffer. Nested
+// documents patch their own length after closing, avoiding ancestor copies.
 func Encode(ctx context.Context, v value.Value) (bson.Raw, error) {
-	data, err := encodeObject(ctx, v, 0)
-	return bson.Raw(data), err
-}
-func encodeObject(ctx context.Context, v value.Value, depth int) ([]byte, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	if depth > 100 || v.Kind != value.Object && v.Kind != value.Array {
+	if v.Kind != value.Object && v.Kind != value.Array {
 		return nil, fmt.Errorf("invalid object or depth")
 	}
-	out := make([]byte, 4)
-	n := len(v.Fields)
-	if v.Kind == value.Array {
-		n = len(v.Items)
+	type encodeFrame struct {
+		node  *value.Value
+		start int
+		index int
 	}
-	for i := 0; i < n; i++ {
+	first := encodeFrame{node: &v}
+	stack := []encodeFrame{first}
+	output := make([]byte, 4)
+	for len(stack) != 0 {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		var name string
-		var child value.Value
-		if v.Kind == value.Array {
-			name = strconv.Itoa(i)
-			child = v.Items[i]
-		} else {
-			name = v.Fields[i].Name
-			child = v.Fields[i].Value
+		frame := &stack[len(stack)-1]
+		length := len(frame.node.Fields)
+		if frame.node.Kind == value.Array {
+			length = len(frame.node.Items)
 		}
+		if frame.index == length {
+			output = append(output, 0)
+			size := len(output) - frame.start
+			if size > math.MaxInt32 {
+				return nil, fmt.Errorf("invalid BSON document length")
+			}
+			binary.LittleEndian.PutUint32(output[frame.start:], uint32(size))
+			stack = stack[:len(stack)-1]
+			continue
+		}
+		var name string
+		var child *value.Value
+		if frame.node.Kind == value.Array {
+			name = strconv.Itoa(frame.index)
+			child = &frame.node.Items[frame.index]
+		} else {
+			field := &frame.node.Fields[frame.index]
+			name, child = field.Name, &field.Value
+		}
+		frame.index++
 		if !utf8.ValidString(name) || strings.IndexByte(name, 0) >= 0 {
 			return nil, fmt.Errorf("invalid name")
 		}
-		rv, err := encodeValue(ctx, child, depth)
-		if err != nil {
-			return nil, err
-		}
-		out = bsoncore.AppendValueElement(out, name, rv)
-	}
-	out = append(out, 0)
-	binary.LittleEndian.PutUint32(out, uint32(len(out)))
-	return out, nil
-}
-func encodeValue(ctx context.Context, v value.Value, depth int) (bsoncore.Value, error) {
-	var zero bsoncore.Value
-	rv := bsoncore.Value{}
-	switch v.Kind {
-	case value.Null:
-		rv.Type = bsoncore.TypeNull
-	case value.Bool:
-		rv.Type = bsoncore.TypeBoolean
-		rv.Data = bsoncore.AppendBoolean(nil, v.Boolean)
-	case value.Int32:
-		if v.Integer < math.MinInt32 || v.Integer > math.MaxInt32 {
-			return zero, fmt.Errorf("int32 overflow")
-		}
-		rv.Type = bsoncore.TypeInt32
-		rv.Data = bsoncore.AppendInt32(nil, int32(v.Integer))
-	case value.Int64:
-		rv.Type = bsoncore.TypeInt64
-		rv.Data = bsoncore.AppendInt64(nil, v.Integer)
-	case value.Float64:
-		rv.Type = bsoncore.TypeDouble
-		rv.Data = bsoncore.AppendDouble(nil, v.Float)
-	case value.String:
-		if !utf8.ValidString(v.Text) {
-			return zero, fmt.Errorf("invalid UTF8")
-		}
-		rv.Type = bsoncore.TypeString
-		rv.Data = bsoncore.AppendString(nil, v.Text)
-	case value.Array, value.Object:
-		data, err := encodeObject(ctx, v, depth+1)
-		if err != nil {
-			return zero, err
-		}
-		rv.Data = data
-		rv.Type = bsoncore.TypeEmbeddedDocument
-		if v.Kind == value.Array {
-			rv.Type = bsoncore.TypeArray
-		}
-	case value.Extended:
-		for t, name := range extendedTypes {
-			if name == v.Type {
-				rv.Type = bsoncore.Type(t)
-				break
+		switch child.Kind {
+		case value.Array, value.Object:
+			if len(stack) > 100 {
+				return nil, fmt.Errorf("invalid object or depth")
 			}
+			kind := bsoncore.TypeEmbeddedDocument
+			if child.Kind == value.Array {
+				kind = bsoncore.TypeArray
+			}
+			output = bsoncore.AppendHeader(output, kind, name)
+			start := len(output)
+			output = append(output, 0, 0, 0, 0)
+			next := encodeFrame{node: child, start: start}
+			stack = append(stack, next)
+		case value.Null:
+			output = bsoncore.AppendNullElement(output, name)
+		case value.Bool:
+			output = bsoncore.AppendBooleanElement(output, name, child.Boolean)
+		case value.Int32:
+			if child.Integer < math.MinInt32 || child.Integer > math.MaxInt32 {
+				return nil, fmt.Errorf("int32 overflow")
+			}
+			output = bsoncore.AppendInt32Element(output, name, int32(child.Integer))
+		case value.Int64:
+			output = bsoncore.AppendInt64Element(output, name, child.Integer)
+		case value.Float64:
+			output = bsoncore.AppendDoubleElement(output, name, child.Float)
+		case value.String:
+			if !utf8.ValidString(child.Text) {
+				return nil, fmt.Errorf("invalid UTF8")
+			}
+			output = bsoncore.AppendStringElement(output, name, child.Text)
+		case value.Extended:
+			raw := bsoncore.Value{Data: child.Data}
+			for kind, typeName := range extendedTypes {
+				if typeName == child.Type {
+					raw.Type = bsoncore.Type(kind)
+					break
+				}
+			}
+			if raw.Type == 0 {
+				return nil, fmt.Errorf("unsupported extended type")
+			}
+			if err := raw.Validate(); err != nil {
+				return nil, err
+			}
+			output = bsoncore.AppendValueElement(output, name, raw)
+		default:
+			return nil, fmt.Errorf("unsupported value")
 		}
-		if rv.Type == 0 {
-			return zero, fmt.Errorf("unsupported extended type")
-		}
-		rv.Data = v.Data
-		if err := rv.Validate(); err != nil {
-			return zero, err
-		}
-	default:
-		return zero, fmt.Errorf("unsupported value")
 	}
-	return rv, nil
+	return bson.Raw(output), nil
 }

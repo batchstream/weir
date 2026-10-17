@@ -1,0 +1,38 @@
+{
+  "time": "2026-10-16T21:30:22.109170+00:00",
+  "scope": "root packaging and upstream audit before integrated runtime qualification; no CLI/DB writes except separately verified cleanup",
+  "python_normal": "46 tests PASS1.528s",
+  "python_optimized": "46 tests PASS1.442s",
+  "source_sha256": {
+    "scripts/check_dependencies.py": "f3d1ecbf136f096b7bd1e5c456791980df3696c47d3d708a12c52ea72169519d",
+    "scripts/check_dependencies_test.py": "2d0d1f90404b79c177f50d0c275d3379ea72415d124917dae65ee00b72059688",
+    "scripts/ci-tools.py": "e8758e38c59479fed54ec49f22ef318614ad9db5a70e9cc260b4f84c9edc93b8",
+    "scripts/ci_tools_test.py": "2b3c0595ecf205c4d9b4f48ff55397a34ea3bafcb1b9f0a958e01a82b1ce3c22",
+    "scripts/package.py": "7900b6dfedc5330869b9d64835adffe0760aad5b3402d4be7ec91ad2e7ee08f8",
+    "scripts/package_test.py": "ee6a8a034a29245d788ac6d3eeb44b634389ee8a8d108af6775ce671198b2f82",
+    ".github/workflows/ci.yml": "862eff1fd2abcd1b2c5eeb4a9519ac3a611e1cf15363f25deb9639c5791bcebf"
+  },
+  "evidence": [
+    {
+      "path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/lua-packaging-python-normal.txt",
+      "bytes": 6653,
+      "sha256": "47024d753e5873275d925e022214dd679abd13d269106fed695bedd5bc03bb6d"
+    },
+    {
+      "path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/lua-packaging-python-optimized.txt",
+      "bytes": 6653,
+      "sha256": "a3ad432e83bb279849812fa235430553e609c4961f6d5f41477508fd83cedc43"
+    },
+    {
+      "path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/lua-upstream-independent-verification.json",
+      "bytes": 533,
+      "sha256": "694e34c689fd3cfbcc9d03ec9bb4088f1bcd9e2045efb8380d9106c6c722e66e"
+    },
+    {
+      "path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/lua-normal-benchmark-before.json",
+      "bytes": 4243,
+      "sha256": "0ee9219b6d8d5758313054f4234e4b18b9d663e18720e0154ed93c56b1d1256d"
+    }
+  ],
+  "actual_Lua_candidate_qualification": "NOT_RUN"
+}

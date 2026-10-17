@@ -1,0 +1,118 @@
+{
+  "Mongo_fixture_absence": {
+    "absent": true,
+    "database": "weir_test_23987_1",
+    "ok": 1
+  },
+  "Search_fixture_absence": null,
+  "actual_driver_exit": 0,
+  "backend_connections": [
+    {
+      "raw_line": 39,
+      "text": "2026/10/17 04:28:01 INFO backend_connections_closed backend=mongo store=mongo owned=0 peak=3 dialing=0 closing=0 acquired=3 released=3"
+    }
+  ],
+  "cgroup_events": [
+    {
+      "raw_line": 5,
+      "text": "lua_memory_budget_integration_test.go:120: cgroup_memory_events phase=Lua_initial value=\"low 0\\nhigh 0\\nmax 0\\noom 0\\noom_kill 0\\noom_group_kill 0\\nsock_throttled 0\" error=<nil>"
+    },
+    {
+      "raw_line": 33,
+      "text": "lua_memory_budget_integration_test.go:199: cgroup_memory_events phase=Lua_after_probe value=\"low 0\\nhigh 0\\nmax 0\\noom 0\\noom_kill 0\\noom_group_kill 0\\nsock_throttled 0\" error=<nil>"
+    },
+    {
+      "raw_line": 35,
+      "text": "lua_memory_budget_integration_test.go:116: cgroup_memory_events phase=Lua_final_cleanup value=\"low 0\\nhigh 0\\nmax 0\\noom 0\\noom_kill 0\\noom_group_kill 0\\nsock_throttled 0\" error=<nil>"
+    }
+  ],
+  "created_utc": "2026-10-17T04:28:03.255011+00:00",
+  "details": {
+    "control": [
+      {
+        "raw_line": 11,
+        "text": "lua_memory_budget_integration_test.go:122: Lua_normal_control Transform_APPLIED=true ID_n_pad_valid=true bytes=1071 SHA256=e4c35b4ae559db91a7df884b3adb80e5260301dcb722c2047a49e7a9d254ed1c caller3s"
+      }
+    ],
+    "independent_unchanged": [
+      {
+        "raw_line": 18,
+        "text": "lua_memory_budget_integration_test.go:175: Lua_independent_unchanged ID=lua-bound-target bytes_before=1076 bytes_after=1076 before_SHA256=897d51bafa1d9a23ef9728feb897efaa527bccd013f709c60395140f8795da6c after_SHA256=897d51bafa1d9a23ef9728feb897efaa527bccd013f709c60395140f8795da6c unchanged=true error=<nil>"
+      }
+    ],
+    "outcomes": [
+      {
+        "raw_line": 16,
+        "text": "lua_memory_budget_integration_test.go:160: Lua_probe_outcome outcome=NOT_APPLIED failure=RESOURCE_EXHAUSTED RPC=OK error=<nil> returned=true started=2026-10-17T04:28:01.200272Z finished=2026-10-17T04:28:01.299542Z deadline=2026-10-17T04:28:04.200272Z within_original_deadline=true elapsed_or_observation_wait=99.269125ms confirmed_successful_Keep=false safe_capacity_rejection=true timeout_or_UNKNOWN_is_not_Keep=true"
+      }
+    ]
+  },
+  "driver_PID": 23987,
+  "final_zero_owners_evidence": [
+    {
+      "raw_line": 30,
+      "text": "lua_memory_budget_integration_test.go:198: ingress_final5s temporary_Node/Store/RPC/ingress/wire/Q/I_ownership0 latch0 connections=0 connection_bytes=0 Node_used=resident=connection_bytes elapsed=8.353875ms"
+    }
+  ],
+  "independent_Docker_observations": [
+    {
+      "raw_line": 8,
+      "text": "ingress_memory_budget_integration_test.go:496: ingress_Docker at=2026-10-17T04:28:01.157999Z state=weir-memory-recovery-23987-1792211280320322000 true false 0 error=<nil>"
+    },
+    {
+      "raw_line": 15,
+      "text": "ingress_memory_budget_integration_test.go:496: ingress_Docker at=2026-10-17T04:28:01.25735Z state=weir-memory-recovery-23987-1792211280320322000 true false 0 error=<nil>"
+    },
+    {
+      "raw_line": 17,
+      "text": "lua_memory_budget_integration_test.go:163: ingress_Docker at=2026-10-17T04:28:01.302456Z state=weir-memory-recovery-23987-1792211280320322000 true false 0 error=<nil>"
+    },
+    {
+      "raw_line": 27,
+      "text": "ingress_memory_budget_integration_test.go:496: ingress_Docker at=2026-10-17T04:28:01.357588Z state=weir-memory-recovery-23987-1792211280320322000 true false 0 error=<nil>"
+    },
+    {
+      "raw_line": 34,
+      "text": "lua_memory_budget_integration_test.go:202: ingress_Docker at=2026-10-17T04:28:01.417448Z state=weir-memory-recovery-23987-1792211280320322000 true false 0 error=<nil>"
+    },
+    {
+      "raw_line": 36,
+      "text": "lua_memory_budget_integration_test.go:117: ingress_Docker at=2026-10-17T04:28:01.456093Z state=weir-memory-recovery-23987-1792211280320322000 true false 0 error=<nil>"
+    }
+  ],
+  "metric_sample_peaks": {
+    "go_memstats_heap_alloc_bytes": 53428000,
+    "process_resident_memory_bytes": 91897856,
+    "weir_execution_memory_used_bytes": 167091096,
+    "weir_memory_cgroup_current_bytes": 100052992
+  },
+  "normal_exit_evidence": [
+    {
+      "raw_line": 40,
+      "text": "memory_recovery_integration_test.go:202: CLI exit=false 0"
+    }
+  ],
+  "owned_CLI_container_absence": [
+    {
+      "absent": true,
+      "owner": "weir-memory-recovery-23987-1792211280320322000",
+      "status": 404
+    }
+  ],
+  "peak_scope": "sampled maxima at separate times; not a physical transient peak proof",
+  "problems": [],
+  "profile": {
+    "CPUs": 2,
+    "caller_seconds": 3,
+    "capacity_MiB": 512,
+    "default_Store_policy": true,
+    "single_Weir_process": true
+  },
+  "raw_sha256": "912ab5d89530b0f16f54ba1fcef717075fef6c08c52bd954a55e12261d3910f1",
+  "retry": false,
+  "runtime_run_count": 1,
+  "source": "9c23c4f58f789aa54b0162b59234f77e5cb0c6a5",
+  "source_hash_verified_all_owner_assertions": "4eda4766b936b16bb405a17c68cca1195858e8ed9501bc284277c7e680701113",
+  "status": "PASS",
+  "successful_metrics_observations": 12
+}

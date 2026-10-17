@@ -81,6 +81,23 @@ func TestRPCExpiryKeepsSharedConnectionAndMutation(t *testing.T) {
 					time.Sleep(time.Millisecond)
 				}
 			}
+			type expiryResult struct {
+				err        error
+				returnedAt time.Time
+			}
+			// Observe expiry immediately, even while the second RPC is opening.
+			// Delaying Recv until afterward could hide an early cancellation.
+			firstDone := make(chan expiryResult, 1)
+			go func() {
+				for {
+					_, err := first.Recv()
+					if err != nil {
+						result := expiryResult{err: err, returnedAt: time.Now()}
+						firstDone <- result
+						return
+					}
+				}
+			}()
 			second, err := client.Execute(ctx)
 			if err != nil {
 				t.Fatal(err)
@@ -105,14 +122,33 @@ func TestRPCExpiryKeepsSharedConnectionAndMutation(t *testing.T) {
 			if connection == nil || server.admission.activeConnections.Load() != 1 {
 				t.Fatal("RPCs did not share one connection")
 			}
-			for {
-				_, err := first.Recv()
-				if err != nil {
-					if status.Code(err) != expected {
-						t.Fatal("first RPC did not end with its own expiry", err)
-					}
-					break
+			var expired expiryResult
+			select {
+			case expired = <-firstDone:
+			case <-ctx.Done():
+				t.Fatal("first RPC did not finish within the shared caller bound", ctx.Err())
+			}
+			actual := status.Code(expired.err)
+			if mode == "caller-deadline" {
+				deadline, ok := firstContext.Deadline()
+				if !ok || expired.returnedAt.Before(deadline) || expired.returnedAt.After(deadline.Add(time.Second)) {
+					t.Fatal("first RPC expired outside its original deadline window", expired.err, expired.returnedAt, deadline)
 				}
+				timer := time.NewTimer(time.Until(deadline.Add(time.Second)))
+				defer timer.Stop()
+				select {
+				case <-firstContext.Done():
+				case <-timer.C:
+					t.Fatal("original caller deadline did not fire")
+				}
+				if firstContext.Err() != context.DeadlineExceeded || actual != expected && actual != codes.Canceled {
+					t.Fatal("first RPC did not end with its own expiry", expired.err, firstContext.Err())
+				}
+				// Native gRPC's deadline timer can cancel its server context before
+				// its context timer runs, yielding a Canceled trailer. The local
+				// cause and independently recorded return time must still prove expiry.
+			} else if actual != expected {
+				t.Fatal("first RPC did not end with its own input stall", expired.err)
 			}
 			close(gate)
 			response, err := second.Recv()

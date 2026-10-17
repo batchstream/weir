@@ -332,7 +332,8 @@ func TestSearchLuaMetricsExcludeSourceDecodingAndClassifyFailures(t *testing.T) 
 			native := &plan{program: program}
 			found := len(tc.stored) != 0
 			current := &getReply{Found: &found, Source: tc.stored}
-			_, _ = adapter.evaluateProgram(tc.context, native, current)
+			work := &execution.Plan{Backend: native}
+			_, _ = adapter.evaluateProgram(tc.context, work, current)
 			families := searchMetricFamilies(t, registry)
 			if tc.outcome == "" {
 				if families["weir_search_lua_evaluation_duration_seconds"] != nil {

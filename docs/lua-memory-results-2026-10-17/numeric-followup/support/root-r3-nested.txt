@@ -1,0 +1,6 @@
+ok  	github.com/iceisfun/golua/budget	2.542s
+ok  	github.com/iceisfun/golua/lexer	3.128s
+ok  	github.com/iceisfun/golua/parser	4.209s
+ok  	github.com/iceisfun/golua/compiler	3.744s
+ok  	github.com/iceisfun/golua/vm	3.369s
+?   	github.com/iceisfun/golua/stdlib	[no test files]

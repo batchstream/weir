@@ -1,0 +1,646 @@
+{
+  "finished_utc": "2026-10-16T22:04:41.732301+00:00",
+  "mode": "qualify",
+  "output_directory": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/lua-repair-candidate-r2",
+  "result": {
+    "CLI": {
+      "binary": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/lua-repair-candidate-r2/weir-linux-arm64",
+      "binary_sha256": "741736023bafb08e55a9a888bbe7b3640a2bd12f2cc5593ce7b3df0e115941c0",
+      "patches": {
+        "github.com/iceisfun/golua": "./third_party/golua",
+        "google.golang.org/grpc": "./third_party/grpc"
+      },
+      "raw_sha256": "013b71336159ecf7ad230e0e0b294662f228485d986f84cacbac03bd9321bcfd",
+      "settings": {
+        "-buildmode": "exe",
+        "-compiler": "gc",
+        "-trimpath": "true",
+        "CGO_ENABLED": "0",
+        "GOARCH": "arm64",
+        "GOARM64": "v8.0",
+        "GOOS": "linux",
+        "vcs": "git",
+        "vcs.modified": "false",
+        "vcs.revision": "a01d523e6fab728d0e48f3ff84d908710559aa65",
+        "vcs.time": "2026-10-16T22:01:57Z"
+      },
+      "source": "a01d523e6fab728d0e48f3ff84d908710559aa65"
+    },
+    "race_driver": {
+      "binary": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/lua-repair-candidate-r2/app-race.test",
+      "binary_sha256": "6087dc99267acb7136f98ea61a23e04fb81085477dcd716446d72cb1bb2d2b35",
+      "patches": {
+        "github.com/iceisfun/golua": "./third_party/golua",
+        "google.golang.org/grpc": "./third_party/grpc"
+      },
+      "raw_sha256": "b7cd5c02348940ab27a50c81b488cba1c1ac9c242c122be0fdab3f904f0c2548",
+      "settings": {
+        "-buildmode": "exe",
+        "-compiler": "gc",
+        "-race": "true",
+        "-tags": "integration",
+        "-trimpath": "true",
+        "CGO_ENABLED": "1",
+        "GOARCH": "arm64",
+        "GOARM64": "v8.0",
+        "GOOS": "darwin",
+        "vcs": "git",
+        "vcs.modified": "false",
+        "vcs.revision": "a01d523e6fab728d0e48f3ff84d908710559aa65",
+        "vcs.time": "2026-10-16T22:01:57Z"
+      },
+      "source": "a01d523e6fab728d0e48f3ff84d908710559aa65"
+    },
+    "runs": [
+      {
+        "Mongo_fixture_absence": {
+          "absent": true,
+          "database": "weir_test_2716_1",
+          "ok": 1
+        },
+        "Search_fixture_absence": null,
+        "actual_driver_exit": 0,
+        "backend_connections": [
+          {
+            "raw_line": 34,
+            "text": "2026/10/16 22:04:35 INFO backend_connections_closed backend=mongo store=mongo owned=0 peak=3 dialing=0 closing=0 acquired=3 released=3"
+          }
+        ],
+        "cgroup_events": [
+          {
+            "raw_line": 4,
+            "text": "lua_memory_budget_integration_test.go:120: cgroup_memory_events phase=Lua_initial value=\"low 0\\nhigh 0\\nmax 0\\noom 0\\noom_kill 0\\noom_group_kill 0\\nsock_throttled 0\" error=<nil>"
+          },
+          {
+            "raw_line": 28,
+            "text": "lua_memory_budget_integration_test.go:199: cgroup_memory_events phase=Lua_after_probe value=\"low 0\\nhigh 0\\nmax 0\\noom 0\\noom_kill 0\\noom_group_kill 0\\nsock_throttled 0\" error=<nil>"
+          },
+          {
+            "raw_line": 30,
+            "text": "lua_memory_budget_integration_test.go:116: cgroup_memory_events phase=Lua_final_cleanup value=\"low 0\\nhigh 0\\nmax 0\\noom 0\\noom_kill 0\\noom_group_kill 0\\nsock_throttled 0\" error=<nil>"
+          }
+        ],
+        "created_utc": "2026-10-16T22:04:37.634055+00:00",
+        "details": {
+          "control": [
+            {
+              "raw_line": 8,
+              "text": "lua_memory_budget_integration_test.go:122: Lua_normal_control Transform_APPLIED=true ID_n_pad_valid=true bytes=1071 SHA256=e4c35b4ae559db91a7df884b3adb80e5260301dcb722c2047a49e7a9d254ed1c caller3s"
+            }
+          ],
+          "independent_unchanged": [
+            {
+              "raw_line": 15,
+              "text": "lua_memory_budget_integration_test.go:175: Lua_independent_unchanged ID=lua-bound-target bytes_before=1076 bytes_after=1076 before_SHA256=897d51bafa1d9a23ef9728feb897efaa527bccd013f709c60395140f8795da6c after_SHA256=897d51bafa1d9a23ef9728feb897efaa527bccd013f709c60395140f8795da6c unchanged=true error=<nil>"
+            }
+          ],
+          "outcomes": [
+            {
+              "raw_line": 13,
+              "text": "lua_memory_budget_integration_test.go:160: Lua_probe_outcome outcome=NOT_APPLIED failure=RESOURCE_EXHAUSTED RPC=OK error=<nil> returned=true started=2026-10-16T22:04:35.517563Z finished=2026-10-16T22:04:35.550958Z deadline=2026-10-16T22:04:38.517563Z within_original_deadline=true elapsed_or_observation_wait=33.395083ms confirmed_successful_Keep=false safe_capacity_rejection=true timeout_or_UNKNOWN_is_not_Keep=true"
+            }
+          ]
+        },
+        "driver_PID": 2716,
+        "final_zero_owners_evidence": [
+          {
+            "raw_line": 25,
+            "text": "lua_memory_budget_integration_test.go:198: ingress_final5s temporary_Node/Store/RPC/ingress/wire/Q/I_ownership0 latch0 connections=0 connection_bytes=0 Node_used=resident=connection_bytes elapsed=8.45ms"
+          }
+        ],
+        "independent_Docker_observations": [
+          {
+            "raw_line": 11,
+            "text": "ingress_memory_budget_integration_test.go:496: ingress_Docker at=2026-10-16T22:04:35.529767Z state=weir-memory-recovery-2716-1792188275166848000 true false 0 error=<nil>"
+          },
+          {
+            "raw_line": 14,
+            "text": "lua_memory_budget_integration_test.go:163: ingress_Docker at=2026-10-16T22:04:35.553545Z state=weir-memory-recovery-2716-1792188275166848000 true false 0 error=<nil>"
+          },
+          {
+            "raw_line": 26,
+            "text": "ingress_memory_budget_integration_test.go:496: ingress_Docker at=2026-10-16T22:04:35.629108Z state=weir-memory-recovery-2716-1792188275166848000 true false 0 error=<nil>"
+          },
+          {
+            "raw_line": 29,
+            "text": "lua_memory_budget_integration_test.go:202: ingress_Docker at=2026-10-16T22:04:35.647231Z state=weir-memory-recovery-2716-1792188275166848000 true false 0 error=<nil>"
+          },
+          {
+            "raw_line": 31,
+            "text": "lua_memory_budget_integration_test.go:117: ingress_Docker at=2026-10-16T22:04:35.683421Z state=weir-memory-recovery-2716-1792188275166848000 true false 0 error=<nil>"
+          }
+        ],
+        "metric_sample_peaks": {
+          "go_memstats_heap_alloc_bytes": 52960808,
+          "process_resident_memory_bytes": 91906048,
+          "weir_execution_memory_used_bytes": 82618416,
+          "weir_memory_cgroup_current_bytes": 98603008
+        },
+        "normal_exit_evidence": [
+          {
+            "raw_line": 35,
+            "text": "memory_recovery_integration_test.go:202: CLI exit=false 0"
+          }
+        ],
+        "owned_CLI_container_absence": [
+          {
+            "absent": true,
+            "owner": "weir-memory-recovery-2716-1792188275166848000",
+            "status": 404
+          }
+        ],
+        "peak_scope": "sampled maxima at separate times; not a physical transient peak proof",
+        "problems": [],
+        "profile": {
+          "CPUs": 2,
+          "caller_seconds": 3,
+          "capacity_MiB": 512,
+          "default_Store_policy": true,
+          "single_Weir_process": true
+        },
+        "raw_sha256": "7604aa62f063cfcca16c2e36fee695a05bf1653b575e377a188a274c5309e41c",
+        "retry": false,
+        "runtime_run_count": 1,
+        "source": "a01d523e6fab728d0e48f3ff84d908710559aa65",
+        "source_hash_verified_all_owner_assertions": "4eda4766b936b16bb405a17c68cca1195858e8ed9501bc284277c7e680701113",
+        "status": "PASS",
+        "successful_metrics_observations": 8
+      },
+      {
+        "Mongo_fixture_absence": {
+          "absent": true,
+          "database": "weir_test_2742_1",
+          "ok": 1
+        },
+        "Search_fixture_absence": {
+          "body": {
+            "error": {
+              "index": "weir_search_2742_1",
+              "index_uuid": "_na_",
+              "reason": "no such index [weir_search_2742_1]",
+              "resource.id": "weir_search_2742_1",
+              "resource.type": "index_or_alias",
+              "root_cause": [
+                {
+                  "index": "weir_search_2742_1",
+                  "index_uuid": "_na_",
+                  "reason": "no such index [weir_search_2742_1]",
+                  "resource.id": "weir_search_2742_1",
+                  "resource.type": "index_or_alias",
+                  "type": "index_not_found_exception"
+                }
+              ],
+              "type": "index_not_found_exception"
+            },
+            "status": 404
+          },
+          "raw_bytes": 437,
+          "raw_sha256": "1e73ed2b7ba9d98caae9ad8ba9d418f9f737fe9b88819f31a60d01f3dcda0942",
+          "status": 404
+        },
+        "actual_driver_exit": 0,
+        "backend_connections": [
+          {
+            "raw_line": 215,
+            "text": "2026/10/16 22:04:39 INFO backend_connections_closed backend=search store=search owned=0 peak=2 acquired=7 released=7"
+          },
+          {
+            "raw_line": 216,
+            "text": "2026/10/16 22:04:39 INFO backend_connections_closed backend=mongo store=mongo owned=0 peak=3 dialing=0 closing=0 acquired=3 released=3"
+          }
+        ],
+        "cgroup_events": [
+          {
+            "raw_line": 6,
+            "text": "lua_memory_paths_integration_test.go:112: cgroup_memory_events phase=Lua_paths_initial value=\"low 0\\nhigh 0\\nmax 0\\noom 0\\noom_kill 0\\noom_group_kill 0\\nsock_throttled 0\" error=<nil>"
+          },
+          {
+            "raw_line": 208,
+            "text": "lua_memory_paths_integration_test.go:139: cgroup_memory_events phase=Lua_paths_final value=\"low 0\\nhigh 0\\nmax 0\\noom 0\\noom_kill 0\\noom_group_kill 0\\nsock_throttled 0\" error=<nil>"
+          },
+          {
+            "raw_line": 211,
+            "text": "lua_memory_paths_integration_test.go:105: cgroup_memory_events phase=Lua_paths_cleanup value=\"low 0\\nhigh 0\\nmax 0\\noom 0\\noom_kill 0\\noom_group_kill 0\\nsock_throttled 0\" error=<nil>"
+          }
+        ],
+        "created_utc": "2026-10-16T22:04:41.534979+00:00",
+        "details": {
+          "effects": [
+            {
+              "raw_line": 7,
+              "text": "lua_memory_paths_integration_test.go:117: Lua_path_independent_effect store=mongo ID=lua-path-increment bytes=1078 expected_bytes=1078 SHA256=76851957512eaf12ce35dd76a873336b5337bf42864fee4126bcd407be5735c4 expected_SHA256=76851957512eaf12ce35dd76a873336b5337bf42864fee4126bcd407be5735c4 full_raw_equal=true error=<nil>"
+            },
+            {
+              "raw_line": 12,
+              "text": "lua_memory_paths_integration_test.go:126: Lua_path_independent_effect store=mongo ID=lua-path-increment bytes=1078 expected_bytes=1078 SHA256=101e9ccb767692b92c0c761985577695b8e37367707b7cb6e4536cdbdfb995d0 expected_SHA256=101e9ccb767692b92c0c761985577695b8e37367707b7cb6e4536cdbdfb995d0 full_raw_equal=true error=<nil>"
+            },
+            {
+              "raw_line": 19,
+              "text": "lua_memory_paths_integration_test.go:130: Lua_path_independent_effect store=mongo ID=write-2000000 bytes=1073 expected_bytes=1073 SHA256=6d6cd376044bf08c0bf011b764d9043e79b7799476646b7780a4fa336ba8b610 expected_SHA256=6d6cd376044bf08c0bf011b764d9043e79b7799476646b7780a4fa336ba8b610 full_raw_equal=true error=<nil>"
+            },
+            {
+              "raw_line": 23,
+              "text": "lua_memory_paths_integration_test.go:117: Lua_path_independent_effect store=mongo ID=lua-path-pcall-concat bytes=1081 expected_bytes=1081 SHA256=7f54f8b75435a3da2bb0eed0943a3815748f912b6fd45385ce0e64b937547be0 expected_SHA256=7f54f8b75435a3da2bb0eed0943a3815748f912b6fd45385ce0e64b937547be0 full_raw_equal=true error=<nil>"
+            },
+            {
+              "raw_line": 27,
+              "text": "lua_memory_paths_integration_test.go:126: Lua_path_independent_effect store=mongo ID=lua-path-pcall-concat bytes=1081 expected_bytes=1081 SHA256=7f54f8b75435a3da2bb0eed0943a3815748f912b6fd45385ce0e64b937547be0 expected_SHA256=7f54f8b75435a3da2bb0eed0943a3815748f912b6fd45385ce0e64b937547be0 full_raw_equal=true error=<nil>"
+            },
+            {
+              "raw_line": 34,
+              "text": "lua_memory_paths_integration_test.go:130: Lua_path_independent_effect store=mongo ID=write-2000001 bytes=1073 expected_bytes=1073 SHA256=df3d792a5255ac7b5e3bf9afbe98d9f1b56f873fb38b43b9b7c62d2998a8065b expected_SHA256=df3d792a5255ac7b5e3bf9afbe98d9f1b56f873fb38b43b9b7c62d2998a8065b full_raw_equal=true error=<nil>"
+            },
+            {
+              "raw_line": 39,
+              "text": "lua_memory_paths_integration_test.go:117: Lua_path_independent_effect store=mongo ID=lua-path-shared-dag bytes=1079 expected_bytes=1079 SHA256=098ebedf3d94fe3ebb67487753802dbc301cad91e82a1eb5e5812f07b575b88b expected_SHA256=098ebedf3d94fe3ebb67487753802dbc301cad91e82a1eb5e5812f07b575b88b full_raw_equal=true error=<nil>"
+            },
+            {
+              "raw_line": 46,
+              "text": "lua_memory_paths_integration_test.go:126: Lua_path_independent_effect store=mongo ID=lua-path-shared-dag bytes=1079 expected_bytes=1079 SHA256=098ebedf3d94fe3ebb67487753802dbc301cad91e82a1eb5e5812f07b575b88b expected_SHA256=098ebedf3d94fe3ebb67487753802dbc301cad91e82a1eb5e5812f07b575b88b full_raw_equal=true error=<nil>"
+            },
+            {
+              "raw_line": 52,
+              "text": "lua_memory_paths_integration_test.go:130: Lua_path_independent_effect store=mongo ID=write-2000002 bytes=1073 expected_bytes=1073 SHA256=78b2ea1ee0703cf6ee445478c0f5367e30d91f93cca4ebb3d79560735ae7cf46 expected_SHA256=78b2ea1ee0703cf6ee445478c0f5367e30d91f93cca4ebb3d79560735ae7cf46 full_raw_equal=true error=<nil>"
+            },
+            {
+              "raw_line": 57,
+              "text": "lua_memory_paths_integration_test.go:117: Lua_path_independent_effect store=mongo ID=lua-path-large-error bytes=1080 expected_bytes=1080 SHA256=03311ad4bd1ae1ae59780cfe7393303b902d9a79bc64e843d643c99a2b745280 expected_SHA256=03311ad4bd1ae1ae59780cfe7393303b902d9a79bc64e843d643c99a2b745280 full_raw_equal=true error=<nil>"
+            },
+            {
+              "raw_line": 61,
+              "text": "lua_memory_paths_integration_test.go:126: Lua_path_independent_effect store=mongo ID=lua-path-large-error bytes=1080 expected_bytes=1080 SHA256=03311ad4bd1ae1ae59780cfe7393303b902d9a79bc64e843d643c99a2b745280 expected_SHA256=03311ad4bd1ae1ae59780cfe7393303b902d9a79bc64e843d643c99a2b745280 full_raw_equal=true error=<nil>"
+            },
+            {
+              "raw_line": 68,
+              "text": "lua_memory_paths_integration_test.go:130: Lua_path_independent_effect store=mongo ID=write-2000003 bytes=1073 expected_bytes=1073 SHA256=e0ca174f88e15f3995ed41f531f21f81189dd192a72933c00ab11522b2f26555 expected_SHA256=e0ca174f88e15f3995ed41f531f21f81189dd192a72933c00ab11522b2f26555 full_raw_equal=true error=<nil>"
+            },
+            {
+              "raw_line": 72,
+              "text": "lua_memory_paths_integration_test.go:117: Lua_path_independent_effect store=mongo ID=lua-path-same-key-comments bytes=1086 expected_bytes=1086 SHA256=a4f0b4966478d0e0125288db3136fbfd91350a9c81379ecff7974628c82168e0 expected_SHA256=a4f0b4966478d0e0125288db3136fbfd91350a9c81379ecff7974628c82168e0 full_raw_equal=true error=<nil>"
+            },
+            {
+              "raw_line": 76,
+              "text": "lua_memory_paths_integration_test.go:126: Lua_path_independent_effect store=mongo ID=lua-path-same-key-comments bytes=1086 expected_bytes=1086 SHA256=a4f0b4966478d0e0125288db3136fbfd91350a9c81379ecff7974628c82168e0 expected_SHA256=a4f0b4966478d0e0125288db3136fbfd91350a9c81379ecff7974628c82168e0 full_raw_equal=true error=<nil>"
+            },
+            {
+              "raw_line": 83,
+              "text": "lua_memory_paths_integration_test.go:130: Lua_path_independent_effect store=mongo ID=write-2000004 bytes=1073 expected_bytes=1073 SHA256=219b239df170fa1ae5ec0c0d2a0bf35e2921a48077ead7a2ad8a04046ce4a961 expected_SHA256=219b239df170fa1ae5ec0c0d2a0bf35e2921a48077ead7a2ad8a04046ce4a961 full_raw_equal=true error=<nil>"
+            },
+            {
+              "raw_line": 87,
+              "text": "lua_memory_paths_integration_test.go:117: Lua_path_independent_effect store=mongo ID=lua-path-control-quote bytes=1082 expected_bytes=1082 SHA256=43ba1c97102f802595293f98a34b405e9c6b91b1e66ca78868d92b2e8fa459dc expected_SHA256=43ba1c97102f802595293f98a34b405e9c6b91b1e66ca78868d92b2e8fa459dc full_raw_equal=true error=<nil>"
+            },
+            {
+              "raw_line": 91,
+              "text": "lua_memory_paths_integration_test.go:126: Lua_path_independent_effect store=mongo ID=lua-path-control-quote bytes=1082 expected_bytes=1082 SHA256=43ba1c97102f802595293f98a34b405e9c6b91b1e66ca78868d92b2e8fa459dc expected_SHA256=43ba1c97102f802595293f98a34b405e9c6b91b1e66ca78868d92b2e8fa459dc full_raw_equal=true error=<nil>"
+            },
+            {
+              "raw_line": 98,
+              "text": "lua_memory_paths_integration_test.go:130: Lua_path_independent_effect store=mongo ID=write-2000005 bytes=1073 expected_bytes=1073 SHA256=b9cd275a5ef95ba5213e3daaee473463b5954ef43effa39f8b5ca92f796f6967 expected_SHA256=b9cd275a5ef95ba5213e3daaee473463b5954ef43effa39f8b5ca92f796f6967 full_raw_equal=true error=<nil>"
+            },
+            {
+              "raw_line": 104,
+              "text": "lua_memory_paths_integration_test.go:117: Lua_path_independent_effect store=search ID=lua-path-increment bytes=1040 expected_bytes=1040 SHA256=5132f082e37b2e214de0878e83b2e3286abcec006ef89f7f82c0b0c03eaf5901 expected_SHA256=5132f082e37b2e214de0878e83b2e3286abcec006ef89f7f82c0b0c03eaf5901 full_raw_equal=true error=<nil>"
+            },
+            {
+              "raw_line": 108,
+              "text": "lua_memory_paths_integration_test.go:126: Lua_path_independent_effect store=search ID=lua-path-increment bytes=1040 expected_bytes=1040 SHA256=d162c4c2548915ef0d86bfd8e0468cb32c0f3be81076da87927c4eab73f21ccf expected_SHA256=d162c4c2548915ef0d86bfd8e0468cb32c0f3be81076da87927c4eab73f21ccf full_raw_equal=true error=<nil>"
+            },
+            {
+              "raw_line": 114,
+              "text": "lua_memory_paths_integration_test.go:130: Lua_path_independent_effect store=search ID=write-2000000 bytes=1046 expected_bytes=1046 SHA256=017d70e64f3fa49db6f3eb15ecb3874785b11291d0f4aab6eeeb60be59e44af2 expected_SHA256=017d70e64f3fa49db6f3eb15ecb3874785b11291d0f4aab6eeeb60be59e44af2 full_raw_equal=true error=<nil>"
+            },
+            {
+              "raw_line": 119,
+              "text": "lua_memory_paths_integration_test.go:117: Lua_path_independent_effect store=search ID=lua-path-pcall-concat bytes=1040 expected_bytes=1040 SHA256=5132f082e37b2e214de0878e83b2e3286abcec006ef89f7f82c0b0c03eaf5901 expected_SHA256=5132f082e37b2e214de0878e83b2e3286abcec006ef89f7f82c0b0c03eaf5901 full_raw_equal=true error=<nil>"
+            },
+            {
+              "raw_line": 124,
+              "text": "lua_memory_paths_integration_test.go:126: Lua_path_independent_effect store=search ID=lua-path-pcall-concat bytes=1040 expected_bytes=1040 SHA256=5132f082e37b2e214de0878e83b2e3286abcec006ef89f7f82c0b0c03eaf5901 expected_SHA256=5132f082e37b2e214de0878e83b2e3286abcec006ef89f7f82c0b0c03eaf5901 full_raw_equal=true error=<nil>"
+            },
+            {
+              "raw_line": 132,
+              "text": "lua_memory_paths_integration_test.go:130: Lua_path_independent_effect store=search ID=write-2000001 bytes=1046 expected_bytes=1046 SHA256=faea609b4f64fa3752d159fe12def58ffed64385f390442162fd9b5e666fd449 expected_SHA256=faea609b4f64fa3752d159fe12def58ffed64385f390442162fd9b5e666fd449 full_raw_equal=true error=<nil>"
+            },
+            {
+              "raw_line": 136,
+              "text": "lua_memory_paths_integration_test.go:117: Lua_path_independent_effect store=search ID=lua-path-shared-dag bytes=1040 expected_bytes=1040 SHA256=5132f082e37b2e214de0878e83b2e3286abcec006ef89f7f82c0b0c03eaf5901 expected_SHA256=5132f082e37b2e214de0878e83b2e3286abcec006ef89f7f82c0b0c03eaf5901 full_raw_equal=true error=<nil>"
+            },
+            {
+              "raw_line": 145,
+              "text": "lua_memory_paths_integration_test.go:126: Lua_path_independent_effect store=search ID=lua-path-shared-dag bytes=1040 expected_bytes=1040 SHA256=5132f082e37b2e214de0878e83b2e3286abcec006ef89f7f82c0b0c03eaf5901 expected_SHA256=5132f082e37b2e214de0878e83b2e3286abcec006ef89f7f82c0b0c03eaf5901 full_raw_equal=true error=<nil>"
+            },
+            {
+              "raw_line": 152,
+              "text": "lua_memory_paths_integration_test.go:130: Lua_path_independent_effect store=search ID=write-2000002 bytes=1046 expected_bytes=1046 SHA256=c50fe3261479a38dc163575bb060881b516a95ca87a99ea71ad2d318954619a7 expected_SHA256=c50fe3261479a38dc163575bb060881b516a95ca87a99ea71ad2d318954619a7 full_raw_equal=true error=<nil>"
+            },
+            {
+              "raw_line": 157,
+              "text": "lua_memory_paths_integration_test.go:117: Lua_path_independent_effect store=search ID=lua-path-large-error bytes=1040 expected_bytes=1040 SHA256=5132f082e37b2e214de0878e83b2e3286abcec006ef89f7f82c0b0c03eaf5901 expected_SHA256=5132f082e37b2e214de0878e83b2e3286abcec006ef89f7f82c0b0c03eaf5901 full_raw_equal=true error=<nil>"
+            },
+            {
+              "raw_line": 161,
+              "text": "lua_memory_paths_integration_test.go:126: Lua_path_independent_effect store=search ID=lua-path-large-error bytes=1040 expected_bytes=1040 SHA256=5132f082e37b2e214de0878e83b2e3286abcec006ef89f7f82c0b0c03eaf5901 expected_SHA256=5132f082e37b2e214de0878e83b2e3286abcec006ef89f7f82c0b0c03eaf5901 full_raw_equal=true error=<nil>"
+            },
+            {
+              "raw_line": 168,
+              "text": "lua_memory_paths_integration_test.go:130: Lua_path_independent_effect store=search ID=write-2000003 bytes=1046 expected_bytes=1046 SHA256=29e92a133d1a92858c6db0207659184b575d6b8977758960e4d747bc7fc02a1e expected_SHA256=29e92a133d1a92858c6db0207659184b575d6b8977758960e4d747bc7fc02a1e full_raw_equal=true error=<nil>"
+            },
+            {
+              "raw_line": 172,
+              "text": "lua_memory_paths_integration_test.go:117: Lua_path_independent_effect store=search ID=lua-path-same-key-comments bytes=1040 expected_bytes=1040 SHA256=5132f082e37b2e214de0878e83b2e3286abcec006ef89f7f82c0b0c03eaf5901 expected_SHA256=5132f082e37b2e214de0878e83b2e3286abcec006ef89f7f82c0b0c03eaf5901 full_raw_equal=true error=<nil>"
+            },
+            {
+              "raw_line": 177,
+              "text": "lua_memory_paths_integration_test.go:126: Lua_path_independent_effect store=search ID=lua-path-same-key-comments bytes=1040 expected_bytes=1040 SHA256=5132f082e37b2e214de0878e83b2e3286abcec006ef89f7f82c0b0c03eaf5901 expected_SHA256=5132f082e37b2e214de0878e83b2e3286abcec006ef89f7f82c0b0c03eaf5901 full_raw_equal=true error=<nil>"
+            },
+            {
+              "raw_line": 183,
+              "text": "lua_memory_paths_integration_test.go:130: Lua_path_independent_effect store=search ID=write-2000004 bytes=1046 expected_bytes=1046 SHA256=e790a6bc749c63e3a8ea3c5c38ee1b16ef1a2bdc1f01dbfa61b93f38282fd8bb expected_SHA256=e790a6bc749c63e3a8ea3c5c38ee1b16ef1a2bdc1f01dbfa61b93f38282fd8bb full_raw_equal=true error=<nil>"
+            },
+            {
+              "raw_line": 188,
+              "text": "lua_memory_paths_integration_test.go:117: Lua_path_independent_effect store=search ID=lua-path-control-quote bytes=1040 expected_bytes=1040 SHA256=5132f082e37b2e214de0878e83b2e3286abcec006ef89f7f82c0b0c03eaf5901 expected_SHA256=5132f082e37b2e214de0878e83b2e3286abcec006ef89f7f82c0b0c03eaf5901 full_raw_equal=true error=<nil>"
+            },
+            {
+              "raw_line": 192,
+              "text": "lua_memory_paths_integration_test.go:126: Lua_path_independent_effect store=search ID=lua-path-control-quote bytes=1040 expected_bytes=1040 SHA256=5132f082e37b2e214de0878e83b2e3286abcec006ef89f7f82c0b0c03eaf5901 expected_SHA256=5132f082e37b2e214de0878e83b2e3286abcec006ef89f7f82c0b0c03eaf5901 full_raw_equal=true error=<nil>"
+            },
+            {
+              "raw_line": 198,
+              "text": "lua_memory_paths_integration_test.go:130: Lua_path_independent_effect store=search ID=write-2000005 bytes=1046 expected_bytes=1046 SHA256=3451122132ddccae661e85fd48417b4de2fc6a023a87a8451f3072a077c39ca1 expected_SHA256=3451122132ddccae661e85fd48417b4de2fc6a023a87a8451f3072a077c39ca1 full_raw_equal=true error=<nil>"
+            }
+          ],
+          "final_oracles": [
+            {
+              "raw_line": 102,
+              "text": "lua_memory_paths_integration_test.go:134: independent_oracle store=mongo expected=13 seen=13 every_ID_n_pad_checked=true"
+            },
+            {
+              "raw_line": 204,
+              "text": "lua_memory_paths_integration_test.go:134: independent_oracle store=search expected=13 seen=13 every_ID_n_pad_checked=true"
+            }
+          ],
+          "outcomes": [
+            {
+              "raw_line": 11,
+              "text": "lua_memory_paths_integration_test.go:123: Lua_path_outcome case=mongo/increment outcome=APPLIED failure= RPC=OK error=<nil> returned=true within_original_deadline=true started=2026-10-16T22:04:38.389093Z finished=2026-10-16T22:04:38.42241Z deadline=2026-10-16T22:04:41.389093Z elapsed=33.317333ms failure_message_bytes=0 failure_message_SHA256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            },
+            {
+              "raw_line": 26,
+              "text": "lua_memory_paths_integration_test.go:123: Lua_path_outcome case=mongo/pcall-concat outcome=NOT_APPLIED failure=RESOURCE_EXHAUSTED RPC=OK error=<nil> returned=true within_original_deadline=true started=2026-10-16T22:04:38.483026Z finished=2026-10-16T22:04:38.519001Z deadline=2026-10-16T22:04:41.483026Z elapsed=35.974333ms failure_message_bytes=43 failure_message_SHA256=66214f21f5c379a0e0e173e71b7611b4ab664adc1214f88858df801dfea654ab"
+            },
+            {
+              "raw_line": 45,
+              "text": "lua_memory_paths_integration_test.go:123: Lua_path_outcome case=mongo/shared-dag outcome=NOT_APPLIED failure=RESOURCE_EXHAUSTED RPC=OK error=<nil> returned=true within_original_deadline=true started=2026-10-16T22:04:38.574079Z finished=2026-10-16T22:04:38.664626Z deadline=2026-10-16T22:04:41.574079Z elapsed=90.545458ms failure_message_bytes=43 failure_message_SHA256=66214f21f5c379a0e0e173e71b7611b4ab664adc1214f88858df801dfea654ab"
+            },
+            {
+              "raw_line": 60,
+              "text": "lua_memory_paths_integration_test.go:123: Lua_path_outcome case=mongo/large-error outcome=NOT_APPLIED failure=INVALID_ARGUMENT RPC=OK error=<nil> returned=true within_original_deadline=true started=2026-10-16T22:04:38.719848Z finished=2026-10-16T22:04:38.742327Z deadline=2026-10-16T22:04:41.719848Z elapsed=22.478625ms failure_message_bytes=29 failure_message_SHA256=f186041e086478d6a311f2a40b445a6240874b4325f46598b3f9c2eabcad25ef"
+            },
+            {
+              "raw_line": 75,
+              "text": "lua_memory_paths_integration_test.go:123: Lua_path_outcome case=mongo/same-key-comments outcome=APPLIED failure= RPC=OK error=<nil> returned=true within_original_deadline=true started=2026-10-16T22:04:38.805779Z finished=2026-10-16T22:04:38.833629Z deadline=2026-10-16T22:04:41.805779Z elapsed=27.849709ms failure_message_bytes=0 failure_message_SHA256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            },
+            {
+              "raw_line": 90,
+              "text": "lua_memory_paths_integration_test.go:123: Lua_path_outcome case=mongo/control-quote outcome=APPLIED failure= RPC=OK error=<nil> returned=true within_original_deadline=true started=2026-10-16T22:04:38.888487Z finished=2026-10-16T22:04:38.912598Z deadline=2026-10-16T22:04:41.888487Z elapsed=24.1105ms failure_message_bytes=0 failure_message_SHA256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            },
+            {
+              "raw_line": 107,
+              "text": "lua_memory_paths_integration_test.go:123: Lua_path_outcome case=search/increment outcome=APPLIED failure= RPC=OK error=<nil> returned=true within_original_deadline=true started=2026-10-16T22:04:38.970947Z finished=2026-10-16T22:04:38.996173Z deadline=2026-10-16T22:04:41.970947Z elapsed=25.224959ms failure_message_bytes=0 failure_message_SHA256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            },
+            {
+              "raw_line": 123,
+              "text": "lua_memory_paths_integration_test.go:123: Lua_path_outcome case=search/pcall-concat outcome=NOT_APPLIED failure=RESOURCE_EXHAUSTED RPC=OK error=<nil> returned=true within_original_deadline=true started=2026-10-16T22:04:39.056011Z finished=2026-10-16T22:04:39.133482Z deadline=2026-10-16T22:04:42.056011Z elapsed=77.469875ms failure_message_bytes=43 failure_message_SHA256=66214f21f5c379a0e0e173e71b7611b4ab664adc1214f88858df801dfea654ab"
+            },
+            {
+              "raw_line": 144,
+              "text": "lua_memory_paths_integration_test.go:123: Lua_path_outcome case=search/shared-dag outcome=NOT_APPLIED failure=RESOURCE_EXHAUSTED RPC=OK error=<nil> returned=true within_original_deadline=true started=2026-10-16T22:04:39.196785Z finished=2026-10-16T22:04:39.320057Z deadline=2026-10-16T22:04:42.196785Z elapsed=123.270625ms failure_message_bytes=43 failure_message_SHA256=66214f21f5c379a0e0e173e71b7611b4ab664adc1214f88858df801dfea654ab"
+            },
+            {
+              "raw_line": 160,
+              "text": "lua_memory_paths_integration_test.go:123: Lua_path_outcome case=search/large-error outcome=NOT_APPLIED failure=INVALID_ARGUMENT RPC=OK error=<nil> returned=true within_original_deadline=true started=2026-10-16T22:04:39.383437Z finished=2026-10-16T22:04:39.409743Z deadline=2026-10-16T22:04:42.383437Z elapsed=26.305792ms failure_message_bytes=29 failure_message_SHA256=f186041e086478d6a311f2a40b445a6240874b4325f46598b3f9c2eabcad25ef"
+            },
+            {
+              "raw_line": 176,
+              "text": "lua_memory_paths_integration_test.go:123: Lua_path_outcome case=search/same-key-comments outcome=APPLIED failure= RPC=OK error=<nil> returned=true within_original_deadline=true started=2026-10-16T22:04:39.472422Z finished=2026-10-16T22:04:39.499211Z deadline=2026-10-16T22:04:42.472422Z elapsed=26.789209ms failure_message_bytes=0 failure_message_SHA256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            },
+            {
+              "raw_line": 191,
+              "text": "lua_memory_paths_integration_test.go:123: Lua_path_outcome case=search/control-quote outcome=APPLIED failure= RPC=OK error=<nil> returned=true within_original_deadline=true started=2026-10-16T22:04:39.558345Z finished=2026-10-16T22:04:39.582683Z deadline=2026-10-16T22:04:42.558345Z elapsed=24.337708ms failure_message_bytes=0 failure_message_SHA256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            }
+          ],
+          "same_SDK_recovery": [
+            {
+              "raw_line": 18,
+              "text": "lua_memory_paths_integration_test.go:130: Lua_path_same_SDK_recovery store=mongo ID=write-2000000 client=0xc0003e2630 combined_Put_Read_caller3s elapsed=33.853458ms error=<nil> full_raw_SHA256=6d6cd376044bf08c0bf011b764d9043e79b7799476646b7780a4fa336ba8b610 TCP_connection_identity=not_observed"
+            },
+            {
+              "raw_line": 33,
+              "text": "lua_memory_paths_integration_test.go:130: Lua_path_same_SDK_recovery store=mongo ID=write-2000001 client=0xc0003e2630 combined_Put_Read_caller3s elapsed=29.682834ms error=<nil> full_raw_SHA256=df3d792a5255ac7b5e3bf9afbe98d9f1b56f873fb38b43b9b7c62d2998a8065b TCP_connection_identity=not_observed"
+            },
+            {
+              "raw_line": 51,
+              "text": "lua_memory_paths_integration_test.go:130: Lua_path_same_SDK_recovery store=mongo ID=write-2000002 client=0xc0003e2630 combined_Put_Read_caller3s elapsed=28.52725ms error=<nil> full_raw_SHA256=78b2ea1ee0703cf6ee445478c0f5367e30d91f93cca4ebb3d79560735ae7cf46 TCP_connection_identity=not_observed"
+            },
+            {
+              "raw_line": 66,
+              "text": "lua_memory_paths_integration_test.go:130: Lua_path_same_SDK_recovery store=mongo ID=write-2000003 client=0xc0003e2630 combined_Put_Read_caller3s elapsed=37.9535ms error=<nil> full_raw_SHA256=e0ca174f88e15f3995ed41f531f21f81189dd192a72933c00ab11522b2f26555 TCP_connection_identity=not_observed"
+            },
+            {
+              "raw_line": 82,
+              "text": "lua_memory_paths_integration_test.go:130: Lua_path_same_SDK_recovery store=mongo ID=write-2000004 client=0xc0003e2630 combined_Put_Read_caller3s elapsed=28.525042ms error=<nil> full_raw_SHA256=219b239df170fa1ae5ec0c0d2a0bf35e2921a48077ead7a2ad8a04046ce4a961 TCP_connection_identity=not_observed"
+            },
+            {
+              "raw_line": 97,
+              "text": "lua_memory_paths_integration_test.go:130: Lua_path_same_SDK_recovery store=mongo ID=write-2000005 client=0xc0003e2630 combined_Put_Read_caller3s elapsed=28.444917ms error=<nil> full_raw_SHA256=b9cd275a5ef95ba5213e3daaee473463b5954ef43effa39f8b5ca92f796f6967 TCP_connection_identity=not_observed"
+            },
+            {
+              "raw_line": 113,
+              "text": "lua_memory_paths_integration_test.go:130: Lua_path_same_SDK_recovery store=search ID=write-2000000 client=0xc0003e2630 combined_Put_Read_caller3s elapsed=26.242042ms error=<nil> full_raw_SHA256=017d70e64f3fa49db6f3eb15ecb3874785b11291d0f4aab6eeeb60be59e44af2 TCP_connection_identity=not_observed"
+            },
+            {
+              "raw_line": 131,
+              "text": "lua_memory_paths_integration_test.go:130: Lua_path_same_SDK_recovery store=search ID=write-2000001 client=0xc0003e2630 combined_Put_Read_caller3s elapsed=25.286166ms error=<nil> full_raw_SHA256=faea609b4f64fa3752d159fe12def58ffed64385f390442162fd9b5e666fd449 TCP_connection_identity=not_observed"
+            },
+            {
+              "raw_line": 151,
+              "text": "lua_memory_paths_integration_test.go:130: Lua_path_same_SDK_recovery store=search ID=write-2000002 client=0xc0003e2630 combined_Put_Read_caller3s elapsed=25.943292ms error=<nil> full_raw_SHA256=c50fe3261479a38dc163575bb060881b516a95ca87a99ea71ad2d318954619a7 TCP_connection_identity=not_observed"
+            },
+            {
+              "raw_line": 167,
+              "text": "lua_memory_paths_integration_test.go:130: Lua_path_same_SDK_recovery store=search ID=write-2000003 client=0xc0003e2630 combined_Put_Read_caller3s elapsed=27.545375ms error=<nil> full_raw_SHA256=29e92a133d1a92858c6db0207659184b575d6b8977758960e4d747bc7fc02a1e TCP_connection_identity=not_observed"
+            },
+            {
+              "raw_line": 182,
+              "text": "lua_memory_paths_integration_test.go:130: Lua_path_same_SDK_recovery store=search ID=write-2000004 client=0xc0003e2630 combined_Put_Read_caller3s elapsed=24.717583ms error=<nil> full_raw_SHA256=e790a6bc749c63e3a8ea3c5c38ee1b16ef1a2bdc1f01dbfa61b93f38282fd8bb TCP_connection_identity=not_observed"
+            },
+            {
+              "raw_line": 197,
+              "text": "lua_memory_paths_integration_test.go:130: Lua_path_same_SDK_recovery store=search ID=write-2000005 client=0xc0003e2630 combined_Put_Read_caller3s elapsed=25.686042ms error=<nil> full_raw_SHA256=3451122132ddccae661e85fd48417b4de2fc6a023a87a8451f3072a077c39ca1 TCP_connection_identity=not_observed"
+            }
+          ]
+        },
+        "driver_PID": 2742,
+        "final_zero_owners_evidence": [
+          {
+            "raw_line": 205,
+            "text": "lua_memory_paths_integration_test.go:138: ingress_final5s temporary_Node/Store/RPC/ingress/wire/Q/I_ownership0 latch0 connections=0 connection_bytes=0 Node_used=resident=connection_bytes elapsed=14.370208ms"
+          }
+        ],
+        "independent_Docker_observations": [
+          {
+            "raw_line": 13,
+            "text": "lua_memory_paths_integration_test.go:128: ingress_Docker at=2026-10-16T22:04:38.42539Z state=weir-memory-recovery-2742-1792188278096086000 true false 0 error=<nil>"
+          },
+          {
+            "raw_line": 15,
+            "text": "ingress_memory_budget_integration_test.go:496: ingress_Docker at=2026-10-16T22:04:38.436829Z state=weir-memory-recovery-2742-1792188278096086000 true false 0 error=<nil>"
+          },
+          {
+            "raw_line": 28,
+            "text": "lua_memory_paths_integration_test.go:128: ingress_Docker at=2026-10-16T22:04:38.522058Z state=weir-memory-recovery-2742-1792188278096086000 true false 0 error=<nil>"
+          },
+          {
+            "raw_line": 31,
+            "text": "ingress_memory_budget_integration_test.go:496: ingress_Docker at=2026-10-16T22:04:38.535243Z state=weir-memory-recovery-2742-1792188278096086000 true false 0 error=<nil>"
+          },
+          {
+            "raw_line": 43,
+            "text": "ingress_memory_budget_integration_test.go:496: ingress_Docker at=2026-10-16T22:04:38.637811Z state=weir-memory-recovery-2742-1792188278096086000 true false 0 error=<nil>"
+          },
+          {
+            "raw_line": 47,
+            "text": "lua_memory_paths_integration_test.go:128: ingress_Docker at=2026-10-16T22:04:38.667664Z state=weir-memory-recovery-2742-1792188278096086000 true false 0 error=<nil>"
+          },
+          {
+            "raw_line": 59,
+            "text": "ingress_memory_budget_integration_test.go:496: ingress_Docker at=2026-10-16T22:04:38.73762Z state=weir-memory-recovery-2742-1792188278096086000 true false 0 error=<nil>"
+          },
+          {
+            "raw_line": 62,
+            "text": "lua_memory_paths_integration_test.go:128: ingress_Docker at=2026-10-16T22:04:38.744995Z state=weir-memory-recovery-2742-1792188278096086000 true false 0 error=<nil>"
+          },
+          {
+            "raw_line": 77,
+            "text": "ingress_memory_budget_integration_test.go:496: ingress_Docker at=2026-10-16T22:04:38.836689Z state=weir-memory-recovery-2742-1792188278096086000 true false 0 error=<nil>"
+          },
+          {
+            "raw_line": 78,
+            "text": "lua_memory_paths_integration_test.go:128: ingress_Docker at=2026-10-16T22:04:38.837215Z state=weir-memory-recovery-2742-1792188278096086000 true false 0 error=<nil>"
+          },
+          {
+            "raw_line": 92,
+            "text": "lua_memory_paths_integration_test.go:128: ingress_Docker at=2026-10-16T22:04:38.915469Z state=weir-memory-recovery-2742-1792188278096086000 true false 0 error=<nil>"
+          },
+          {
+            "raw_line": 95,
+            "text": "ingress_memory_budget_integration_test.go:496: ingress_Docker at=2026-10-16T22:04:38.937021Z state=weir-memory-recovery-2742-1792188278096086000 true false 0 error=<nil>"
+          },
+          {
+            "raw_line": 109,
+            "text": "lua_memory_paths_integration_test.go:128: ingress_Docker at=2026-10-16T22:04:38.999415Z state=weir-memory-recovery-2742-1792188278096086000 true false 0 error=<nil>"
+          },
+          {
+            "raw_line": 112,
+            "text": "ingress_memory_budget_integration_test.go:496: ingress_Docker at=2026-10-16T22:04:39.037906Z state=weir-memory-recovery-2742-1792188278096086000 true false 0 error=<nil>"
+          },
+          {
+            "raw_line": 125,
+            "text": "ingress_memory_budget_integration_test.go:496: ingress_Docker at=2026-10-16T22:04:39.136652Z state=weir-memory-recovery-2742-1792188278096086000 true false 0 error=<nil>"
+          },
+          {
+            "raw_line": 126,
+            "text": "lua_memory_paths_integration_test.go:128: ingress_Docker at=2026-10-16T22:04:39.137231Z state=weir-memory-recovery-2742-1792188278096086000 true false 0 error=<nil>"
+          },
+          {
+            "raw_line": 140,
+            "text": "ingress_memory_budget_integration_test.go:496: ingress_Docker at=2026-10-16T22:04:39.236271Z state=weir-memory-recovery-2742-1792188278096086000 true false 0 error=<nil>"
+          },
+          {
+            "raw_line": 147,
+            "text": "lua_memory_paths_integration_test.go:128: ingress_Docker at=2026-10-16T22:04:39.324687Z state=weir-memory-recovery-2742-1792188278096086000 true false 0 error=<nil>"
+          },
+          {
+            "raw_line": 148,
+            "text": "ingress_memory_budget_integration_test.go:496: ingress_Docker at=2026-10-16T22:04:39.335999Z state=weir-memory-recovery-2742-1792188278096086000 true false 0 error=<nil>"
+          },
+          {
+            "raw_line": 162,
+            "text": "lua_memory_paths_integration_test.go:128: ingress_Docker at=2026-10-16T22:04:39.413498Z state=weir-memory-recovery-2742-1792188278096086000 true false 0 error=<nil>"
+          },
+          {
+            "raw_line": 165,
+            "text": "ingress_memory_budget_integration_test.go:496: ingress_Docker at=2026-10-16T22:04:39.436589Z state=weir-memory-recovery-2742-1792188278096086000 true false 0 error=<nil>"
+          },
+          {
+            "raw_line": 178,
+            "text": "lua_memory_paths_integration_test.go:128: ingress_Docker at=2026-10-16T22:04:39.50256Z state=weir-memory-recovery-2742-1792188278096086000 true false 0 error=<nil>"
+          },
+          {
+            "raw_line": 181,
+            "text": "ingress_memory_budget_integration_test.go:496: ingress_Docker at=2026-10-16T22:04:39.537728Z state=weir-memory-recovery-2742-1792188278096086000 true false 0 error=<nil>"
+          },
+          {
+            "raw_line": 193,
+            "text": "lua_memory_paths_integration_test.go:128: ingress_Docker at=2026-10-16T22:04:39.586229Z state=weir-memory-recovery-2742-1792188278096086000 true false 0 error=<nil>"
+          },
+          {
+            "raw_line": 201,
+            "text": "ingress_memory_budget_integration_test.go:496: ingress_Docker at=2026-10-16T22:04:39.636207Z state=weir-memory-recovery-2742-1792188278096086000 true false 0 error=<nil>"
+          },
+          {
+            "raw_line": 210,
+            "text": "lua_memory_paths_integration_test.go:143: ingress_Docker at=2026-10-16T22:04:39.728618Z state=weir-memory-recovery-2742-1792188278096086000 true false 0 error=<nil>"
+          },
+          {
+            "raw_line": 212,
+            "text": "lua_memory_paths_integration_test.go:106: ingress_Docker at=2026-10-16T22:04:39.778722Z state=weir-memory-recovery-2742-1792188278096086000 true false 0 error=<nil>"
+          }
+        ],
+        "metric_sample_peaks": {
+          "go_memstats_heap_alloc_bytes": 189162176,
+          "process_resident_memory_bytes": 225755136,
+          "weir_execution_memory_used_bytes": 240969442,
+          "weir_memory_cgroup_current_bytes": 251826176
+        },
+        "normal_exit_evidence": [
+          {
+            "raw_line": 217,
+            "text": "memory_recovery_integration_test.go:202: CLI exit=false 0"
+          }
+        ],
+        "owned_CLI_container_absence": [
+          {
+            "absent": true,
+            "owner": "weir-memory-recovery-2742-1792188278096086000",
+            "status": 404
+          }
+        ],
+        "peak_scope": "sampled maxima at separate times; not a physical transient peak proof",
+        "problems": [],
+        "profile": {
+          "CPUs": 2,
+          "caller_seconds": 3,
+          "capacity_MiB": 512,
+          "default_Store_policy": true,
+          "single_Weir_process": true
+        },
+        "raw_sha256": "c9d4f8e012e64c63408e00e35e42a8da130be76bcd59f60bc2828cffb0598f3e",
+        "retry": false,
+        "runtime_run_count": 1,
+        "source": "a01d523e6fab728d0e48f3ff84d908710559aa65",
+        "source_hash_verified_all_owner_assertions": "4eda4766b936b16bb405a17c68cca1195858e8ed9501bc284277c7e680701113",
+        "status": "PASS",
+        "successful_metrics_observations": 55
+      }
+    ]
+  },
+  "retry": false,
+  "runner_sha256": "c7430cf568e968244d1b88a9a9f35d1870ae2d13947cc35c131475af1cba6236",
+  "source": "a01d523e6fab728d0e48f3ff84d908710559aa65",
+  "source_before_after_clean_unchanged": true,
+  "started_utc": "2026-10-16T22:04:26.189334+00:00",
+  "status": "PASS"
+}

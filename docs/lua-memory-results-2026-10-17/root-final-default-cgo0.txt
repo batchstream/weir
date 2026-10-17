@@ -1,0 +1,30 @@
+ok  	github.com/batchstream/weir/cmd/weir	13.235s
+ok  	github.com/batchstream/weir/deploy/kubernetes	1.385s
+ok  	github.com/batchstream/weir/internal/api/peer/v1	1.953s
+ok  	github.com/batchstream/weir/internal/app	6.142s
+?   	github.com/batchstream/weir/internal/backend	[no test files]
+2026/10/17 05:41:13 INFO backend_connections_closed backend=mongo store=records owned=0 peak=1 dialing=0 closing=0 acquired=1 released=1
+2026/10/17 05:41:13 INFO backend_connections_closed backend=mongo store=records owned=0 peak=1 dialing=0 closing=0 acquired=1 released=1
+2026/10/17 05:41:13 INFO backend_connections_closed backend=mongo store=records owned=0 peak=1 dialing=0 closing=0 acquired=1 released=1
+2026/10/17 05:41:13 INFO backend_connections_closed backend=mongo store=records owned=0 peak=1 dialing=0 closing=0 acquired=1 released=1
+--- FAIL: TestMongoLuaEvaluationCancellationWithCallerDeadlineKeepsPeer (0.02s)
+    program_execution_test.go:227: evaluation lost caller cancellation evidence or completed an uncommitted peer [outcome:NOT_APPLIED  failure:{code:RESOURCE_EXHAUSTED  message:"execution working memory capacity exhausted"} <nil>]
+FAIL
+FAIL	github.com/batchstream/weir/internal/backend/mongodb	7.797s
+ok  	github.com/batchstream/weir/internal/backend/search	24.698s
+ok  	github.com/batchstream/weir/internal/backend/targetcache	4.120s
+ok  	github.com/batchstream/weir/internal/directory	5.888s
+ok  	github.com/batchstream/weir/internal/execution	4.325s
+ok  	github.com/batchstream/weir/internal/luaengine	4.535s
+ok  	github.com/batchstream/weir/internal/overload	2.809s
+ok  	github.com/batchstream/weir/internal/protowire	1.711s
+ok  	github.com/batchstream/weir/internal/server	17.898s
+ok  	github.com/batchstream/weir/internal/store	3.573s
+ok  	github.com/batchstream/weir/internal/testutil	2.784s
+ok  	github.com/batchstream/weir/internal/testutil/testdns	2.518s
+?   	github.com/batchstream/weir/internal/testutil/testmetrics	[no test files]
+ok  	github.com/batchstream/weir/internal/testutil/testmongo	2.851s
+?   	github.com/batchstream/weir/internal/testutil/testrecords	[no test files]
+ok  	github.com/batchstream/weir/internal/testutil/testresource	2.659s
+ok  	github.com/batchstream/weir/internal/value	2.078s
+FAIL

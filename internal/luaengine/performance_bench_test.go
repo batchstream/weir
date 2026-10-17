@@ -70,9 +70,11 @@ func BenchmarkLuaPhases(b *testing.B) {
 		}
 	})
 	b.Run("BridgeRoundtrip", func(b *testing.B) {
+		state := vm.New(vm.WithContext(ctx))
+		defer state.Close(ctx)
 		b.ReportAllocs()
 		for b.Loop() {
-			conversion := newBridge(ctx)
+			conversion := newBridge(ctx, state)
 			incoming, err := conversion.toLua(program.Current)
 			if err != nil {
 				b.Fatal(err)
@@ -106,7 +108,9 @@ func BenchmarkBridgeKind(b *testing.B) {
 				field := value.Field{Name: "nested", Value: child}
 				child = value.Value{Kind: value.Object, Fields: []value.Field{field}}
 			}
-			conversion := newBridge(context.Background())
+			state := vm.New()
+			defer state.Close(context.Background())
+			conversion := newBridge(context.Background(), state)
 			input, err := conversion.toLua(child)
 			if err != nil {
 				b.Fatal(err)

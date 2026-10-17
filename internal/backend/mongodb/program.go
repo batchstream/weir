@@ -6,12 +6,14 @@ import (
 	"errors"
 	"fmt"
 	"time"
+	"unsafe"
 
 	"github.com/batchstream/weir-protocol/api/protocol"
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 	"github.com/batchstream/weir/internal/execution"
 	"github.com/batchstream/weir/internal/luaengine"
 	"github.com/batchstream/weir/internal/value"
+	"github.com/iceisfun/golua/budget"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
@@ -397,7 +399,7 @@ func (a *Adapter) transformPrograms(ctx context.Context, batch *programBatch, po
 	return writes, writePositions
 }
 
-func transformProgram(ctx context.Context, work *execution.Plan, raw bson.Raw) (*execution.Plan, *pb.MutationResult) {
+func transformProgram(ctx context.Context, work *execution.Plan, raw bson.Raw) (write *execution.Plan, result *pb.MutationResult) {
 	if failure := programCallerFailure(ctx, work); failure != nil {
 		return nil, protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, failure)
 	}
@@ -412,13 +414,26 @@ func transformProgram(ctx context.Context, work *execution.Plan, raw bson.Raw) (
 		defer cancel()
 		ctx = programContext
 	}
+	var allocationErr error
+	defer func() {
+		if allocationErr != nil {
+			write = nil
+			failure := fmt.Errorf("%w: %w", execution.ErrExecutionMemory, allocationErr)
+			result = execution.LuaFailure(ctx, failure)
+		}
+	}()
+	defer budget.Recover(&allocationErr)
 	input := work.Command.GetMutate().GetAtomicTransform().GetLua().GetInput()
 	inputBytes := []byte(nil)
 	if input != nil {
 		inputBytes = input.Data
 	}
 	plans := []*execution.Plan{work}
-	if err := reserveRecordWorking(ctx, plans, bsonDecodeWorking(raw)+bsonDecodeWorking(inputBytes)); err != nil {
+	decodedWorking, err := programWorking(bsonDecodeWorking(raw), bsonDecodeWorking(inputBytes))
+	if err != nil {
+		return nil, protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, recordMemoryFailure())
+	}
+	if err := reserveRecordWorking(ctx, plans, decodedWorking); err != nil {
 		return nil, protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, recordMemoryFailure())
 	}
 	native := work.Backend.(*plan)
@@ -440,6 +455,21 @@ func transformProgram(ctx context.Context, work *execution.Plan, raw bson.Raw) (
 	}
 	program := *native.program
 	program.Current = current
+	luaBytes, programScratch := 0, decodedWorking
+	memory, managed := ctx.Value(recordMemoryContextKey).(*recordMemory)
+	if managed && memory.owner != nil || !managed && work.Memory != nil {
+		program.Reserve = func(bytes int) error {
+			working, err := programWorking(programScratch, bytes)
+			if err != nil {
+				return err
+			}
+			if err := reserveRecordWorking(ctx, plans, working); err != nil {
+				return err
+			}
+			luaBytes = bytes
+			return nil
+		}
+	}
 	if input != nil {
 		decoded, err := Decode(ctx, input.Data)
 		if err != nil {
@@ -454,11 +484,21 @@ func transformProgram(ctx context.Context, work *execution.Plan, raw bson.Raw) (
 	if transformErr != nil {
 		return nil, execution.LuaFailure(ctx, transformErr)
 	}
+	luaBytes = transformed.Allocations.UsedBytes()
 	prepared := &plan{target: native.target, id: native.id}
 	switch transformed.Action {
 	case "keep":
 		return nil, protocol.Mutation(pb.MutationOutcome_APPLIED, nil)
 	case "reject":
+		if work.Memory != nil {
+			retained, err := programWorking(len(transformed.Message), execution.ResultOverheadBytes)
+			if err != nil {
+				return nil, protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, recordMemoryFailure())
+			}
+			if err := work.Memory.ReserveResult(retained); err != nil {
+				return nil, protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, recordMemoryFailure())
+			}
+		}
 		failure := protocol.Fail(pb.FailureCode_PRECONDITION_FAILED, transformed.Message)
 		return nil, protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, failure)
 	case "delete":
@@ -467,6 +507,9 @@ func transformProgram(ctx context.Context, work *execution.Plan, raw bson.Raw) (
 		}
 		prepared.action = "delete"
 	case "replace":
+		// The bounded identity codec and the replacement's field copy run
+		// before Encode. Their validation maps belong to the same Lua scope.
+		transformed.Allocations.RequireAllocation(4096)
 		identity, identityErr := mongoIdentity(ctx, native.id)
 		if !missing && identityErr == nil {
 			storedID, lookupErr := current.Lookup("_id")
@@ -476,6 +519,15 @@ func transformProgram(ctx context.Context, work *execution.Plan, raw bson.Raw) (
 				identity.Value = storedID
 			}
 		}
+		var field value.Field
+		transformed.Allocations.RequireArray(unsafe.Sizeof(field), len(transformed.Value.Fields)+1)
+		if err := luaengine.ReserveValueValidation(transformed.Allocations, transformed.Value); err != nil {
+			return nil, execution.LuaFailure(ctx, err)
+		}
+		if err := luaengine.ReserveValueValidation(transformed.Allocations, transformed.Value); err != nil {
+			return nil, execution.LuaFailure(ctx, err)
+		}
+		transformed.Allocations.RequireAllocation(1024)
 		replacement, valid := withMongoIdentity(ctx, transformed.Value, identity, native.id)
 		if identityErr != nil || !valid {
 			if failure := programCallerFailure(ctx, work); failure != nil {
@@ -484,7 +536,19 @@ func transformProgram(ctx context.Context, work *execution.Plan, raw bson.Raw) (
 			failure := protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "Lua replacement changes record identity")
 			return nil, protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, failure)
 		}
-		if err := reserveRecordWorking(ctx, plans, bsonDecodeWorking(raw)+bsonDecodeWorking(inputBytes)+4*bsonValueBytes(replacement)); err != nil {
+		valueBytes, err := transformed.ValueBytes(ctx, replacement, false)
+		if err != nil {
+			return nil, execution.LuaFailure(ctx, err)
+		}
+		programScratch, err = programWorking(decodedWorking, valueBytes, valueBytes, valueBytes, valueBytes)
+		if err != nil {
+			return nil, protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, recordMemoryFailure())
+		}
+		working, err := programWorking(programScratch, luaBytes)
+		if err != nil {
+			return nil, protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, recordMemoryFailure())
+		}
+		if err := reserveRecordWorking(ctx, plans, working); err != nil {
 			return nil, protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, recordMemoryFailure())
 		}
 		encoded, encodeErr := Encode(ctx, replacement)
@@ -513,7 +577,7 @@ func transformProgram(ctx context.Context, work *execution.Plan, raw bson.Raw) (
 	if failure := programCallerFailure(ctx, work); failure != nil {
 		return nil, protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, failure)
 	}
-	write := &execution.Plan{Command: work.Command, Backend: prepared, Memory: work.Memory}
+	write = &execution.Plan{Command: work.Command, Backend: prepared, Memory: work.Memory}
 	return write, nil
 }
 

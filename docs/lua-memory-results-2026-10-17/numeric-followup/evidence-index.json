@@ -1,0 +1,1418 @@
+{
+  "scope": "Independent review P1 numeric coercion omission, the implemented root-cause fix and complete R3 requalification. Earlier failed and passing H2 artifacts are retained separately and are not substituted for final fixed-source evidence. Gzip decoding preserves original raw bytes; diagnostic Go sources are text to avoid adding build packages.",
+  "artifacts": [
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-numeric-candidate-r3/CLI-build-command.json",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/numeric-candidate-r3/CLI-build-command.json",
+      "raw_bytes": 1205,
+      "raw_sha256": "085cb6dd0945f9bd8a229061b042a30d4c80f7db9b5c5e993ba2c8c42b83efb5",
+      "encoding": "identity",
+      "preserved_bytes": 1205,
+      "preserved_sha256": "085cb6dd0945f9bd8a229061b042a30d4c80f7db9b5c5e993ba2c8c42b83efb5"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-numeric-candidate-r3/CLI-build-pid.json",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/numeric-candidate-r3/CLI-build-pid.json",
+      "raw_bytes": 63,
+      "raw_sha256": "8951b96228855b2861d02dbadf9175a5e31e514e5466c46631b5da8463c89bb8",
+      "encoding": "identity",
+      "preserved_bytes": 63,
+      "preserved_sha256": "8951b96228855b2861d02dbadf9175a5e31e514e5466c46631b5da8463c89bb8"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-numeric-candidate-r3/CLI-build-process.exit",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/numeric-candidate-r3/CLI-build-process.exit",
+      "raw_bytes": 2,
+      "raw_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "encoding": "identity",
+      "preserved_bytes": 2,
+      "preserved_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-numeric-candidate-r3/CLI-build-process.txt",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/numeric-candidate-r3/CLI-build-process.txt",
+      "raw_bytes": 0,
+      "raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "encoding": "identity",
+      "preserved_bytes": 0,
+      "preserved_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-numeric-candidate-r3/CLI-build-receipt.json",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/numeric-candidate-r3/CLI-build-receipt.json",
+      "raw_bytes": 1592,
+      "raw_sha256": "0ceef958ef7b8b7a62b974476a293d3672ab3763b3cc89f5b66c1dfbfb4e47de",
+      "encoding": "identity",
+      "preserved_bytes": 1592,
+      "preserved_sha256": "0ceef958ef7b8b7a62b974476a293d3672ab3763b3cc89f5b66c1dfbfb4e47de"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-numeric-candidate-r3/CLI-buildinfo-command.json",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/numeric-candidate-r3/CLI-buildinfo-command.json",
+      "raw_bytes": 970,
+      "raw_sha256": "f7933f20c122f2f873fe411922521a2905b3e3986e9962f259c87d5248a2d29e",
+      "encoding": "identity",
+      "preserved_bytes": 970,
+      "preserved_sha256": "f7933f20c122f2f873fe411922521a2905b3e3986e9962f259c87d5248a2d29e"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-numeric-candidate-r3/CLI-buildinfo-pid.json",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/numeric-candidate-r3/CLI-buildinfo-pid.json",
+      "raw_bytes": 63,
+      "raw_sha256": "a543f65fb771e90f2814d0864783d87c5b8fa33af76f1f01ebe545d37dc46094",
+      "encoding": "identity",
+      "preserved_bytes": 63,
+      "preserved_sha256": "a543f65fb771e90f2814d0864783d87c5b8fa33af76f1f01ebe545d37dc46094"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-numeric-candidate-r3/CLI-buildinfo-process.exit",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/numeric-candidate-r3/CLI-buildinfo-process.exit",
+      "raw_bytes": 2,
+      "raw_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "encoding": "identity",
+      "preserved_bytes": 2,
+      "preserved_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-numeric-candidate-r3/CLI-buildinfo-process.txt",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/numeric-candidate-r3/CLI-buildinfo-process.txt",
+      "raw_bytes": 2834,
+      "raw_sha256": "28d29f1ab27af7959a1fd52e44ac53d119fc6f690eb2c4a8b440be2b44fc5f50",
+      "encoding": "identity",
+      "preserved_bytes": 2834,
+      "preserved_sha256": "28d29f1ab27af7959a1fd52e44ac53d119fc6f690eb2c4a8b440be2b44fc5f50"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-numeric-candidate-r3/CLI-buildinfo-receipt.json",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/numeric-candidate-r3/CLI-buildinfo-receipt.json",
+      "raw_bytes": 1367,
+      "raw_sha256": "489d2be3af05d703cea8573175bb2d3787f496d845b0edaf0f3af48cb1024cf4",
+      "encoding": "identity",
+      "preserved_bytes": 1367,
+      "preserved_sha256": "489d2be3af05d703cea8573175bb2d3787f496d845b0edaf0f3af48cb1024cf4"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-numeric-candidate-r3/CLI-buildinfo-validated.json",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/numeric-candidate-r3/CLI-buildinfo-validated.json",
+      "raw_bytes": 825,
+      "raw_sha256": "1ca59f6bb897171789395db372bceb259346628e9ca1d5677313e4acafbd8f45",
+      "encoding": "identity",
+      "preserved_bytes": 825,
+      "preserved_sha256": "1ca59f6bb897171789395db372bceb259346628e9ca1d5677313e4acafbd8f45"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-numeric-candidate-r3/attempt.json",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/numeric-candidate-r3/attempt.json",
+      "raw_bytes": 264,
+      "raw_sha256": "8f2a696d9da73655012d40176cbd25e3fadd9ae2ca35cb8ff0ee41e7efc262fb",
+      "encoding": "identity",
+      "preserved_bytes": 264,
+      "preserved_sha256": "8f2a696d9da73655012d40176cbd25e3fadd9ae2ca35cb8ff0ee41e7efc262fb"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-numeric-candidate-r3/driver-build-command.json",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/numeric-candidate-r3/driver-build-command.json",
+      "raw_bytes": 1164,
+      "raw_sha256": "0709e18b2f534d1033e444e19caa6b7a92fb671381542c62846d34cb77685be4",
+      "encoding": "identity",
+      "preserved_bytes": 1164,
+      "preserved_sha256": "0709e18b2f534d1033e444e19caa6b7a92fb671381542c62846d34cb77685be4"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-numeric-candidate-r3/driver-build-pid.json",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/numeric-candidate-r3/driver-build-pid.json",
+      "raw_bytes": 63,
+      "raw_sha256": "42125e9389383f2b5781feefbedcbe47f43abf9f9fd2e06bb6221ae1d29a724d",
+      "encoding": "identity",
+      "preserved_bytes": 63,
+      "preserved_sha256": "42125e9389383f2b5781feefbedcbe47f43abf9f9fd2e06bb6221ae1d29a724d"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-numeric-candidate-r3/driver-build-process.exit",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/numeric-candidate-r3/driver-build-process.exit",
+      "raw_bytes": 2,
+      "raw_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "encoding": "identity",
+      "preserved_bytes": 2,
+      "preserved_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-numeric-candidate-r3/driver-build-process.txt",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/numeric-candidate-r3/driver-build-process.txt",
+      "raw_bytes": 0,
+      "raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "encoding": "identity",
+      "preserved_bytes": 0,
+      "preserved_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-numeric-candidate-r3/driver-build-receipt.json",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/numeric-candidate-r3/driver-build-receipt.json",
+      "raw_bytes": 1555,
+      "raw_sha256": "cbb4bd290b0e43a1079b0ab1df5ea219dd630e50d4407b8a29e584ea6a432b09",
+      "encoding": "identity",
+      "preserved_bytes": 1555,
+      "preserved_sha256": "cbb4bd290b0e43a1079b0ab1df5ea219dd630e50d4407b8a29e584ea6a432b09"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-numeric-candidate-r3/driver-buildinfo-command.json",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/numeric-candidate-r3/driver-buildinfo-command.json",
+      "raw_bytes": 967,
+      "raw_sha256": "c5eb7f1979bb582f9572bf475d720ac30070fa29c4749ff244b0f8bbcb741e5c",
+      "encoding": "identity",
+      "preserved_bytes": 967,
+      "preserved_sha256": "c5eb7f1979bb582f9572bf475d720ac30070fa29c4749ff244b0f8bbcb741e5c"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-numeric-candidate-r3/driver-buildinfo-pid.json",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/numeric-candidate-r3/driver-buildinfo-pid.json",
+      "raw_bytes": 63,
+      "raw_sha256": "f78223fa6ed4568c3121fc3815aedbd7f474aa3c5390ead7ef47cf2797a3eaf7",
+      "encoding": "identity",
+      "preserved_bytes": 63,
+      "preserved_sha256": "f78223fa6ed4568c3121fc3815aedbd7f474aa3c5390ead7ef47cf2797a3eaf7"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-numeric-candidate-r3/driver-buildinfo-process.exit",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/numeric-candidate-r3/driver-buildinfo-process.exit",
+      "raw_bytes": 2,
+      "raw_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "encoding": "identity",
+      "preserved_bytes": 2,
+      "preserved_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-numeric-candidate-r3/driver-buildinfo-process.txt",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/numeric-candidate-r3/driver-buildinfo-process.txt",
+      "raw_bytes": 2809,
+      "raw_sha256": "d494e8d298408ed9f6f6c4326b1825aa3d48ea4c8e60c9d20e5de5a3f713a46e",
+      "encoding": "identity",
+      "preserved_bytes": 2809,
+      "preserved_sha256": "d494e8d298408ed9f6f6c4326b1825aa3d48ea4c8e60c9d20e5de5a3f713a46e"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-numeric-candidate-r3/driver-buildinfo-receipt.json",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/numeric-candidate-r3/driver-buildinfo-receipt.json",
+      "raw_bytes": 1367,
+      "raw_sha256": "90348c42750cab28e068091491edfa1f5c86efba8d0a1d4fe20debce35de2ed1",
+      "encoding": "identity",
+      "preserved_bytes": 1367,
+      "preserved_sha256": "90348c42750cab28e068091491edfa1f5c86efba8d0a1d4fe20debce35de2ed1"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-numeric-candidate-r3/driver-buildinfo-validated.json",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/numeric-candidate-r3/driver-buildinfo-validated.json",
+      "raw_bytes": 872,
+      "raw_sha256": "8e94ba9616205aa0f434a063d1f26147dbe7cd696b52887b7644d4f7c4143eef",
+      "encoding": "identity",
+      "preserved_bytes": 872,
+      "preserved_sha256": "8e94ba9616205aa0f434a063d1f26147dbe7cd696b52887b7644d4f7c4143eef"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-numeric-candidate-r3/original-command.json",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/numeric-candidate-r3/original-command.json",
+      "raw_bytes": 1440,
+      "raw_sha256": "3661fd7dfdf856f65fc3e468d9f3972318dc2a7c841a417a2f44a2a1df131f01",
+      "encoding": "identity",
+      "preserved_bytes": 1440,
+      "preserved_sha256": "3661fd7dfdf856f65fc3e468d9f3972318dc2a7c841a417a2f44a2a1df131f01"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-numeric-candidate-r3/original-mongo-absence-command.json",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/numeric-candidate-r3/original-mongo-absence-command.json",
+      "raw_bytes": 1170,
+      "raw_sha256": "7bde831b0c0de073a00e089e996b6012ae7ef44e9bec3db835b155641a858ae1",
+      "encoding": "identity",
+      "preserved_bytes": 1170,
+      "preserved_sha256": "7bde831b0c0de073a00e089e996b6012ae7ef44e9bec3db835b155641a858ae1"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-numeric-candidate-r3/original-mongo-absence-pid.json",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/numeric-candidate-r3/original-mongo-absence-pid.json",
+      "raw_bytes": 63,
+      "raw_sha256": "98be658e3834a76fe0adc0eb5e60ae48eb571698f5295c663b015561be449894",
+      "encoding": "identity",
+      "preserved_bytes": 63,
+      "preserved_sha256": "98be658e3834a76fe0adc0eb5e60ae48eb571698f5295c663b015561be449894"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-numeric-candidate-r3/original-mongo-absence-process.exit",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/numeric-candidate-r3/original-mongo-absence-process.exit",
+      "raw_bytes": 2,
+      "raw_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "encoding": "identity",
+      "preserved_bytes": 2,
+      "preserved_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-numeric-candidate-r3/original-mongo-absence-process.txt",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/numeric-candidate-r3/original-mongo-absence-process.txt",
+      "raw_bytes": 54,
+      "raw_sha256": "f46e0a6b80619534ae52065c5042c0e210507607b42936ecd1892613ddb17cd6",
+      "encoding": "identity",
+      "preserved_bytes": 54,
+      "preserved_sha256": "f46e0a6b80619534ae52065c5042c0e210507607b42936ecd1892613ddb17cd6"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-numeric-candidate-r3/original-mongo-absence-receipt.json",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/numeric-candidate-r3/original-mongo-absence-receipt.json",
+      "raw_bytes": 1573,
+      "raw_sha256": "a95fe0fb14632a4c4765137ff8fca35b4877a50e0b270edf9369f071232c6af4",
+      "encoding": "identity",
+      "preserved_bytes": 1573,
+      "preserved_sha256": "a95fe0fb14632a4c4765137ff8fca35b4877a50e0b270edf9369f071232c6af4"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-numeric-candidate-r3/original-pid.json",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/numeric-candidate-r3/original-pid.json",
+      "raw_bytes": 63,
+      "raw_sha256": "c564c52e820c1b92cf0b997ec66a5fc1d8a7ee737b1a32e3d9403aee7782d414",
+      "encoding": "identity",
+      "preserved_bytes": 63,
+      "preserved_sha256": "c564c52e820c1b92cf0b997ec66a5fc1d8a7ee737b1a32e3d9403aee7782d414"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-numeric-candidate-r3/original-process.exit",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/numeric-candidate-r3/original-process.exit",
+      "raw_bytes": 2,
+      "raw_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "encoding": "identity",
+      "preserved_bytes": 2,
+      "preserved_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-numeric-candidate-r3/original-process.txt",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/numeric-candidate-r3/original-process.txt",
+      "raw_bytes": 51718,
+      "raw_sha256": "912ab5d89530b0f16f54ba1fcef717075fef6c08c52bd954a55e12261d3910f1",
+      "encoding": "identity",
+      "preserved_bytes": 51718,
+      "preserved_sha256": "912ab5d89530b0f16f54ba1fcef717075fef6c08c52bd954a55e12261d3910f1"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-numeric-candidate-r3/original-receipt.json",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/numeric-candidate-r3/original-receipt.json",
+      "raw_bytes": 1831,
+      "raw_sha256": "17a8dbd55bbda098c4875b4889ca6cd7b3ab2bec2859c0262e2e9f7f2e267994",
+      "encoding": "identity",
+      "preserved_bytes": 1831,
+      "preserved_sha256": "17a8dbd55bbda098c4875b4889ca6cd7b3ab2bec2859c0262e2e9f7f2e267994"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-numeric-candidate-r3/original-source-after.json",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/numeric-candidate-r3/original-source-after.json.gz",
+      "raw_bytes": 132399,
+      "raw_sha256": "5ac774abf4e3985a6eac67b4f6f41e53d5c4fa18ba73dcee55b2d7014c3c80e4",
+      "encoding": "gzip",
+      "preserved_bytes": 51999,
+      "preserved_sha256": "aa54735100f29b8ef98f95b4118a6e1635c17a951c93bd29b2b28904ca330dae"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-numeric-candidate-r3/original-validation.json",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/numeric-candidate-r3/original-validation.json",
+      "raw_bytes": 5209,
+      "raw_sha256": "94e20ca09f3885884eabca786df16cf14a3c4109f6e0e0b1b18a96d4c42bd8a8",
+      "encoding": "identity",
+      "preserved_bytes": 5209,
+      "preserved_sha256": "94e20ca09f3885884eabca786df16cf14a3c4109f6e0e0b1b18a96d4c42bd8a8"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-numeric-candidate-r3/paths-command.json",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/numeric-candidate-r3/paths-command.json",
+      "raw_bytes": 1493,
+      "raw_sha256": "9083e608f169b51c5f747d46c5ad1c523adea495ca5545721870a1d08b6a6300",
+      "encoding": "identity",
+      "preserved_bytes": 1493,
+      "preserved_sha256": "9083e608f169b51c5f747d46c5ad1c523adea495ca5545721870a1d08b6a6300"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-numeric-candidate-r3/paths-mongo-absence-command.json",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/numeric-candidate-r3/paths-mongo-absence-command.json",
+      "raw_bytes": 1170,
+      "raw_sha256": "ae6c69db383d021fcb02e907e4bd83eec3208cb858cb3381157c56d7f9c7d167",
+      "encoding": "identity",
+      "preserved_bytes": 1170,
+      "preserved_sha256": "ae6c69db383d021fcb02e907e4bd83eec3208cb858cb3381157c56d7f9c7d167"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-numeric-candidate-r3/paths-mongo-absence-pid.json",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/numeric-candidate-r3/paths-mongo-absence-pid.json",
+      "raw_bytes": 63,
+      "raw_sha256": "1ff909d831921e59c961fad7cab0f3a728e0647d471343a3ae9a8cda277b7adc",
+      "encoding": "identity",
+      "preserved_bytes": 63,
+      "preserved_sha256": "1ff909d831921e59c961fad7cab0f3a728e0647d471343a3ae9a8cda277b7adc"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-numeric-candidate-r3/paths-mongo-absence-process.exit",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/numeric-candidate-r3/paths-mongo-absence-process.exit",
+      "raw_bytes": 2,
+      "raw_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "encoding": "identity",
+      "preserved_bytes": 2,
+      "preserved_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-numeric-candidate-r3/paths-mongo-absence-process.txt",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/numeric-candidate-r3/paths-mongo-absence-process.txt",
+      "raw_bytes": 54,
+      "raw_sha256": "98b445e71eb33fb2904bd9fb29637df04360808a952d04bea0c38a4f9fe1c24b",
+      "encoding": "identity",
+      "preserved_bytes": 54,
+      "preserved_sha256": "98b445e71eb33fb2904bd9fb29637df04360808a952d04bea0c38a4f9fe1c24b"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-numeric-candidate-r3/paths-mongo-absence-receipt.json",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/numeric-candidate-r3/paths-mongo-absence-receipt.json",
+      "raw_bytes": 1568,
+      "raw_sha256": "925ae17832b981e351a9284bdef6ec58e70263ebcd74cad9b18613cd62506595",
+      "encoding": "identity",
+      "preserved_bytes": 1568,
+      "preserved_sha256": "925ae17832b981e351a9284bdef6ec58e70263ebcd74cad9b18613cd62506595"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-numeric-candidate-r3/paths-pid.json",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/numeric-candidate-r3/paths-pid.json",
+      "raw_bytes": 63,
+      "raw_sha256": "0cdf1d591c2f36c0914314a1d116cd70e934935a5e5fb0721c90fbf295fe2f60",
+      "encoding": "identity",
+      "preserved_bytes": 63,
+      "preserved_sha256": "0cdf1d591c2f36c0914314a1d116cd70e934935a5e5fb0721c90fbf295fe2f60"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-numeric-candidate-r3/paths-process.exit",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/numeric-candidate-r3/paths-process.exit",
+      "raw_bytes": 2,
+      "raw_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "encoding": "identity",
+      "preserved_bytes": 2,
+      "preserved_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-numeric-candidate-r3/paths-process.txt",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/numeric-candidate-r3/paths-process.txt.gz",
+      "raw_bytes": 446586,
+      "raw_sha256": "b039cac0e1f449a1900f3f5988f9a6f095f4c1989389055ed0a15c030bf00100",
+      "encoding": "gzip",
+      "preserved_bytes": 25625,
+      "preserved_sha256": "11abebb77326fbeff8b1e809a70b0118023570bdee822d439360fbfb3c9762ca"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-numeric-candidate-r3/paths-receipt.json",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/numeric-candidate-r3/paths-receipt.json",
+      "raw_bytes": 1881,
+      "raw_sha256": "2f863f33429c82d49a612e67b2141c217936031a7e0a51be1fc1ffffbed0a291",
+      "encoding": "identity",
+      "preserved_bytes": 1881,
+      "preserved_sha256": "2f863f33429c82d49a612e67b2141c217936031a7e0a51be1fc1ffffbed0a291"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-numeric-candidate-r3/paths-source-after.json",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/numeric-candidate-r3/paths-source-after.json.gz",
+      "raw_bytes": 132399,
+      "raw_sha256": "e74fb07567484ad4d156914af6a33f81f350bbe17e0a38f8a4edfcf7f3e1fadc",
+      "encoding": "gzip",
+      "preserved_bytes": 51999,
+      "preserved_sha256": "27bcde5bf8cf8a9833c1288fb31e8c3813bae751d6ccb95926cf25054111e2a1"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-numeric-candidate-r3/paths-validation.json",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/numeric-candidate-r3/paths-validation.json",
+      "raw_bytes": 45376,
+      "raw_sha256": "00b5a350799b333048547c4ecaa11cd5d993e0efa0d4aa5df061de6ac2404e01",
+      "encoding": "identity",
+      "preserved_bytes": 45376,
+      "preserved_sha256": "00b5a350799b333048547c4ecaa11cd5d993e0efa0d4aa5df061de6ac2404e01"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-numeric-candidate-r3/preflight-mongo-read-command.json",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/numeric-candidate-r3/preflight-mongo-read-command.json",
+      "raw_bytes": 1132,
+      "raw_sha256": "6b1bc52c472f57d41adca469f4858b5788ed04200f414edde4b50b38bcad6a62",
+      "encoding": "identity",
+      "preserved_bytes": 1132,
+      "preserved_sha256": "6b1bc52c472f57d41adca469f4858b5788ed04200f414edde4b50b38bcad6a62"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-numeric-candidate-r3/preflight-mongo-read-pid.json",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/numeric-candidate-r3/preflight-mongo-read-pid.json",
+      "raw_bytes": 63,
+      "raw_sha256": "ae704554c7e753cc37d228e07bf70e4ca7872022103d7fa7258c075e63aab501",
+      "encoding": "identity",
+      "preserved_bytes": 63,
+      "preserved_sha256": "ae704554c7e753cc37d228e07bf70e4ca7872022103d7fa7258c075e63aab501"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-numeric-candidate-r3/preflight-mongo-read-process.exit",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/numeric-candidate-r3/preflight-mongo-read-process.exit",
+      "raw_bytes": 2,
+      "raw_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "encoding": "identity",
+      "preserved_bytes": 2,
+      "preserved_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-numeric-candidate-r3/preflight-mongo-read-process.txt",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/numeric-candidate-r3/preflight-mongo-read-process.txt",
+      "raw_bytes": 81,
+      "raw_sha256": "2635e43cf25a30666a3ea02226e962b081f9210758eb82d26537aee8f356069d",
+      "encoding": "identity",
+      "preserved_bytes": 81,
+      "preserved_sha256": "2635e43cf25a30666a3ea02226e962b081f9210758eb82d26537aee8f356069d"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-numeric-candidate-r3/preflight-mongo-read-receipt.json",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/numeric-candidate-r3/preflight-mongo-read-receipt.json",
+      "raw_bytes": 1532,
+      "raw_sha256": "25b6bbae5781dbfd0f0acdad6715634341d67ed52d0d80eb101c531b75ae4c2d",
+      "encoding": "identity",
+      "preserved_bytes": 1532,
+      "preserved_sha256": "25b6bbae5781dbfd0f0acdad6715634341d67ed52d0d80eb101c531b75ae4c2d"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-numeric-candidate-r3/preflight.json",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/numeric-candidate-r3/preflight.json",
+      "raw_bytes": 2066,
+      "raw_sha256": "7f29efc266ce433745d96876bc9cfc5ff24c019c24d061b44b5362b6d2e5e329",
+      "encoding": "identity",
+      "preserved_bytes": 2066,
+      "preserved_sha256": "7f29efc266ce433745d96876bc9cfc5ff24c019c24d061b44b5362b6d2e5e329"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-numeric-candidate-r3/runtime-started.json",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/numeric-candidate-r3/runtime-started.json",
+      "raw_bytes": 143,
+      "raw_sha256": "86413f1ef237a46f457328f03e99819f4dd5120f678d89b62825e6b3549442df",
+      "encoding": "identity",
+      "preserved_bytes": 143,
+      "preserved_sha256": "86413f1ef237a46f457328f03e99819f4dd5120f678d89b62825e6b3549442df"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-numeric-candidate-r3/source-after.json",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/numeric-candidate-r3/source-after.json.gz",
+      "raw_bytes": 132399,
+      "raw_sha256": "26991d85456d9312d29b13e1b951b21d07fc29aa523213f8feb689069cc1097f",
+      "encoding": "gzip",
+      "preserved_bytes": 51999,
+      "preserved_sha256": "c1e8cc268d1843d258a7cf91589e8e7c6b023ae2a4553b6b4268e62b34db0a1b"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-numeric-candidate-r3/source-before.json",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/numeric-candidate-r3/source-before.json.gz",
+      "raw_bytes": 132399,
+      "raw_sha256": "d9bc0adb6a138f807715e9085ec54ab8a2232e5dcbbe8acf7a92e2fa67d57bc7",
+      "encoding": "gzip",
+      "preserved_bytes": 51999,
+      "preserved_sha256": "5ad7ebb28fae00d31f71c0ac0e31cafc74d92efe9eb5fe4a4d567cec43da6080"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-numeric-candidate-r3/toolchain-version-command.json",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/numeric-candidate-r3/toolchain-version-command.json",
+      "raw_bytes": 835,
+      "raw_sha256": "fbc27df0fae7da65974c406711301099d3e55ce54ebab938e1011089cb5dc1c6",
+      "encoding": "identity",
+      "preserved_bytes": 835,
+      "preserved_sha256": "fbc27df0fae7da65974c406711301099d3e55ce54ebab938e1011089cb5dc1c6"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-numeric-candidate-r3/toolchain-version-pid.json",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/numeric-candidate-r3/toolchain-version-pid.json",
+      "raw_bytes": 63,
+      "raw_sha256": "371e81a36a778c331b6e518135ef7aee24e6b42bf9c504b569a2da98e76d413b",
+      "encoding": "identity",
+      "preserved_bytes": 63,
+      "preserved_sha256": "371e81a36a778c331b6e518135ef7aee24e6b42bf9c504b569a2da98e76d413b"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-numeric-candidate-r3/toolchain-version-process.exit",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/numeric-candidate-r3/toolchain-version-process.exit",
+      "raw_bytes": 2,
+      "raw_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "encoding": "identity",
+      "preserved_bytes": 2,
+      "preserved_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-numeric-candidate-r3/toolchain-version-process.txt",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/numeric-candidate-r3/toolchain-version-process.txt",
+      "raw_bytes": 33,
+      "raw_sha256": "c528ba02b39880f1357f51dee70e41c1ef03e3a70c7a03055c080532b9635f58",
+      "encoding": "identity",
+      "preserved_bytes": 33,
+      "preserved_sha256": "c528ba02b39880f1357f51dee70e41c1ef03e3a70c7a03055c080532b9635f58"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-numeric-candidate-r3/toolchain-version-receipt.json",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/numeric-candidate-r3/toolchain-version-receipt.json",
+      "raw_bytes": 1234,
+      "raw_sha256": "418eee4fa4bc107bbbf1edd58b97994b9458a1c044075faf43bec8daa4020403",
+      "encoding": "identity",
+      "preserved_bytes": 1234,
+      "preserved_sha256": "418eee4fa4bc107bbbf1edd58b97994b9458a1c044075faf43bec8daa4020403"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-numeric-candidate-r3/validation.json",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/numeric-candidate-r3/validation.json",
+      "raw_bytes": 57409,
+      "raw_sha256": "a286f01e58ea5020afaad837db79ef78257c15514f1c1da32bb7c71e1585040f",
+      "encoding": "identity",
+      "preserved_bytes": 57409,
+      "preserved_sha256": "a286f01e58ea5020afaad837db79ef78257c15514f1c1da32bb7c71e1585040f"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-numeric-package-r3/attempt.json",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/numeric-package-r3/attempt.json",
+      "raw_bytes": 264,
+      "raw_sha256": "7feaccf27869510e59c60298f2d1f77b2f8181a9a15175039c5e5e6b0d165306",
+      "encoding": "identity",
+      "preserved_bytes": 264,
+      "preserved_sha256": "7feaccf27869510e59c60298f2d1f77b2f8181a9a15175039c5e5e6b0d165306"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-numeric-package-r3/package-two-exports-four-targets-command.json",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/numeric-package-r3/package-two-exports-four-targets-command.json",
+      "raw_bytes": 904,
+      "raw_sha256": "776bdb3e6e7fcd760671e9d0f124653d24ecd128114b1fc1f7fefd43c6bf8ad1",
+      "encoding": "identity",
+      "preserved_bytes": 904,
+      "preserved_sha256": "776bdb3e6e7fcd760671e9d0f124653d24ecd128114b1fc1f7fefd43c6bf8ad1"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-numeric-package-r3/package-two-exports-four-targets-pid.json",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/numeric-package-r3/package-two-exports-four-targets-pid.json",
+      "raw_bytes": 63,
+      "raw_sha256": "e819652dc9a0adf7bca52d1b949f4880ac0fcc7776561d901d1a3a13347ce939",
+      "encoding": "identity",
+      "preserved_bytes": 63,
+      "preserved_sha256": "e819652dc9a0adf7bca52d1b949f4880ac0fcc7776561d901d1a3a13347ce939"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-numeric-package-r3/package-two-exports-four-targets-process.exit",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/numeric-package-r3/package-two-exports-four-targets-process.exit",
+      "raw_bytes": 2,
+      "raw_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "encoding": "identity",
+      "preserved_bytes": 2,
+      "preserved_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-numeric-package-r3/package-two-exports-four-targets-process.txt",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/numeric-package-r3/package-two-exports-four-targets-process.txt",
+      "raw_bytes": 333,
+      "raw_sha256": "f6a9f91527b331ab4a5790f02fe1df011436d2106ce27c8cea26d4d2d961d8eb",
+      "encoding": "identity",
+      "preserved_bytes": 333,
+      "preserved_sha256": "f6a9f91527b331ab4a5790f02fe1df011436d2106ce27c8cea26d4d2d961d8eb"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-numeric-package-r3/package-two-exports-four-targets-receipt.json",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/numeric-package-r3/package-two-exports-four-targets-receipt.json",
+      "raw_bytes": 1315,
+      "raw_sha256": "fbd399365bf42bf56fcfb1a53e79405e80144e94a295c61b71773660f392730f",
+      "encoding": "identity",
+      "preserved_bytes": 1315,
+      "preserved_sha256": "fbd399365bf42bf56fcfb1a53e79405e80144e94a295c61b71773660f392730f"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-numeric-package-r3/package-validation.json",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/numeric-package-r3/package-validation.json",
+      "raw_bytes": 3574,
+      "raw_sha256": "7126cf72bf5f41dbfe9b46d5f66706e9fe399e5c7250c9deeb27a7952c8cd423",
+      "encoding": "identity",
+      "preserved_bytes": 3574,
+      "preserved_sha256": "7126cf72bf5f41dbfe9b46d5f66706e9fe399e5c7250c9deeb27a7952c8cd423"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-numeric-package-r3/source-after.json",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/numeric-package-r3/source-after.json.gz",
+      "raw_bytes": 132399,
+      "raw_sha256": "65a87d4462cf5668bb7e0322ea183fa4c0fbb3914b20a0e07f27bdfba702baa4",
+      "encoding": "gzip",
+      "preserved_bytes": 51999,
+      "preserved_sha256": "e50bc1472d5fc2b7be7ffb1c4cd8d6cbf7c6ad13a5ac2ea5245b4dfadc286a53"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-numeric-package-r3/source-before.json",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/numeric-package-r3/source-before.json.gz",
+      "raw_bytes": 132399,
+      "raw_sha256": "32251cf252636d797ba63da21ae9e97163ff8dcb8db0cf84e799d2a708dbd3b4",
+      "encoding": "gzip",
+      "preserved_bytes": 51999,
+      "preserved_sha256": "d961ff7b728f1c66b268c7dd4c4bf387dd7d8255bf42f25c6de5efcb5f4932f0"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-numeric-package-r3/toolchain-version-command.json",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/numeric-package-r3/toolchain-version-command.json",
+      "raw_bytes": 833,
+      "raw_sha256": "1d77d7f26b1c3806e8485b5d66d5ff6375e112b8c116b489397ad125c32fd83f",
+      "encoding": "identity",
+      "preserved_bytes": 833,
+      "preserved_sha256": "1d77d7f26b1c3806e8485b5d66d5ff6375e112b8c116b489397ad125c32fd83f"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-numeric-package-r3/toolchain-version-pid.json",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/numeric-package-r3/toolchain-version-pid.json",
+      "raw_bytes": 63,
+      "raw_sha256": "7083902fc7f174ae9ec443eb80fa50ae6c6c26eccdb1d983ef0e1d863dc12eed",
+      "encoding": "identity",
+      "preserved_bytes": 63,
+      "preserved_sha256": "7083902fc7f174ae9ec443eb80fa50ae6c6c26eccdb1d983ef0e1d863dc12eed"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-numeric-package-r3/toolchain-version-process.exit",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/numeric-package-r3/toolchain-version-process.exit",
+      "raw_bytes": 2,
+      "raw_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "encoding": "identity",
+      "preserved_bytes": 2,
+      "preserved_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-numeric-package-r3/toolchain-version-process.txt",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/numeric-package-r3/toolchain-version-process.txt",
+      "raw_bytes": 33,
+      "raw_sha256": "c528ba02b39880f1357f51dee70e41c1ef03e3a70c7a03055c080532b9635f58",
+      "encoding": "identity",
+      "preserved_bytes": 33,
+      "preserved_sha256": "c528ba02b39880f1357f51dee70e41c1ef03e3a70c7a03055c080532b9635f58"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-numeric-package-r3/toolchain-version-receipt.json",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/numeric-package-r3/toolchain-version-receipt.json",
+      "raw_bytes": 1229,
+      "raw_sha256": "e672cca817f11588be4aad8fa75e9c91eeebc79bae1de68df2d97582d1b33358",
+      "encoding": "identity",
+      "preserved_bytes": 1229,
+      "preserved_sha256": "e672cca817f11588be4aad8fa75e9c91eeebc79bae1de68df2d97582d1b33358"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-numeric-package-r3/validation.json",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/numeric-package-r3/validation.json",
+      "raw_bytes": 4214,
+      "raw_sha256": "3c56bfbd7b11f7f20d4628fe6231c2df6ae9c08862c2d95bf167a9351bb2e5dc",
+      "encoding": "identity",
+      "preserved_bytes": 4214,
+      "preserved_sha256": "3c56bfbd7b11f7f20d4628fe6231c2df6ae9c08862c2d95bf167a9351bb2e5dc"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-numeric-package-r3/artifacts/comparison.json",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/numeric-package-r3/artifacts/comparison.json",
+      "raw_bytes": 461,
+      "raw_sha256": "6f185cbd6aee6d450d23983ad418a41c7603e35f800467e7dfa0915e7d8c3542",
+      "encoding": "identity",
+      "preserved_bytes": 461,
+      "preserved_sha256": "6f185cbd6aee6d450d23983ad418a41c7603e35f800467e7dfa0915e7d8c3542"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-numeric-package-r3/artifacts/first/darwin-amd64-linked.json",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/numeric-package-r3/artifacts/first/darwin-amd64-linked.json",
+      "raw_bytes": 3879,
+      "raw_sha256": "70c44c4b0b008762eac36e00bfa999cdd1f56d406f6a093bfb9cf78c536738be",
+      "encoding": "identity",
+      "preserved_bytes": 3879,
+      "preserved_sha256": "70c44c4b0b008762eac36e00bfa999cdd1f56d406f6a093bfb9cf78c536738be"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-numeric-package-r3/artifacts/first/darwin-arm64-linked.json",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/numeric-package-r3/artifacts/first/darwin-arm64-linked.json",
+      "raw_bytes": 3883,
+      "raw_sha256": "79bcc14ac5e9a4140146f9b48c81fab6d4a38e499d5ab9f180e8f0afd40458a6",
+      "encoding": "identity",
+      "preserved_bytes": 3883,
+      "preserved_sha256": "79bcc14ac5e9a4140146f9b48c81fab6d4a38e499d5ab9f180e8f0afd40458a6"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-numeric-package-r3/artifacts/first/linux-amd64-linked.json",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/numeric-package-r3/artifacts/first/linux-amd64-linked.json",
+      "raw_bytes": 3877,
+      "raw_sha256": "7499801607b972af6e098a92d2f911d0747b757d5ac7627364d40bce3d8c8ca8",
+      "encoding": "identity",
+      "preserved_bytes": 3877,
+      "preserved_sha256": "7499801607b972af6e098a92d2f911d0747b757d5ac7627364d40bce3d8c8ca8"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-numeric-package-r3/artifacts/first/linux-arm64-linked.json",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/numeric-package-r3/artifacts/first/linux-arm64-linked.json",
+      "raw_bytes": 3881,
+      "raw_sha256": "964e00fc60d62b0c92e90297734273db6e96988813f8956a983067461f43910a",
+      "encoding": "identity",
+      "preserved_bytes": 3881,
+      "preserved_sha256": "964e00fc60d62b0c92e90297734273db6e96988813f8956a983067461f43910a"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-numeric-package-r3/artifacts/first/module-graph.json",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/numeric-package-r3/artifacts/first/module-graph.json",
+      "raw_bytes": 15568,
+      "raw_sha256": "9d2f8ef7a34841234f42cf65ab6ae8b1e4e7f93a954aa11671fde47b0a47f772",
+      "encoding": "identity",
+      "preserved_bytes": 15568,
+      "preserved_sha256": "9d2f8ef7a34841234f42cf65ab6ae8b1e4e7f93a954aa11671fde47b0a47f772"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-numeric-package-r3/artifacts/first/receipt.json",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/numeric-package-r3/artifacts/first/receipt.json",
+      "raw_bytes": 95076,
+      "raw_sha256": "4ef3f5cba063feeca1800251642f82886e11b5ee193c6652d3dde8989e19d7a3",
+      "encoding": "identity",
+      "preserved_bytes": 95076,
+      "preserved_sha256": "4ef3f5cba063feeca1800251642f82886e11b5ee193c6652d3dde8989e19d7a3"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-numeric-package-r3/artifacts/first/SHA256SUMS",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/numeric-package-r3/artifacts/first/SHA256SUMS",
+      "raw_bytes": 1257,
+      "raw_sha256": "08ad5bc39d729307beee14f681ee9dd0395f3fde09d8ac7ae43567a5bd1775e6",
+      "encoding": "identity",
+      "preserved_bytes": 1257,
+      "preserved_sha256": "08ad5bc39d729307beee14f681ee9dd0395f3fde09d8ac7ae43567a5bd1775e6"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-numeric-package-r3/artifacts/second/darwin-amd64-linked.json",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/numeric-package-r3/artifacts/second/darwin-amd64-linked.json",
+      "raw_bytes": 3879,
+      "raw_sha256": "70c44c4b0b008762eac36e00bfa999cdd1f56d406f6a093bfb9cf78c536738be",
+      "encoding": "identity",
+      "preserved_bytes": 3879,
+      "preserved_sha256": "70c44c4b0b008762eac36e00bfa999cdd1f56d406f6a093bfb9cf78c536738be"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-numeric-package-r3/artifacts/second/darwin-arm64-linked.json",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/numeric-package-r3/artifacts/second/darwin-arm64-linked.json",
+      "raw_bytes": 3883,
+      "raw_sha256": "79bcc14ac5e9a4140146f9b48c81fab6d4a38e499d5ab9f180e8f0afd40458a6",
+      "encoding": "identity",
+      "preserved_bytes": 3883,
+      "preserved_sha256": "79bcc14ac5e9a4140146f9b48c81fab6d4a38e499d5ab9f180e8f0afd40458a6"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-numeric-package-r3/artifacts/second/linux-amd64-linked.json",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/numeric-package-r3/artifacts/second/linux-amd64-linked.json",
+      "raw_bytes": 3877,
+      "raw_sha256": "7499801607b972af6e098a92d2f911d0747b757d5ac7627364d40bce3d8c8ca8",
+      "encoding": "identity",
+      "preserved_bytes": 3877,
+      "preserved_sha256": "7499801607b972af6e098a92d2f911d0747b757d5ac7627364d40bce3d8c8ca8"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-numeric-package-r3/artifacts/second/linux-arm64-linked.json",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/numeric-package-r3/artifacts/second/linux-arm64-linked.json",
+      "raw_bytes": 3881,
+      "raw_sha256": "964e00fc60d62b0c92e90297734273db6e96988813f8956a983067461f43910a",
+      "encoding": "identity",
+      "preserved_bytes": 3881,
+      "preserved_sha256": "964e00fc60d62b0c92e90297734273db6e96988813f8956a983067461f43910a"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-numeric-package-r3/artifacts/second/module-graph.json",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/numeric-package-r3/artifacts/second/module-graph.json",
+      "raw_bytes": 15568,
+      "raw_sha256": "9d2f8ef7a34841234f42cf65ab6ae8b1e4e7f93a954aa11671fde47b0a47f772",
+      "encoding": "identity",
+      "preserved_bytes": 15568,
+      "preserved_sha256": "9d2f8ef7a34841234f42cf65ab6ae8b1e4e7f93a954aa11671fde47b0a47f772"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-numeric-package-r3/artifacts/second/receipt.json",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/numeric-package-r3/artifacts/second/receipt.json",
+      "raw_bytes": 95076,
+      "raw_sha256": "4ef3f5cba063feeca1800251642f82886e11b5ee193c6652d3dde8989e19d7a3",
+      "encoding": "identity",
+      "preserved_bytes": 95076,
+      "preserved_sha256": "4ef3f5cba063feeca1800251642f82886e11b5ee193c6652d3dde8989e19d7a3"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-numeric-package-r3/artifacts/second/SHA256SUMS",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/numeric-package-r3/artifacts/second/SHA256SUMS",
+      "raw_bytes": 1257,
+      "raw_sha256": "08ad5bc39d729307beee14f681ee9dd0395f3fde09d8ac7ae43567a5bd1775e6",
+      "encoding": "identity",
+      "preserved_bytes": 1257,
+      "preserved_sha256": "08ad5bc39d729307beee14f681ee9dd0395f3fde09d8ac7ae43567a5bd1775e6"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-numeric-release-r3/attempt.json",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/numeric-release-r3/attempt.json",
+      "raw_bytes": 384,
+      "raw_sha256": "5182466e24a25f14b6cb4213ac465ac5ab90a422aabd774afdd7de0a8b6a44bd",
+      "encoding": "identity",
+      "preserved_bytes": 384,
+      "preserved_sha256": "5182466e24a25f14b6cb4213ac465ac5ab90a422aabd774afdd7de0a8b6a44bd"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-numeric-release-r3/original-command.json",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/numeric-release-r3/original-command.json",
+      "raw_bytes": 1436,
+      "raw_sha256": "b78589935159154bde168a4324296934179f3e3ee4147a535501c8833b2137d9",
+      "encoding": "identity",
+      "preserved_bytes": 1436,
+      "preserved_sha256": "b78589935159154bde168a4324296934179f3e3ee4147a535501c8833b2137d9"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-numeric-release-r3/original-mongo-absence-command.json",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/numeric-release-r3/original-mongo-absence-command.json",
+      "raw_bytes": 1168,
+      "raw_sha256": "7fe5e883838e2ce84f681a38bdf0c251086bdb1725afb04200cd3c807bb1309c",
+      "encoding": "identity",
+      "preserved_bytes": 1168,
+      "preserved_sha256": "7fe5e883838e2ce84f681a38bdf0c251086bdb1725afb04200cd3c807bb1309c"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-numeric-release-r3/original-mongo-absence-pid.json",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/numeric-release-r3/original-mongo-absence-pid.json",
+      "raw_bytes": 63,
+      "raw_sha256": "57c50cc849e4fd16ce3dbf5d6f04dd937bc4804b8c23c01ca3bc8ae4dd5bd110",
+      "encoding": "identity",
+      "preserved_bytes": 63,
+      "preserved_sha256": "57c50cc849e4fd16ce3dbf5d6f04dd937bc4804b8c23c01ca3bc8ae4dd5bd110"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-numeric-release-r3/original-mongo-absence-process.exit",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/numeric-release-r3/original-mongo-absence-process.exit",
+      "raw_bytes": 2,
+      "raw_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "encoding": "identity",
+      "preserved_bytes": 2,
+      "preserved_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-numeric-release-r3/original-mongo-absence-process.txt",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/numeric-release-r3/original-mongo-absence-process.txt",
+      "raw_bytes": 54,
+      "raw_sha256": "ab70e376622913d715261e8bad10a0fbfd1bce4752efb68401293099f829430b",
+      "encoding": "identity",
+      "preserved_bytes": 54,
+      "preserved_sha256": "ab70e376622913d715261e8bad10a0fbfd1bce4752efb68401293099f829430b"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-numeric-release-r3/original-mongo-absence-receipt.json",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/numeric-release-r3/original-mongo-absence-receipt.json",
+      "raw_bytes": 1568,
+      "raw_sha256": "376b99dc433d6319b3533ee92964ad70d26857946b55afa4eb486a97739d469f",
+      "encoding": "identity",
+      "preserved_bytes": 1568,
+      "preserved_sha256": "376b99dc433d6319b3533ee92964ad70d26857946b55afa4eb486a97739d469f"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-numeric-release-r3/original-pid.json",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/numeric-release-r3/original-pid.json",
+      "raw_bytes": 63,
+      "raw_sha256": "53cea05cce3cc18af9de4dad003a245b52f12f8ddfe54792bf09f6aa62e54319",
+      "encoding": "identity",
+      "preserved_bytes": 63,
+      "preserved_sha256": "53cea05cce3cc18af9de4dad003a245b52f12f8ddfe54792bf09f6aa62e54319"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-numeric-release-r3/original-process.exit",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/numeric-release-r3/original-process.exit",
+      "raw_bytes": 2,
+      "raw_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "encoding": "identity",
+      "preserved_bytes": 2,
+      "preserved_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-numeric-release-r3/original-process.txt",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/numeric-release-r3/original-process.txt",
+      "raw_bytes": 39991,
+      "raw_sha256": "ef28e84b1ce661bc2df91a77605079d7f02df4c72f6fa7f75159db842a53d031",
+      "encoding": "identity",
+      "preserved_bytes": 39991,
+      "preserved_sha256": "ef28e84b1ce661bc2df91a77605079d7f02df4c72f6fa7f75159db842a53d031"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-numeric-release-r3/original-receipt.json",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/numeric-release-r3/original-receipt.json",
+      "raw_bytes": 1825,
+      "raw_sha256": "e6cd160a90eb597437f931febfe03ba84b16889733af4ebccae556d973379712",
+      "encoding": "identity",
+      "preserved_bytes": 1825,
+      "preserved_sha256": "e6cd160a90eb597437f931febfe03ba84b16889733af4ebccae556d973379712"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-numeric-release-r3/original-source-after.json",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/numeric-release-r3/original-source-after.json.gz",
+      "raw_bytes": 132399,
+      "raw_sha256": "713981c0773e13eb280b2ff883e82b513c649d88b1a25e46612fa026ed8c765d",
+      "encoding": "gzip",
+      "preserved_bytes": 51999,
+      "preserved_sha256": "c5186ff9b0c60c418b4e9eb173716fef1a55b85b4f107e05bf60559a7b911ea0"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-numeric-release-r3/original-validation.json",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/numeric-release-r3/original-validation.json",
+      "raw_bytes": 4983,
+      "raw_sha256": "ae75f9aafcf221c6846104a48f1217d28c817e1a0c23a13f1c5e154524d1e43a",
+      "encoding": "identity",
+      "preserved_bytes": 4983,
+      "preserved_sha256": "ae75f9aafcf221c6846104a48f1217d28c817e1a0c23a13f1c5e154524d1e43a"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-numeric-release-r3/paths-command.json",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/numeric-release-r3/paths-command.json",
+      "raw_bytes": 1489,
+      "raw_sha256": "06698a488b110700cee775f99881334ded68c19bbefa0e174f7ab3f4398db9fe",
+      "encoding": "identity",
+      "preserved_bytes": 1489,
+      "preserved_sha256": "06698a488b110700cee775f99881334ded68c19bbefa0e174f7ab3f4398db9fe"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-numeric-release-r3/paths-mongo-absence-command.json",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/numeric-release-r3/paths-mongo-absence-command.json",
+      "raw_bytes": 1168,
+      "raw_sha256": "c6f8531b29e3c887604d7196a9e77a9de1c1d4e8d9f352d44bddc603f96558ca",
+      "encoding": "identity",
+      "preserved_bytes": 1168,
+      "preserved_sha256": "c6f8531b29e3c887604d7196a9e77a9de1c1d4e8d9f352d44bddc603f96558ca"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-numeric-release-r3/paths-mongo-absence-pid.json",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/numeric-release-r3/paths-mongo-absence-pid.json",
+      "raw_bytes": 63,
+      "raw_sha256": "6ba1316e0c085f6e4a4b87759ded8804b5f51bdc2694e4d59bbd68770a2d9efa",
+      "encoding": "identity",
+      "preserved_bytes": 63,
+      "preserved_sha256": "6ba1316e0c085f6e4a4b87759ded8804b5f51bdc2694e4d59bbd68770a2d9efa"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-numeric-release-r3/paths-mongo-absence-process.exit",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/numeric-release-r3/paths-mongo-absence-process.exit",
+      "raw_bytes": 2,
+      "raw_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "encoding": "identity",
+      "preserved_bytes": 2,
+      "preserved_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-numeric-release-r3/paths-mongo-absence-process.txt",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/numeric-release-r3/paths-mongo-absence-process.txt",
+      "raw_bytes": 54,
+      "raw_sha256": "46f588ae0d25c54b158242ee8b9c99be24773640ed2bd2a12dcff75848e6969f",
+      "encoding": "identity",
+      "preserved_bytes": 54,
+      "preserved_sha256": "46f588ae0d25c54b158242ee8b9c99be24773640ed2bd2a12dcff75848e6969f"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-numeric-release-r3/paths-mongo-absence-receipt.json",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/numeric-release-r3/paths-mongo-absence-receipt.json",
+      "raw_bytes": 1565,
+      "raw_sha256": "6506ab040a4a2172d7f18ea644932f75d75ea1c2cffe8c31d798ffd3cae40b9c",
+      "encoding": "identity",
+      "preserved_bytes": 1565,
+      "preserved_sha256": "6506ab040a4a2172d7f18ea644932f75d75ea1c2cffe8c31d798ffd3cae40b9c"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-numeric-release-r3/paths-pid.json",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/numeric-release-r3/paths-pid.json",
+      "raw_bytes": 63,
+      "raw_sha256": "e844e7c1b1730cb1208c520a23b17570f5c1583dd50da464f3ab5336688f4330",
+      "encoding": "identity",
+      "preserved_bytes": 63,
+      "preserved_sha256": "e844e7c1b1730cb1208c520a23b17570f5c1583dd50da464f3ab5336688f4330"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-numeric-release-r3/paths-process.exit",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/numeric-release-r3/paths-process.exit",
+      "raw_bytes": 2,
+      "raw_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "encoding": "identity",
+      "preserved_bytes": 2,
+      "preserved_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-numeric-release-r3/paths-process.txt",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/numeric-release-r3/paths-process.txt.gz",
+      "raw_bytes": 434786,
+      "raw_sha256": "aae3be0fada57103f3ffbabfa5dac4dcc1a6f221b66978733be7fad561338989",
+      "encoding": "gzip",
+      "preserved_bytes": 25062,
+      "preserved_sha256": "a603d7fa70cb6885f9f9b97e365d7e18040ebcc3bb300052f47a7ad8ab39e56c"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-numeric-release-r3/paths-receipt.json",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/numeric-release-r3/paths-receipt.json",
+      "raw_bytes": 1875,
+      "raw_sha256": "33c817ce5b16673b8d1b36009da9d2b32a84aee0d469475d28beaf4f6e38ba33",
+      "encoding": "identity",
+      "preserved_bytes": 1875,
+      "preserved_sha256": "33c817ce5b16673b8d1b36009da9d2b32a84aee0d469475d28beaf4f6e38ba33"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-numeric-release-r3/paths-source-after.json",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/numeric-release-r3/paths-source-after.json.gz",
+      "raw_bytes": 132399,
+      "raw_sha256": "244e7314a81d1a82eef669b672d91faef81d657013db38c7fb255db1ab625e4d",
+      "encoding": "gzip",
+      "preserved_bytes": 51999,
+      "preserved_sha256": "36abc7cc93f0e0d78396823528a197285d7f6c6f970d03b9b371457e880bf680"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-numeric-release-r3/paths-validation.json",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/numeric-release-r3/paths-validation.json",
+      "raw_bytes": 45153,
+      "raw_sha256": "195db0f3034af6efb4d259198667e1fe9dbb16e980d5abc8a3f7adbdc91fb098",
+      "encoding": "identity",
+      "preserved_bytes": 45153,
+      "preserved_sha256": "195db0f3034af6efb4d259198667e1fe9dbb16e980d5abc8a3f7adbdc91fb098"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-numeric-release-r3/preflight-mongo-read-command.json",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/numeric-release-r3/preflight-mongo-read-command.json",
+      "raw_bytes": 1130,
+      "raw_sha256": "b8bbac68fe24beda39e16195e3a1da25b675096559e479b0508076c97bc064d4",
+      "encoding": "identity",
+      "preserved_bytes": 1130,
+      "preserved_sha256": "b8bbac68fe24beda39e16195e3a1da25b675096559e479b0508076c97bc064d4"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-numeric-release-r3/preflight-mongo-read-pid.json",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/numeric-release-r3/preflight-mongo-read-pid.json",
+      "raw_bytes": 63,
+      "raw_sha256": "a98e1992b16e105c104444091a27fe3ec4e626c23d5829e1fa9f4916fb2f595f",
+      "encoding": "identity",
+      "preserved_bytes": 63,
+      "preserved_sha256": "a98e1992b16e105c104444091a27fe3ec4e626c23d5829e1fa9f4916fb2f595f"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-numeric-release-r3/preflight-mongo-read-process.exit",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/numeric-release-r3/preflight-mongo-read-process.exit",
+      "raw_bytes": 2,
+      "raw_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "encoding": "identity",
+      "preserved_bytes": 2,
+      "preserved_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-numeric-release-r3/preflight-mongo-read-process.txt",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/numeric-release-r3/preflight-mongo-read-process.txt",
+      "raw_bytes": 81,
+      "raw_sha256": "2635e43cf25a30666a3ea02226e962b081f9210758eb82d26537aee8f356069d",
+      "encoding": "identity",
+      "preserved_bytes": 81,
+      "preserved_sha256": "2635e43cf25a30666a3ea02226e962b081f9210758eb82d26537aee8f356069d"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-numeric-release-r3/preflight-mongo-read-receipt.json",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/numeric-release-r3/preflight-mongo-read-receipt.json",
+      "raw_bytes": 1528,
+      "raw_sha256": "9ca5556918dafcebcd3631c6591cf2e49498398c1a95e78b621dd4a35be00b59",
+      "encoding": "identity",
+      "preserved_bytes": 1528,
+      "preserved_sha256": "9ca5556918dafcebcd3631c6591cf2e49498398c1a95e78b621dd4a35be00b59"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-numeric-release-r3/preflight.json",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/numeric-release-r3/preflight.json",
+      "raw_bytes": 2066,
+      "raw_sha256": "b8033a472006a6ad70747bed466be65814ba8f4dad8e8b9f405156f621ac7cf0",
+      "encoding": "identity",
+      "preserved_bytes": 2066,
+      "preserved_sha256": "b8033a472006a6ad70747bed466be65814ba8f4dad8e8b9f405156f621ac7cf0"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-numeric-release-r3/runtime-started.json",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/numeric-release-r3/runtime-started.json",
+      "raw_bytes": 256,
+      "raw_sha256": "ec03cb28a0740fc3404cc85579dc34116a445eeade218f439566364595973146",
+      "encoding": "identity",
+      "preserved_bytes": 256,
+      "preserved_sha256": "ec03cb28a0740fc3404cc85579dc34116a445eeade218f439566364595973146"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-numeric-release-r3/shipping-provenance.json",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/numeric-release-r3/shipping-provenance.json",
+      "raw_bytes": 1880,
+      "raw_sha256": "a47df763cd5269b4269364f97efa7e73ad0c4c2d166c98136d3d5888c72e7734",
+      "encoding": "identity",
+      "preserved_bytes": 1880,
+      "preserved_sha256": "a47df763cd5269b4269364f97efa7e73ad0c4c2d166c98136d3d5888c72e7734"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-numeric-release-r3/source-after.json",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/numeric-release-r3/source-after.json.gz",
+      "raw_bytes": 132399,
+      "raw_sha256": "1dda513e5e83be985409f4d82b7c07bfd6ad545704b82dafc00800bb4ee360a2",
+      "encoding": "gzip",
+      "preserved_bytes": 51999,
+      "preserved_sha256": "ed1c501d6586f271ec90b9e0d826c4f4a647e5c502c2485793af068a1b4724f7"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-numeric-release-r3/source-before.json",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/numeric-release-r3/source-before.json.gz",
+      "raw_bytes": 132399,
+      "raw_sha256": "00aef3ab9dd16ee2595654f9c38eb98906b72af474122b788fefa7cea14d3b71",
+      "encoding": "gzip",
+      "preserved_bytes": 51999,
+      "preserved_sha256": "793c02f2643b81b2c90c31e969ada38bd57208ee1b210e1f41b3dc77f21daa14"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-numeric-release-r3/validation.json",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/numeric-release-r3/validation.json",
+      "raw_bytes": 55694,
+      "raw_sha256": "1ab13767db9cc24bc7a7a9b60f903dfd4848bbe094e83e342e4f197ebb6da56f",
+      "encoding": "identity",
+      "preserved_bytes": 55694,
+      "preserved_sha256": "1ab13767db9cc24bc7a7a9b60f903dfd4848bbe094e83e342e4f197ebb6da56f"
+    },
+    {
+      "original_path": ".testdata/lua-offline/root-r3-global-receipt.json",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/support/root-r3-global-receipt.json.gz",
+      "raw_bytes": 259332,
+      "raw_sha256": "8f8ccbb643c9950302afc90a98207fb9c4e313b287e1f97ed022088b96c7358d",
+      "encoding": "gzip",
+      "preserved_bytes": 100750,
+      "preserved_sha256": "5f45dc0769e7cd176fcb7d69c7156c4421f02e799ede98818dc2f6144b2e780b"
+    },
+    {
+      "original_path": ".testdata/lua-offline/root-r3-nested-receipt.json",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/support/root-r3-nested-receipt.json",
+      "raw_bytes": 23588,
+      "raw_sha256": "d35454c41693161ea791fcd6baa35c2a9e99461f4c4fcf53c80943915e4ea6c9",
+      "encoding": "identity",
+      "preserved_bytes": 23588,
+      "preserved_sha256": "d35454c41693161ea791fcd6baa35c2a9e99461f4c4fcf53c80943915e4ea6c9"
+    },
+    {
+      "original_path": ".testdata/lua-offline/root-r3-nested.txt",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/support/root-r3-nested.txt",
+      "raw_bytes": 276,
+      "raw_sha256": "58d7da4425bb3bfe42a65e45d32e08b032122b84a9ed11fe0b563df095ffdb33",
+      "encoding": "identity",
+      "preserved_bytes": 276,
+      "preserved_sha256": "58d7da4425bb3bfe42a65e45d32e08b032122b84a9ed11fe0b563df095ffdb33"
+    },
+    {
+      "original_path": ".testdata/lua-offline/frames-r3-receipt.json",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/support/frames-r3-receipt.json.gz",
+      "raw_bytes": 1721297,
+      "raw_sha256": "a7afce5e681b25cbe6b5859eadc5cb1ae3fbddb0958c8be3e923b0ef9b322c18",
+      "encoding": "gzip",
+      "preserved_bytes": 126643,
+      "preserved_sha256": "50a5529173c096c72b9d36ba47ad96907d1ccdb2d5eccd41576cce5af431ad1f"
+    },
+    {
+      "original_path": ".testdata/lua-offline/numeric-coercion-author-freeze-r1.json",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/support/numeric-coercion-author-freeze-r1.json",
+      "raw_bytes": 3759,
+      "raw_sha256": "ba59ccca9d93f6c02052865bc9cfbada5f4022cf1fccdd70ea7fcb1911993a59",
+      "encoding": "identity",
+      "preserved_bytes": 3759,
+      "preserved_sha256": "ba59ccca9d93f6c02052865bc9cfbada5f4022cf1fccdd70ea7fcb1911993a59"
+    },
+    {
+      "original_path": ".testdata/lua-offline/numeric-followup-r3-stack-receipt.json",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/support/numeric-followup-r3-stack-receipt.json",
+      "raw_bytes": 17498,
+      "raw_sha256": "6c6b6d90b4ad9950fe137bb2463616365061c672ce38824db94c78b7aa99c6e0",
+      "encoding": "identity",
+      "preserved_bytes": 17498,
+      "preserved_sha256": "6c6b6d90b4ad9950fe137bb2463616365061c672ce38824db94c78b7aa99c6e0"
+    },
+    {
+      "original_path": ".testdata/lua-offline/root-r3-default-cgo0.txt",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/support/root-r3-default-cgo0.txt",
+      "raw_bytes": 1369,
+      "raw_sha256": "ced0d4f2f557e4aec298a66b1ad9dd932a82196b2c2dc5a92c4ef4e24cdd8303",
+      "encoding": "identity",
+      "preserved_bytes": 1369,
+      "preserved_sha256": "ced0d4f2f557e4aec298a66b1ad9dd932a82196b2c2dc5a92c4ef4e24cdd8303"
+    },
+    {
+      "original_path": ".testdata/lua-offline/root-r3-default-race.txt",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/support/root-r3-default-race.txt",
+      "raw_bytes": 1370,
+      "raw_sha256": "b85c5596b6f76c5ef39c14647024adf091cb85802eec167a154d1b82ce2bc058",
+      "encoding": "identity",
+      "preserved_bytes": 1370,
+      "preserved_sha256": "b85c5596b6f76c5ef39c14647024adf091cb85802eec167a154d1b82ce2bc058"
+    },
+    {
+      "original_path": ".testdata/lua-offline/root-r3-integration-compile.txt",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/support/root-r3-integration-compile.txt",
+      "raw_bytes": 1864,
+      "raw_sha256": "02f6bc1e7e958c33484af6ec39bd4db76115371e3e9a54b3f54f8fe64e9d8369",
+      "encoding": "identity",
+      "preserved_bytes": 1864,
+      "preserved_sha256": "02f6bc1e7e958c33484af6ec39bd4db76115371e3e9a54b3f54f8fe64e9d8369"
+    },
+    {
+      "original_path": ".testdata/lua-offline/root-r3-integration-vet.txt",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/support/root-r3-integration-vet.txt",
+      "raw_bytes": 0,
+      "raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "encoding": "identity",
+      "preserved_bytes": 0,
+      "preserved_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "original_path": ".testdata/lua-offline/root-r3-nested.txt",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/support/root-r3-nested.txt",
+      "raw_bytes": 276,
+      "raw_sha256": "58d7da4425bb3bfe42a65e45d32e08b032122b84a9ed11fe0b563df095ffdb33",
+      "encoding": "identity",
+      "preserved_bytes": 276,
+      "preserved_sha256": "58d7da4425bb3bfe42a65e45d32e08b032122b84a9ed11fe0b563df095ffdb33"
+    },
+    {
+      "original_path": ".testdata/lua-offline/root-r3-normal-benchmark.txt",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/support/root-r3-normal-benchmark.txt",
+      "raw_bytes": 775,
+      "raw_sha256": "b3e2eaad9668a65db78768e3a5bf56d1f7599498209df17ff56236f402bd02b5",
+      "encoding": "identity",
+      "preserved_bytes": 775,
+      "preserved_sha256": "b3e2eaad9668a65db78768e3a5bf56d1f7599498209df17ff56236f402bd02b5"
+    },
+    {
+      "original_path": ".testdata/lua-offline/root-r3-vet.txt",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/support/root-r3-vet.txt",
+      "raw_bytes": 0,
+      "raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "encoding": "identity",
+      "preserved_bytes": 0,
+      "preserved_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/review83-runtime/nested-race-output.txt",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/review-original-and-fix/nested-race-output.txt",
+      "raw_bytes": 276,
+      "raw_sha256": "d73be41964a439b8fe30205d2c18381509b8bde089976ccad72f768e4ffc9dbd",
+      "encoding": "identity",
+      "preserved_bytes": 276,
+      "preserved_sha256": "d73be41964a439b8fe30205d2c18381509b8bde089976ccad72f768e4ffc9dbd"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/review83-runtime/numeric-coercion-r1-output.jsonl",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/review-original-and-fix/numeric-coercion-r1-output.jsonl",
+      "raw_bytes": 552,
+      "raw_sha256": "f10039fd41ff308ddf41941b69264b34b899137a9aaa05b8b73b80742a16ee09",
+      "encoding": "identity",
+      "preserved_bytes": 552,
+      "preserved_sha256": "f10039fd41ff308ddf41941b69264b34b899137a9aaa05b8b73b80742a16ee09"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/review83-runtime/numeric-coercion-r1.go",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/review-original-and-fix/numeric-coercion-r1.go.txt",
+      "raw_bytes": 1411,
+      "raw_sha256": "f2a8d00db980fd7e97794d00623ced7c3459968e99dd93952e6db790cbc8eec4",
+      "encoding": "identity",
+      "preserved_bytes": 1411,
+      "preserved_sha256": "f2a8d00db980fd7e97794d00623ced7c3459968e99dd93952e6db790cbc8eec4"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/review83-runtime/numeric-coercion-r2-output.jsonl",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/review-original-and-fix/numeric-coercion-r2-output.jsonl",
+      "raw_bytes": 471,
+      "raw_sha256": "856050f63f88cf7f431df5682e6ac03671b44f2d515d6c938ca9fd7f7fa999ef",
+      "encoding": "identity",
+      "preserved_bytes": 471,
+      "preserved_sha256": "856050f63f88cf7f431df5682e6ac03671b44f2d515d6c938ca9fd7f7fa999ef"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/review83-runtime/numeric-coercion-r2.go",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/review-original-and-fix/numeric-coercion-r2.go.txt",
+      "raw_bytes": 1412,
+      "raw_sha256": "7cbf6620f88ce8a319c503d1e41885e61ba412472740fbbcfd14f52ab37e7af3",
+      "encoding": "identity",
+      "preserved_bytes": 1412,
+      "preserved_sha256": "7cbf6620f88ce8a319c503d1e41885e61ba412472740fbbcfd14f52ab37e7af3"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/review83-runtime/numeric-coercion.go",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/review-original-and-fix/numeric-coercion.go.txt",
+      "raw_bytes": 1411,
+      "raw_sha256": "f2a8d00db980fd7e97794d00623ced7c3459968e99dd93952e6db790cbc8eec4",
+      "encoding": "identity",
+      "preserved_bytes": 1411,
+      "preserved_sha256": "f2a8d00db980fd7e97794d00623ced7c3459968e99dd93952e6db790cbc8eec4"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/review83-runtime/numeric-fix-static-closure-r1.json",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/review-original-and-fix/numeric-fix-static-closure-r1.json",
+      "raw_bytes": 3702,
+      "raw_sha256": "447a8afab35259b6d483eb44f492c633d3ca2e55bb53aee3301248322e9163c5",
+      "encoding": "identity",
+      "preserved_bytes": 3702,
+      "preserved_sha256": "447a8afab35259b6d483eb44f492c633d3ca2e55bb53aee3301248322e9163c5"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/review83-runtime/review.json",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/review-original-and-fix/review.json",
+      "raw_bytes": 3202,
+      "raw_sha256": "aa345fc201c7ee329b5c7fd5e4e7d3ff2cdeddf509604eaea7723f32eef7e157",
+      "encoding": "identity",
+      "preserved_bytes": 3202,
+      "preserved_sha256": "aa345fc201c7ee329b5c7fd5e4e7d3ff2cdeddf509604eaea7723f32eef7e157"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/pr83-ci-first-failed.log",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/followup/pr83-ci-first-failed.log",
+      "raw_bytes": 4979,
+      "raw_sha256": "24bcb0108845266a1d1a37e8ee77410c1f940ffe24a7e354f7bd1996dced6c61",
+      "encoding": "identity",
+      "preserved_bytes": 4979,
+      "preserved_sha256": "24bcb0108845266a1d1a37e8ee77410c1f940ffe24a7e354f7bd1996dced6c61"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/pr83-rpc-expiry-independent-review.json",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/followup/pr83-rpc-expiry-independent-review.json",
+      "raw_bytes": 3029,
+      "raw_sha256": "f7c92833d2150af47e527bb9adba18e1994d382e57489948d5cec4ee855b4d4d",
+      "encoding": "identity",
+      "preserved_bytes": 3029,
+      "preserved_sha256": "f7c92833d2150af47e527bb9adba18e1994d382e57489948d5cec4ee855b4d4d"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/rpc-expiry-upstream-second.json",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/followup/rpc-expiry-upstream-second.json",
+      "raw_bytes": 112,
+      "raw_sha256": "e361487ee3190c1785ac6fbe5eaec1f60eec82e24c74d13131a72ffca9aa1ecd",
+      "encoding": "identity",
+      "preserved_bytes": 112,
+      "preserved_sha256": "e361487ee3190c1785ac6fbe5eaec1f60eec82e24c74d13131a72ffca9aa1ecd"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/rpc-expiry-overlay-first.txt",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/followup/rpc-expiry-overlay-first.txt",
+      "raw_bytes": 57,
+      "raw_sha256": "68ec7a0d30f4f36a6a1869a368d0c12515c3daa8d450aac81d86cb10efa6606f",
+      "encoding": "identity",
+      "preserved_bytes": 57,
+      "preserved_sha256": "68ec7a0d30f4f36a6a1869a368d0c12515c3daa8d450aac81d86cb10efa6606f"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-runner-r3.py",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/followup/lua-repair-runner-r3.py",
+      "raw_bytes": 37695,
+      "raw_sha256": "798d58a3f57a1b28a51a97a78baf09ba879df593e77a6a7bce5b43dff0e0d96b",
+      "encoding": "identity",
+      "preserved_bytes": 37695,
+      "preserved_sha256": "798d58a3f57a1b28a51a97a78baf09ba879df593e77a6a7bce5b43dff0e0d96b"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-runner-r3-preparation.json",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/followup/lua-repair-runner-r3-preparation.json",
+      "raw_bytes": 786,
+      "raw_sha256": "6b9c64ddca95885e945c483165eff2efcfee06f13fa28decc49e0da8807fc598",
+      "encoding": "identity",
+      "preserved_bytes": 786,
+      "preserved_sha256": "6b9c64ddca95885e945c483165eff2efcfee06f13fa28decc49e0da8807fc598"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-repair-runner-r3-preparation.diff",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/followup/lua-repair-runner-r3-preparation.diff",
+      "raw_bytes": 3941,
+      "raw_sha256": "478a116f5860bd805841cea1974ef6f00aabf45b1a1fe0443f6ee4723c3f1011",
+      "encoding": "identity",
+      "preserved_bytes": 3941,
+      "preserved_sha256": "478a116f5860bd805841cea1974ef6f00aabf45b1a1fe0443f6ee4723c3f1011"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-numeric-release-qualification.py",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/numeric-followup/followup/lua-numeric-release-qualification.py",
+      "raw_bytes": 9444,
+      "raw_sha256": "ad998270e57f21cf4c505e632284a580948d7c02fb7ca48d40a01fe24761091e",
+      "encoding": "identity",
+      "preserved_bytes": 9444,
+      "preserved_sha256": "ad998270e57f21cf4c505e632284a580948d7c02fb7ca48d40a01fe24761091e"
+    }
+  ]
+}

@@ -1,0 +1,38 @@
+{
+  "args": [
+    "mongosh",
+    "--norc",
+    "--quiet",
+    "mongodb://127.0.0.1:27028/?directConnection=true&serverMonitoringMode=poll&serverSelectionTimeoutMS=3000&retryReads=false&retryWrites=false",
+    "--eval",
+    "const r=db.adminCommand({listDatabases:1,nameOnly:true,filter:{name:\"weir_test_2742_1\"}});print(JSON.stringify({database:\"weir_test_2742_1\",ok:r.ok,absent:r.ok===1&&Array.isArray(r.databases)&&r.databases.length===0}));"
+  ],
+  "cwd": "/Users/liran/Projects/liran/go/weir",
+  "elapsed_seconds": 0.39000441701500677,
+  "env": {
+    "DOCKER_CONFIG": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/lua-repair-candidate-r2/docker-client",
+    "DOCKER_HOST": "unix:///var/run/docker.sock",
+    "GOAMD64": "v1",
+    "GOARM64": "v8.0",
+    "GOENV": "off",
+    "GOEXPERIMENT": "",
+    "GOFLAGS": "",
+    "GOPROXY": "off",
+    "GOROOT": "/Users/liran/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.1.darwin-arm64",
+    "GOSUMDB": "off",
+    "GOTOOLCHAIN": "local",
+    "GOWORK": "off",
+    "MONGOSH_DISABLE_TELEMETRY": "1",
+    "PYTHONDONTWRITEBYTECODE": "1"
+  },
+  "exit_code": 0,
+  "finished_utc": "2026-10-16T22:04:41.520488+00:00",
+  "pid": 2764,
+  "raw": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/lua-repair-candidate-r2/paths-mongo-absence-process.txt",
+  "raw_bytes": 53,
+  "raw_sha256": "b00446cf61c8f9d3187e680059bbde2a8c3504442efaca4caf1d4b4d46b63c09",
+  "retry": false,
+  "started_utc": "2026-10-16T22:04:41.130238+00:00",
+  "timed_out": false,
+  "timeout_seconds": 12
+}

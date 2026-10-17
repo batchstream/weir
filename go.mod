@@ -40,3 +40,5 @@ require (
 )
 
 replace google.golang.org/grpc => ./third_party/grpc
+
+replace github.com/iceisfun/golua => ./third_party/golua

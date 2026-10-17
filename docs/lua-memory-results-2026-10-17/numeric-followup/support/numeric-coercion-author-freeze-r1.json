@@ -1,0 +1,52 @@
+{
+  "stage": "PR83 numeric coercion rootcause author freeze; tests not executed by author",
+  "recorded_at": "2026-10-16T22:18:57.489031+00:00",
+  "source_frozen": true,
+  "files": {
+    "third_party/golua/vm/numeric.go": "9f0dab1fb16589ea5554b2abab8059f35dcb69bdc03e798b545b747a63c5d0f7",
+    "third_party/golua/vm/numeric_test.go": "b9b9d0f826ab31dd90e8cc72c0f5d9289db7846ac38d2318e2df02c0238b8b1e",
+    "third_party/golua/vm/value.go": "75ae91aa84565c892b5939a57e52cb19cc70e4dac66a2df159fabe314ab64052",
+    "third_party/golua/vm/vm_arith.go": "ca7bfa717a32ca9e3f783bce88eaf00dd0422a296d48d1c6376de47e85512fb5",
+    "third_party/golua/vm/vm_exec.go": "a53b8f286555e64aff60e1892e6ba7ad55aed358cc29155cc08edd1c21a1f171",
+    "third_party/golua/vm/vm_table.go": "000432c9ac9296c47828db72f0dde195f0dbd203117d74759fd8a507d63a53cf",
+    "third_party/golua/stdlib/globals.go": "2edbe3d5f723325c5bed364315c91b152fa3398f5902e803c8aa6caea38be683",
+    "third_party/golua/stdlib/helpers.go": "a2d3340ae719233355bf5f477796ef6f7429828eed433c07b774667a61c194d0",
+    "third_party/golua/stdlib/math.go": "ca79c6565f3926b96fae65401c162c918df4cef349d6bd4b5c8f3fb4f91dfcfc",
+    "third_party/golua/stdlib/memory.go": "2a31f663143a9ccc5dae30cb6d1162ff264259413824c402502f904cec1c6a27",
+    "third_party/golua/stdlib/string.go": "db52e919e65cb402298c1b66659a76d26607e5c145b8b12bd2314e7de7875556",
+    "third_party/golua/stdlib/string_format.go": "69fc475fec8b28eda249eb14578b53c92c8e075bb797cac4756679250aa8b702",
+    "internal/luaengine/environment.go": "7a6bae2d70e796272b9aaf38279f3eb213c2fc9cf190c7deaf3d575e16c6776b",
+    "internal/luaengine/numeric_memory_test.go": "e1ae2af32197d87c5baebf4ac7071a06294bbd314e7328130e49f7e0dab8cdf1"
+  },
+  "allocation_model": "Public Value APIs and VM-owned methods share private parsers; each actual strconv attempt prepays at most its own possible NumError input clone and fixed NumError object. Hex p0 concatenation paid only when used. No global multiplier. Integer/float Value conversions add no byte credit. Before/after parsing and manual long scans check sticky budget context.",
+  "reachable_fixed": [
+    "OP_FORPREP init/limit/step plus invalid-string fallback",
+    "OP_MMBINI rejects strings before attempted integer conversion",
+    "Weir table.concat start/end",
+    "string arithmetic and unary minus",
+    "ipairs iterator caller-supplied index and select index",
+    "numeric string helpers, math, format precheck and output conversion, tonumber custom base parsing",
+    "VM numeric/bitwise/metamethod result conversions"
+  ],
+  "remaining_raw_callsites": {
+    "vm/table.go:520,614": "Guarded by key.IsNumber, cannot parse string",
+    "stdlib unexposed files": "debug/chan/utf8/exec/coroutine/io/os/string_pack are not in Weir whitelist",
+    "internal/luaengine/bridge.go:302": "Existing JSON number input credit at encodeChild:8*len(data); not edited by author",
+    "internal/luaengine/bridge_decode.go:173": "Reparse stored hint previously accepted as finite exact nativeJSONNumber; not edited by author"
+  },
+  "new_tests": [
+    "Root eight reused65539-byte numeric-string cases:1MiB quota fails through pcall;64MiB succeeds",
+    "Lua5.4 legacy decimal/hex/int/float/error/bitwise contracts",
+    "VM successful integer does not prepay unused fallback; numeric Value zero extra credit",
+    "VM three owned numeric conversion entry points preserve sticky cancellation and allocation-free Close"
+  ],
+  "validation": [
+    "gofmt completed on all14files",
+    "git diff --check completed with exit0"
+  ],
+  "pending": [
+    "Root targeted/new/full nested and root test/race/vet checks",
+    "Root manifest regeneration and independent review",
+    "Root actual CLI repeated qualification on new source"
+  ]
+}

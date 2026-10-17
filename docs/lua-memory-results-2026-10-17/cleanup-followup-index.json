@@ -1,0 +1,18 @@
+{
+  "time": "2026-10-16T21:22:09.776926+00:00",
+  "scope": "separate ownership-verified local fixture cleanup; original qualification and receipts unchanged",
+  "files": [
+    {
+      "path": "/Users/liran/Projects/liran/go/weir/docs/lua-memory-results-2026-10-17/lua-production-baseline-cleanup-ownership.json",
+      "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/lua-production-baseline-cleanup-ownership.json",
+      "bytes": 948,
+      "sha256": "8e0d626cc68c926ebd42529a7d333bb96ef7b08f36098b4f77e09a2d229a42a5"
+    },
+    {
+      "path": "/Users/liran/Projects/liran/go/weir/docs/lua-memory-results-2026-10-17/lua-production-baseline-cleanup-final.json",
+      "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/lua-production-baseline-cleanup-final.json",
+      "bytes": 2649,
+      "sha256": "476cf96b2e4641cedbf04e122c2e6318a80f7d54d3d99841fbfe9261d5bba2b6"
+    }
+  ]
+}
