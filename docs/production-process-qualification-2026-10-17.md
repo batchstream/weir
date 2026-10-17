@@ -45,7 +45,7 @@ The first historical formal run failed at this same burst with a short Native
 resource rejection; it is not counted as a successful 600-second run.
 
 At second 150, 32 Native consumers began receiving 8 MiB results in periodic
-chunks for 120 seconds. Every stream demonstrated at least 237 callbacks and
+chunks for 120 seconds. Every consumer demonstrated at least 237 callbacks and
 11,316,243 bytes; the largest observed gap was 1.791397 seconds, below the
 two-second continuous-progress gate. Thirty-two responses completed and their
 32 successors were intentionally canceled at phase end. This crossed the
