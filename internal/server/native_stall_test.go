@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
+	"fmt"
 	"io"
 	"net"
 	"runtime"
@@ -61,6 +62,118 @@ func (adapter *nativeStallAdapter) Execute(ctx context.Context, plans []*executi
 	_ = emit(plans[0], endEvent)
 }
 
+// nativeHealthyResponse keeps only the two small probe replies. Slow Native
+// bodies remain on the flow-control path and are never retained by this oracle.
+type nativeHealthyResponse struct {
+	native  bool
+	headers bool
+	ended   bool
+	body    []byte
+}
+
+func (response *nativeHealthyResponse) observe(frame http2.Frame) error {
+	switch frame := frame.(type) {
+	case *http2.MetaHeadersFrame:
+		if response.ended || frame.Truncated {
+			return fmt.Errorf("healthy reply has extra or truncated headers")
+		}
+		status, contentType, grpcStatus := "", "", ""
+		for _, field := range frame.Fields {
+			var target *string
+			switch field.Name {
+			case ":status":
+				target = &status
+			case "content-type":
+				target = &contentType
+			case "grpc-status":
+				target = &grpcStatus
+			}
+			if target != nil {
+				if *target != "" || field.Value == "" {
+					return fmt.Errorf("healthy reply has duplicate or empty %s", field.Name)
+				}
+				*target = field.Value
+			}
+		}
+		if !response.headers {
+			if status != "200" || contentType != "application/grpc" {
+				return fmt.Errorf("healthy reply has HTTP status %q or content type %q", status, contentType)
+			}
+			response.headers = true
+		} else if status != "" || contentType != "" {
+			return fmt.Errorf("healthy reply repeats initial headers in its trailers")
+		}
+		if !frame.StreamEnded() {
+			if grpcStatus != "" {
+				return fmt.Errorf("healthy reply sends grpc-status before its terminal trailers")
+			}
+			return nil
+		}
+		if grpcStatus != "0" {
+			return fmt.Errorf("healthy reply grpc-status=%q, want 0", grpcStatus)
+		}
+		if err := response.validateBody(); err != nil {
+			return err
+		}
+		response.ended = true
+	case *http2.DataFrame:
+		if !response.headers || response.ended || frame.StreamEnded() {
+			return fmt.Errorf("healthy reply DATA is outside its headers and trailers")
+		}
+		if len(response.body)+len(frame.Data()) > 64<<10 {
+			return fmt.Errorf("healthy probe reply exceeds its finite 64 KiB bound")
+		}
+		response.body = append(response.body, frame.Data()...)
+	case *http2.RSTStreamFrame:
+		return fmt.Errorf("healthy reply reset with %s", frame.ErrCode)
+	case *http2.HeadersFrame, *http2.ContinuationFrame:
+		return fmt.Errorf("healthy reply bypassed decoded complete headers")
+	}
+	return nil
+}
+
+func (response *nativeHealthyResponse) validateBody() error {
+	missing := protocol.Missing()
+	readValue := &pb.Event_ReadResult{ReadResult: missing}
+	readEvent := &pb.Event{Value: readValue}
+	want := []*pb.Event{readEvent}
+	if response.native {
+		head := &pb.NativeHead{BodyContentType: "application/octet-stream"}
+		headValue := &pb.Event_Head{Head: head}
+		headEvent := &pb.Event{Value: headValue}
+		end := &pb.NativeEnd{Completion: pb.NativeCompletion_RESPONSE_COMPLETE}
+		endValue := &pb.Event_NativeEnd{NativeEnd: end}
+		endEvent := &pb.Event{Value: endValue}
+		want = []*pb.Event{headEvent, endEvent}
+	}
+	body, count := response.body, 0
+	for len(body) > 0 {
+		if len(body) < 5 || body[0] != 0 {
+			return fmt.Errorf("healthy reply has a truncated or compressed gRPC envelope")
+		}
+		size := uint64(binary.BigEndian.Uint32(body[1:5]))
+		if size > uint64(len(body)-5) {
+			return fmt.Errorf("healthy reply has a truncated gRPC message")
+		}
+		message := &pb.ExecuteResponse{}
+		if err := proto.Unmarshal(body[5:5+int(size)], message); err != nil {
+			return fmt.Errorf("healthy reply protobuf: %w", err)
+		}
+		if err := protocol.ValidateExecuteResponse(message); err != nil {
+			return fmt.Errorf("healthy reply protocol: %w", err)
+		}
+		if count >= len(want) || message.Index != 1 || !proto.Equal(message.Event, want[count]) {
+			return fmt.Errorf("healthy reply has an unexpected event at position %d: %v", count, message)
+		}
+		count++
+		body = body[5+int(size):]
+	}
+	if count != len(want) {
+		return fmt.Errorf("healthy reply has %d events, want %d", count, len(want))
+	}
+	return nil
+}
+
 type nativeFlowFrame struct {
 	streamID uint32
 	bytes    int
@@ -88,10 +201,16 @@ func TestNativeContinuousSlowProgressPreservesHealthySiblingQueries(t *testing.T
 		t.Fatal(err)
 	}
 	framer := http2.NewFramer(conn, conn)
+	framer.ReadMetaHeaders = hpack.NewDecoder(4096, nil)
+	framer.MaxHeaderListSize = 16 << 10
 	setting := http2.Setting{ID: http2.SettingInitialWindowSize, Val: 0}
 	if err := framer.WriteSettings(setting); err != nil {
 		t.Fatal(err)
 	}
+	const slowStreams = 32
+	readID, nativeID := uint32(slowStreams*2+1), uint32(slowStreams*2+3)
+	readReply, nativeReply := &nativeHealthyResponse{}, &nativeHealthyResponse{native: true}
+	healthy := map[uint32]*nativeHealthyResponse{readID: readReply, nativeID: nativeReply}
 	frames := make(chan nativeFlowFrame, 128)
 	stopReader := make(chan struct{})
 	defer close(stopReader)
@@ -102,10 +221,19 @@ func TestNativeContinuousSlowProgressPreservesHealthySiblingQueries(t *testing.T
 			switch value := frame.(type) {
 			case *http2.DataFrame:
 				observed.streamID, observed.bytes = value.StreamID, len(value.Data())
-			case *http2.HeadersFrame:
+			case *http2.MetaHeadersFrame:
 				observed.streamID, observed.ended = value.StreamID, value.StreamEnded()
 			case *http2.SettingsFrame:
 				observed.settings = !value.IsAck()
+			case *http2.RSTStreamFrame:
+				observed.err = fmt.Errorf("stream %d reset during slow progress: %s", value.StreamID, value.ErrCode)
+			case *http2.GoAwayFrame:
+				observed.err = fmt.Errorf("connection sent GOAWAY during slow progress: %s", value.ErrCode)
+			}
+			if err == nil && observed.err == nil {
+				if reply := healthy[frame.Header().StreamID]; reply != nil {
+					observed.err = reply.observe(frame)
+				}
 			}
 			select {
 			case frames <- observed:
@@ -121,7 +249,6 @@ func TestNativeContinuousSlowProgressPreservesHealthySiblingQueries(t *testing.T
 	native := &pb.NativeRequest{Resource: "slow", Request: document}
 	value := &pb.Command_Native{Native: native}
 	command := &pb.Command{Operation: value}
-	const slowStreams = 32
 	for index := range slowStreams {
 		request := flowControlledRequest{framer: framer, address: node.address, streamID: uint32(index*2 + 1), command: command, responseWindow: 128}
 		sendFlowControlledRequest(t, request)
@@ -129,14 +256,13 @@ func TestNativeContinuousSlowProgressPreservesHealthySiblingQueries(t *testing.T
 	ticker := time.NewTicker(25 * time.Millisecond)
 	defer ticker.Stop()
 	started := time.Now()
-	readID, nativeID := uint32(slowStreams*2+1), uint32(slowStreams*2+3)
 	probeSent, readComplete, nativeComplete := false, false, false
 	progress := make(map[uint32]int)
 	for time.Since(started) < 900*time.Millisecond {
 		select {
 		case frame := <-frames:
 			if frame.err != nil {
-				t.Fatal("slow progress closed the shared connection", frame.err)
+				t.Fatal("shared connection or healthy probe reply failed during slow progress", frame.err)
 			}
 			if frame.settings {
 				if err := framer.WriteSettingsAck(); err != nil {
@@ -274,6 +400,8 @@ func TestNativeOutputStallsPreserveSiblingProgressBeforeWatchdogAbort(t *testing
 		t.Fatal(err)
 	}
 	framer := http2.NewFramer(conn, conn)
+	framer.ReadMetaHeaders = hpack.NewDecoder(4096, nil)
+	framer.MaxHeaderListSize = 16 << 10
 	setting := http2.Setting{ID: http2.SettingInitialWindowSize, Val: 0}
 	if err := framer.WriteSettings(setting); err != nil {
 		t.Fatal(err)
@@ -316,6 +444,8 @@ func TestNativeOutputStallsPreserveSiblingProgressBeforeWatchdogAbort(t *testing
 		}
 		completed <- err
 	}()
+	readReply, nativeReply := &nativeHealthyResponse{}, &nativeHealthyResponse{native: true}
+	healthy := map[uint32]*nativeHealthyResponse{sharedReadID: readReply, sharedNativeID: nativeReply}
 	readComplete, nativeComplete := false, false
 	for {
 		frame, err := framer.ReadFrame()
@@ -325,10 +455,23 @@ func TestNativeOutputStallsPreserveSiblingProgressBeforeWatchdogAbort(t *testing
 			}
 			break
 		}
+		if !readComplete || !nativeComplete {
+			switch value := frame.(type) {
+			case *http2.RSTStreamFrame:
+				t.Fatal("stream reset before healthy probes completed", value.StreamID, value.ErrCode)
+			case *http2.GoAwayFrame:
+				t.Fatal("connection sent GOAWAY before healthy probes completed", value.ErrCode)
+			}
+		}
+		if reply := healthy[frame.Header().StreamID]; reply != nil {
+			if err := reply.observe(frame); err != nil {
+				t.Fatal("healthy shared-connection probe failed", err)
+			}
+		}
 		if data, ok := frame.(*http2.DataFrame); ok && data.StreamID != sharedReadID && data.StreamID != sharedNativeID {
 			t.Fatal("Native output bypassed zero-window flow control", data.StreamID)
 		}
-		if trailers, ok := frame.(*http2.HeadersFrame); ok && trailers.StreamEnded() {
+		if trailers, ok := frame.(*http2.MetaHeadersFrame); ok && trailers.StreamEnded() {
 			readComplete = readComplete || trailers.StreamID == sharedReadID
 			nativeComplete = nativeComplete || trailers.StreamID == sharedNativeID
 		}
@@ -369,5 +512,146 @@ func TestNativeOutputStallsPreserveSiblingProgressBeforeWatchdogAbort(t *testing
 	}
 	if snapshot := local.Snapshot(); snapshot.Overloaded {
 		t.Fatal("flow control saturation was misreported as process overload", snapshot)
+	}
+}
+
+func nativeHealthyReplyBytes(t *testing.T, messages []*pb.ExecuteResponse) []byte {
+	t.Helper()
+	var body []byte
+	for _, message := range messages {
+		raw, err := proto.Marshal(message)
+		if err != nil {
+			t.Fatal(err)
+		}
+		envelope := make([]byte, 5)
+		binary.BigEndian.PutUint32(envelope[1:], uint32(len(raw)))
+		body = append(body, envelope...)
+		body = append(body, raw...)
+	}
+	return body
+}
+
+func TestNativeHealthyResponseRejectsFalseBusinessSuccess(t *testing.T) {
+	missing := protocol.Missing()
+	readValue := &pb.Event_ReadResult{ReadResult: missing}
+	readEvent := &pb.Event{Value: readValue}
+	read := &pb.ExecuteResponse{Index: 1, Event: readEvent}
+	wrongIndex := &pb.ExecuteResponse{Index: 2, Event: readEvent}
+	failure := protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "synthetic refusal")
+	failedRead := protocol.ReadFailure(failure)
+	failedReadValue := &pb.Event_ReadResult{ReadResult: failedRead}
+	failedReadEvent := &pb.Event{Value: failedReadValue}
+	readFailure := &pb.ExecuteResponse{Index: 1, Event: failedReadEvent}
+	head := &pb.NativeHead{BodyContentType: "application/octet-stream"}
+	headValue := &pb.Event_Head{Head: head}
+	headEvent := &pb.Event{Value: headValue}
+	nativeHead := &pb.ExecuteResponse{Index: 1, Event: headEvent}
+	end := &pb.NativeEnd{Completion: pb.NativeCompletion_RESPONSE_COMPLETE}
+	endValue := &pb.Event_NativeEnd{NativeEnd: end}
+	endEvent := &pb.Event{Value: endValue}
+	nativeEnd := &pb.ExecuteResponse{Index: 1, Event: endEvent}
+	incomplete := &pb.NativeEnd{Completion: pb.NativeCompletion_RESPONSE_INCOMPLETE, Failure: failure}
+	incompleteValue := &pb.Event_NativeEnd{NativeEnd: incomplete}
+	incompleteEvent := &pb.Event{Value: incompleteValue}
+	nativeIncomplete := &pb.ExecuteResponse{Index: 1, Event: incompleteEvent}
+	tests := []struct {
+		name     string
+		native   bool
+		messages []*pb.ExecuteResponse
+		alter    string
+	}{
+		{name: "read-index", messages: []*pb.ExecuteResponse{wrongIndex}},
+		{name: "read-failure", messages: []*pb.ExecuteResponse{readFailure}},
+		{name: "read-extra-event", messages: []*pb.ExecuteResponse{read, read}},
+		{name: "native-incomplete", native: true, messages: []*pb.ExecuteResponse{nativeHead, nativeIncomplete}},
+		{name: "native-missing-end", native: true, messages: []*pb.ExecuteResponse{nativeHead}},
+		{name: "native-extra-event", native: true, messages: []*pb.ExecuteResponse{nativeHead, nativeEnd, nativeEnd}},
+		{name: "truncated-envelope", messages: []*pb.ExecuteResponse{read}, alter: "envelope"},
+		{name: "truncated-message", messages: []*pb.ExecuteResponse{read}, alter: "message"},
+		{name: "compressed-envelope", messages: []*pb.ExecuteResponse{read}, alter: "compressed"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			body := nativeHealthyReplyBytes(t, test.messages)
+			switch test.alter {
+			case "envelope":
+				body = body[:4]
+			case "message":
+				body = body[:len(body)-1]
+			case "compressed":
+				body[0] = 1
+			}
+			reply := &nativeHealthyResponse{native: test.native, body: body}
+			if err := reply.validateBody(); err == nil {
+				t.Fatal("failed or incomplete business reply passed the healthy probe oracle")
+			}
+		})
+	}
+}
+
+func TestNativeHealthyResponseAcceptsFragmentedWire(t *testing.T) {
+	missing := protocol.Missing()
+	readValue := &pb.Event_ReadResult{ReadResult: missing}
+	readEvent := &pb.Event{Value: readValue}
+	read := &pb.ExecuteResponse{Index: 1, Event: readEvent}
+	head := &pb.NativeHead{BodyContentType: "application/octet-stream"}
+	headValue := &pb.Event_Head{Head: head}
+	headEvent := &pb.Event{Value: headValue}
+	nativeHead := &pb.ExecuteResponse{Index: 1, Event: headEvent}
+	end := &pb.NativeEnd{Completion: pb.NativeCompletion_RESPONSE_COMPLETE}
+	endValue := &pb.Event_NativeEnd{NativeEnd: end}
+	endEvent := &pb.Event{Value: endValue}
+	nativeEnd := &pb.ExecuteResponse{Index: 1, Event: endEvent}
+	for _, native := range []bool{false, true} {
+		t.Run(fmt.Sprintf("native=%t", native), func(t *testing.T) {
+			messages := []*pb.ExecuteResponse{read}
+			if native {
+				messages = []*pb.ExecuteResponse{nativeHead, nativeEnd}
+			}
+			body := nativeHealthyReplyBytes(t, messages)
+			var wire, block bytes.Buffer
+			writer := http2.NewFramer(&wire, nil)
+			encoder := hpack.NewEncoder(&block)
+			fields := []hpack.HeaderField{{Name: ":status", Value: "200"}, {Name: "content-type", Value: "application/grpc"}}
+			for _, field := range fields {
+				if err := encoder.WriteField(field); err != nil {
+					t.Fatal(err)
+				}
+			}
+			initial := http2.HeadersFrameParam{StreamID: 1, BlockFragment: block.Bytes(), EndHeaders: true}
+			if err := writer.WriteHeaders(initial); err != nil {
+				t.Fatal(err)
+			}
+			// Split every byte, including all five bytes of each gRPC envelope.
+			for index := range body {
+				if err := writer.WriteData(1, false, body[index:index+1]); err != nil {
+					t.Fatal(err)
+				}
+			}
+			block.Reset()
+			status := hpack.HeaderField{Name: "grpc-status", Value: "0"}
+			if err := encoder.WriteField(status); err != nil {
+				t.Fatal(err)
+			}
+			trailers := http2.HeadersFrameParam{StreamID: 1, BlockFragment: block.Bytes(), EndHeaders: true, EndStream: true}
+			if err := writer.WriteHeaders(trailers); err != nil {
+				t.Fatal(err)
+			}
+			reader := http2.NewFramer(nil, &wire)
+			reader.ReadMetaHeaders = hpack.NewDecoder(4096, nil)
+			reply := &nativeHealthyResponse{native: native}
+			for wire.Len() > 0 {
+				frame, err := reader.ReadFrame()
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := reply.observe(frame); err != nil {
+					t.Fatal("valid fragmented probe was rejected", err)
+				}
+			}
+			if !reply.ended {
+				t.Fatal("valid fragmented probe did not reach confirmed terminal trailers")
+			}
+		})
 	}
 }
