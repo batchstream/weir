@@ -1,0 +1,10 @@
+{
+  "qualified_source": "9c23c4f58f789aa54b0162b59234f77e5cb0c6a5",
+  "candidate_source_inventory_sha256": "d9bc0adb6a138f807715e9085ec54ab8a2232e5dcbbe8acf7a92e2fa67d57bc7",
+  "protected_source_count": 1090,
+  "all_protected_sources_unchanged": true,
+  "changes_since_qualified_source": "only qualification documentation and evidence",
+  "changed_or_added_evidence_files": 159,
+  "release_packaging_input_changes": [],
+  "original_269_line_probe_sha256": "36cd530f20b03a2e72f6c913bf583910cde2b163b594556480592261ca252012"
+}

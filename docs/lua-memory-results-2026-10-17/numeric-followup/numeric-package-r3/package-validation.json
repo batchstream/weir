@@ -1,0 +1,73 @@
+{
+  "comparison": {
+    "completed": true,
+    "export_directories": [
+      "/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-package-first-azjd7lgy/source",
+      "/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-package-second-77c5mvs_/source"
+    ],
+    "identical_archives": 4,
+    "identical_binaries": 4,
+    "oci_identical": false,
+    "receipt_sha256": "4ef3f5cba063feeca1800251642f82886e11b5ee193c6652d3dde8989e19d7a3",
+    "source": "9c23c4f58f789aa54b0162b59234f77e5cb0c6a5"
+  },
+  "independent_archive_provenance": [
+    {
+      "archive": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/lua-repair-numeric-package-r3/artifacts/first/weir-linux-amd64.tar.gz",
+      "archive_sha256": "177f3433d5904eb30934943e3af8696c3f2d597f52c96147e57832d17d985e6a",
+      "both_fork_license_provenance": true,
+      "export": "first",
+      "target": "linux-amd64"
+    },
+    {
+      "archive": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/lua-repair-numeric-package-r3/artifacts/first/weir-linux-arm64.tar.gz",
+      "archive_sha256": "55844c441d1869e4724d18bee564256888117f7e472fc58103c9f042be0ffb85",
+      "both_fork_license_provenance": true,
+      "export": "first",
+      "target": "linux-arm64"
+    },
+    {
+      "archive": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/lua-repair-numeric-package-r3/artifacts/first/weir-darwin-amd64.tar.gz",
+      "archive_sha256": "7599c7f0ba18495b8b4d2c129a4435e25ba6283ac33563fa30ad14d7303c2838",
+      "both_fork_license_provenance": true,
+      "export": "first",
+      "target": "darwin-amd64"
+    },
+    {
+      "archive": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/lua-repair-numeric-package-r3/artifacts/first/weir-darwin-arm64.tar.gz",
+      "archive_sha256": "6b8994d6edd72e2602fff1755cf0c0d9fc8fb1a39015ee70a82d217e8028b731",
+      "both_fork_license_provenance": true,
+      "export": "first",
+      "target": "darwin-arm64"
+    },
+    {
+      "archive": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/lua-repair-numeric-package-r3/artifacts/second/weir-linux-amd64.tar.gz",
+      "archive_sha256": "177f3433d5904eb30934943e3af8696c3f2d597f52c96147e57832d17d985e6a",
+      "both_fork_license_provenance": true,
+      "export": "second",
+      "target": "linux-amd64"
+    },
+    {
+      "archive": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/lua-repair-numeric-package-r3/artifacts/second/weir-linux-arm64.tar.gz",
+      "archive_sha256": "55844c441d1869e4724d18bee564256888117f7e472fc58103c9f042be0ffb85",
+      "both_fork_license_provenance": true,
+      "export": "second",
+      "target": "linux-arm64"
+    },
+    {
+      "archive": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/lua-repair-numeric-package-r3/artifacts/second/weir-darwin-amd64.tar.gz",
+      "archive_sha256": "7599c7f0ba18495b8b4d2c129a4435e25ba6283ac33563fa30ad14d7303c2838",
+      "both_fork_license_provenance": true,
+      "export": "second",
+      "target": "darwin-amd64"
+    },
+    {
+      "archive": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/lua-repair-numeric-package-r3/artifacts/second/weir-darwin-arm64.tar.gz",
+      "archive_sha256": "6b8994d6edd72e2602fff1755cf0c0d9fc8fb1a39015ee70a82d217e8028b731",
+      "both_fork_license_provenance": true,
+      "export": "second",
+      "target": "darwin-arm64"
+    }
+  ],
+  "scope": "actual two independent clean exports / fresh caches / four targets; no OCI, publish, or deploy"
+}

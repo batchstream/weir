@@ -37,7 +37,10 @@ func LuaFailure(ctx context.Context, err error) *pb.MutationResult {
 	}
 	code := pb.FailureCode_INVALID_ARGUMENT
 	message := "Lua program evaluation failed"
-	if errors.Is(err, context.DeadlineExceeded) {
+	if errors.Is(err, ErrExecutionMemory) {
+		code = pb.FailureCode_RESOURCE_EXHAUSTED
+		message = ErrExecutionMemory.Error()
+	} else if errors.Is(err, context.DeadlineExceeded) {
 		code = pb.FailureCode_DEADLINE_EXCEEDED
 		message = "Lua program execution limit exceeded"
 	}

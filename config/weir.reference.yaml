@@ -149,6 +149,8 @@ overload:
     # Explicit GOMEMLIMIT takes precedence. The OS limit remains the hard boundary.
 
 # VM limits shared by every local Store.
+# Lua also reserves new allocations on the automatic shared Node execution-memory
+# account, including compilation and document conversion. This needs no setting.
 lua:
   # Default: 0 (no instruction budget), or a positive instruction count.
   max_instructions: 0

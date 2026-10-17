@@ -1,0 +1,44 @@
+{
+  "archives": [
+    {
+      "archive_sha256": "55844c441d1869e4724d18bee564256888117f7e472fc58103c9f042be0ffb85",
+      "export": "first",
+      "weir_sha256": "16669a2cd593d523a8bb52446a1140ea157a9224613ee5a34f37fdcbbe8d16d6"
+    },
+    {
+      "archive_sha256": "55844c441d1869e4724d18bee564256888117f7e472fc58103c9f042be0ffb85",
+      "export": "second",
+      "weir_sha256": "16669a2cd593d523a8bb52446a1140ea157a9224613ee5a34f37fdcbbe8d16d6"
+    }
+  ],
+  "candidate_validation_sha256": "a286f01e58ea5020afaad837db79ef78257c15514f1c1da32bb7c71e1585040f",
+  "identity_scope": "Shipping export intentionally has no Go VCS settings; runtime version must assert exact clean H",
+  "package_validation_sha256": "3c56bfbd7b11f7f20d4628fe6231c2df6ae9c08862c2d95bf167a9351bb2e5dc",
+  "race_driver": {
+    "binary": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/lua-repair-numeric-candidate-r3/app-race.test",
+    "binary_sha256": "4183ca5cea2eb50f19cf23c7e02e6bd6f6259492987bda1cef606e877dc4b5a2",
+    "patches": {
+      "github.com/iceisfun/golua": "./third_party/golua",
+      "google.golang.org/grpc": "./third_party/grpc"
+    },
+    "raw_sha256": "d494e8d298408ed9f6f6c4326b1825aa3d48ea4c8e60c9d20e5de5a3f713a46e",
+    "settings": {
+      "-buildmode": "exe",
+      "-compiler": "gc",
+      "-race": "true",
+      "-tags": "integration",
+      "-trimpath": "true",
+      "CGO_ENABLED": "1",
+      "GOARCH": "arm64",
+      "GOARM64": "v8.0",
+      "GOOS": "darwin",
+      "vcs": "git",
+      "vcs.modified": "false",
+      "vcs.revision": "9c23c4f58f789aa54b0162b59234f77e5cb0c6a5",
+      "vcs.time": "2026-10-17T04:27:35Z"
+    },
+    "source": "9c23c4f58f789aa54b0162b59234f77e5cb0c6a5"
+  },
+  "reproducible_build_receipt_sha256": "4ef3f5cba063feeca1800251642f82886e11b5ee193c6652d3dde8989e19d7a3",
+  "source": "9c23c4f58f789aa54b0162b59234f77e5cb0c6a5"
+}

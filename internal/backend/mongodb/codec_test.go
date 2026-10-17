@@ -137,3 +137,61 @@ func TestCodecCancellationAndLargeRoundTrip(t *testing.T) {
 		t.Fatal("BSON encode ignored caller cancellation", err)
 	}
 }
+
+func TestCodecSingleBufferNestedValuesMatchNativeBSON(t *testing.T) {
+	decimal, err := bson.ParseDecimal128("1234567890.123456789012345")
+	if err != nil {
+		t.Fatal(err)
+	}
+	binaryValue := bson.Binary{Subtype: 0x80, Data: []byte{0, 128, 255}}
+	regex := bson.Regex{Pattern: "a.*b", Options: "im"}
+	timestamp := bson.Timestamp{T: 1234, I: 99}
+	leaf := bson.D{
+		{Key: "text", Value: strings.Repeat("nested payload", 4096)},
+		{Key: "small", Value: int32(7)}, {Key: "wide", Value: int64(7)},
+		{Key: "float", Value: math.Float64frombits(0x7ff8000000000042)},
+		{Key: "decimal", Value: decimal}, {Key: "binary", Value: binaryValue},
+		{Key: "regex", Value: regex}, {Key: "timestamp", Value: timestamp},
+		{Key: "date", Value: bson.DateTime(-123456789)},
+		{Key: "duplicate", Value: true}, {Key: "duplicate", Value: nil},
+	}
+	var nested any = leaf
+	for depth := 0; depth < 98; depth++ {
+		if depth%2 == 0 {
+			items := bson.A{nested}
+			nested = items
+		} else {
+			object := bson.D{{Key: "child", Value: nested}}
+			nested = object
+		}
+	}
+	document := bson.D{{Key: "root", Value: nested}}
+	raw, err := bson.Marshal(document)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := Decode(t.Context(), raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := Encode(t.Context(), decoded)
+	if err != nil || !bytes.Equal(raw, encoded) {
+		t.Fatal("single-buffer encoding changed nested native BSON bytes", len(raw), len(encoded), err)
+	}
+}
+
+func TestCodecEncodingPreservesNativeDepthBoundary(t *testing.T) {
+	leaf := value.Value{Kind: value.Object}
+	for depth := 0; depth < 100; depth++ {
+		field := value.Field{Name: "child", Value: leaf}
+		leaf = value.Value{Kind: value.Object, Fields: []value.Field{field}}
+	}
+	if _, err := Encode(t.Context(), leaf); err != nil {
+		t.Fatal("native depth 100 was rejected", err)
+	}
+	field := value.Field{Name: "child", Value: leaf}
+	tooDeep := value.Value{Kind: value.Object, Fields: []value.Field{field}}
+	if _, err := Encode(t.Context(), tooDeep); err == nil {
+		t.Fatal("native depth 101 was accepted")
+	}
+}

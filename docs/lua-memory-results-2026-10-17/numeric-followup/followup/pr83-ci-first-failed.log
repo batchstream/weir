@@ -1,0 +1,45 @@
+test	Native CGO0 default tests	﻿2026-10-16T22:09:41.1646689Z ##[group]Run python3 scripts/check_dependencies.py
+test	Native CGO0 default tests	2026-10-16T22:09:41.1647173Z [36;1mpython3 scripts/check_dependencies.py[0m
+test	Native CGO0 default tests	2026-10-16T22:09:41.1647606Z [36;1mCGO_ENABLED=0 timeout 12m go test -count=1 -timeout=180s ./...[0m
+test	Native CGO0 default tests	2026-10-16T22:09:41.1714997Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+test	Native CGO0 default tests	2026-10-16T22:09:41.1715373Z env:
+test	Native CGO0 default tests	2026-10-16T22:09:41.1715589Z   GOENV: off
+test	Native CGO0 default tests	2026-10-16T22:09:41.1715806Z   GOWORK: off
+test	Native CGO0 default tests	2026-10-16T22:09:41.1716034Z   GOTOOLCHAIN: local
+test	Native CGO0 default tests	2026-10-16T22:09:41.1716513Z   GOFLAGS: -mod=readonly
+test	Native CGO0 default tests	2026-10-16T22:09:41.1716764Z   GOPROXY: off
+test	Native CGO0 default tests	2026-10-16T22:09:41.1716969Z   GOSUMDB: off
+test	Native CGO0 default tests	2026-10-16T22:09:41.1717192Z   PYTHONDONTWRITEBYTECODE: 1
+test	Native CGO0 default tests	2026-10-16T22:09:41.1717485Z   GOROOT: /home/runner/work/weir/weir/.tools/ci/go
+test	Native CGO0 default tests	2026-10-16T22:09:41.1717861Z   GOMODCACHE: /home/runner/work/weir/weir/.tools/ci/modules
+test	Native CGO0 default tests	2026-10-16T22:09:41.1718201Z   GOEXPERIMENT: 
+test	Native CGO0 default tests	2026-10-16T22:09:41.1718405Z ##[endgroup]
+test	Native CGO0 default tests	2026-10-16T22:09:41.9155428Z One-way project module graph and SDK-free server binary verified
+test	Native CGO0 default tests	2026-10-16T22:10:24.5119352Z ok  	github.com/batchstream/weir/cmd/weir	12.591s
+test	Native CGO0 default tests	2026-10-16T22:10:24.5119891Z ok  	github.com/batchstream/weir/deploy/kubernetes	0.009s
+test	Native CGO0 default tests	2026-10-16T22:10:24.5120688Z ok  	github.com/batchstream/weir/internal/api/peer/v1	0.009s
+test	Native CGO0 default tests	2026-10-16T22:10:24.5121277Z ok  	github.com/batchstream/weir/internal/app	5.785s
+test	Native CGO0 default tests	2026-10-16T22:10:24.5121999Z ?   	github.com/batchstream/weir/internal/backend	[no test files]
+test	Native CGO0 default tests	2026-10-16T22:10:24.5122782Z ok  	github.com/batchstream/weir/internal/backend/mongodb	4.654s
+test	Native CGO0 default tests	2026-10-16T22:10:36.2931946Z ok  	github.com/batchstream/weir/internal/backend/search	20.751s
+test	Native CGO0 default tests	2026-10-16T22:10:36.2932492Z ok  	github.com/batchstream/weir/internal/backend/targetcache	0.012s
+test	Native CGO0 default tests	2026-10-16T22:10:36.2932918Z ok  	github.com/batchstream/weir/internal/directory	1.177s
+test	Native CGO0 default tests	2026-10-16T22:10:36.2933314Z ok  	github.com/batchstream/weir/internal/execution	0.007s
+test	Native CGO0 default tests	2026-10-16T22:10:36.2933686Z ok  	github.com/batchstream/weir/internal/luaengine	0.423s
+test	Native CGO0 default tests	2026-10-16T22:10:36.2934073Z ok  	github.com/batchstream/weir/internal/overload	0.423s
+test	Native CGO0 default tests	2026-10-16T22:10:36.2934440Z ok  	github.com/batchstream/weir/internal/protowire	0.045s
+test	Native CGO0 default tests	2026-10-16T22:10:38.9793649Z --- FAIL: TestRPCExpiryKeepsSharedConnectionAndMutation (0.56s)
+test	Native CGO0 default tests	2026-10-16T22:10:38.9794668Z     --- FAIL: TestRPCExpiryKeepsSharedConnectionAndMutation/caller-deadline (0.25s)
+test	Native CGO0 default tests	2026-10-16T22:10:38.9796032Z         rpc_isolation_test.go:112: first RPC did not end with its own expiry rpc error: code = Canceled desc = context canceled
+test	Native CGO0 default tests	2026-10-16T22:10:38.9797186Z FAIL
+test	Native CGO0 default tests	2026-10-16T22:10:38.9797674Z FAIL	github.com/batchstream/weir/internal/server	16.175s
+test	Native CGO0 default tests	2026-10-16T22:10:38.9798326Z ok  	github.com/batchstream/weir/internal/store	1.445s
+test	Native CGO0 default tests	2026-10-16T22:10:38.9798945Z ok  	github.com/batchstream/weir/internal/testutil	0.029s
+test	Native CGO0 default tests	2026-10-16T22:10:38.9799646Z ok  	github.com/batchstream/weir/internal/testutil/testdns	0.080s
+test	Native CGO0 default tests	2026-10-16T22:10:38.9800448Z ?   	github.com/batchstream/weir/internal/testutil/testmetrics	[no test files]
+test	Native CGO0 default tests	2026-10-16T22:10:38.9801283Z ok  	github.com/batchstream/weir/internal/testutil/testmongo	0.005s
+test	Native CGO0 default tests	2026-10-16T22:10:38.9802082Z ?   	github.com/batchstream/weir/internal/testutil/testrecords	[no test files]
+test	Native CGO0 default tests	2026-10-16T22:10:38.9802904Z ok  	github.com/batchstream/weir/internal/testutil/testresource	0.002s
+test	Native CGO0 default tests	2026-10-16T22:10:38.9803602Z ok  	github.com/batchstream/weir/internal/value	0.021s
+test	Native CGO0 default tests	2026-10-16T22:10:38.9804371Z FAIL
+test	Native CGO0 default tests	2026-10-16T22:10:39.2179071Z ##[error]Process completed with exit code 1.

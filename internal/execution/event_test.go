@@ -16,6 +16,7 @@ func TestLuaFailurePreservesCallerStatusAndSanitizesErrors(t *testing.T) {
 	expired, release := context.WithDeadline(t.Context(), time.Unix(0, 0))
 	defer release()
 	private := fmt.Errorf("private source detail")
+	memory := fmt.Errorf("private source detail: %w", ErrExecutionMemory)
 	timeout := fmt.Errorf("private source detail: %w", context.DeadlineExceeded)
 	cases := []struct {
 		name string
@@ -25,6 +26,8 @@ func TestLuaFailurePreservesCallerStatusAndSanitizesErrors(t *testing.T) {
 	}{
 		{name: "evaluation error", ctx: t.Context(), err: private, code: pb.FailureCode_INVALID_ARGUMENT},
 		{name: "execution limit", ctx: t.Context(), err: timeout, code: pb.FailureCode_DEADLINE_EXCEEDED},
+		{name: "allocation limit", ctx: t.Context(), err: memory, code: pb.FailureCode_RESOURCE_EXHAUSTED},
+		{name: "caller cancellation overrides memory", ctx: canceled, err: memory, code: pb.FailureCode_CANCELLED},
 		{name: "caller cancellation overrides limit", ctx: canceled, err: timeout, code: pb.FailureCode_CANCELLED},
 		{name: "caller deadline overrides evaluation error", ctx: expired, err: private, code: pb.FailureCode_DEADLINE_EXCEEDED},
 	}

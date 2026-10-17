@@ -1,0 +1,9 @@
+{
+  "retry": false,
+  "runner_sha256": "ad998270e57f21cf4c505e632284a580948d7c02fb7ca48d40a01fe24761091e",
+  "scope": "First qualification of the distinct reproducible shipping artifact; prior candidate result retained",
+  "shipping_SHA256": null,
+  "source": "9c23c4f58f789aa54b0162b59234f77e5cb0c6a5",
+  "started_utc": "2026-10-17T04:31:30.683523+00:00",
+  "status": "INCOMPLETE"
+}

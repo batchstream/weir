@@ -1,0 +1,24 @@
+{
+  "started_utc": "2026-10-16T22:03:02.507528+00:00",
+  "args": [
+    "/Users/liran/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.1.darwin-arm64/bin/go",
+    "run",
+    "-mod=readonly",
+    "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/lua-repair-candidate-r1-cleanup-audit/main.go",
+    "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/lua-repair-candidate-r1-cleanup-audit/input.json"
+  ],
+  "cwd": "/Users/liran/Projects/liran/go/weir",
+  "env": {
+    "GOROOT": "/Users/liran/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.1.darwin-arm64",
+    "GOENV": "off",
+    "GOTOOLCHAIN": "local",
+    "GOPROXY": "off",
+    "GOSUMDB": "off",
+    "GOWORK": "off",
+    "GOFLAGS": "",
+    "GOEXPERIMENT": "",
+    "CGO_ENABLED": "0"
+  },
+  "main_sha256": "d915b9da37758c37bd49db45777516db4908e0ce26e461fb254f9e18210fc440",
+  "scope": "read-only exact namespace cleanup ownership audit, not qualification retry"
+}

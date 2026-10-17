@@ -3,6 +3,7 @@ package search
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/batchstream/weir-protocol/api/protocol"
@@ -10,16 +11,31 @@ import (
 	"github.com/batchstream/weir/internal/execution"
 	"github.com/batchstream/weir/internal/luaengine"
 	"github.com/batchstream/weir/internal/value"
+	"github.com/iceisfun/golua/budget"
 )
 
 // evaluateProgram runs Lua in the main process. A returned write carries the
 // exact observed OCC condition; only a confirmed conflict permits reevaluation.
-func (a *Adapter) evaluateProgram(ctx context.Context, native *plan, current *getReply) (*plan, *pb.MutationResult) {
+func (a *Adapter) evaluateProgram(ctx context.Context, work *execution.Plan, current *getReply) (write *plan, result *pb.MutationResult) {
+	var allocationErr error
+	defer func() {
+		if allocationErr != nil {
+			write = nil
+			failure := fmt.Errorf("%w: %w", execution.ErrExecutionMemory, allocationErr)
+			result = execution.LuaFailure(ctx, failure)
+		}
+	}()
+	defer budget.Recover(&allocationErr)
+	native := work.Backend.(*plan)
 	inputBytes := []byte(nil)
 	if native.input != nil {
 		inputBytes = native.input.Data
 	}
-	if err := reserveSearchScratch(ctx, jsonDecodeWorking(current.Source)+jsonDecodeWorking(inputBytes)); err != nil {
+	decodedWorking, err := programWorking(jsonDecodeWorking(current.Source), jsonDecodeWorking(inputBytes))
+	if err != nil {
+		return nil, protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, recordMemoryFailure())
+	}
+	if err := reserveSearchScratch(ctx, decodedWorking); err != nil {
 		return nil, protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, recordMemoryFailure())
 	}
 	currentValue := value.Value{Kind: value.Missing}
@@ -39,6 +55,20 @@ func (a *Adapter) evaluateProgram(ctx context.Context, native *plan, current *ge
 	}
 	program := *native.program
 	program.Current = currentValue
+	luaBytes, programScratch := 0, decodedWorking
+	if memory := searchMemory(ctx); memory != nil && memory.owner != nil {
+		program.Reserve = func(bytes int) error {
+			working, err := programWorking(programScratch, bytes)
+			if err != nil {
+				return err
+			}
+			if err := reserveSearchScratch(ctx, working); err != nil {
+				return err
+			}
+			luaBytes = bytes
+			return nil
+		}
+	}
 	if native.input != nil {
 		input, err := value.DecodeJSON(ctx, native.input.Data)
 		if err != nil {
@@ -53,11 +83,21 @@ func (a *Adapter) evaluateProgram(ctx context.Context, native *plan, current *ge
 	if err != nil {
 		return nil, execution.LuaFailure(ctx, err)
 	}
+	luaBytes = transformed.Allocations.UsedBytes()
 	next := *native
 	switch transformed.Action {
 	case "keep":
 		return nil, protocol.Mutation(pb.MutationOutcome_APPLIED, nil)
 	case "reject":
+		if work.Memory != nil {
+			retained, err := programWorking(len(transformed.Message), execution.ResultOverheadBytes)
+			if err != nil {
+				return nil, protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, recordMemoryFailure())
+			}
+			if err := work.Memory.ReserveResult(retained); err != nil {
+				return nil, protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, recordMemoryFailure())
+			}
+		}
 		failure := protocol.Fail(pb.FailureCode_PRECONDITION_FAILED, transformed.Message)
 		return nil, protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, failure)
 	case "delete":
@@ -66,8 +106,23 @@ func (a *Adapter) evaluateProgram(ctx context.Context, native *plan, current *ge
 		}
 		next.action = "delete"
 	case "replace":
-		if err := reserveSearchScratch(ctx, jsonDecodeWorking(current.Source)+jsonDecodeWorking(inputBytes)+3*jsonValueBytes(transformed.Value)); err != nil {
+		valueBytes, err := transformed.ValueBytes(ctx, transformed.Value, true)
+		if err != nil {
+			return nil, execution.LuaFailure(ctx, err)
+		}
+		programScratch, err = programWorking(decodedWorking, valueBytes, valueBytes, valueBytes)
+		if err != nil {
 			return nil, protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, recordMemoryFailure())
+		}
+		working, err := programWorking(programScratch, luaBytes)
+		if err != nil {
+			return nil, protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, recordMemoryFailure())
+		}
+		if err := reserveSearchScratch(ctx, working); err != nil {
+			return nil, protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, recordMemoryFailure())
+		}
+		if err := luaengine.ReserveValueValidation(transformed.Allocations, transformed.Value); err != nil {
+			return nil, execution.LuaFailure(ctx, err)
 		}
 		source, err := value.EncodeJSON(ctx, transformed.Value)
 		if err != nil {
@@ -78,6 +133,9 @@ func (a *Adapter) evaluateProgram(ctx context.Context, native *plan, current *ge
 			return nil, protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, failure)
 		}
 		if *current.Found {
+			if err := luaengine.ReserveValueValidation(transformed.Allocations, currentValue); err != nil {
+				return nil, execution.LuaFailure(ctx, err)
+			}
 			previous, encodeErr := value.EncodeJSON(ctx, currentValue)
 			if encodeErr != nil {
 				return nil, execution.LuaFailure(ctx, encodeErr)
@@ -87,7 +145,11 @@ func (a *Adapter) evaluateProgram(ctx context.Context, native *plan, current *ge
 			}
 		}
 		if memory := searchMemory(ctx); memory != nil {
-			if err := memory.set(memory.sources+cap(source), memory.frame, max(0, memory.scratch-cap(source))); err != nil {
+			sources, err := programWorking(memory.sources, cap(source))
+			if err != nil {
+				return nil, protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, recordMemoryFailure())
+			}
+			if err := memory.set(sources, memory.frame, max(0, memory.scratch-cap(source))); err != nil {
 				return nil, protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, recordMemoryFailure())
 			}
 		}
@@ -100,6 +162,6 @@ func (a *Adapter) evaluateProgram(ctx context.Context, native *plan, current *ge
 		failure := protocol.Fail(pb.FailureCode_INTERNAL, "Lua evaluation returned an invalid action")
 		return nil, protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, failure)
 	}
-	write := &next
+	write = &next
 	return write, nil
 }

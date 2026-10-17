@@ -590,7 +590,7 @@ func (a *Adapter) executeRecords(ctx context.Context, works []*execution.Plan) [
 					if work.Context != nil {
 						stop = context.AfterFunc(work.Context, cancel)
 					}
-					next, mutation := a.evaluateProgram(programContext, native, current)
+					next, mutation := a.evaluateProgram(programContext, work, current)
 					if stop != nil {
 						stop()
 					}

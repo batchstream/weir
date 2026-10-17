@@ -1,0 +1,19 @@
+{
+  "at": "2026-10-16T22:02:15.525331+00:00",
+  "driver_exit": 2,
+  "driver_absent": true,
+  "MongoDB_pid": 97071,
+  "MongoDB_command": "/Users/liran/Projects/liran/go/weir/.tools/mongodb-macos-aarch64--8.0.32/bin/mongod --dbpath /Users/liran/Projects/liran/go/weir/.testdata/mongo-local --bind_ip 127.0.0.1 --port 27028 --replSet weir_local --setParameter enableTestCommands=1 --logpath /Users/liran/Projects/liran/go/weir/.testdata/mongo-local/mongod.log --pidfilepath /Users/liran/Projects/liran/go/weir/.testdata/mongo-local/mongod.pid --fork",
+  "MongoDB_owner_sha256": "2457c16990041d8d9df978ec2f73d9d3de95c7c09540bd71d43a5673ac10dad3",
+  "Search_ID": "0a8037715b19fd64c43641f9fc448bf917a608410b252b1ddb591c51bb91349b",
+  "Search_owner": "weir-search-local",
+  "Search_image": "docker.elastic.co/elasticsearch/elasticsearch@sha256:c2a3ed5f968be6d59c960aa0c60cfdaee667b6bc8211142021a41d0e85b43237",
+  "Search_running": true,
+  "input_sha256": "7b2c02ada6a325766f5e564dccfb46cbc5cba39b0264619ed480ea676b7a046e",
+  "raw_failed_log_sha256": "a865318413b152ff0a5cde0dee1527de3b09dcbec881c8631082c4cbd209bb35",
+  "namespace_only": {
+    "mongo": "weir_test_95323_1",
+    "search": "weir_search_95323_1"
+  },
+  "note": "seedNativeBurstDataset seeds hot only; write-0 is not expected in this supplemental harness"
+}

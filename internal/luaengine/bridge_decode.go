@@ -6,8 +6,10 @@ import (
 	"strconv"
 	"strings"
 	"unicode/utf8"
+	"unsafe"
 
 	"github.com/batchstream/weir/internal/value"
+	"github.com/iceisfun/golua/budget"
 	"github.com/iceisfun/golua/vm"
 )
 
@@ -23,8 +25,10 @@ type decodeFrame struct {
 
 func (b *bridge) fromLua(v vm.Value) (value.Value, error) {
 	var result value.Value
+	scope := b.state.Budget()
 	first := decodeFrame{source: v, output: &result}
-	stack := []decodeFrame{first}
+	stack := budget.Append(scope, []decodeFrame(nil), first)
+	scope.Require(256)
 	active := make(map[*vm.Table]bool)
 	for len(stack) != 0 {
 		if err := b.checkpoint(); err != nil {
@@ -56,18 +60,15 @@ func (b *bridge) fromLua(v vm.Value) (value.Value, error) {
 		key := frame.keys[frame.index]
 		var destination *value.Value
 		if frame.output.Kind == value.Object {
-			field := value.Field{Name: key.AsString()}
-			frame.output.Fields = append(frame.output.Fields, field)
-			destination = &frame.output.Fields[len(frame.output.Fields)-1].Value
+			frame.output.Fields[frame.index].Name = cloneLuaText(scope, key.AsString())
+			destination = &frame.output.Fields[frame.index].Value
 		} else {
-			empty := value.Value{}
-			frame.output.Items = append(frame.output.Items, empty)
-			destination = &frame.output.Items[len(frame.output.Items)-1]
+			destination = &frame.output.Items[frame.index]
 			key = vm.NewInt(int64(frame.index + 1))
 		}
 		frame.index++
 		next := decodeFrame{source: frame.table.Get(key), hint: frame.info.hints[key], output: destination}
-		stack = append(stack, next)
+		stack = budget.Append(scope, stack, next)
 	}
 	return result, nil
 }
@@ -80,6 +81,10 @@ func (b *bridge) openTable(frame *decodeFrame, active map[*vm.Table]bool) error 
 	if active[table] {
 		return fmt.Errorf("cyclic Lua table")
 	}
+	scope := b.state.Budget()
+	var field value.Field
+	var item value.Value
+	scope.Require(256)
 	active[table] = true
 	frame.table, frame.info = table, b.tables[table]
 	stringsOnly, integersOnly := true, true
@@ -90,7 +95,7 @@ func (b *bridge) openTable(frame *decodeFrame, active map[*vm.Table]bool) error 
 		}
 		stringsOnly = stringsOnly && key.IsString()
 		integersOnly = integersOnly && key.IsInt() && key.AsInt() > 0
-		frame.keys = append(frame.keys, key)
+		frame.keys = budget.Append(scope, frame.keys, key)
 		return true
 	})
 	if interrupted != nil {
@@ -121,6 +126,10 @@ func (b *bridge) openTable(frame *decodeFrame, active map[*vm.Table]bool) error 
 				return fmt.Errorf("invalid field name")
 			}
 		}
+		if len(frame.keys) != 0 {
+			scope.RequireArray(unsafe.Sizeof(field), len(frame.keys))
+			frame.output.Fields = make([]value.Field, len(frame.keys))
+		}
 		return nil
 	}
 	if !integersOnly {
@@ -133,6 +142,10 @@ func (b *bridge) openTable(frame *decodeFrame, active map[*vm.Table]bool) error 
 		if key.AsInt() > int64(len(frame.keys)) {
 			return fmt.Errorf("sparse Lua array")
 		}
+	}
+	if len(frame.keys) != 0 {
+		scope.RequireArray(unsafe.Sizeof(item), len(frame.keys))
+		frame.output.Items = make([]value.Value, len(frame.keys))
 	}
 	return nil
 }
@@ -167,16 +180,20 @@ func (b *bridge) decodeScalar(v vm.Value, hint value.Value) (value.Value, error)
 		if !utf8.ValidString(text) {
 			return empty, fmt.Errorf("invalid UTF-8 string")
 		}
-		result = value.Value{Kind: value.String, Text: text}
+		result = value.Value{Kind: value.String, Text: cloneLuaText(b.state.Budget(), text)}
 	case v.IsUserdata():
 		leaf, ok := v.AsUserdata().Data.(scalarLeaf)
 		if !ok || v.AsUserdata().Metatable() != b.leafMeta {
 			return empty, fmt.Errorf("unsupported userdata")
 		}
 		result = leaf.value
+		result.Type = cloneLuaText(b.state.Budget(), result.Type)
 	default:
 		return empty, fmt.Errorf("unsupported Lua value")
 	}
-	result.Data = append([]byte(nil), result.Data...)
+	if len(result.Data) != 0 {
+		b.state.Budget().RequireArray(1, len(result.Data))
+		result.Data = append([]byte(nil), result.Data...)
+	}
 	return result, nil
 }

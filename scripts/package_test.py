@@ -146,32 +146,34 @@ class PackageTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'unlisted credentials'):
                 package.source_files(root, package.clean_head(root))
 
-    def test_exported_grpc_inputs_match_the_complete_patch_manifest(self):
-        with tempfile.TemporaryDirectory() as temp:
-            source = Path(temp)
-            directory = source / 'third_party/grpc'
-            directory.mkdir(parents=True)
-            base = {'go.mod': package.sha(b'module google.golang.org/grpc\n'),
-                    'server.go': package.sha(b'upstream'), 'LICENSE': package.sha(b'license')}
-            patch = {'path': 'server.go', 'upstream_sha256': base['server.go'], 'sha256': package.sha(b'patched')}
-            addition = {'path': 'mem/receive_memory.go', 'sha256': package.sha(b'new source')}
-            manifest = {'module': package.dependencies.GRPC, 'version': package.dependencies.GRPC_VERSION,
-                        'files': base, 'patchedFiles': [patch], 'newFiles': [addition]}
-            (directory / 'WEIR_UPSTREAM.json').write_text(json.dumps(manifest))
-            inputs = {'third_party/grpc/' + name: digest for name, digest in base.items()}
-            inputs['third_party/grpc/server.go'] = patch['sha256']
-            inputs['third_party/grpc/mem/receive_memory.go'] = addition['sha256']
-            inputs['third_party/grpc/WEIR_UPSTREAM.json'] = package.sha(json.dumps(manifest).encode())
-            package.validate_grpc_inputs(source, inputs)
-            changed = dict(inputs)
-            changed['third_party/grpc/server.go'] = base['server.go']
-            missing = dict(inputs)
-            del missing['third_party/grpc/LICENSE']
-            extra = dict(inputs)
-            extra['third_party/grpc/unrecorded.go'] = package.sha(b'unrecorded source')
-            for invalid in (changed, missing, extra):
-                with self.assertRaisesRegex(ValueError, 'differ from the pinned patch manifest'):
-                    package.validate_grpc_inputs(source, invalid)
+    def test_exported_inputs_match_each_complete_patch_manifest(self):
+        for module, (version, relative) in package.dependencies.LOCAL_PATCHES.items():
+            with self.subTest(module=module), tempfile.TemporaryDirectory() as temp:
+                source = Path(temp)
+                relative = relative.removeprefix('./')
+                directory = source / relative
+                directory.mkdir(parents=True)
+                base = {'go.mod': package.sha(('module ' + module + '\n').encode()),
+                        'server.go': package.sha(b'upstream'), 'LICENSE': package.sha(b'license')}
+                patch = {'path': 'server.go', 'upstream_sha256': base['server.go'], 'sha256': package.sha(b'patched')}
+                addition = {'path': 'mem/receive_memory.go', 'sha256': package.sha(b'new source')}
+                manifest = {'module': module, 'version': version,
+                            'files': base, 'patchedFiles': [patch], 'newFiles': [addition]}
+                (directory / 'WEIR_UPSTREAM.json').write_text(json.dumps(manifest))
+                inputs = {relative + '/' + name: digest for name, digest in base.items()}
+                inputs[relative + '/server.go'] = patch['sha256']
+                inputs[relative + '/mem/receive_memory.go'] = addition['sha256']
+                inputs[relative + '/WEIR_UPSTREAM.json'] = package.sha(json.dumps(manifest).encode())
+                package.validate_patch_inputs(source, inputs)
+                changed = dict(inputs)
+                changed[relative + '/server.go'] = base['server.go']
+                missing = dict(inputs)
+                del missing[relative + '/LICENSE']
+                extra = dict(inputs)
+                extra[relative + '/unrecorded.go'] = package.sha(b'unrecorded source')
+                for invalid in (changed, missing, extra):
+                    with self.assertRaisesRegex(ValueError, 'differ from the pinned patch manifest'):
+                        package.validate_patch_inputs(source, invalid)
 
     def test_toolchain_drift_rejected(self):
         result = subprocess.CompletedProcess([], 0, b'go1.27.0\n', b'')
@@ -182,47 +184,50 @@ class PackageTests(unittest.TestCase):
     def test_binary_target_and_linked_dependency_validation(self):
         env = {}
         lines = ('binary: go1.27.1\n\tdep\tgoogle.golang.org/grpc\tv1.83.2\n'
-                 '\t=>\t./third_party/grpc\t(devel)\n\tbuild\tGOOS=linux\n'
+                 '\t=>\t./third_party/grpc\t(devel)\n'
+                 '\tdep\tgithub.com/iceisfun/golua\tv1.1.1\n\t=>\t./third_party/golua\t(devel)\n'
+                 '\tbuild\tGOOS=linux\n'
                  '\tbuild\tGOARCH=arm64\n\tbuild\tCGO_ENABLED=0\n\tbuild\t-trimpath=true\n\tbuild\tGOARM64=v8.0\n')
-        for extra, target, success in (('', ('linux', 'arm64'), True), ('', ('linux', 'amd64'), False), ('\tdep\tgithub.com/iceisfun/golua\tv1.1.1\th1:fixture\n', ('linux', 'arm64'), True)):
+        for extra, target, success in (('', ('linux', 'arm64'), True), ('', ('linux', 'amd64'), False), ('\tdep\texample.com/public\tv1.0.0\th1:fixture\n', ('linux', 'arm64'), True)):
             result = subprocess.CompletedProcess([], 0, (lines + extra).encode(), b'')
             with patch.object(subprocess, 'run', return_value=result):
                 if success:
-                    expected = [['google.golang.org/grpc', 'v1.83.2']]
+                    expected = [['google.golang.org/grpc', 'v1.83.2'], ['github.com/iceisfun/golua', 'v1.1.1']]
                     if extra:
-                        expected.append(['github.com/iceisfun/golua', 'v1.1.1', 'h1:fixture'])
+                        expected.append(['example.com/public', 'v1.0.0', 'h1:fixture'])
                     self.assertEqual(package.build_info(Path('binary'), target, env)['linked_modules'],
                                      expected)
                 else:
                     with self.assertRaises(ValueError):
                         package.build_info(Path('binary'), target, env)
 
-    def test_binary_only_allows_the_exact_local_grpc_patch(self):
+    def test_binary_only_allows_both_exact_local_patches(self):
         env = {}
         lines = ('binary: go1.27.1\n\tbuild\tGOOS=linux\n\tbuild\tGOARCH=arm64\n'
                  '\tbuild\tCGO_ENABLED=0\n\tbuild\t-trimpath=true\n\tbuild\tGOARM64=v8.0\n')
-        cases = (
-            ('google.golang.org/grpc', 'v1.83.2', './third_party/grpc', True),
-            ('google.golang.org/grpc', 'v1.83.1', './third_party/grpc', False),
-            ('github.com/batchstream/weir-protocol', 'v0.14.0', './third_party/grpc', False),
-            ('google.golang.org/grpc', 'v1.83.2', '../grpc', False),
-        )
-        for module, version, directory, success in cases:
-            extra = f'\tdep\t{module}\t{version}\n\t=>\t{directory}\t(devel)\n'
-            result = subprocess.CompletedProcess([], 0, (lines + extra).encode(), b'')
-            with self.subTest(module=module, version=version, directory=directory):
-                with patch.object(subprocess, 'run', return_value=result):
-                    if success:
-                        info = package.build_info(Path('binary'), ('linux', 'arm64'), env)
-                        expected = {'module': module, 'version': version, 'path': directory}
-                        self.assertEqual(info['local_patches'], [expected])
-                    else:
-                        with self.assertRaisesRegex(ValueError, 'replacement dependency refused'):
-                            package.build_info(Path('binary'), ('linux', 'arm64'), env)
-        for extra in ('', '\tdep\tgoogle.golang.org/grpc\tv1.83.2\th1:fixture\n'):
+        linked = {module: f'\tdep\t{module}\t{version}\n\t=>\t{directory}\t(devel)\n'
+                  for module, (version, directory) in package.dependencies.LOCAL_PATCHES.items()}
+        complete = ''.join(linked.values())
+        result = subprocess.CompletedProcess([], 0, (lines + complete).encode(), b'')
+        with patch.object(subprocess, 'run', return_value=result):
+            info = package.build_info(Path('binary'), ('linux', 'arm64'), env)
+            self.assertEqual(info['local_patches'], [
+                {'module': module, 'version': version, 'path': directory}
+                for module, (version, directory) in package.dependencies.LOCAL_PATCHES.items()])
+        for module, (version, directory) in package.dependencies.LOCAL_PATCHES.items():
+            for invalid in (linked[module].replace(version, 'v0.0.1'),
+                            linked[module].replace(directory, '../unreviewed'),
+                            linked[module].replace(module, package.dependencies.PROTOCOL),
+                            linked[module] + linked[module]):
+                extra = complete.replace(linked[module], invalid)
+                result = subprocess.CompletedProcess([], 0, (lines + extra).encode(), b'')
+                with self.subTest(module=module, invalid=invalid), patch.object(subprocess, 'run', return_value=result):
+                    with self.assertRaisesRegex(ValueError, 'replacement dependency refused'):
+                        package.build_info(Path('binary'), ('linux', 'arm64'), env)
+        for extra in ('', *linked.values()):
             result = subprocess.CompletedProcess([], 0, (lines + extra).encode(), b'')
             with patch.object(subprocess, 'run', return_value=result):
-                with self.assertRaisesRegex(ValueError, 'missing its pinned local gRPC receive patch'):
+                with self.assertRaisesRegex(ValueError, 'missing a pinned local dependency patch'):
                     package.build_info(Path('binary'), ('linux', 'arm64'), env)
 
     def test_oci_build_context_contains_only_built_binaries(self):

@@ -45,6 +45,9 @@ jobs:
       - name: Native receive ownership patch race tests
         working-directory: third_party/grpc
         run: CGO_ENABLED=1 timeout 3m go test -race -count=1 -timeout=120s -run '^TestReceive' ./ ./mem ./internal/transport
+      - name: Lua allocation patch race tests
+        working-directory: third_party/golua
+        run: CGO_ENABLED=1 timeout 3m go test -race -count=1 -timeout=120s ./budget ./lexer ./parser ./compiler ./vm ./stdlib
       - name: Static vet and offline script tests
         run: |
           CGO_ENABLED=0 go vet ./...

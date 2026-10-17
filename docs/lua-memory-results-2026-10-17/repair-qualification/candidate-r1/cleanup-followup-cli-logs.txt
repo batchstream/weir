@@ -1,0 +1,4 @@
+Weir listening on [[::]:7447]; local execution and peer directory discovery
+Diagnostics listening on [::]:7449
+2026/10/16 22:01:36 INFO backend_connections_closed backend=search store=search owned=0 peak=2 acquired=7 released=7
+2026/10/16 22:01:36 INFO backend_connections_closed backend=mongo store=mongo owned=0 peak=3 dialing=0 closing=0 acquired=3 released=3
