@@ -730,7 +730,7 @@ func (vm *VM) execute() ([]Value, error) {
 			sc := inst.SC()
 			v := vm.stack[frame.base+b]
 			if !v.IsString() {
-				if i, ok := v.ToInt(); ok {
+				if i, ok := vm.ToInt(v); ok {
 					if sc < 0 {
 						vm.stack[frame.base+a] = NewInt(i << uint(-sc))
 					} else {
@@ -746,7 +746,7 @@ func (vm *VM) execute() ([]Value, error) {
 			sc := inst.SC()
 			v := vm.stack[frame.base+b]
 			if !v.IsString() {
-				if i, ok := v.ToInt(); ok {
+				if i, ok := vm.ToInt(v); ok {
 					vm.stack[frame.base+a] = NewInt(int64(sc) << uint(i))
 				} else if v.IsNumber() {
 					return nil, vm.runtimeErrorForNumber(b)
@@ -852,9 +852,11 @@ func (vm *VM) execute() ([]Value, error) {
 				case compiler.TM_ADD, compiler.TM_SUB, compiler.TM_MUL, compiler.TM_MOD, compiler.TM_POW, compiler.TM_DIV, compiler.TM_IDIV:
 					skip = left.IsNumber() && right.IsNumber()
 				case compiler.TM_BAND, compiler.TM_BOR, compiler.TM_BXOR, compiler.TM_SHL, compiler.TM_SHR:
-					_, ok1 := left.ToInt()
-					_, ok2 := right.ToInt()
-					skip = !left.IsString() && !right.IsString() && ok1 && ok2
+					if !left.IsString() && !right.IsString() {
+						_, ok1 := vm.ToInt(left)
+						_, ok2 := vm.ToInt(right)
+						skip = ok1 && ok2
+					}
 				}
 				if skip {
 					break
@@ -905,7 +907,7 @@ func (vm *VM) execute() ([]Value, error) {
 			// Lua 5.4: bitwise ops do NOT coerce strings
 			done := false
 			if !v.IsString() {
-				if i, ok := v.ToInt(); ok {
+				if i, ok := vm.ToInt(v); ok {
 					vm.stack[frame.base+a] = NewInt(^i)
 					done = true
 				}
@@ -1522,17 +1524,17 @@ func (vm *VM) execute() ([]Value, error) {
 			initWasString := init.IsString()
 			stepWasString := step.IsString()
 			if init.IsString() {
-				if nv, ok := StringToNumericValue(init.AsString()); ok {
+				if nv, ok := vm.StringToNumericValue(init.AsString()); ok {
 					init = nv
 				}
 			}
 			if limit.IsString() {
-				if nv, ok := StringToNumericValue(limit.AsString()); ok {
+				if nv, ok := vm.StringToNumericValue(limit.AsString()); ok {
 					limit = nv
 				}
 			}
 			if step.IsString() {
-				if nv, ok := StringToNumericValue(step.AsString()); ok {
+				if nv, ok := vm.StringToNumericValue(step.AsString()); ok {
 					step = nv
 				}
 			}
@@ -1548,7 +1550,7 @@ func (vm *VM) execute() ([]Value, error) {
 					return nil, vm.runtimeError("'for' step is zero")
 				}
 				// Try to convert limit to integer
-				limitI, limitIsInt := limit.ToInt()
+				limitI, limitIsInt := vm.ToInt(limit)
 				if !limitIsInt && limit.IsNumber() {
 					// Float limit: convert using floor (step>0) or ceil (step<0)
 					limitF := limit.AsFloat()
@@ -1657,9 +1659,9 @@ func (vm *VM) execute() ([]Value, error) {
 				}
 			} else {
 				// Float for loop — validate in Lua 5.4 order: limit, step, initial
-				limitF, ok2 := limit.ToNumber()
-				stepF, ok3 := step.ToNumber()
-				initF, ok1 := init.ToNumber()
+				limitF, ok2 := vm.ToNumber(limit)
+				stepF, ok3 := vm.ToNumber(step)
+				initF, ok1 := vm.ToNumber(init)
 				if !ok2 {
 					return nil, vm.runtimeError("bad 'for' limit (number expected, got %s)", vm.ObjTypeName(limit))
 				}

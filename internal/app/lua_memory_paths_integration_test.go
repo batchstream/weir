@@ -151,6 +151,8 @@ func luaMemoryPaths() []luaMemoryPath {
 		{name: "large-error", source: `return function() local s='x'; for i=1,20 do s=s..s end; error(s) end`, outcome: "NOT_APPLIED", failure: "INVALID_ARGUMENT", n: 1},
 		{name: "same-key-comments", source: "--[[" + strings.Repeat("x", 40<<10) + "]]\n" + `return function() local t={n=0}; for i=1,100000 do t.n=i end; assert(t.n==100000); return weir.keep() end`, outcome: "APPLIED", n: 1},
 		{name: "control-quote", source: `return function() local s=string.char(0,1,49); assert(string.format('%q',s)==[["\0\0011"]]); for i=1,16 do s=s..s end; local q=string.format('%q',s); assert(#s==196608 and #q==458754); return weir.keep() end`, outcome: "APPLIED", n: 1},
+		{name: "numeric-for", source: `return function() local s='0'; for i=1,16 do s=s..s end; s=s..'1.0'; for i=1,16384 do for j=s,0 do end end; return weir.keep() end`, outcome: "NOT_APPLIED", failure: "RESOURCE_EXHAUSTED", n: 1},
+		{name: "numeric-concat", source: `return function() local s='0'; for i=1,16 do s=s..s end; s=s..'1.0'; for i=1,16384 do table.concat({},'',s,0) end; return weir.keep() end`, outcome: "NOT_APPLIED", failure: "RESOURCE_EXHAUSTED", n: 1},
 	}
 	return paths
 }

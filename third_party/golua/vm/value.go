@@ -43,6 +43,8 @@ import (
 	"strconv"
 	"strings"
 	"unsafe"
+
+	"github.com/iceisfun/golua/budget"
 )
 
 // nativeFuncBox wraps a NativeFunc in a heap-allocated struct so that it
@@ -418,20 +420,24 @@ func TrimASCIISpace(s string) string {
 // rejectInfNan returns true if the trimmed string is an inf/nan token that
 // Go's strconv.ParseFloat would accept but Lua 5.4 must reject.
 func rejectInfNan(s string) bool {
-	lower := strings.ToLower(s)
-	if len(lower) == 0 {
+	if len(s) == 0 {
 		return false
 	}
-	bare := lower
+	bare := s
 	if bare[0] == '+' || bare[0] == '-' {
 		bare = bare[1:]
 	}
-	return strings.HasPrefix(bare, "inf") || strings.HasPrefix(bare, "nan")
+	return len(bare) >= 3 && (strings.EqualFold(bare[:3], "inf") || strings.EqualFold(bare[:3], "nan"))
 }
 
 // StringToNumericValue converts a string to a numeric Value, preserving the
 // integer/float distinction based on the string format.
 func StringToNumericValue(s string) (Value, bool) {
+	return stringToNumericValue(nil, s)
+}
+
+func stringToNumericValue(owner *budget.Budget, s string) (Value, bool) {
+	owner.Require(0)
 	s = TrimASCIISpace(s)
 	if s == "" {
 		return Nil, false
@@ -447,7 +453,10 @@ func StringToNumericValue(s string) (Value, bool) {
 		hex := s[2:]
 		// Check if it's a hex float (has '.' or 'p'/'P')
 		isHexFloat := false
-		for _, c := range hex {
+		for index, c := range hex {
+			if index&1023 == 0 {
+				owner.Require(0)
+			}
 			if c == '.' || c == 'p' || c == 'P' {
 				isHexFloat = true
 				break
@@ -455,13 +464,16 @@ func StringToNumericValue(s string) (Value, bool) {
 		}
 		if !isHexFloat {
 			// Hex integer: parse with wrapping on overflow (Lua 5.4 behavior)
-			if i, err := strconv.ParseUint(hex, 16, 64); err == nil {
+			if i, err := parseNumericUint(owner, hex, 16); err == nil {
 				return NewInt(int64(i)), true
 			}
 			// Overflows uint64: parse digit by digit with modular wrapping
 			var result uint64
 			valid := false
-			for _, c := range hex {
+			for index, c := range hex {
+				if index&1023 == 0 {
+					owner.Require(0)
+				}
 				var d uint64
 				switch {
 				case c >= '0' && c <= '9':
@@ -482,10 +494,10 @@ func StringToNumericValue(s string) (Value, bool) {
 			return Nil, false
 		}
 		// Hex float
-		if f, err := strconv.ParseFloat(s, 64); err == nil {
+		if f, err := parseNumericFloat(owner, s); err == nil {
 			return NewFloat(f), true
 		}
-		if f, ok := ParseHexFloat(s); ok {
+		if f, ok := parseHexFloat(owner, s); ok {
 			return NewFloat(f), true
 		}
 		return Nil, false
@@ -497,7 +509,10 @@ func StringToNumericValue(s string) (Value, bool) {
 		sign := s[0]
 		// Check if it's a hex float (has '.' or 'p'/'P')
 		isHexFloat := false
-		for _, c := range hex {
+		for index, c := range hex {
+			if index&1023 == 0 {
+				owner.Require(0)
+			}
 			if c == '.' || c == 'p' || c == 'P' {
 				isHexFloat = true
 				break
@@ -505,7 +520,7 @@ func StringToNumericValue(s string) (Value, bool) {
 		}
 		if !isHexFloat {
 			// Signed hex integer
-			if u, err := strconv.ParseUint(hex, 16, 64); err == nil {
+			if u, err := parseNumericUint(owner, hex, 16); err == nil {
 				i := int64(u)
 				if sign == '-' {
 					i = -i
@@ -515,7 +530,10 @@ func StringToNumericValue(s string) (Value, bool) {
 			// Overflows uint64: parse digit by digit with modular wrapping
 			var result uint64
 			valid := false
-			for _, c := range hex {
+			for index, c := range hex {
+				if index&1023 == 0 {
+					owner.Require(0)
+				}
 				var d uint64
 				switch {
 				case c >= '0' && c <= '9':
@@ -540,12 +558,12 @@ func StringToNumericValue(s string) (Value, bool) {
 			return Nil, false
 		}
 		// Signed hex float
-		if f, ok := ParseHexFloat(s); ok {
+		if f, ok := parseHexFloat(owner, s); ok {
 			return NewFloat(f), true
 		}
 	}
 	// Try decimal integer
-	if i, err := strconv.ParseInt(s, 10, 64); err == nil {
+	if i, err := parseNumericInt(owner, s, 10); err == nil {
 		return NewInt(i), true
 	}
 	// Reject textual inf/nan tokens — Go's strconv.ParseFloat accepts these
@@ -554,7 +572,7 @@ func StringToNumericValue(s string) (Value, bool) {
 		return Nil, false
 	}
 	// Try float (accept ErrRange for overflow → ±Inf, matching Lua 5.4 coercion)
-	if f, err := strconv.ParseFloat(s, 64); err == nil || errors.Is(err, strconv.ErrRange) {
+	if f, err := parseNumericFloat(owner, s); err == nil || errors.Is(err, strconv.ErrRange) {
 		return NewFloat(f), true
 	}
 	return Nil, false
@@ -563,6 +581,11 @@ func StringToNumericValue(s string) (Value, bool) {
 // ToNumber attempts to convert the value to a number.
 // Returns (number, true) on success, (0, false) on failure.
 func (v Value) ToNumber() (float64, bool) {
+	return v.toNumber(nil)
+}
+
+func (v Value) toNumber(owner *budget.Budget) (float64, bool) {
+	owner.Require(0)
 	switch v.typ {
 	case typeInt:
 		return float64(v.ival()), true
@@ -581,7 +604,7 @@ func (v Value) ToNumber() (float64, bool) {
 			return 0, false
 		}
 		// Try parsing as float (accept ErrRange for overflow → ±Inf)
-		if f, err := strconv.ParseFloat(s, 64); err == nil || errors.Is(err, strconv.ErrRange) {
+		if f, err := parseNumericFloat(owner, s); err == nil || errors.Is(err, strconv.ErrRange) {
 			return f, true
 		}
 		// Try parsing hex (0x prefix, including signed +0x/-0x)
@@ -593,13 +616,13 @@ func (v Value) ToNumber() (float64, bool) {
 			hexStart = 3
 		}
 		if hexStart > 0 {
-			if i, err := strconv.ParseInt(s[hexStart:], 16, 64); err == nil {
+			if i, err := parseNumericInt(owner, s[hexStart:], 16); err == nil {
 				if hexStart == 3 && s[0] == '-' {
 					return float64(-i), true
 				}
 				return float64(i), true
 			}
-			if f, ok := ParseHexFloat(s); ok {
+			if f, ok := parseHexFloat(owner, s); ok {
 				return f, true
 			}
 		}
@@ -612,6 +635,11 @@ func (v Value) ToNumber() (float64, bool) {
 // ToInt attempts to convert the value to an integer.
 // Returns (int, true) on success, (0, false) on failure.
 func (v Value) ToInt() (int64, bool) {
+	return v.toInt(nil)
+}
+
+func (v Value) toInt(owner *budget.Budget) (int64, bool) {
+	owner.Require(0)
 	switch v.typ {
 	case typeInt:
 		return v.ival(), true
@@ -630,11 +658,11 @@ func (v Value) ToInt() (int64, bool) {
 		// reference Lua, instead of failing ParseInt/ParseUint and reporting "no
 		// integer representation". Also inherits the underscore and
 		// inf/nan rejection there.
-		nv, ok := StringToNumericValue(v.ptr.(string))
+		nv, ok := stringToNumericValue(owner, v.ptr.(string))
 		if !ok {
 			return 0, false
 		}
-		return nv.ToInt()
+		return nv.toInt(owner)
 	default:
 		return 0, false
 	}
@@ -905,6 +933,11 @@ func (e *LuaError) Error() string {
 // delegated to strconv.ParseFloat — which is correctly rounded from the exact
 // hex value, avoiding the double-rounding/truncation of a manual accumulation. Returns false for anything that is not a valid hex float.
 func ParseHexFloat(s string) (float64, bool) {
+	return parseHexFloat(nil, s)
+}
+
+func parseHexFloat(owner *budget.Budget, s string) (float64, bool) {
+	owner.Require(0)
 	body := s
 	if len(body) > 0 && (body[0] == '+' || body[0] == '-') {
 		body = body[1:]
@@ -919,9 +952,13 @@ func ParseHexFloat(s string) (float64, bool) {
 	}
 	t := s
 	if strings.IndexAny(s, "pP") < 0 {
+		if len(s) > math.MaxInt-2 {
+			owner.Require(-1)
+		}
+		owner.RequireAllocation(len(s) + 2)
 		t = s + "p0"
 	}
-	if f, err := strconv.ParseFloat(t, 64); err == nil || errors.Is(err, strconv.ErrRange) {
+	if f, err := parseNumericFloat(owner, t); err == nil || errors.Is(err, strconv.ErrRange) {
 		return f, true
 	}
 	return 0, false

@@ -656,8 +656,8 @@ func makeStringArith(opName string, floatOp func(float64, float64) float64, intO
 			v.Set(0, vm.NewInt(intOp(cv1.AsInt(), cv2.AsInt())))
 			return 1
 		}
-		n1, _ := cv1.ToNumber()
-		n2, _ := cv2.ToNumber()
+		n1, _ := v.ToNumber(cv1)
+		n2, _ := v.ToNumber(cv2)
 		v.Set(0, vm.NewFloat(floatOp(n1, n2)))
 		return 1
 	}
@@ -697,8 +697,8 @@ func makeStringArithFloorDiv() func(*vm.VM) int {
 			v.Set(0, vm.NewInt(q))
 			return 1
 		}
-		n1, _ := cv1.ToNumber()
-		n2, _ := cv2.ToNumber()
+		n1, _ := v.ToNumber(cv1)
+		n2, _ := v.ToNumber(cv2)
 		v.Set(0, vm.NewFloat(math.Floor(n1/n2)))
 		return 1
 	}
@@ -735,8 +735,8 @@ func makeStringArithMod() func(*vm.VM) int {
 			v.Set(0, vm.NewInt(r))
 			return 1
 		}
-		n1, _ := cv1.ToNumber()
-		n2, _ := cv2.ToNumber()
+		n1, _ := v.ToNumber(cv1)
+		n2, _ := v.ToNumber(cv2)
 		result := math.Mod(n1, n2)
 		if result != 0 && (result < 0) != (n2 < 0) {
 			result += n2
@@ -755,7 +755,7 @@ func makeStringArithMod() func(*vm.VM) int {
 // stringMetaUnm is the default string unary minus metamethod.
 func stringMetaUnm(v *vm.VM) int {
 	a := v.Get(1)
-	nv, ok := vm.StringToNumericValue(a.AsString())
+	nv, ok := v.StringToNumericValue(a.AsString())
 	if !ok {
 		panic(fmt.Sprintf("attempt to unm a '%s' with a '%s'", a.Type(), a.Type()))
 	}
@@ -794,12 +794,11 @@ func stringArithFallback(v *vm.VM, a, b vm.Value, ok1, ok2 bool, mmName string) 
 }
 
 func coerceToNumber(v *vm.VM, val vm.Value) (vm.Value, bool) {
-	prepayNumeric(v, val)
 	if val.IsInt() || val.IsFloat() {
 		return val, true
 	}
 	if val.IsString() {
-		nv, ok := vm.StringToNumericValue(val.AsString())
+		nv, ok := v.StringToNumericValue(val.AsString())
 		return nv, ok
 	}
 	return vm.Nil, false

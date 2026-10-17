@@ -67,8 +67,7 @@ func getString(v *vm.VM, idx int, fname string) string {
 // caught by ProtectedCall — see package-level panic convention docs.
 func getInt(v *vm.VM, idx int, fname string) int64 {
 	val := v.Get(idx)
-	prepayNumeric(v, val)
-	if i, ok := val.ToInt(); ok {
+	if i, ok := v.ToInt(val); ok {
 		return i
 	}
 	if val.IsNumber() {
@@ -87,16 +86,15 @@ func getInt(v *vm.VM, idx int, fname string) int64 {
 // caught by ProtectedCall — see package-level panic convention docs.
 func getNumber(v *vm.VM, idx int, fname string) float64 {
 	val := v.Get(idx)
-	prepayNumeric(v, val)
 	if val.IsString() {
 		// Coerce strings integer-first (matching luaO_str2num) so an
 		// integer-parseable string like "-0" yields the integer 0 -> +0.0,
 		// not the float -0.0 that a direct ParseFloat would produce.
-		if nv, ok := vm.StringToNumericValue(val.AsString()); ok {
-			n, _ := nv.ToNumber()
+		if nv, ok := v.StringToNumericValue(val.AsString()); ok {
+			n, _ := v.ToNumber(nv)
 			return n
 		}
-	} else if n, ok := val.ToNumber(); ok {
+	} else if n, ok := v.ToNumber(val); ok {
 		return n
 	}
 	got := v.ObjTypeName(val)

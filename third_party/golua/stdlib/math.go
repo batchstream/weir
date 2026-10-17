@@ -596,12 +596,11 @@ func mathTointeger(v *vm.VM) int {
 		callerArgError(v, 1, "math.tointeger", "value expected")
 	}
 	val := v.Get(1)
-	prepayNumeric(v, val)
 	if !val.IsNumber() && !val.IsString() {
 		v.Set(0, vm.Nil)
 		return 1
 	}
-	if i, ok := val.ToInt(); ok {
+	if i, ok := v.ToInt(val); ok {
 		v.Set(0, vm.NewInt(i))
 	} else {
 		v.Set(0, vm.Nil)

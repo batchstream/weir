@@ -638,7 +638,7 @@ func (vm *VM) ObjLen(val Value) (int, error) {
 		if err != nil {
 			return 0, err
 		}
-		if i, ok := res.ToInt(); ok {
+		if i, ok := vm.ToInt(res); ok {
 			return int(i), nil
 		}
 		return 0, fmt.Errorf("object length is not an integer")

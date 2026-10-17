@@ -154,7 +154,7 @@ func luaToString(v *vm.VM) int {
 
 // tonumber(e [, base])
 func luaToNumber(v *vm.VM) int {
-	prepayNumeric(v, v.Get(1))
+	v.Budget().Require(0)
 	if v.ArgCount() < 1 {
 		callerArgError(v, 1, "tonumber", "value expected")
 	}
@@ -171,17 +171,17 @@ func luaToNumber(v *vm.VM) int {
 			callerArgError(v, 2, "tonumber", "base out of range")
 		}
 		s := vm.TrimASCIISpace(val.AsString())
-		if i, err := strconv.ParseInt(s, int(bi), 64); err == nil {
+		if i, err := v.ParseInt(s, int(bi)); err == nil {
 			v.Set(0, vm.NewInt(i))
 			return 1
 		}
 		// Try unsigned — Lua 5.4 wraps values > INT64_MAX to signed
-		if u, err := strconv.ParseUint(s, int(bi), 64); err == nil {
+		if u, err := v.ParseUint(s, int(bi)); err == nil {
 			v.Set(0, vm.NewInt(int64(u)))
 			return 1
 		}
 		// Lua 5.4 wraps overflows modulo 2^64 for explicit base
-		if result, ok := parseIntWrapping(s, int(bi)); ok {
+		if result, ok := parseIntWrapping(v, s, int(bi)); ok {
 			v.Set(0, vm.NewInt(result))
 			return 1
 		}
@@ -207,12 +207,11 @@ func luaToNumber(v *vm.VM) int {
 			return 1
 		}
 		// Lua rejects textual inf/nan tokens in tonumber input.
-		lower := strings.ToLower(trimmed)
-		bare := lower
+		bare := trimmed
 		if len(bare) > 0 && (bare[0] == '+' || bare[0] == '-') {
 			bare = bare[1:]
 		}
-		if strings.HasPrefix(bare, "inf") || strings.HasPrefix(bare, "nan") {
+		if len(bare) >= 3 && (strings.EqualFold(bare[:3], "inf") || strings.EqualFold(bare[:3], "nan")) {
 			v.Set(0, vm.Nil)
 			return 1
 		}
@@ -230,14 +229,17 @@ func luaToNumber(v *vm.VM) int {
 		if len(body) >= 2 && body[0] == '0' && (body[1] == 'x' || body[1] == 'X') {
 			hex := body[2:]
 			if hex != "" && !strings.ContainsAny(hex, ".pP") {
-				if u, err := strconv.ParseUint(hex, 16, 64); err == nil {
+				if u, err := v.ParseUint(hex, 16); err == nil {
 					v.Set(0, vm.NewInt(sign*int64(u)))
 					return 1
 				}
 				// Overflow: parse digit-by-digit with modular wrapping (Lua 5.4)
 				var result uint64
 				valid := true
-				for _, c := range hex {
+				for index, c := range hex {
+					if index&1023 == 0 {
+						v.Budget().Require(0)
+					}
 					var d uint64
 					switch {
 					case c >= '0' && c <= '9':
@@ -261,7 +263,7 @@ func luaToNumber(v *vm.VM) int {
 				}
 			}
 			// Hex float forms (e.g. 0x1p4, 0x.1, 0xA.8) — try ParseHexFloat
-			if f, ok := vm.ParseHexFloat(trimmed); ok {
+			if f, ok := v.ParseHexFloat(trimmed); ok {
 				v.Set(0, vm.NewFloat(f))
 				return 1
 			}
@@ -270,6 +272,9 @@ func luaToNumber(v *vm.VM) int {
 		// to preserve int64 precision.
 		isDecIntLike := true
 		for i, c := range trimmed {
+			if i&1023 == 0 {
+				v.Budget().Require(0)
+			}
 			if i == 0 && (c == '+' || c == '-') {
 				continue
 			}
@@ -279,13 +284,13 @@ func luaToNumber(v *vm.VM) int {
 			}
 		}
 		if isDecIntLike {
-			if i, err := strconv.ParseInt(trimmed, 10, 64); err == nil {
+			if i, err := v.ParseInt(trimmed, 10); err == nil {
 				v.Set(0, vm.NewInt(i))
 				return 1
 			}
 		}
 		// Try float
-		if f, err := strconv.ParseFloat(trimmed, 64); err == nil || errors.Is(err, strconv.ErrRange) {
+		if f, err := v.ParseFloat(trimmed); err == nil || errors.Is(err, strconv.ErrRange) {
 			v.Set(0, vm.NewFloat(f))
 			return 1
 		}
@@ -612,7 +617,7 @@ var ipairsIter = vm.NewNativeFunc(func(v *vm.VM) int {
 	defer v.EnterNonYieldable()()
 	tval := v.Get(1)
 	i := v.Get(2)
-	idx, _ := i.ToInt()
+	idx, _ := v.ToInt(i)
 	idx++
 	// Use IndexInt to support any indexable type and produce natural
 	// "attempt to index" errors for non-indexable types (like numbers),
@@ -680,7 +685,7 @@ func luaSelect(v *vm.VM) int {
 		return 1
 	}
 
-	i, ok := idx.ToInt()
+	i, ok := v.ToInt(idx)
 	if !ok {
 		// String-encoded numerics that parse as float but lack integer
 		// representation must report "no integer representation", matching
@@ -688,7 +693,7 @@ func luaSelect(v *vm.VM) int {
 		if idx.IsNumber() {
 			callerArgError(v, 1, "select", "number has no integer representation")
 		}
-		if _, isNum := idx.ToNumber(); isNum {
+		if _, isNum := v.ToNumber(idx); isNum {
 			callerArgError(v, 1, "select", "number has no integer representation")
 		}
 		typeName := idx.Type()
@@ -965,7 +970,7 @@ func valueToString(val vm.Value) string {
 
 // parseIntWrapping parses a string in the given base with unsigned wrapping
 // modulo 2^64, matching Lua 5.4's tonumber(s, base) overflow semantics.
-func parseIntWrapping(s string, base int) (int64, bool) {
+func parseIntWrapping(v *vm.VM, s string, base int) (int64, bool) {
 	if len(s) == 0 {
 		return 0, false
 	}
@@ -983,7 +988,11 @@ func parseIntWrapping(s string, base int) (int64, bool) {
 	}
 
 	var result uint64
-	for _, c := range []byte(s) {
+	for index := 0; index < len(s); index++ {
+		if index&1023 == 0 {
+			v.Budget().Require(0)
+		}
+		c := s[index]
 		var digit uint64
 		switch {
 		case c >= '0' && c <= '9':

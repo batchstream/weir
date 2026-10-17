@@ -164,14 +164,14 @@ func luaConcat(state *vm.VM) int {
 	first, last := int64(1), int64(items.Len())
 	if !state.Get(3).IsNil() {
 		var ok bool
-		first, ok = state.Get(3).ToInt()
+		first, ok = state.ToInt(state.Get(3))
 		if !ok {
 			panic("table.concat start must be an integer")
 		}
 	}
 	if !state.Get(4).IsNil() {
 		var ok bool
-		last, ok = state.Get(4).ToInt()
+		last, ok = state.ToInt(state.Get(4))
 		if !ok {
 			panic("table.concat end must be an integer")
 		}

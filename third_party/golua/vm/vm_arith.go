@@ -96,8 +96,8 @@ func (vm *VM) arith(op compiler.OpCode, v1, v2 Value, regB, regC int) (Value, er
 
 	// Mixed number types (int + float or float + int): promote to float
 	if v1.IsNumber() && v2.IsNumber() {
-		n1, _ := v1.ToNumber()
-		n2, _ := v2.ToNumber()
+		n1, _ := vm.ToNumber(v1)
+		n2, _ := vm.ToNumber(v2)
 		var result float64
 		switch op {
 		case compiler.OP_ADD:
@@ -198,8 +198,8 @@ func (vm *VM) arithK(op compiler.OpCode, v, kv Value, regB int) (Value, error) {
 
 	// Mixed number types (int + float or float + int): promote to float
 	if v.IsNumber() && kv.IsNumber() {
-		n1, _ := v.ToNumber()
-		n2, _ := kv.ToNumber()
+		n1, _ := vm.ToNumber(v)
+		n2, _ := vm.ToNumber(kv)
 		var result float64
 		switch op {
 		case compiler.OP_ADDK:
@@ -264,10 +264,10 @@ func (vm *VM) bitwise(op compiler.OpCode, v1, v2 Value, regB, regC int) (Value, 
 	var i1, i2 int64
 	var ok1, ok2 bool
 	if !v1.IsString() {
-		i1, ok1 = v1.ToInt()
+		i1, ok1 = vm.ToInt(v1)
 	}
 	if !v2.IsString() {
-		i2, ok2 = v2.ToInt()
+		i2, ok2 = vm.ToInt(v2)
 	}
 	if ok1 && ok2 {
 		var result int64
@@ -321,10 +321,10 @@ func (vm *VM) bitwiseK(op compiler.OpCode, v, kv Value, regB int) (Value, error)
 	var i1, i2 int64
 	var ok1, ok2 bool
 	if !v.IsString() {
-		i1, ok1 = v.ToInt()
+		i1, ok1 = vm.ToInt(v)
 	}
 	if !kv.IsString() {
-		i2, ok2 = kv.ToInt()
+		i2, ok2 = vm.ToInt(kv)
 	}
 	if ok1 && ok2 {
 		var result int64

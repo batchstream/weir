@@ -84,8 +84,6 @@ func luaFormatValues(v *vm.VM, format string, vals []vm.Value) string {
 		// Lua 5.4 checks argument type for numeric conversions before rejecting
 		// malformed/invalid conversion specifications in several cases.
 		if strings.ContainsRune("diuoxXeEfgGaAc", rune(specChar)) {
-			prepayNumeric(v, val)
-			prepayNumeric(v, val)
 			// Lua caps precision/width at 99. This bounds numeric formatter
 			// workspace, including decimal float, hexadecimal and padding.
 			v.Budget().RequireAllocation(4096)
@@ -123,7 +121,7 @@ func luaFormatValues(v *vm.VM, format string, vals []vm.Value) string {
 		switch specChar {
 		case 'd', 'i':
 			goSpec := spec + "d"
-			if i, ok := val.ToInt(); ok {
+			if i, ok := v.ToInt(val); ok {
 				validateConversion(spec, specChar)
 				if i == 0 {
 					if prec, hasPrec := parsePrecision(spec); hasPrec && prec == 0 {
@@ -148,26 +146,26 @@ func luaFormatValues(v *vm.VM, format string, vals []vm.Value) string {
 					}
 				}
 				result.WriteString(fmt.Sprintf(goSpec, i))
-			} else if _, ok := val.ToNumber(); ok {
+			} else if _, ok := v.ToNumber(val); ok {
 				callerArgError(v, argIdx+1, "string.format", "number has no integer representation")
 			} else {
 				callerArgError(v, argIdx+1, "string.format", fmt.Sprintf("number expected, got %s", v.ObjTypeName(val)))
 			}
 		case 'u':
 			goSpec := spec + "d"
-			if i, ok := val.ToInt(); ok {
+			if i, ok := v.ToInt(val); ok {
 				validateConversion(spec, specChar)
 				result.WriteString(fmt.Sprintf(goSpec, uint64(i)))
-			} else if _, ok := val.ToNumber(); ok {
+			} else if _, ok := v.ToNumber(val); ok {
 				callerArgError(v, argIdx+1, "string.format", "number has no integer representation")
 			} else {
 				callerArgError(v, argIdx+1, "string.format", fmt.Sprintf("number expected, got %s", v.ObjTypeName(val)))
 			}
 		case 'o', 'x', 'X':
-			if i, ok := val.ToInt(); ok {
+			if i, ok := v.ToInt(val); ok {
 				validateConversion(spec, specChar)
 				result.WriteString(formatIntHex(spec, specChar, uint64(i)))
-			} else if _, ok := val.ToNumber(); ok {
+			} else if _, ok := v.ToNumber(val); ok {
 				callerArgError(v, argIdx+1, "string.format", "number has no integer representation")
 			} else {
 				callerArgError(v, argIdx+1, "string.format", fmt.Sprintf("number expected, got %s", v.ObjTypeName(val)))
@@ -183,7 +181,7 @@ func luaFormatValues(v *vm.VM, format string, vals []vm.Value) string {
 			// as "-0" parses to the integer 0 and converts to +0.0 — not the
 			// float -0.0 a direct string->float parse would yield.
 			if nv, ok := coerceToNumber(v, val); ok {
-				n, _ := nv.ToNumber()
+				n, _ := v.ToNumber(nv)
 				if special, ok := formatSpecialFloat(spec, specChar, n); ok {
 					result.WriteString(special)
 				} else if (specChar == 'g' || specChar == 'G') && strings.Contains(spec, "#") {
@@ -198,7 +196,7 @@ func luaFormatValues(v *vm.VM, format string, vals []vm.Value) string {
 			// Go's fmt package does not support %a/%A for floats.
 			// Coerce integer-first so "-0" -> integer 0 -> +0.0 (see e/f/g above).
 			if nv, ok := coerceToNumber(v, val); ok {
-				n, _ := nv.ToNumber()
+				n, _ := v.ToNumber(nv)
 				if special, ok := formatSpecialFloat(spec, specChar, n); ok {
 					result.WriteString(special)
 				} else {
@@ -274,7 +272,7 @@ func luaFormatValues(v *vm.VM, format string, vals []vm.Value) string {
 		case 'q':
 			result.WriteString(luaQuote(v, val, argIdx+1))
 		case 'c':
-			if i, ok := val.ToInt(); ok {
+			if i, ok := v.ToInt(val); ok {
 				// Lua %c writes one byte (C unsigned char semantics).
 				ch := string([]byte{byte(i)})
 				// Apply width formatting if specified (e.g., %-16c).
@@ -283,7 +281,7 @@ func luaFormatValues(v *vm.VM, format string, vals []vm.Value) string {
 					ch = fmt.Sprintf(goSpec, ch)
 				}
 				result.WriteString(ch)
-			} else if _, ok := val.ToNumber(); ok {
+			} else if _, ok := v.ToNumber(val); ok {
 				callerArgError(v, argIdx+1, "string.format", "number has no integer representation")
 			} else {
 				callerArgError(v, argIdx+1, "string.format", fmt.Sprintf("number expected, got %s", v.ObjTypeName(val)))
@@ -306,15 +304,15 @@ func luaFormatValues(v *vm.VM, format string, vals []vm.Value) string {
 func precheckFormatArgType(v *vm.VM, val vm.Value, conv byte, argPos int) {
 	switch conv {
 	case 'd', 'i', 'u', 'o', 'x', 'X':
-		if _, ok := val.ToInt(); ok {
+		if _, ok := v.ToInt(val); ok {
 			return
 		}
-		if _, ok := val.ToNumber(); ok {
+		if _, ok := v.ToNumber(val); ok {
 			callerArgError(v, argPos, "string.format", "number has no integer representation")
 		}
 		callerArgError(v, argPos, "string.format", fmt.Sprintf("number expected, got %s", v.ObjTypeName(val)))
 	case 'e', 'E', 'f', 'g', 'G':
-		if _, ok := val.ToNumber(); ok {
+		if _, ok := v.ToNumber(val); ok {
 			return
 		}
 		callerArgError(v, argPos, "string.format", fmt.Sprintf("number expected, got %s", v.ObjTypeName(val)))

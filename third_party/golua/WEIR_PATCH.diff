@@ -2982,11 +2982,102 @@ diff --git a/stdlib/globals.go b/stdlib/globals.go
  
  // tonumber(e [, base])
  func luaToNumber(v *vm.VM) int {
-+	prepayNumeric(v, v.Get(1))
++	v.Budget().Require(0)
  	if v.ArgCount() < 1 {
  		callerArgError(v, 1, "tonumber", "value expected")
  	}
-@@ -301,6 +306,7 @@
+@@ -166,17 +171,17 @@
+ 			callerArgError(v, 2, "tonumber", "base out of range")
+ 		}
+ 		s := vm.TrimASCIISpace(val.AsString())
+-		if i, err := strconv.ParseInt(s, int(bi), 64); err == nil {
++		if i, err := v.ParseInt(s, int(bi)); err == nil {
+ 			v.Set(0, vm.NewInt(i))
+ 			return 1
+ 		}
+ 		// Try unsigned — Lua 5.4 wraps values > INT64_MAX to signed
+-		if u, err := strconv.ParseUint(s, int(bi), 64); err == nil {
++		if u, err := v.ParseUint(s, int(bi)); err == nil {
+ 			v.Set(0, vm.NewInt(int64(u)))
+ 			return 1
+ 		}
+ 		// Lua 5.4 wraps overflows modulo 2^64 for explicit base
+-		if result, ok := parseIntWrapping(s, int(bi)); ok {
++		if result, ok := parseIntWrapping(v, s, int(bi)); ok {
+ 			v.Set(0, vm.NewInt(result))
+ 			return 1
+ 		}
+@@ -202,12 +207,11 @@
+ 			return 1
+ 		}
+ 		// Lua rejects textual inf/nan tokens in tonumber input.
+-		lower := strings.ToLower(trimmed)
+-		bare := lower
++		bare := trimmed
+ 		if len(bare) > 0 && (bare[0] == '+' || bare[0] == '-') {
+ 			bare = bare[1:]
+ 		}
+-		if strings.HasPrefix(bare, "inf") || strings.HasPrefix(bare, "nan") {
++		if len(bare) >= 3 && (strings.EqualFold(bare[:3], "inf") || strings.EqualFold(bare[:3], "nan")) {
+ 			v.Set(0, vm.Nil)
+ 			return 1
+ 		}
+@@ -225,14 +229,17 @@
+ 		if len(body) >= 2 && body[0] == '0' && (body[1] == 'x' || body[1] == 'X') {
+ 			hex := body[2:]
+ 			if hex != "" && !strings.ContainsAny(hex, ".pP") {
+-				if u, err := strconv.ParseUint(hex, 16, 64); err == nil {
++				if u, err := v.ParseUint(hex, 16); err == nil {
+ 					v.Set(0, vm.NewInt(sign*int64(u)))
+ 					return 1
+ 				}
+ 				// Overflow: parse digit-by-digit with modular wrapping (Lua 5.4)
+ 				var result uint64
+ 				valid := true
+-				for _, c := range hex {
++				for index, c := range hex {
++					if index&1023 == 0 {
++						v.Budget().Require(0)
++					}
+ 					var d uint64
+ 					switch {
+ 					case c >= '0' && c <= '9':
+@@ -256,7 +263,7 @@
+ 				}
+ 			}
+ 			// Hex float forms (e.g. 0x1p4, 0x.1, 0xA.8) — try ParseHexFloat
+-			if f, ok := vm.ParseHexFloat(trimmed); ok {
++			if f, ok := v.ParseHexFloat(trimmed); ok {
+ 				v.Set(0, vm.NewFloat(f))
+ 				return 1
+ 			}
+@@ -265,6 +272,9 @@
+ 		// to preserve int64 precision.
+ 		isDecIntLike := true
+ 		for i, c := range trimmed {
++			if i&1023 == 0 {
++				v.Budget().Require(0)
++			}
+ 			if i == 0 && (c == '+' || c == '-') {
+ 				continue
+ 			}
+@@ -274,13 +284,13 @@
+ 			}
+ 		}
+ 		if isDecIntLike {
+-			if i, err := strconv.ParseInt(trimmed, 10, 64); err == nil {
++			if i, err := v.ParseInt(trimmed, 10); err == nil {
+ 				v.Set(0, vm.NewInt(i))
+ 				return 1
+ 			}
+ 		}
+ 		// Try float
+-		if f, err := strconv.ParseFloat(trimmed, 64); err == nil || errors.Is(err, strconv.ErrRange) {
++		if f, err := v.ParseFloat(trimmed); err == nil || errors.Is(err, strconv.ErrRange) {
+ 			v.Set(0, vm.NewFloat(f))
+ 			return 1
+ 		}
+@@ -301,6 +311,7 @@
  	// For string messages with level > 0, prepend source location
  	if level > 0 && msg.IsString() {
  		if loc := v.GetSourceLocation(int(level)); loc != "" {
@@ -2994,7 +3085,7 @@ diff --git a/stdlib/globals.go b/stdlib/globals.go
  			msg = vm.NewString(loc + ": " + msg.AsString())
  		}
  	}
-@@ -320,6 +326,7 @@
+@@ -320,6 +331,7 @@
  	v.ClearLastErrorCallStack()
  
  	// Collect additional arguments
@@ -3002,7 +3093,7 @@ diff --git a/stdlib/globals.go b/stdlib/globals.go
  	args := make([]vm.Value, argc-1)
  	for i := 2; i <= argc; i++ {
  		args[i-2] = v.Get(i)
-@@ -393,6 +400,7 @@
+@@ -393,6 +405,7 @@
  
  	// Collect extra arguments (after fn and msgh)
  	argc := v.ArgCount()
@@ -3010,6 +3101,55 @@ diff --git a/stdlib/globals.go b/stdlib/globals.go
  	args := make([]vm.Value, argc-2)
  	for i := 3; i <= argc; i++ {
  		args[i-3] = v.Get(i)
+@@ -604,7 +617,7 @@
+ 	defer v.EnterNonYieldable()()
+ 	tval := v.Get(1)
+ 	i := v.Get(2)
+-	idx, _ := i.ToInt()
++	idx, _ := v.ToInt(i)
+ 	idx++
+ 	// Use IndexInt to support any indexable type and produce natural
+ 	// "attempt to index" errors for non-indexable types (like numbers),
+@@ -672,7 +685,7 @@
+ 		return 1
+ 	}
+ 
+-	i, ok := idx.ToInt()
++	i, ok := v.ToInt(idx)
+ 	if !ok {
+ 		// String-encoded numerics that parse as float but lack integer
+ 		// representation must report "no integer representation", matching
+@@ -680,7 +693,7 @@
+ 		if idx.IsNumber() {
+ 			callerArgError(v, 1, "select", "number has no integer representation")
+ 		}
+-		if _, isNum := idx.ToNumber(); isNum {
++		if _, isNum := v.ToNumber(idx); isNum {
+ 			callerArgError(v, 1, "select", "number has no integer representation")
+ 		}
+ 		typeName := idx.Type()
+@@ -957,7 +970,7 @@
+ 
+ // parseIntWrapping parses a string in the given base with unsigned wrapping
+ // modulo 2^64, matching Lua 5.4's tonumber(s, base) overflow semantics.
+-func parseIntWrapping(s string, base int) (int64, bool) {
++func parseIntWrapping(v *vm.VM, s string, base int) (int64, bool) {
+ 	if len(s) == 0 {
+ 		return 0, false
+ 	}
+@@ -975,7 +988,11 @@
+ 	}
+ 
+ 	var result uint64
+-	for _, c := range []byte(s) {
++	for index := 0; index < len(s); index++ {
++		if index&1023 == 0 {
++			v.Budget().Require(0)
++		}
++		c := s[index]
+ 		var digit uint64
+ 		switch {
+ 		case c >= '0' && c <= '9':
 diff --git a/stdlib/helpers.go b/stdlib/helpers.go
 --- a/stdlib/helpers.go
 +++ b/stdlib/helpers.go
@@ -3029,33 +3169,42 @@ diff --git a/stdlib/helpers.go b/stdlib/helpers.go
  		return val.String()
  	}
  	got := v.ObjTypeName(val)
-@@ -65,6 +67,7 @@
+@@ -65,7 +67,7 @@
  // caught by ProtectedCall — see package-level panic convention docs.
  func getInt(v *vm.VM, idx int, fname string) int64 {
  	val := v.Get(idx)
-+	prepayNumeric(v, val)
- 	if i, ok := val.ToInt(); ok {
+-	if i, ok := val.ToInt(); ok {
++	if i, ok := v.ToInt(val); ok {
  		return i
  	}
-@@ -84,6 +87,7 @@
- // caught by ProtectedCall — see package-level panic convention docs.
- func getNumber(v *vm.VM, idx int, fname string) float64 {
- 	val := v.Get(idx)
-+	prepayNumeric(v, val)
- 	if val.IsString() {
+ 	if val.IsNumber() {
+@@ -88,11 +90,11 @@
  		// Coerce strings integer-first (matching luaO_str2num) so an
  		// integer-parseable string like "-0" yields the integer 0 -> +0.0,
+ 		// not the float -0.0 that a direct ParseFloat would produce.
+-		if nv, ok := vm.StringToNumericValue(val.AsString()); ok {
+-			n, _ := nv.ToNumber()
++		if nv, ok := v.StringToNumericValue(val.AsString()); ok {
++			n, _ := v.ToNumber(nv)
+ 			return n
+ 		}
+-	} else if n, ok := val.ToNumber(); ok {
++	} else if n, ok := v.ToNumber(val); ok {
+ 		return n
+ 	}
+ 	got := v.ObjTypeName(val)
 diff --git a/stdlib/math.go b/stdlib/math.go
 --- a/stdlib/math.go
 +++ b/stdlib/math.go
-@@ -596,6 +596,7 @@
- 		callerArgError(v, 1, "math.tointeger", "value expected")
- 	}
- 	val := v.Get(1)
-+	prepayNumeric(v, val)
- 	if !val.IsNumber() && !val.IsString() {
+@@ -600,7 +600,7 @@
  		v.Set(0, vm.Nil)
  		return 1
+ 	}
+-	if i, ok := val.ToInt(); ok {
++	if i, ok := v.ToInt(val); ok {
+ 		v.Set(0, vm.NewInt(i))
+ 	} else {
+ 		v.Set(0, vm.Nil)
 diff --git a/stdlib/string.go b/stdlib/string.go
 --- a/stdlib/string.go
 +++ b/stdlib/string.go
@@ -3117,6 +3266,17 @@ diff --git a/stdlib/string.go b/stdlib/string.go
  		if !ok1 || !ok2 {
  			// Try the other operand's metamethod (skip strings to avoid recursion)
  			if result, ok := stringArithFallback(v, a, b, ok1, ok2, mmName); ok {
+@@ -653,8 +656,8 @@
+ 			v.Set(0, vm.NewInt(intOp(cv1.AsInt(), cv2.AsInt())))
+ 			return 1
+ 		}
+-		n1, _ := cv1.ToNumber()
+-		n2, _ := cv2.ToNumber()
++		n1, _ := v.ToNumber(cv1)
++		n2, _ := v.ToNumber(cv2)
+ 		v.Set(0, vm.NewFloat(floatOp(n1, n2)))
+ 		return 1
+ 	}
 @@ -663,8 +666,8 @@
  func makeStringArithFloorDiv() func(*vm.VM) int {
  	return func(v *vm.VM) int {
@@ -3128,6 +3288,17 @@ diff --git a/stdlib/string.go b/stdlib/string.go
  		if !ok1 || !ok2 {
  			if result, ok := stringArithFallback(v, a, b, ok1, ok2, vm.MetaIDiv); ok {
  				v.Set(0, result)
+@@ -694,8 +697,8 @@
+ 			v.Set(0, vm.NewInt(q))
+ 			return 1
+ 		}
+-		n1, _ := cv1.ToNumber()
+-		n2, _ := cv2.ToNumber()
++		n1, _ := v.ToNumber(cv1)
++		n2, _ := v.ToNumber(cv2)
+ 		v.Set(0, vm.NewFloat(math.Floor(n1/n2)))
+ 		return 1
+ 	}
 @@ -704,8 +707,8 @@
  func makeStringArithMod() func(*vm.VM) int {
  	return func(v *vm.VM) int {
@@ -3139,16 +3310,41 @@ diff --git a/stdlib/string.go b/stdlib/string.go
  		if !ok1 || !ok2 {
  			if result, ok := stringArithFallback(v, a, b, ok1, ok2, vm.MetaMod); ok {
  				v.Set(0, result)
-@@ -790,7 +793,8 @@
+@@ -732,8 +735,8 @@
+ 			v.Set(0, vm.NewInt(r))
+ 			return 1
+ 		}
+-		n1, _ := cv1.ToNumber()
+-		n2, _ := cv2.ToNumber()
++		n1, _ := v.ToNumber(cv1)
++		n2, _ := v.ToNumber(cv2)
+ 		result := math.Mod(n1, n2)
+ 		if result != 0 && (result < 0) != (n2 < 0) {
+ 			result += n2
+@@ -752,7 +755,7 @@
+ // stringMetaUnm is the default string unary minus metamethod.
+ func stringMetaUnm(v *vm.VM) int {
+ 	a := v.Get(1)
+-	nv, ok := vm.StringToNumericValue(a.AsString())
++	nv, ok := v.StringToNumericValue(a.AsString())
+ 	if !ok {
+ 		panic(fmt.Sprintf("attempt to unm a '%s' with a '%s'", a.Type(), a.Type()))
+ 	}
+@@ -790,12 +793,12 @@
  	return vm.Nil, false
  }
  
 -func coerceToNumber(val vm.Value) (vm.Value, bool) {
 +func coerceToNumber(v *vm.VM, val vm.Value) (vm.Value, bool) {
-+	prepayNumeric(v, val)
  	if val.IsInt() || val.IsFloat() {
  		return val, true
  	}
+ 	if val.IsString() {
+-		nv, ok := vm.StringToNumericValue(val.AsString())
++		nv, ok := v.StringToNumericValue(val.AsString())
+ 		return nv, ok
+ 	}
+ 	return vm.Nil, false
 diff --git a/stdlib/string_format.go b/stdlib/string_format.go
 --- a/stdlib/string_format.go
 +++ b/stdlib/string_format.go
@@ -3184,13 +3380,11 @@ diff --git a/stdlib/string_format.go b/stdlib/string_format.go
  			spec += string(format[i])
  			i++
  		}
-@@ -80,6 +83,13 @@
+@@ -80,6 +83,11 @@
  
  		// Lua 5.4 checks argument type for numeric conversions before rejecting
  		// malformed/invalid conversion specifications in several cases.
 +		if strings.ContainsRune("diuoxXeEfgGaAc", rune(specChar)) {
-+			prepayNumeric(v, val)
-+			prepayNumeric(v, val)
 +			// Lua caps precision/width at 99. This bounds numeric formatter
 +			// workspace, including decimal float, hexadecimal and padding.
 +			v.Budget().RequireAllocation(4096)
@@ -3198,25 +3392,70 @@ diff --git a/stdlib/string_format.go b/stdlib/string_format.go
  		precheckFormatArgType(v, val, specChar, argIdx+1)
  
  		if specChar == 'q' {
-@@ -172,7 +182,7 @@
+@@ -113,7 +121,7 @@
+ 		switch specChar {
+ 		case 'd', 'i':
+ 			goSpec := spec + "d"
+-			if i, ok := val.ToInt(); ok {
++			if i, ok := v.ToInt(val); ok {
+ 				validateConversion(spec, specChar)
+ 				if i == 0 {
+ 					if prec, hasPrec := parsePrecision(spec); hasPrec && prec == 0 {
+@@ -138,26 +146,26 @@
+ 					}
+ 				}
+ 				result.WriteString(fmt.Sprintf(goSpec, i))
+-			} else if _, ok := val.ToNumber(); ok {
++			} else if _, ok := v.ToNumber(val); ok {
+ 				callerArgError(v, argIdx+1, "string.format", "number has no integer representation")
+ 			} else {
+ 				callerArgError(v, argIdx+1, "string.format", fmt.Sprintf("number expected, got %s", v.ObjTypeName(val)))
+ 			}
+ 		case 'u':
+ 			goSpec := spec + "d"
+-			if i, ok := val.ToInt(); ok {
++			if i, ok := v.ToInt(val); ok {
+ 				validateConversion(spec, specChar)
+ 				result.WriteString(fmt.Sprintf(goSpec, uint64(i)))
+-			} else if _, ok := val.ToNumber(); ok {
++			} else if _, ok := v.ToNumber(val); ok {
+ 				callerArgError(v, argIdx+1, "string.format", "number has no integer representation")
+ 			} else {
+ 				callerArgError(v, argIdx+1, "string.format", fmt.Sprintf("number expected, got %s", v.ObjTypeName(val)))
+ 			}
+ 		case 'o', 'x', 'X':
+-			if i, ok := val.ToInt(); ok {
++			if i, ok := v.ToInt(val); ok {
+ 				validateConversion(spec, specChar)
+ 				result.WriteString(formatIntHex(spec, specChar, uint64(i)))
+-			} else if _, ok := val.ToNumber(); ok {
++			} else if _, ok := v.ToNumber(val); ok {
+ 				callerArgError(v, argIdx+1, "string.format", "number has no integer representation")
+ 			} else {
+ 				callerArgError(v, argIdx+1, "string.format", fmt.Sprintf("number expected, got %s", v.ObjTypeName(val)))
+@@ -172,8 +180,8 @@
  			// Coerce integer-first (like Lua's luaO_str2num), so a string such
  			// as "-0" parses to the integer 0 and converts to +0.0 — not the
  			// float -0.0 a direct string->float parse would yield.
 -			if nv, ok := coerceToNumber(val); ok {
+-				n, _ := nv.ToNumber()
 +			if nv, ok := coerceToNumber(v, val); ok {
- 				n, _ := nv.ToNumber()
++				n, _ := v.ToNumber(nv)
  				if special, ok := formatSpecialFloat(spec, specChar, n); ok {
  					result.WriteString(special)
-@@ -187,7 +197,7 @@
+ 				} else if (specChar == 'g' || specChar == 'G') && strings.Contains(spec, "#") {
+@@ -187,8 +195,8 @@
  		case 'a', 'A':
  			// Go's fmt package does not support %a/%A for floats.
  			// Coerce integer-first so "-0" -> integer 0 -> +0.0 (see e/f/g above).
 -			if nv, ok := coerceToNumber(val); ok {
+-				n, _ := nv.ToNumber()
 +			if nv, ok := coerceToNumber(v, val); ok {
- 				n, _ := nv.ToNumber()
++				n, _ := v.ToNumber(nv)
  				if special, ok := formatSpecialFloat(spec, specChar, n); ok {
  					result.WriteString(special)
-@@ -258,6 +268,7 @@
+ 				} else {
+@@ -258,12 +266,13 @@
  				result.WriteString(str)
  			} else {
  				// Lua 5.4 counts bytes (not runes) for width/precision
@@ -3224,7 +3463,42 @@ diff --git a/stdlib/string_format.go b/stdlib/string_format.go
  				result.WriteString(formatStringByBytes(spec, str))
  			}
  		case 'q':
-@@ -1117,6 +1128,9 @@
+ 			result.WriteString(luaQuote(v, val, argIdx+1))
+ 		case 'c':
+-			if i, ok := val.ToInt(); ok {
++			if i, ok := v.ToInt(val); ok {
+ 				// Lua %c writes one byte (C unsigned char semantics).
+ 				ch := string([]byte{byte(i)})
+ 				// Apply width formatting if specified (e.g., %-16c).
+@@ -272,7 +281,7 @@
+ 					ch = fmt.Sprintf(goSpec, ch)
+ 				}
+ 				result.WriteString(ch)
+-			} else if _, ok := val.ToNumber(); ok {
++			} else if _, ok := v.ToNumber(val); ok {
+ 				callerArgError(v, argIdx+1, "string.format", "number has no integer representation")
+ 			} else {
+ 				callerArgError(v, argIdx+1, "string.format", fmt.Sprintf("number expected, got %s", v.ObjTypeName(val)))
+@@ -295,15 +304,15 @@
+ func precheckFormatArgType(v *vm.VM, val vm.Value, conv byte, argPos int) {
+ 	switch conv {
+ 	case 'd', 'i', 'u', 'o', 'x', 'X':
+-		if _, ok := val.ToInt(); ok {
++		if _, ok := v.ToInt(val); ok {
+ 			return
+ 		}
+-		if _, ok := val.ToNumber(); ok {
++		if _, ok := v.ToNumber(val); ok {
+ 			callerArgError(v, argPos, "string.format", "number has no integer representation")
+ 		}
+ 		callerArgError(v, argPos, "string.format", fmt.Sprintf("number expected, got %s", v.ObjTypeName(val)))
+ 	case 'e', 'E', 'f', 'g', 'G':
+-		if _, ok := val.ToNumber(); ok {
++		if _, ok := v.ToNumber(val); ok {
+ 			return
+ 		}
+ 		callerArgError(v, argPos, "string.format", fmt.Sprintf("number expected, got %s", v.ObjTypeName(val)))
+@@ -1117,6 +1126,9 @@
  
  // luaQuote implements Lua's %q format for proper Lua-parseable quoting.
  func luaQuote(v *vm.VM, val vm.Value, argIdx int) string {
@@ -3234,7 +3508,7 @@ diff --git a/stdlib/string_format.go b/stdlib/string_format.go
  	if val.IsNil() {
  		return "nil"
  	}
-@@ -1152,7 +1166,7 @@
+@@ -1152,7 +1164,7 @@
  	}
  	// String quoting — matches Lua 5.4 addquoted (lstrlib.c)
  	s := valueToString(val)
@@ -3243,7 +3517,7 @@ diff --git a/stdlib/string_format.go b/stdlib/string_format.go
  	b.WriteByte('"')
  	for i := 0; i < len(s); i++ {
  		ch := s[i]
-@@ -1166,11 +1180,15 @@
+@@ -1166,11 +1178,15 @@
  		case ch < 0x20 || ch == 0x7f:
  			// Control character (C locale iscntrl): use decimal escape.
  			// Use 3-digit form if next byte is a digit.
@@ -3515,15 +3789,17 @@ diff --git a/vm/table.go b/vm/table.go
 diff --git a/vm/value.go b/vm/value.go
 --- a/vm/value.go
 +++ b/vm/value.go
-@@ -42,6 +42,7 @@
+@@ -42,6 +42,9 @@
  	"reflect"
  	"strconv"
  	"strings"
 +	"unsafe"
++
++	"github.com/iceisfun/golua/budget"
  )
  
  // nativeFuncBox wraps a NativeFunc in a heap-allocated struct so that it
-@@ -72,7 +73,9 @@
+@@ -72,7 +75,9 @@
  	if r := vm.InternalState(stringInternsKey); r != nil {
  		return r.(*stringInternMap)
  	}
@@ -3534,7 +3810,7 @@ diff --git a/vm/value.go b/vm/value.go
  	vm.SetInternalState(stringInternsKey, m)
  	return m
  }
-@@ -91,6 +94,8 @@
+@@ -91,6 +96,8 @@
  	if id, ok := m.ids[s]; ok {
  		return id
  	}
@@ -3543,6 +3819,226 @@ diff --git a/vm/value.go b/vm/value.go
  	id := &stringPointerToken{}
  	m.ids[s] = id
  	return id
+@@ -413,20 +420,24 @@
+ // rejectInfNan returns true if the trimmed string is an inf/nan token that
+ // Go's strconv.ParseFloat would accept but Lua 5.4 must reject.
+ func rejectInfNan(s string) bool {
+-	lower := strings.ToLower(s)
+-	if len(lower) == 0 {
++	if len(s) == 0 {
+ 		return false
+ 	}
+-	bare := lower
++	bare := s
+ 	if bare[0] == '+' || bare[0] == '-' {
+ 		bare = bare[1:]
+ 	}
+-	return strings.HasPrefix(bare, "inf") || strings.HasPrefix(bare, "nan")
++	return len(bare) >= 3 && (strings.EqualFold(bare[:3], "inf") || strings.EqualFold(bare[:3], "nan"))
+ }
+ 
+ // StringToNumericValue converts a string to a numeric Value, preserving the
+ // integer/float distinction based on the string format.
+ func StringToNumericValue(s string) (Value, bool) {
++	return stringToNumericValue(nil, s)
++}
++
++func stringToNumericValue(owner *budget.Budget, s string) (Value, bool) {
++	owner.Require(0)
+ 	s = TrimASCIISpace(s)
+ 	if s == "" {
+ 		return Nil, false
+@@ -442,7 +453,10 @@
+ 		hex := s[2:]
+ 		// Check if it's a hex float (has '.' or 'p'/'P')
+ 		isHexFloat := false
+-		for _, c := range hex {
++		for index, c := range hex {
++			if index&1023 == 0 {
++				owner.Require(0)
++			}
+ 			if c == '.' || c == 'p' || c == 'P' {
+ 				isHexFloat = true
+ 				break
+@@ -450,13 +464,16 @@
+ 		}
+ 		if !isHexFloat {
+ 			// Hex integer: parse with wrapping on overflow (Lua 5.4 behavior)
+-			if i, err := strconv.ParseUint(hex, 16, 64); err == nil {
++			if i, err := parseNumericUint(owner, hex, 16); err == nil {
+ 				return NewInt(int64(i)), true
+ 			}
+ 			// Overflows uint64: parse digit by digit with modular wrapping
+ 			var result uint64
+ 			valid := false
+-			for _, c := range hex {
++			for index, c := range hex {
++				if index&1023 == 0 {
++					owner.Require(0)
++				}
+ 				var d uint64
+ 				switch {
+ 				case c >= '0' && c <= '9':
+@@ -477,10 +494,10 @@
+ 			return Nil, false
+ 		}
+ 		// Hex float
+-		if f, err := strconv.ParseFloat(s, 64); err == nil {
++		if f, err := parseNumericFloat(owner, s); err == nil {
+ 			return NewFloat(f), true
+ 		}
+-		if f, ok := ParseHexFloat(s); ok {
++		if f, ok := parseHexFloat(owner, s); ok {
+ 			return NewFloat(f), true
+ 		}
+ 		return Nil, false
+@@ -492,7 +509,10 @@
+ 		sign := s[0]
+ 		// Check if it's a hex float (has '.' or 'p'/'P')
+ 		isHexFloat := false
+-		for _, c := range hex {
++		for index, c := range hex {
++			if index&1023 == 0 {
++				owner.Require(0)
++			}
+ 			if c == '.' || c == 'p' || c == 'P' {
+ 				isHexFloat = true
+ 				break
+@@ -500,7 +520,7 @@
+ 		}
+ 		if !isHexFloat {
+ 			// Signed hex integer
+-			if u, err := strconv.ParseUint(hex, 16, 64); err == nil {
++			if u, err := parseNumericUint(owner, hex, 16); err == nil {
+ 				i := int64(u)
+ 				if sign == '-' {
+ 					i = -i
+@@ -510,7 +530,10 @@
+ 			// Overflows uint64: parse digit by digit with modular wrapping
+ 			var result uint64
+ 			valid := false
+-			for _, c := range hex {
++			for index, c := range hex {
++				if index&1023 == 0 {
++					owner.Require(0)
++				}
+ 				var d uint64
+ 				switch {
+ 				case c >= '0' && c <= '9':
+@@ -535,12 +558,12 @@
+ 			return Nil, false
+ 		}
+ 		// Signed hex float
+-		if f, ok := ParseHexFloat(s); ok {
++		if f, ok := parseHexFloat(owner, s); ok {
+ 			return NewFloat(f), true
+ 		}
+ 	}
+ 	// Try decimal integer
+-	if i, err := strconv.ParseInt(s, 10, 64); err == nil {
++	if i, err := parseNumericInt(owner, s, 10); err == nil {
+ 		return NewInt(i), true
+ 	}
+ 	// Reject textual inf/nan tokens — Go's strconv.ParseFloat accepts these
+@@ -549,7 +572,7 @@
+ 		return Nil, false
+ 	}
+ 	// Try float (accept ErrRange for overflow → ±Inf, matching Lua 5.4 coercion)
+-	if f, err := strconv.ParseFloat(s, 64); err == nil || errors.Is(err, strconv.ErrRange) {
++	if f, err := parseNumericFloat(owner, s); err == nil || errors.Is(err, strconv.ErrRange) {
+ 		return NewFloat(f), true
+ 	}
+ 	return Nil, false
+@@ -558,6 +581,11 @@
+ // ToNumber attempts to convert the value to a number.
+ // Returns (number, true) on success, (0, false) on failure.
+ func (v Value) ToNumber() (float64, bool) {
++	return v.toNumber(nil)
++}
++
++func (v Value) toNumber(owner *budget.Budget) (float64, bool) {
++	owner.Require(0)
+ 	switch v.typ {
+ 	case typeInt:
+ 		return float64(v.ival()), true
+@@ -576,7 +604,7 @@
+ 			return 0, false
+ 		}
+ 		// Try parsing as float (accept ErrRange for overflow → ±Inf)
+-		if f, err := strconv.ParseFloat(s, 64); err == nil || errors.Is(err, strconv.ErrRange) {
++		if f, err := parseNumericFloat(owner, s); err == nil || errors.Is(err, strconv.ErrRange) {
+ 			return f, true
+ 		}
+ 		// Try parsing hex (0x prefix, including signed +0x/-0x)
+@@ -588,13 +616,13 @@
+ 			hexStart = 3
+ 		}
+ 		if hexStart > 0 {
+-			if i, err := strconv.ParseInt(s[hexStart:], 16, 64); err == nil {
++			if i, err := parseNumericInt(owner, s[hexStart:], 16); err == nil {
+ 				if hexStart == 3 && s[0] == '-' {
+ 					return float64(-i), true
+ 				}
+ 				return float64(i), true
+ 			}
+-			if f, ok := ParseHexFloat(s); ok {
++			if f, ok := parseHexFloat(owner, s); ok {
+ 				return f, true
+ 			}
+ 		}
+@@ -607,6 +635,11 @@
+ // ToInt attempts to convert the value to an integer.
+ // Returns (int, true) on success, (0, false) on failure.
+ func (v Value) ToInt() (int64, bool) {
++	return v.toInt(nil)
++}
++
++func (v Value) toInt(owner *budget.Budget) (int64, bool) {
++	owner.Require(0)
+ 	switch v.typ {
+ 	case typeInt:
+ 		return v.ival(), true
+@@ -625,11 +658,11 @@
+ 		// reference Lua, instead of failing ParseInt/ParseUint and reporting "no
+ 		// integer representation". Also inherits the underscore and
+ 		// inf/nan rejection there.
+-		nv, ok := StringToNumericValue(v.ptr.(string))
++		nv, ok := stringToNumericValue(owner, v.ptr.(string))
+ 		if !ok {
+ 			return 0, false
+ 		}
+-		return nv.ToInt()
++		return nv.toInt(owner)
+ 	default:
+ 		return 0, false
+ 	}
+@@ -900,6 +933,11 @@
+ // delegated to strconv.ParseFloat — which is correctly rounded from the exact
+ // hex value, avoiding the double-rounding/truncation of a manual accumulation. Returns false for anything that is not a valid hex float.
+ func ParseHexFloat(s string) (float64, bool) {
++	return parseHexFloat(nil, s)
++}
++
++func parseHexFloat(owner *budget.Budget, s string) (float64, bool) {
++	owner.Require(0)
+ 	body := s
+ 	if len(body) > 0 && (body[0] == '+' || body[0] == '-') {
+ 		body = body[1:]
+@@ -914,9 +952,13 @@
+ 	}
+ 	t := s
+ 	if strings.IndexAny(s, "pP") < 0 {
++		if len(s) > math.MaxInt-2 {
++			owner.Require(-1)
++		}
++		owner.RequireAllocation(len(s) + 2)
+ 		t = s + "p0"
+ 	}
+-	if f, err := strconv.ParseFloat(t, 64); err == nil || errors.Is(err, strconv.ErrRange) {
++	if f, err := parseNumericFloat(owner, t); err == nil || errors.Is(err, strconv.ErrRange) {
+ 		return f, true
+ 	}
+ 	return 0, false
 diff --git a/vm/vm.go b/vm/vm.go
 --- a/vm/vm.go
 +++ b/vm/vm.go
@@ -3813,6 +4309,57 @@ diff --git a/vm/vm_access.go b/vm/vm_access.go
  }
  
  // InstructionCount returns the current checkpoint visit count.
+diff --git a/vm/vm_arith.go b/vm/vm_arith.go
+--- a/vm/vm_arith.go
++++ b/vm/vm_arith.go
+@@ -96,8 +96,8 @@
+ 
+ 	// Mixed number types (int + float or float + int): promote to float
+ 	if v1.IsNumber() && v2.IsNumber() {
+-		n1, _ := v1.ToNumber()
+-		n2, _ := v2.ToNumber()
++		n1, _ := vm.ToNumber(v1)
++		n2, _ := vm.ToNumber(v2)
+ 		var result float64
+ 		switch op {
+ 		case compiler.OP_ADD:
+@@ -198,8 +198,8 @@
+ 
+ 	// Mixed number types (int + float or float + int): promote to float
+ 	if v.IsNumber() && kv.IsNumber() {
+-		n1, _ := v.ToNumber()
+-		n2, _ := kv.ToNumber()
++		n1, _ := vm.ToNumber(v)
++		n2, _ := vm.ToNumber(kv)
+ 		var result float64
+ 		switch op {
+ 		case compiler.OP_ADDK:
+@@ -264,10 +264,10 @@
+ 	var i1, i2 int64
+ 	var ok1, ok2 bool
+ 	if !v1.IsString() {
+-		i1, ok1 = v1.ToInt()
++		i1, ok1 = vm.ToInt(v1)
+ 	}
+ 	if !v2.IsString() {
+-		i2, ok2 = v2.ToInt()
++		i2, ok2 = vm.ToInt(v2)
+ 	}
+ 	if ok1 && ok2 {
+ 		var result int64
+@@ -321,10 +321,10 @@
+ 	var i1, i2 int64
+ 	var ok1, ok2 bool
+ 	if !v.IsString() {
+-		i1, ok1 = v.ToInt()
++		i1, ok1 = vm.ToInt(v)
+ 	}
+ 	if !kv.IsString() {
+-		i2, ok2 = kv.ToInt()
++		i2, ok2 = vm.ToInt(kv)
+ 	}
+ 	if ok1 && ok2 {
+ 		var result int64
 diff --git a/vm/vm_compare.go b/vm/vm_compare.go
 --- a/vm/vm_compare.go
 +++ b/vm/vm_compare.go
@@ -3910,7 +4457,49 @@ diff --git a/vm/vm_exec.go b/vm/vm_exec.go
  			}
  
  		case compiler.OP_SELF:
-@@ -968,6 +971,7 @@
+@@ -727,7 +730,7 @@
+ 			sc := inst.SC()
+ 			v := vm.stack[frame.base+b]
+ 			if !v.IsString() {
+-				if i, ok := v.ToInt(); ok {
++				if i, ok := vm.ToInt(v); ok {
+ 					if sc < 0 {
+ 						vm.stack[frame.base+a] = NewInt(i << uint(-sc))
+ 					} else {
+@@ -743,7 +746,7 @@
+ 			sc := inst.SC()
+ 			v := vm.stack[frame.base+b]
+ 			if !v.IsString() {
+-				if i, ok := v.ToInt(); ok {
++				if i, ok := vm.ToInt(v); ok {
+ 					vm.stack[frame.base+a] = NewInt(int64(sc) << uint(i))
+ 				} else if v.IsNumber() {
+ 					return nil, vm.runtimeErrorForNumber(b)
+@@ -849,9 +852,11 @@
+ 				case compiler.TM_ADD, compiler.TM_SUB, compiler.TM_MUL, compiler.TM_MOD, compiler.TM_POW, compiler.TM_DIV, compiler.TM_IDIV:
+ 					skip = left.IsNumber() && right.IsNumber()
+ 				case compiler.TM_BAND, compiler.TM_BOR, compiler.TM_BXOR, compiler.TM_SHL, compiler.TM_SHR:
+-					_, ok1 := left.ToInt()
+-					_, ok2 := right.ToInt()
+-					skip = !left.IsString() && !right.IsString() && ok1 && ok2
++					if !left.IsString() && !right.IsString() {
++						_, ok1 := vm.ToInt(left)
++						_, ok2 := vm.ToInt(right)
++						skip = ok1 && ok2
++					}
+ 				}
+ 				if skip {
+ 					break
+@@ -902,7 +907,7 @@
+ 			// Lua 5.4: bitwise ops do NOT coerce strings
+ 			done := false
+ 			if !v.IsString() {
+-				if i, ok := v.ToInt(); ok {
++				if i, ok := vm.ToInt(v); ok {
+ 					vm.stack[frame.base+a] = NewInt(^i)
+ 					done = true
+ 				}
+@@ -968,6 +973,7 @@
  					if len(s1) > (1<<30)-len(s2) {
  						return nil, vm.runtimeError("string length overflow")
  					}
@@ -3918,7 +4507,7 @@ diff --git a/vm/vm_exec.go b/vm/vm_exec.go
  					vm.stack[frame.base+a] = NewString(s1 + s2)
  					break
  				}
-@@ -1001,13 +1005,14 @@
+@@ -1001,13 +1007,14 @@
  			}
  
  			if allStringOrNum {
@@ -3934,7 +4523,7 @@ diff --git a/vm/vm_exec.go b/vm/vm_exec.go
  						builder.WriteString(v.String())
  					}
  				}
-@@ -1072,7 +1077,7 @@
+@@ -1072,7 +1079,7 @@
  					return nil, vm.runtimeError("variable '%s' got a non-closable value", varName)
  				}
  			}
@@ -3943,7 +4532,7 @@ diff --git a/vm/vm_exec.go b/vm/vm_exec.go
  
  		case compiler.OP_JMP:
  			sj := inst.SJ()
-@@ -1257,7 +1262,7 @@
+@@ -1257,7 +1264,7 @@
  			if nTailArgs <= len(tailArgBuf) {
  				args = tailArgBuf[:nTailArgs]
  			} else {
@@ -3952,7 +4541,7 @@ diff --git a/vm/vm_exec.go b/vm/vm_exec.go
  			}
  			if b == 0 {
  				copy(args, vm.stack[frame.base+a+1:vm.top])
-@@ -1293,7 +1298,7 @@
+@@ -1293,7 +1300,7 @@
  						}
  						if numArgs > numParams {
  							frame.numVararg = numArgs - numParams
@@ -3961,7 +4550,7 @@ diff --git a/vm/vm_exec.go b/vm/vm_exec.go
  							copy(frame.varargs, args[numParams:numParams+frame.numVararg])
  						} else {
  							frame.numVararg = 0
-@@ -1357,7 +1362,7 @@
+@@ -1357,7 +1364,7 @@
  						argc:      len(args),
  						funcValue: fn,
  					}
@@ -3970,7 +4559,7 @@ diff --git a/vm/vm_exec.go b/vm/vm_exec.go
  					nResults := nf(vm)
  					vm.callStack = vm.callStack[:len(vm.callStack)-1]
  					vm.top = savedTop
-@@ -1366,7 +1371,7 @@
+@@ -1366,7 +1373,7 @@
  						copy(vm.retBuf[:nResults], vm.stack[nativeBase:nativeBase+nResults])
  						results = vm.retBuf[:nResults]
  					} else {
@@ -3979,7 +4568,7 @@ diff --git a/vm/vm_exec.go b/vm/vm_exec.go
  						copy(results, vm.stack[nativeBase:nativeBase+nResults])
  					}
  					return results, nil
-@@ -1376,7 +1381,7 @@
+@@ -1376,7 +1383,7 @@
  					mm := vm.getMetafield(fn, op)
  					if !mm.IsNil() {
  						// Create new args with self (fn) prepended
@@ -3988,7 +4577,7 @@ diff --git a/vm/vm_exec.go b/vm/vm_exec.go
  						newArgs[0] = fn
  						copy(newArgs[1:], args)
  						args = newArgs
-@@ -1417,7 +1422,7 @@
+@@ -1417,7 +1424,7 @@
  			if nret <= len(localBuf) {
  				saved = localBuf[:nret]
  			} else {
@@ -3997,7 +4586,50 @@ diff --git a/vm/vm_exec.go b/vm/vm_exec.go
  			}
  			copy(saved, vm.stack[frame.base+a:frame.base+a+nret])
  
-@@ -1718,13 +1723,13 @@
+@@ -1517,17 +1524,17 @@
+ 			initWasString := init.IsString()
+ 			stepWasString := step.IsString()
+ 			if init.IsString() {
+-				if nv, ok := StringToNumericValue(init.AsString()); ok {
++				if nv, ok := vm.StringToNumericValue(init.AsString()); ok {
+ 					init = nv
+ 				}
+ 			}
+ 			if limit.IsString() {
+-				if nv, ok := StringToNumericValue(limit.AsString()); ok {
++				if nv, ok := vm.StringToNumericValue(limit.AsString()); ok {
+ 					limit = nv
+ 				}
+ 			}
+ 			if step.IsString() {
+-				if nv, ok := StringToNumericValue(step.AsString()); ok {
++				if nv, ok := vm.StringToNumericValue(step.AsString()); ok {
+ 					step = nv
+ 				}
+ 			}
+@@ -1543,7 +1550,7 @@
+ 					return nil, vm.runtimeError("'for' step is zero")
+ 				}
+ 				// Try to convert limit to integer
+-				limitI, limitIsInt := limit.ToInt()
++				limitI, limitIsInt := vm.ToInt(limit)
+ 				if !limitIsInt && limit.IsNumber() {
+ 					// Float limit: convert using floor (step>0) or ceil (step<0)
+ 					limitF := limit.AsFloat()
+@@ -1652,9 +1659,9 @@
+ 				}
+ 			} else {
+ 				// Float for loop — validate in Lua 5.4 order: limit, step, initial
+-				limitF, ok2 := limit.ToNumber()
+-				stepF, ok3 := step.ToNumber()
+-				initF, ok1 := init.ToNumber()
++				limitF, ok2 := vm.ToNumber(limit)
++				stepF, ok3 := vm.ToNumber(step)
++				initF, ok1 := vm.ToNumber(init)
+ 				if !ok2 {
+ 					return nil, vm.runtimeError("bad 'for' limit (number expected, got %s)", vm.ObjTypeName(limit))
+ 				}
+@@ -1718,13 +1725,13 @@
  					argc:      2, // iterator always called with (state, ctrl)
  					funcValue: fn,
  				}
@@ -4013,7 +4645,7 @@ diff --git a/vm/vm_exec.go b/vm/vm_exec.go
  				copy(results, vm.stack[nativeBase:nativeBase+nResults])
  
  				// Pop native frame and restore top
-@@ -1807,7 +1812,7 @@
+@@ -1807,7 +1814,7 @@
  			if ct, ok := tbl.(*Table); ok {
  				needed := offset + n - 1 // last 1-based index
  				if needed > len(ct.array) {
@@ -4022,7 +4654,7 @@ diff --git a/vm/vm_exec.go b/vm/vm_exec.go
  					copy(newArr, ct.array)
  					ct.array = newArr
  				}
-@@ -1834,7 +1839,7 @@
+@@ -1834,7 +1841,7 @@
  		case compiler.OP_CLOSURE:
  			a, bx := inst.A(), inst.Bx()
  			subProto := proto.Protos[bx]
@@ -4031,7 +4663,7 @@ diff --git a/vm/vm_exec.go b/vm/vm_exec.go
  
  			// Set up upvalues
  			for i, uvDesc := range subProto.Upvalues {
-@@ -1903,9 +1908,25 @@
+@@ -1903,9 +1910,25 @@
  		panic(fmt.Sprintf("C stack overflow: %d slots exceeds limit %d",
  			n, limit))
  	}
@@ -4060,7 +4692,7 @@ diff --git a/vm/vm_exec.go b/vm/vm_exec.go
  }
  
  // EnsureStack grows the stack so that index n is valid.
-@@ -1946,7 +1967,7 @@
+@@ -1946,7 +1969,7 @@
  	if nArgs <= len(argBuf) {
  		args = argBuf[:nArgs]
  	} else {
@@ -4069,7 +4701,7 @@ diff --git a/vm/vm_exec.go b/vm/vm_exec.go
  	}
  	if b == 0 {
  		copy(args, vm.stack[frame.base+a+1:vm.top])
-@@ -1986,7 +2007,7 @@
+@@ -1986,7 +2009,7 @@
  			ftransfer: 1,         // args start at getlocal index 1 (base+1 = first arg)
  			ntransfer: len(args), // number of arguments
  		}
@@ -4078,7 +4710,7 @@ diff --git a/vm/vm_exec.go b/vm/vm_exec.go
  
  		// Clear slots beyond the arguments to prevent stale data from affecting
  		// optional argument checks (e.g., if !v.Get(3).IsNil())
-@@ -2017,7 +2038,7 @@
+@@ -2017,7 +2040,7 @@
  		hooksActiveBefore := vm.hookMask != 0
  		var savedArgs []Value
  		if hooksActiveBefore {
@@ -4087,7 +4719,7 @@ diff --git a/vm/vm_exec.go b/vm/vm_exec.go
  			copy(savedArgs, vm.stack[nativeBase+1:nativeBase+1+len(args)])
  		}
  
-@@ -2061,7 +2082,7 @@
+@@ -2061,7 +2084,7 @@
  		// return hook sees [args..., results...]) does not lose them. The
  		// allocation is acceptable here: this path only runs under an active
  		// debug hook.
@@ -4096,7 +4728,7 @@ diff --git a/vm/vm_exec.go b/vm/vm_exec.go
  		copy(results, vm.stack[nativeBase:nativeBase+nResults])
  
  		nf := &vm.callStack[len(vm.callStack)-1]
-@@ -2105,7 +2126,7 @@
+@@ -2105,7 +2128,7 @@
  		}
  
  		// Build new args: prepend fn (self) so the call becomes mm(fn, args...)
@@ -4126,6 +4758,18 @@ diff --git a/vm/vm_hook.go b/vm/vm_hook.go
  				// Wrap the original panic in a hook error sentinel
  				panic(&luaHookError{original: r})
  			}
+diff --git a/vm/vm_table.go b/vm/vm_table.go
+--- a/vm/vm_table.go
++++ b/vm/vm_table.go
+@@ -638,7 +638,7 @@
+ 		if err != nil {
+ 			return 0, err
+ 		}
+-		if i, ok := res.ToInt(); ok {
++		if i, ok := vm.ToInt(res); ok {
+ 			return int(i), nil
+ 		}
+ 		return 0, fmt.Errorf("object length is not an integer")
 diff --git a/vm/vm_upvalue.go b/vm/vm_upvalue.go
 --- a/vm/vm_upvalue.go
 +++ b/vm/vm_upvalue.go
@@ -5328,7 +5972,7 @@ diff --git a/parser/budget_test.go b/parser/budget_test.go
 diff --git a/stdlib/memory.go b/stdlib/memory.go
 --- /dev/null
 +++ b/stdlib/memory.go
-@@ -0,0 +1,28 @@
+@@ -0,0 +1,18 @@
 +package stdlib
 +
 +import (
@@ -5336,16 +5980,6 @@ diff --git a/stdlib/memory.go b/stdlib/memory.go
 +
 +	"github.com/iceisfun/golua/vm"
 +)
-+
-+func prepayNumeric(v *vm.VM, input vm.Value) {
-+	if input.IsString() {
-+		// strconv may retain a copied input in NumError for each attempted
-+		// integer/float parse. The lower-case token check is another copy.
-+		for range 4 {
-+			v.Budget().RequireAllocation(len(input.AsString()))
-+		}
-+	}
-+}
 +
 +func prepayArguments(v *vm.VM, count int) {
 +	var argument vm.Value
@@ -5751,5 +6385,142 @@ diff --git a/vm/memory_test.go b/vm/memory_test.go
 +	}()
 +	if !errors.Is(err, context.DeadlineExceeded) || !state.GetGlobal("after").IsNil() {
 +		t.Fatal("cancellation lost its terminal cause", err)
++	}
++}
+diff --git a/vm/numeric.go b/vm/numeric.go
+--- /dev/null
++++ b/vm/numeric.go
+@@ -0,0 +1,68 @@
++package vm
++
++import (
++	"strconv"
++	"unsafe"
++
++	"github.com/iceisfun/golua/budget"
++)
++
++// strconv clones its input into NumError on failure. Reserve that possible
++// allocation before each actual parse, rather than charging unused fallbacks.
++func reserveNumericParse(owner *budget.Budget, input string) {
++	if owner == nil {
++		return
++	}
++	owner.RequireAllocation(len(input))
++	var parseError strconv.NumError
++	owner.RequireArray(unsafe.Sizeof(parseError), 1)
++}
++
++func parseNumericInt(owner *budget.Budget, input string, base int) (int64, error) {
++	reserveNumericParse(owner, input)
++	integer, err := strconv.ParseInt(input, base, 64)
++	owner.Require(0)
++	return integer, err
++}
++
++func parseNumericUint(owner *budget.Budget, input string, base int) (uint64, error) {
++	reserveNumericParse(owner, input)
++	integer, err := strconv.ParseUint(input, base, 64)
++	owner.Require(0)
++	return integer, err
++}
++
++func parseNumericFloat(owner *budget.Budget, input string) (float64, error) {
++	reserveNumericParse(owner, input)
++	number, err := strconv.ParseFloat(input, 64)
++	owner.Require(0)
++	return number, err
++}
++
++func (vm *VM) ToInt(input Value) (int64, bool) {
++	return input.toInt(vm.budget)
++}
++
++func (vm *VM) ToNumber(input Value) (float64, bool) {
++	return input.toNumber(vm.budget)
++}
++
++func (vm *VM) StringToNumericValue(input string) (Value, bool) {
++	return stringToNumericValue(vm.budget, input)
++}
++
++func (vm *VM) ParseInt(input string, base int) (int64, error) {
++	return parseNumericInt(vm.budget, input, base)
++}
++
++func (vm *VM) ParseUint(input string, base int) (uint64, error) {
++	return parseNumericUint(vm.budget, input, base)
++}
++
++func (vm *VM) ParseFloat(input string) (float64, error) {
++	return parseNumericFloat(vm.budget, input)
++}
++
++func (vm *VM) ParseHexFloat(input string) (float64, bool) {
++	return parseHexFloat(vm.budget, input)
++}
+diff --git a/vm/numeric_test.go b/vm/numeric_test.go
+--- /dev/null
++++ b/vm/numeric_test.go
+@@ -0,0 +1,61 @@
++package vm_test
++
++import (
++	"context"
++	"errors"
++	"strings"
++	"testing"
++
++	"github.com/iceisfun/golua/budget"
++	"github.com/iceisfun/golua/vm"
++)
++
++func TestOwnedNumericParsingOnlyChargesAttemptedFallbacks(t *testing.T) {
++	owner := newBudget(t, 1<<20)
++	state := vm.New(vm.WithBudget(owner))
++	defer state.Close(context.Background())
++	text := strings.Repeat("0", 4096) + "1"
++	paid := owner.UsedBytes()
++	integer, ok := state.ToInt(vm.NewString(text))
++	if !ok || integer != 1 {
++		t.Fatal("integer conversion changed", integer, ok)
++	}
++	if charged := owner.UsedBytes() - paid; charged < len(text) || charged >= 2*len(text) {
++		t.Fatal("successful integer conversion prepaid unused fallbacks", charged)
++	}
++	paid = owner.UsedBytes()
++	integer, ok = state.ToInt(vm.NewInt(1))
++	if !ok || integer != 1 || owner.UsedBytes() != paid {
++		t.Fatal("numeric Value conversion charged string workspace", integer, ok, paid, owner.UsedBytes())
++	}
++}
++
++func TestOwnedNumericParsingPreservesStickyCancellation(t *testing.T) {
++	for operation := range 3 {
++		ctx, cancel := context.WithCancel(t.Context())
++		options := budget.Options{Context: ctx}
++		owner := budget.New(options)
++		state := vm.New(vm.WithBudget(owner))
++		paid := owner.UsedBytes()
++		text := strings.Repeat("0", 4096) + "1.0"
++		cancel()
++		var err error
++		func() {
++			defer budget.Recover(&err)
++			switch operation {
++			case 0:
++				state.ToInt(vm.NewString(text))
++			case 1:
++				state.ToNumber(vm.NewString(text))
++			case 2:
++				state.StringToNumericValue(text)
++			}
++		}()
++		if !errors.Is(err, context.Canceled) || !budget.IsExhausted(err) || owner.UsedBytes() != paid {
++			t.Fatal("numeric conversion bypassed canceled ownership", operation, err, paid, owner.UsedBytes())
++		}
++		if err := state.Close(context.Background()); err != nil || owner.UsedBytes() != paid {
++			t.Fatal("canceled numeric cleanup allocated", operation, err)
++		}
 +	}
 +}
