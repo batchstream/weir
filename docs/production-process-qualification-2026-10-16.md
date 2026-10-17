@@ -1,9 +1,10 @@
 # Complete-process production qualification
 
-Status: the first formal sustained run failed at its 300-second mixed burst.
-PRs 79 and 80 corrected the Native ownership and transient admission boundaries.
-A separate proven typed large-read OOM must be corrected before the original
-600-second sustained and fault qualification gates are run again.
+Historical status: the first formal sustained run failed at its 300-second mixed
+burst. Its failure remains preserved. Subsequent PRs 79–83 corrected the related
+Native, typed, ingress and Lua boundaries. The unchanged formal workload and
+strengthened final fault gates now pass; see the
+[2026-10-17 final report](production-process-qualification-2026-10-17.md).
 
 ## Fixed acceptance workload
 

@@ -1,7 +1,8 @@
 # Ingress memory qualification, 2026-10-17
 
 Status: **this ingress goal passed local fixed-profile qualification and actual
-reproducible release builds**. PR review, CI and merge remain pending. Earlier
+reproducible release builds**. PR #82 subsequently passed both independent
+final-head reviews and CI and merged. Earlier
 failures and rejected intermediate implementations are retained below. Overall
 production-readiness acceptance is still incomplete: final Lua allocation,
 600-second sustained load and fault-recovery qualification have not yet run.
@@ -412,10 +413,10 @@ how much data the server retained or which global message lease belongs to it.
 The full ordinary-write throughput and acknowledgement requirements remain in
 A. No partial-upload runtime result existed when this change was selected.
 
-Original failure and diagnostics have not run the remaining Lua allocation,
-final 600-second sustained-load, or final fault-recovery acceptance. Their
-results must be obtained from a clean final binary before a production-readiness
-claim.
+The original failures and diagnostics do not establish later acceptance. The
+Lua allocation objective subsequently passed and merged as PR #83; the
+[final clean-binary complete-process qualification](production-process-qualification-2026-10-17.md)
+passed the full 600-second sustained load and final fault recovery gates.
 
 ## Evidence inventory
 

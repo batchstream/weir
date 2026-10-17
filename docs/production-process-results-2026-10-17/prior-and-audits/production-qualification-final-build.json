@@ -1,0 +1,20 @@
+{
+  "source": "fde3b1775b0a36dbb4f4044be1299f731db43314",
+  "state": "clean-commit",
+  "binary": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/weir-production-qualified-linux",
+  "sha256": "795601c60e8f4398a8108843939361032f88249acc8f75ee42ae322ca7269c79",
+  "target": "linux/arm64",
+  "toolchain": "go1.27.1",
+  "command": [
+    "/Users/liran/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.1.darwin-arm64/bin/go",
+    "build",
+    "-trimpath",
+    "-buildvcs=true",
+    "-mod=readonly",
+    "-ldflags=-buildid= -X main.sourceRevision=fde3b1775b0a36dbb4f4044be1299f731db43314",
+    "-o",
+    "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/weir-production-qualified-linux",
+    "./cmd/weir"
+  ],
+  "scope": "Merged PR79 production plus complete-process sustained/fault drivers"
+}

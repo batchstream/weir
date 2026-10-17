@@ -5,7 +5,9 @@ fix, passes offline, constrained CLI and shipping-artifact qualification**. The
 latest qualified source is `9c23c4f58f789aa54b0162b59234f77e5cb0c6a5`.
 The original OOM baseline remains failed. The ingress objective was merged as
 PR #82; it does not bound arbitrary allocations inside the existing Lua VM.
-Overall production-readiness acceptance is incomplete.
+PR #83 merged after both final-head reviews and CI passed. The later
+[complete-process qualification](production-process-qualification-2026-10-17.md)
+also passed its full sustained-load and fault gates with this shipping runtime.
 
 The clean source was `a6ccb9b8e0b7397cc7e7e796e0d8b1bd0b8855fc`, consisting of
 main merge `6d8c3a5e2cd71e62106a466e9f7123308ee9eb8d` plus the opt-in Lua probe.
@@ -208,6 +210,6 @@ contains the original review finding, first CI failure, independent test review,
 root regression checks, complete candidate/package/shipping qualification and
 compiler-frame comparison with its stated boundaries.
 
-Final 600-second sustained load, latency SLOs and fault qualification remain
-pending. Passing this allocation objective does not complete overall production
-readiness acceptance.
+The subsequent [final complete-process qualification](production-process-qualification-2026-10-17.md)
+passed the 600-second sustained load, declared latency gates and fault recovery.
+The allocation objective remains a separate bounded claim within that report.

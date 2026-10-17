@@ -1,0 +1,35 @@
+{
+  "mongo": {
+    "absent": true,
+    "name": "weir_test_37439_1"
+  },
+  "owned_containers": [],
+  "owned_containers_status": 200,
+  "search": {
+    "body": {
+      "error": {
+        "index": "weir_search_37439_1",
+        "index_uuid": "_na_",
+        "reason": "no such index [weir_search_37439_1]",
+        "resource.id": "weir_search_37439_1",
+        "resource.type": "index_or_alias",
+        "root_cause": [
+          {
+            "index": "weir_search_37439_1",
+            "index_uuid": "_na_",
+            "reason": "no such index [weir_search_37439_1]",
+            "resource.id": "weir_search_37439_1",
+            "resource.type": "index_or_alias",
+            "type": "index_not_found_exception"
+          }
+        ],
+        "type": "index_not_found_exception"
+      },
+      "status": 404
+    },
+    "raw_bytes": 443,
+    "raw_sha256": "aa54674212fd15da6d99dfd1c32a3a3eb428e0d2d4cbe12f815dc7a4828e09c1",
+    "status": 404
+  },
+  "search_index": "weir_search_37439_1"
+}

@@ -1,0 +1,476 @@
+{
+  "status": "PASS",
+  "formal600": {
+    "distributions": [
+      {
+        "completed": 43,
+        "key": "burst/mongo/Native",
+        "offered": 43,
+        "raw_line": "production_qualification_integration_test.go:165: distribution burst/mongo/Native offered=43 completed=43 records_per_RPC=1 payload_counts_1KiB_256KiB_2MiB=[43 0 0] p50=76.992042ms p95=81.901459ms p99=82.113417ms max=82.113417ms service_p99=51.637875ms driver_lag_p99=33.811334ms driver_lag_max=33.811334ms max_sequence=126146 max_payload=0 max_scheduled=2026-10-17T04:48:29.766219Z"
+      },
+      {
+        "completed": 42,
+        "key": "burst/mongo/Put",
+        "offered": 42,
+        "raw_line": "production_qualification_integration_test.go:165: distribution burst/mongo/Put offered=42 completed=42 records_per_RPC=1 payload_counts_1KiB_256KiB_2MiB=[42 0 0] p50=80.839417ms p95=81.5495ms p99=81.578834ms max=81.578834ms service_p99=57.303125ms driver_lag_p99=33.750792ms driver_lag_max=33.750792ms max_sequence=126172 max_payload=0 max_scheduled=2026-10-17T04:48:29.766219Z"
+      },
+      {
+        "completed": 43,
+        "key": "burst/mongo/Read",
+        "offered": 43,
+        "raw_line": "production_qualification_integration_test.go:165: distribution burst/mongo/Read offered=43 completed=43 records_per_RPC=1 payload_counts_1KiB_256KiB_2MiB=[43 0 0] p50=75.449834ms p95=77.153167ms p99=77.247459ms max=77.247459ms service_p99=48.840542ms driver_lag_p99=33.974709ms driver_lag_max=33.974709ms max_sequence=126174 max_payload=0 max_scheduled=2026-10-17T04:48:29.766219Z"
+      },
+      {
+        "completed": 42,
+        "key": "burst/search/Native",
+        "offered": 42,
+        "raw_line": "production_qualification_integration_test.go:165: distribution burst/search/Native offered=42 completed=42 records_per_RPC=1 payload_counts_1KiB_256KiB_2MiB=[42 0 0] p50=74.003959ms p95=76.296292ms p99=76.63775ms max=76.63775ms service_p99=50.627834ms driver_lag_p99=33.948084ms driver_lag_max=33.948084ms max_sequence=126197 max_payload=0 max_scheduled=2026-10-17T04:48:29.766219Z"
+      },
+      {
+        "completed": 43,
+        "key": "burst/search/Put",
+        "offered": 43,
+        "raw_line": "production_qualification_integration_test.go:165: distribution burst/search/Put offered=43 completed=43 records_per_RPC=1 payload_counts_1KiB_256KiB_2MiB=[43 0 0] p50=75.272625ms p95=76.268459ms p99=76.484875ms max=76.484875ms service_p99=50.043708ms driver_lag_p99=34.122417ms driver_lag_max=34.122417ms max_sequence=126169 max_payload=0 max_scheduled=2026-10-17T04:48:29.766219Z"
+      },
+      {
+        "completed": 43,
+        "key": "burst/search/Read",
+        "offered": 43,
+        "raw_line": "production_qualification_integration_test.go:165: distribution burst/search/Read offered=43 completed=43 records_per_RPC=1 payload_counts_1KiB_256KiB_2MiB=[43 0 0] p50=64.330875ms p95=76.321084ms p99=76.862167ms max=76.862167ms service_p99=46.769417ms driver_lag_p99=33.96725ms driver_lag_max=33.96725ms max_sequence=126249 max_payload=0 max_scheduled=2026-10-17T04:48:29.766219Z"
+      },
+      {
+        "completed": 3000,
+        "key": "steady/mongo/Batch4",
+        "offered": 3000,
+        "raw_line": "production_qualification_integration_test.go:165: distribution steady/mongo/Batch4 offered=3000 completed=3000 records_per_RPC=4 payload_counts_1KiB_256KiB_2MiB=[2972 23 5] p50=28.992417ms p95=32.038834ms p99=45.756209ms max=456.639709ms service_p99=44.358542ms driver_lag_p99=1.440542ms driver_lag_max=159.174459ms max_sequence=18379 max_payload=0 max_scheduled=2026-10-17T04:44:31.661219Z"
+      },
+      {
+        "completed": 6000,
+        "key": "steady/mongo/Lua",
+        "offered": 6000,
+        "raw_line": "production_qualification_integration_test.go:165: distribution steady/mongo/Lua offered=6000 completed=6000 records_per_RPC=1 payload_counts_1KiB_256KiB_2MiB=[6000 0 0] p50=27.825125ms p95=31.513709ms p99=37.345084ms max=478.573417ms service_p99=36.228708ms driver_lag_p99=1.335542ms driver_lag_max=176.394042ms max_sequence=18378 max_payload=0 max_scheduled=2026-10-17T04:44:31.656219Z"
+      },
+      {
+        "completed": 9000,
+        "key": "steady/mongo/Native",
+        "offered": 9000,
+        "raw_line": "production_qualification_integration_test.go:165: distribution steady/mongo/Native offered=9000 completed=9000 records_per_RPC=1 payload_counts_1KiB_256KiB_2MiB=[8902 87 11] p50=2.168125ms p95=3.58025ms p99=9.847584ms max=417.946042ms service_p99=8.448958ms driver_lag_p99=1.545959ms driver_lag_max=178.99625ms max_sequence=18374 max_payload=0 max_scheduled=2026-10-17T04:44:31.636219Z"
+      },
+      {
+        "completed": 12000,
+        "key": "steady/mongo/Put",
+        "offered": 12000,
+        "raw_line": "production_qualification_integration_test.go:165: distribution steady/mongo/Put offered=12000 completed=12000 records_per_RPC=1 payload_counts_1KiB_256KiB_2MiB=[11874 113 13] p50=22.170667ms p95=30.105542ms p99=35.26325ms max=410.546125ms service_p99=34.153542ms driver_lag_p99=1.38225ms driver_lag_max=136.911875ms max_sequence=18370 max_payload=0 max_scheduled=2026-10-17T04:44:31.616219Z"
+      },
+      {
+        "completed": 30000,
+        "key": "steady/mongo/Read",
+        "offered": 30000,
+        "raw_line": "production_qualification_integration_test.go:165: distribution steady/mongo/Read offered=30000 completed=30000 records_per_RPC=1 payload_counts_1KiB_256KiB_2MiB=[29658 305 37] p50=2.056875ms p95=3.525917ms p99=11.1135ms max=366.358875ms service_p99=8.75825ms driver_lag_p99=1.725542ms driver_lag_max=151.677042ms max_sequence=18361 max_payload=0 max_scheduled=2026-10-17T04:44:31.571219Z"
+      },
+      {
+        "completed": 3000,
+        "key": "steady/search/Batch4",
+        "offered": 3000,
+        "raw_line": "production_qualification_integration_test.go:165: distribution steady/search/Batch4 offered=3000 completed=3000 records_per_RPC=4 payload_counts_1KiB_256KiB_2MiB=[2959 37 4] p50=14.8805ms p95=20.353125ms p99=64.235ms max=547.140459ms service_p99=63.352542ms driver_lag_p99=1.337959ms driver_lag_max=108.169209ms max_sequence=18359 max_payload=0 max_scheduled=2026-10-17T04:44:31.561219Z"
+      },
+      {
+        "completed": 6000,
+        "key": "steady/search/Lua",
+        "offered": 6000,
+        "raw_line": "production_qualification_integration_test.go:165: distribution steady/search/Lua offered=6000 completed=6000 records_per_RPC=1 payload_counts_1KiB_256KiB_2MiB=[6000 0 0] p50=23.733209ms p95=26.364125ms p99=33.229542ms max=553.950125ms service_p99=32.551416ms driver_lag_p99=1.336917ms driver_lag_max=117.863125ms max_sequence=18357 max_payload=0 max_scheduled=2026-10-17T04:44:31.551219Z"
+      },
+      {
+        "completed": 9000,
+        "key": "steady/search/Native",
+        "offered": 9000,
+        "raw_line": "production_qualification_integration_test.go:165: distribution steady/search/Native offered=9000 completed=9000 records_per_RPC=1 payload_counts_1KiB_256KiB_2MiB=[8891 99 10] p50=2.395084ms p95=3.931584ms p99=21.701917ms max=312.2285ms service_p99=20.637166ms driver_lag_p99=1.4895ms driver_lag_max=131.423459ms max_sequence=18395 max_payload=0 max_scheduled=2026-10-17T04:44:31.741219Z"
+      },
+      {
+        "completed": 12000,
+        "key": "steady/search/Put",
+        "offered": 12000,
+        "raw_line": "production_qualification_integration_test.go:165: distribution steady/search/Put offered=12000 completed=12000 records_per_RPC=1 payload_counts_1KiB_256KiB_2MiB=[11870 120 10] p50=18.642875ms p95=25.513334ms p99=40.035084ms max=588.934625ms service_p99=37.742375ms driver_lag_p99=1.47075ms driver_lag_max=149.921042ms max_sequence=18350 max_payload=0 max_scheduled=2026-10-17T04:44:31.516219Z"
+      },
+      {
+        "completed": 30000,
+        "key": "steady/search/Read",
+        "offered": 30000,
+        "raw_line": "production_qualification_integration_test.go:165: distribution steady/search/Read offered=30000 completed=30000 records_per_RPC=1 payload_counts_1KiB_256KiB_2MiB=[29661 304 35] p50=2.308ms p95=3.56625ms p99=27.667792ms max=363.8465ms service_p99=26.277125ms driver_lag_p99=1.503959ms driver_lag_max=189.853125ms max_sequence=18388 max_payload=0 max_scheduled=2026-10-17T04:44:31.706219Z"
+      },
+      {
+        "completed": 150,
+        "key": "warmup/mongo/Batch4",
+        "offered": 150,
+        "raw_line": "production_qualification_integration_test.go:165: distribution warmup/mongo/Batch4 offered=150 completed=150 records_per_RPC=4 payload_counts_1KiB_256KiB_2MiB=[150 0 0] p50=28.757375ms p95=30.806792ms p99=44.848209ms max=229.472875ms service_p99=40.02275ms driver_lag_p99=4.825542ms driver_lag_max=14.370834ms max_sequence=99 max_payload=0 max_scheduled=2026-10-17T04:43:00.261219Z"
+      },
+      {
+        "completed": 300,
+        "key": "warmup/mongo/Lua",
+        "offered": 300,
+        "raw_line": "production_qualification_integration_test.go:165: distribution warmup/mongo/Lua offered=300 completed=300 records_per_RPC=1 payload_counts_1KiB_256KiB_2MiB=[300 0 0] p50=27.814959ms p95=30.535375ms p99=49.778125ms max=249.203084ms service_p99=39.997833ms driver_lag_p99=9.780334ms driver_lag_max=12.4545ms max_sequence=97 max_payload=0 max_scheduled=2026-10-17T04:43:00.251219Z"
+      },
+      {
+        "completed": 450,
+        "key": "warmup/mongo/Native",
+        "offered": 450,
+        "raw_line": "production_qualification_integration_test.go:165: distribution warmup/mongo/Native offered=450 completed=450 records_per_RPC=1 payload_counts_1KiB_256KiB_2MiB=[446 4 0] p50=1.908ms p95=3.396917ms p99=6.750417ms max=187.479334ms service_p99=6.379292ms driver_lag_p99=1.033625ms driver_lag_max=3.331834ms max_sequence=96 max_payload=0 max_scheduled=2026-10-17T04:43:00.246219Z"
+      },
+      {
+        "completed": 600,
+        "key": "warmup/mongo/Put",
+        "offered": 600,
+        "raw_line": "production_qualification_integration_test.go:165: distribution warmup/mongo/Put offered=600 completed=600 records_per_RPC=1 payload_counts_1KiB_256KiB_2MiB=[597 3 0] p50=22.047459ms p95=29.964084ms p99=63.594084ms max=217.539584ms service_p99=63.116541ms driver_lag_p99=1.744667ms driver_lag_max=18.136917ms max_sequence=90 max_payload=0 max_scheduled=2026-10-17T04:43:00.216219Z"
+      },
+      {
+        "completed": 1500,
+        "key": "warmup/mongo/Read",
+        "offered": 1500,
+        "raw_line": "production_qualification_integration_test.go:165: distribution warmup/mongo/Read offered=1500 completed=1500 records_per_RPC=1 payload_counts_1KiB_256KiB_2MiB=[1491 8 1] p50=1.809959ms p95=3.184834ms p99=12.68375ms max=70.104542ms service_p99=6.654417ms driver_lag_p99=3.315625ms driver_lag_max=23.715209ms max_sequence=120 max_payload=0 max_scheduled=2026-10-17T04:43:00.366219Z"
+      },
+      {
+        "completed": 150,
+        "key": "warmup/search/Batch4",
+        "offered": 150,
+        "raw_line": "production_qualification_integration_test.go:165: distribution warmup/search/Batch4 offered=150 completed=150 records_per_RPC=4 payload_counts_1KiB_256KiB_2MiB=[149 1 0] p50=14.820584ms p95=23.125125ms p99=121.808875ms max=142.758667ms service_p99=121.280625ms driver_lag_p99=2.079917ms driver_lag_max=10.802875ms max_sequence=119 max_payload=0 max_scheduled=2026-10-17T04:43:00.361219Z"
+      },
+      {
+        "completed": 300,
+        "key": "warmup/search/Lua",
+        "offered": 300,
+        "raw_line": "production_qualification_integration_test.go:165: distribution warmup/search/Lua offered=300 completed=300 records_per_RPC=1 payload_counts_1KiB_256KiB_2MiB=[300 0 0] p50=23.569084ms p95=27.485959ms p99=126.513084ms max=152.541542ms service_p99=125.941292ms driver_lag_p99=659.959\u00b5s driver_lag_max=20.277917ms max_sequence=117 max_payload=0 max_scheduled=2026-10-17T04:43:00.351219Z"
+      },
+      {
+        "completed": 450,
+        "key": "warmup/search/Native",
+        "offered": 450,
+        "raw_line": "production_qualification_integration_test.go:165: distribution warmup/search/Native offered=450 completed=450 records_per_RPC=1 payload_counts_1KiB_256KiB_2MiB=[444 6 0] p50=2.142459ms p95=3.856959ms p99=27.157375ms max=103.172042ms service_p99=26.632375ms driver_lag_p99=1.879125ms driver_lag_max=30.169459ms max_sequence=114 max_payload=0 max_scheduled=2026-10-17T04:43:00.336219Z"
+      },
+      {
+        "completed": 600,
+        "key": "warmup/search/Put",
+        "offered": 600,
+        "raw_line": "production_qualification_integration_test.go:165: distribution warmup/search/Put offered=600 completed=600 records_per_RPC=1 payload_counts_1KiB_256KiB_2MiB=[593 6 1] p50=18.78825ms p95=25.706125ms p99=43.183959ms max=185.608917ms service_p99=42.896125ms driver_lag_p99=1.441459ms driver_lag_max=13.538625ms max_sequence=110 max_payload=0 max_scheduled=2026-10-17T04:43:00.316219Z"
+      },
+      {
+        "completed": 1500,
+        "key": "warmup/search/Read",
+        "offered": 1500,
+        "raw_line": "production_qualification_integration_test.go:165: distribution warmup/search/Read offered=1500 completed=1500 records_per_RPC=1 payload_counts_1KiB_256KiB_2MiB=[1477 22 1] p50=2.162792ms p95=4.010792ms p99=32.625375ms max=172.183375ms service_p99=32.109542ms driver_lag_p99=1.965917ms driver_lag_max=26.086584ms max_sequence=100 max_payload=0 max_scheduled=2026-10-17T04:43:00.266219Z"
+      }
+    ],
+    "independent": {
+      "mongo": {
+        "absent": true,
+        "name": "weir_test_37439_1"
+      },
+      "owned_containers": [],
+      "owned_containers_status": 200,
+      "search": {
+        "body": {
+          "error": {
+            "index": "weir_search_37439_1",
+            "index_uuid": "_na_",
+            "reason": "no such index [weir_search_37439_1]",
+            "resource.id": "weir_search_37439_1",
+            "resource.type": "index_or_alias",
+            "root_cause": [
+              {
+                "index": "weir_search_37439_1",
+                "index_uuid": "_na_",
+                "reason": "no such index [weir_search_37439_1]",
+                "resource.id": "weir_search_37439_1",
+                "resource.type": "index_or_alias",
+                "type": "index_not_found_exception"
+              }
+            ],
+            "type": "index_not_found_exception"
+          },
+          "status": 404
+        },
+        "raw_bytes": 443,
+        "raw_sha256": "aa54674212fd15da6d99dfd1c32a3a3eb428e0d2d4cbe12f815dc7a4828e09c1",
+        "status": 404
+      },
+      "search_index": "weir_search_37439_1"
+    },
+    "problems": [],
+    "raw": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/final-process-r1/formal600-process.txt",
+    "raw_sha256": "9525525c17ee376a4ae5d6ad057630168ca9dc784fa3bdb97a96fadea35d12bf",
+    "record": {
+      "args": [
+        "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/final-process-r1/app-race.test",
+        "-test.v",
+        "-test.failfast",
+        "-test.count=1",
+        "-test.run=^TestProductionProcessQualification$",
+        "-test.timeout=12m"
+      ],
+      "cwd": "/Users/liran/Projects/liran/go/weir",
+      "elapsed_seconds": 643.7839642080071,
+      "env": {
+        "CGO_ENABLED": "1",
+        "DOCKER_CONFIG": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/final-process-r1/docker-client",
+        "DOCKER_HOST": "unix:///var/run/docker.sock",
+        "GOAMD64": "v1",
+        "GOARCH": "arm64",
+        "GOARM64": "v8.0",
+        "GOENV": "off",
+        "GOEXPERIMENT": "",
+        "GOFLAGS": "",
+        "GOOS": "darwin",
+        "GOPROXY": "off",
+        "GOROOT": "/Users/liran/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.1.darwin-arm64",
+        "GOSUMDB": "off",
+        "GOTOOLCHAIN": "local",
+        "GOWORK": "off",
+        "MONGOSH_DISABLE_TELEMETRY": "1",
+        "PYTHONDONTWRITEBYTECODE": "1",
+        "WEIR_INTEGRATION": "1",
+        "WEIR_PRODUCTION_QUALIFICATION": "1",
+        "WEIR_QUALIFICATION_BINARY": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/final-process-r1/weir-linux-arm64",
+        "WEIR_QUALIFICATION_SHA256": "5310682e9ca6b072ff602b20708965f848ec8b6d739c61033f260324bc2ca395",
+        "WEIR_QUALIFICATION_SOURCE": "69349eac568af9993c837fcd05c08337f5743a30",
+        "WEIR_SEARCH_INTEGRATION": "elasticsearch"
+      },
+      "exit_code": 0,
+      "finished_utc": "2026-10-17T04:53:40.544016+00:00",
+      "pid": 37439,
+      "raw": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/final-process-r1/formal600-process.txt",
+      "raw_bytes": 616311,
+      "raw_sha256": "9525525c17ee376a4ae5d6ad057630168ca9dc784fa3bdb97a96fadea35d12bf",
+      "retry": false,
+      "started_utc": "2026-10-17T04:42:56.769241+00:00",
+      "timed_out": false,
+      "timeout_seconds": 780
+    },
+    "source": "69349eac568af9993c837fcd05c08337f5743a30",
+    "status": "PASS",
+    "oracle_documents": {
+      "mongo": 25374,
+      "search": 25375
+    },
+    "correction": {
+      "initial_validation_sha256": "97f3b6f329845a0431ad1423eeae1e8222855498f6bad8a9bcc810cf9f06af66",
+      "reason": "Only parser labels wrong: actual test uses independent oracle <backend>, not oracle backend=<backend>. Exact test source log and full preserved raw verified. No runtime rerun, weaker gate, source change or evidence overwrite."
+    },
+    "steady_methods": [
+      {
+        "method": "steady/mongo/Batch4",
+        "count": 3000,
+        "p99": "45.756209ms",
+        "max": "456.639709ms"
+      },
+      {
+        "method": "steady/mongo/Lua",
+        "count": 6000,
+        "p99": "37.345084ms",
+        "max": "478.573417ms"
+      },
+      {
+        "method": "steady/mongo/Native",
+        "count": 9000,
+        "p99": "9.847584ms",
+        "max": "417.946042ms"
+      },
+      {
+        "method": "steady/mongo/Put",
+        "count": 12000,
+        "p99": "35.26325ms",
+        "max": "410.546125ms"
+      },
+      {
+        "method": "steady/mongo/Read",
+        "count": 30000,
+        "p99": "11.1135ms",
+        "max": "366.358875ms"
+      },
+      {
+        "method": "steady/search/Batch4",
+        "count": 3000,
+        "p99": "64.235ms",
+        "max": "547.140459ms"
+      },
+      {
+        "method": "steady/search/Lua",
+        "count": 6000,
+        "p99": "33.229542ms",
+        "max": "553.950125ms"
+      },
+      {
+        "method": "steady/search/Native",
+        "count": 9000,
+        "p99": "21.701917ms",
+        "max": "312.2285ms"
+      },
+      {
+        "method": "steady/search/Put",
+        "count": 12000,
+        "p99": "40.035084ms",
+        "max": "588.934625ms"
+      },
+      {
+        "method": "steady/search/Read",
+        "count": 30000,
+        "p99": "27.667792ms",
+        "max": "363.8465ms"
+      }
+    ],
+    "sampled_trends": {
+      "scope": "One-second sampled maxima at different times, not physical transient peak proof",
+      "samples": 630,
+      "maxima": {
+        "RSS": 356216832.0,
+        "working": 477650944.0,
+        "heap": 324076232.0,
+        "inflight": 39.0,
+        "pending": 30.0,
+        "active": 12.0,
+        "paused": 33.0,
+        "pause_bytes": 137956009.0,
+        "working_bytes": 361225358.0,
+        "wire_bytes": 2127178.0,
+        "sessions": 70.0,
+        "latch": 0.0
+      },
+      "first_CPU": "0.1700",
+      "last_CPU": "80.3200"
+    },
+    "slow_summary": "production_qualification_integration_test.go:165: all 32 slow consumers canceled and joined at 4m30.020786042s; slow_duration=2m0s offered=64 completed=32 canceled=32 minimum_callbacks_per_stream=237 minimum_bytes_per_stream=11316243 maximum_progress_gap=1.791397s"
+  },
+  "final_fault": {
+    "CLI": {
+      "binary": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/final-fault-r2/weir-linux-arm64",
+      "binary_sha256": "ea8d8617052a53db7fa676df9b614fd8cfcc973004f1f0451e79539352a15687",
+      "patches": {
+        "github.com/iceisfun/golua": "./third_party/golua",
+        "google.golang.org/grpc": "./third_party/grpc"
+      },
+      "raw_sha256": "9e9c31f4245bbb4d3eeedd1df63595027455e48937b3678f2f2afde693b27da7",
+      "settings": {
+        "-buildmode": "exe",
+        "-compiler": "gc",
+        "-trimpath": "true",
+        "CGO_ENABLED": "0",
+        "GOARCH": "arm64",
+        "GOARM64": "v8.0",
+        "GOOS": "linux",
+        "vcs": "git",
+        "vcs.modified": "false",
+        "vcs.revision": "032fd8b8e2cfa0acf0e65c166d6265c3c30ad87b",
+        "vcs.time": "2026-10-17T04:54:20Z"
+      },
+      "source": "032fd8b8e2cfa0acf0e65c166d6265c3c30ad87b"
+    },
+    "independent": {
+      "mongo": {
+        "absent": true,
+        "name": "weir_test_38535_1"
+      },
+      "owned_containers": [],
+      "owned_containers_status": 200,
+      "search": {
+        "body": {
+          "error": {
+            "index": "weir_search_38535_1",
+            "index_uuid": "_na_",
+            "reason": "no such index [weir_search_38535_1]",
+            "resource.id": "weir_search_38535_1",
+            "resource.type": "index_or_alias",
+            "root_cause": [
+              {
+                "index": "weir_search_38535_1",
+                "index_uuid": "_na_",
+                "reason": "no such index [weir_search_38535_1]",
+                "resource.id": "weir_search_38535_1",
+                "resource.type": "index_or_alias",
+                "type": "index_not_found_exception"
+              }
+            ],
+            "type": "index_not_found_exception"
+          },
+          "status": 404
+        },
+        "raw_bytes": 443,
+        "raw_sha256": "6afb6e479524c69fcb4cbc5b15513974c32588f84464eb4368e72dfff30548f0",
+        "status": 404
+      },
+      "search_index": "weir_search_38535_1"
+    },
+    "problems": [],
+    "race_driver": {
+      "binary": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/final-fault-r2/app-race.test",
+      "binary_sha256": "0b234b65318c6d15fae286a4786e1d84d94300e09c2ba4c086764e6623848c8e",
+      "patches": {
+        "github.com/iceisfun/golua": "./third_party/golua",
+        "google.golang.org/grpc": "./third_party/grpc"
+      },
+      "raw_sha256": "b7eab4e48af9d75167aa1463c83f284d58ce91b19352c7dbc55ffec438e147e7",
+      "settings": {
+        "-buildmode": "exe",
+        "-compiler": "gc",
+        "-race": "true",
+        "-tags": "integration",
+        "-trimpath": "true",
+        "CGO_ENABLED": "1",
+        "GOARCH": "arm64",
+        "GOARM64": "v8.0",
+        "GOOS": "darwin",
+        "vcs": "git",
+        "vcs.modified": "false",
+        "vcs.revision": "032fd8b8e2cfa0acf0e65c166d6265c3c30ad87b",
+        "vcs.time": "2026-10-17T04:54:20Z"
+      },
+      "source": "032fd8b8e2cfa0acf0e65c166d6265c3c30ad87b"
+    },
+    "record": {
+      "args": [
+        "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/final-fault-r2/app-race.test",
+        "-test.v",
+        "-test.failfast",
+        "-test.count=1",
+        "-test.run=^TestProductionProcessFaultQualification$",
+        "-test.timeout=2m"
+      ],
+      "cwd": "/Users/liran/Projects/liran/go/weir",
+      "elapsed_seconds": 6.737706457992317,
+      "env": {
+        "CGO_ENABLED": "1",
+        "DOCKER_CONFIG": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/final-fault-r2/docker-client",
+        "DOCKER_HOST": "unix:///var/run/docker.sock",
+        "GOAMD64": "v1",
+        "GOARCH": "arm64",
+        "GOARM64": "v8.0",
+        "GOENV": "off",
+        "GOEXPERIMENT": "",
+        "GOFLAGS": "",
+        "GOOS": "darwin",
+        "GOPROXY": "off",
+        "GOROOT": "/Users/liran/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.1.darwin-arm64",
+        "GOSUMDB": "off",
+        "GOTOOLCHAIN": "local",
+        "GOWORK": "off",
+        "MONGOSH_DISABLE_TELEMETRY": "1",
+        "PYTHONDONTWRITEBYTECODE": "1",
+        "WEIR_INTEGRATION": "1",
+        "WEIR_PRODUCTION_FAULT_QUALIFICATION": "1",
+        "WEIR_QUALIFICATION_BINARY": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/final-fault-r2/weir-linux-arm64",
+        "WEIR_QUALIFICATION_SHA256": "ea8d8617052a53db7fa676df9b614fd8cfcc973004f1f0451e79539352a15687",
+        "WEIR_QUALIFICATION_SOURCE": "032fd8b8e2cfa0acf0e65c166d6265c3c30ad87b",
+        "WEIR_SEARCH_INTEGRATION": "elasticsearch"
+      },
+      "exit_code": 0,
+      "finished_utc": "2026-10-17T04:55:12.589675+00:00",
+      "pid": 38535,
+      "raw": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/final-fault-r2/fault-process.txt",
+      "raw_bytes": 5464,
+      "raw_sha256": "b05ee96cd6c0c89a18b7ec829d8eac1005d723a008b7bffa6d427dd36f521d4f",
+      "retry": false,
+      "started_utc": "2026-10-17T04:55:05.851750+00:00",
+      "timed_out": false,
+      "timeout_seconds": 150
+    },
+    "source": "032fd8b8e2cfa0acf0e65c166d6265c3c30ad87b",
+    "status": "PASS"
+  }
+}

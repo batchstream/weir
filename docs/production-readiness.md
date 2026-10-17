@@ -1,8 +1,10 @@
 # Weir production reliability milestones
 
-Production readiness is being qualified through separately reviewed changes.
-Passing one milestone does not approve the remaining resource-recovery and
-Linux sustained-load boundaries.
+The default configuration has passed the controlled local real-backend
+[final sustained-load and fault qualification](production-process-qualification-2026-10-17.md).
+Each preceding repair was independently reviewed and merged after its own CI.
+The results establish the declared profiles below; running production clusters
+were outside the user-selected local validation scope.
 
 | Milestone | Result |
 | --- | --- |
@@ -12,8 +14,10 @@ Linux sustained-load boundaries.
 | Recovery with shared cgroup memory outside the process | [PR 78](https://github.com/batchstream/weir/pull/78) merged after new independent review and Linux CI |
 | Healthy queries with a full Native output reservation | [PR 79](https://github.com/batchstream/weir/pull/79) merged after independent exact-head review and CI; clean Linux focused ownership qualification passed |
 | Short Native mixed bursts with transient IO reservations | [PR 80](https://github.com/batchstream/weir/pull/80) merged after new independent exact-head review, two 2560-call real-backend runs and full CI; [causal evidence](native-burst-admission-2026-10-16.md) |
-| Typed large-result memory safety | [Confirmed 512 MiB OOM and correction gates](typed-memory-qualification-2026-10-17.md); implementation in progress |
-| Linux complete-process sustained mixed workload and failure recovery | First formal run failed at the 256-request burst; original gates remain pending |
+| Typed large-result memory safety | [PR 81](https://github.com/batchstream/weir/pull/81) merged after independent review and CI; [original 512 MiB OOM and constrained correction evidence](typed-memory-qualification-2026-10-17.md) |
+| Bounded ingress and default short-request progress | [PR 82](https://github.com/batchstream/weir/pull/82) merged after two independent reviews and CI; [512/1024 MiB fixed profiles and release reproducibility](ingress-memory-qualification-2026-10-17.md) |
+| Main-process Lua allocation bounds | [PR 83](https://github.com/batchstream/weir/pull/83) merged after two independent reviews and CI; [original OOM, numeric review repair, actual shipping probe and sixteen paths](lua-memory-qualification-2026-10-17.md) |
+| Linux complete-process sustained mixed workload and failure recovery | [Final 600-second mixed load and fault suite passed](production-process-qualification-2026-10-17.md); first failed formal run retained |
 
 The [initial reliability study](production-reliability-2026-10-16.md) is a
 historical baseline at revision `63bafdd`; its Native scheduling and cancellation
@@ -288,5 +292,6 @@ The affected default race suites and vet pass; the
 [real Mongo diagnostics check](shared-recovery-results-2026-10-16/shared-recovery-diagnostics-clean.txt)
 passes with exactly 1105 fixed Weir series at the maximum local Store count.
 
-The sustained mixed workload, full Native output boundary and backend-fault
-milestones remain pending.
+The earlier pending sustained mixed workload, full Native output boundary and
+backend-fault milestones are covered by the later merged repairs and
+[final complete-process results](production-process-qualification-2026-10-17.md).

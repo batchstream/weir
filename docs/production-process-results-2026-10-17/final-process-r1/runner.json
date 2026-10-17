@@ -1,0 +1,11 @@
+{
+  "fixed_arrival": 200,
+  "formal_seconds": 600,
+  "helper_sha256": "798d58a3f57a1b28a51a97a78baf09ba879df593e77a6a7bce5b43dff0e0d96b",
+  "retry": false,
+  "runner_sha256": "a6be37d3222516971eeb683be1e00c33ccafdee9e295950cced54e893e74f158",
+  "scope": "Default actual Linux CLI, real MongoDB and Elasticsearch; no smoke or exploratory opt-ins",
+  "source": "69349eac568af9993c837fcd05c08337f5743a30",
+  "started": "2026-10-17T04:42:42.681718+00:00",
+  "warmup_seconds": 30
+}

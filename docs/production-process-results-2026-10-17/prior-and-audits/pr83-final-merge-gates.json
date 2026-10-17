@@ -1,0 +1,224 @@
+{
+  "ci": {
+    "conclusion": "success",
+    "headSha": "f476bff9138e1b121a68b648b654392e5d94e412",
+    "jobs": [
+      {
+        "completedAt": "2026-10-17T04:36:42Z",
+        "conclusion": "success",
+        "databaseId": 117309796935,
+        "name": "test",
+        "startedAt": "2026-10-17T04:34:03Z",
+        "status": "completed",
+        "steps": [
+          {
+            "completedAt": "2026-10-17T04:34:04Z",
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "startedAt": "2026-10-17T04:34:03Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-17T04:34:07Z",
+            "conclusion": "success",
+            "name": "Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+            "number": 2,
+            "startedAt": "2026-10-17T04:34:04Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-17T04:34:20Z",
+            "conclusion": "success",
+            "name": "Prepare fixed native SDK and public modules",
+            "number": 3,
+            "startedAt": "2026-10-17T04:34:07Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-17T04:35:06Z",
+            "conclusion": "success",
+            "name": "Native CGO0 default tests",
+            "number": 4,
+            "startedAt": "2026-10-17T04:34:20Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-17T04:36:26Z",
+            "conclusion": "success",
+            "name": "Native CGO1 race tests",
+            "number": 5,
+            "startedAt": "2026-10-17T04:35:06Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-17T04:36:28Z",
+            "conclusion": "success",
+            "name": "Native receive ownership patch race tests",
+            "number": 6,
+            "startedAt": "2026-10-17T04:36:26Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-17T04:36:31Z",
+            "conclusion": "success",
+            "name": "Lua allocation patch race tests",
+            "number": 7,
+            "startedAt": "2026-10-17T04:36:28Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-17T04:36:40Z",
+            "conclusion": "success",
+            "name": "Static vet and offline script tests",
+            "number": 8,
+            "startedAt": "2026-10-17T04:36:31Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-17T04:36:40Z",
+            "conclusion": "success",
+            "name": "Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+            "number": 16,
+            "startedAt": "2026-10-17T04:36:40Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-17T04:36:40Z",
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 17,
+            "startedAt": "2026-10-17T04:36:40Z",
+            "status": "completed"
+          }
+        ],
+        "url": "https://github.com/batchstream/weir/actions/runs/39003043808/job/117309796935"
+      }
+    ],
+    "status": "completed",
+    "url": "https://github.com/batchstream/weir/actions/runs/39003043808"
+  },
+  "reviews": [
+    {
+      "path": ".testdata/reliability-2026-10-16/review83-runtime/final-review-f476.json",
+      "sha256": "e8a9ea88d89586307f46035ba75d9db197113873aa361302260f737df113d8b2",
+      "receipt": {
+        "verdict": "APPROVE",
+        "head": "f476bff9138e1b121a68b648b654392e5d94e412",
+        "pullRequest": "https://github.com/batchstream/weir/pull/83",
+        "blockingFindings": [],
+        "closedFindings": [
+          {
+            "priority": "P1",
+            "originalHead": "4f3f90fa0ecb43f978925d49447df24028cc3c68",
+            "finding": "Numeric string coercion bypassed cumulative allocation prepayment in FORPREP and table.concat.",
+            "closure": "Both original independent reproduction programs now terminate with execution.ErrExecutionMemory, empty action and no partial result under the same1MiBquota. The shared parser reserves each attempted strconv input clone and NumError before invocation. All reachable VM/native numeric paths were statically audited."
+          }
+        ],
+        "independentValidation": {
+          "headAndCleanStatusVerified": true,
+          "sourceProjection": {
+            "artifactsVerified": 157,
+            "qualifiedSourceFilesVerified": 1090,
+            "qualifiedSource": "9c23c4f58f789aa54b0162b59234f77e5cb0c6a5",
+            "head": "f476bff9138e1b121a68b648b654392e5d94e412",
+            "authorFrozenFilesVerified": 14,
+            "changedSinceQualifiedOnlyDocs": true,
+            "changedFilesCount": 160
+          },
+          "diagnosticCommand": "env GOROOT=/Users/liran/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.1.darwin-arm64 GOENV=off GOTOOLCHAIN=local GOPROXY=off GOSUMDB=off GOWORK=off /Users/liran/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.1.darwin-arm64/bin/go run .testdata/reliability-2026-10-16/review83-runtime/numeric-coercion-r2.go",
+          "diagnosticExitCode": 0,
+          "diagnosticOutputSha256": "cdede4e92ac6c8b2a1fa10909fcd0c74200275587f4adbdab54766f3af246526",
+          "diagnosticResults": [
+            {
+              "action": "",
+              "allocated": 277984,
+              "budgetLimit": 1048576,
+              "error": "execution working memory capacity exhausted: execution working memory capacity exhausted",
+              "inputBytes": 65539,
+              "memoryRefused": true,
+              "reserved": 1039784,
+              "source": "return function(_,input) local s=input.n; for i=1,128 do for j=s,0 do end end; return weir.keep() end"
+            },
+            {
+              "action": "",
+              "allocated": 279088,
+              "budgetLimit": 1048576,
+              "error": "execution working memory capacity exhausted: execution working memory capacity exhausted",
+              "inputBytes": 65539,
+              "memoryRefused": true,
+              "reserved": 1021216,
+              "source": "return function(_,input) local s=input.n; for i=1,128 do table.concat({},'',s,0) end; return weir.keep() end"
+            }
+          ],
+          "priorNestedRace": "Six nested packages passed on original reviewed head; root final fixed-source nested race and root suite evidence inspected, no unnecessary full rerun."
+        },
+        "evidenceInspected": {
+          "artifactsVerified": 157,
+          "qualifiedSourceFilesVerified": 1090,
+          "authorFrozenFilesVerified": 14,
+          "candidateAndShippingOriginalProbe": "PASS on final fixed runtime9c23c4f58f789aa54b0162b59234f77e5cb0c6a5",
+          "candidateAndShippingSupplement": "16cases acrossMongoDBandElasticsearch PASS each; numeric paths strictlyNOT_APPLIED/RESOURCE_EXHAUSTED underoriginal3sdeadline. All owners0,normalexit,noOOM andbackendfixtureabsence confirmed by preserved evidence.",
+          "shippingLinuxArm64Sha256": "16669a2cd593d523a8bb52446a1140ea157a9224613ee5a34f37fdcbbe8d16d6",
+          "twoExportFourTargetPackage": "PASS evidence inspected; identical Linux shipping binarySHAverified."
+        },
+        "limits": [
+          "Approval covers this Lua allocation objective on the exact reviewed head. It does not certify overall production readiness.",
+          "Final own-head CI and merge remain root-owned gates.",
+          "Allocation model is conservative cumulative ownership for the restricted reachable Weir environment, not an arbitrary Go heap sandbox or precise live heap measurement.",
+          "No live backend/CLI qualification rerun by reviewer; actual-run receipts and raw artifacts independently hash-verified.",
+          "Sustained600s latency qualification and fault acceptance remain separate pending objectives."
+        ],
+        "trackedEditsByReviewer": false
+      }
+    },
+    {
+      "path": ".testdata/reliability-2026-10-16/review83-integration/final-review-f476.json",
+      "sha256": "028646f6ba17366d3a178741cc556cc6923c6cd3a9378da9ccf6a58562cfea4f",
+      "receipt": {
+        "decision": "APPROVE",
+        "pull_request": "https://github.com/batchstream/weir/pull/83",
+        "exact_head": "f476bff9138e1b121a68b648b654392e5d94e412",
+        "supersedes_review_head": "4f3f90fa0ecb43f978925d49447df24028cc3c68",
+        "review_findings": [],
+        "scope": [
+          "New host table.concat owned numeric conversion and shared parser integration",
+          "Preserved backend ownership and exact NOT_APPLIED/RESOURCE_EXHAUSTED outcomes",
+          "New numeric quota/pcall/wide-quota/semantic tests",
+          "RPC expiry test immediate observer and original deadline window/cause assertions",
+          "Latest candidate/shipping source equivalence, fork manifests, raw results and actual archives"
+        ],
+        "source_review": "VM-owned coercion entries use shared private parsers with per-actual-strconv prepayment. Host concat uses state.ToInt; remaining public numeric conversions in table Get/Set are guarded by IsNumber, and exposed-library inventory excludes unrelated IO/debug/exec/string-pack paths. Backend ownership code is unchanged from integration review.",
+        "independent_checks": [
+          "Complete internal/luaengine race PASS, 5.876 seconds",
+          "RPCExpiryKeepsSharedConnectionAndMutation race count=3 PASS, 4.223 seconds",
+          "All 157 evidence artifacts verified for compressed/raw bytes and SHA256",
+          "Both final fork manifests verified: grpc 564 files, golua 103 files",
+          "8 actual archive hashes/provenance checked; all 4 platform binary pairs identical",
+          "Candidate and shipping raw supplement logs each contain 16 exact timely outcomes, 48 full raw oracles and 16 same-SDK recoveries",
+          "Qualified 9c23 to reviewed f476 has 160 docs-only changes including projection itself; no runtime/package input changes",
+          "Original 269-line OOM probe hash unchanged"
+        ],
+        "shipping_linux_arm64_sha256": "16669a2cd593d523a8bb52446a1140ea157a9224613ee5a34f37fdcbbe8d16d6",
+        "limits": [
+          "No live backend or CLI runs performed by this reviewer; checked retained actual-run raw evidence and archive bytes.",
+          "Detailed VM allocation audit belongs to fresh runtime reviewer.",
+          "Deadline proof measures observer execution time, with scheduler limitation already documented in independent RPC review.",
+          "600-second load/SLO and final fault qualification remain pending.",
+          "Coordinator verifies final-head CI and merge gates."
+        ],
+        "head_and_tracked_worktree_unchanged": true,
+        "supporting_receipts": {
+          "final-f476-checks.json": {
+            "bytes": 739,
+            "sha256": "fffad53ab37e50dc68a85178c52c0c788d7b181ef49dd98874cd8ff98387bdfb"
+          },
+          "final-f476-evidence-audit.json": {
+            "bytes": 3026,
+            "sha256": "050ae834aa3ae04cd953639479aa6d038aeaee816767e5dff58db6b65ab3db43"
+          }
+        }
+      }
+    }
+  ]
+}

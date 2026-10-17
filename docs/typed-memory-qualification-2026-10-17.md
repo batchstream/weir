@@ -2,9 +2,10 @@
 
 Status: the sixth clean candidate passes the original real-backend acceptance
 and independent re-execution. Both independent reviewers report no blocking
-code findings. Exact final-head approval and CI gate merge of PR 81. Overall
-production qualification remains incomplete: ingress, Lua, sustained load and
-fault qualification have not run.
+code findings. PR #81 subsequently passed both exact final-head reviews and CI
+and merged. Ingress and Lua qualification followed in PRs #82 and #83. The
+[final complete-process report](production-process-qualification-2026-10-17.md)
+records the successful 600-second sustained load and strengthened fault suite.
 
 ## Preserved failure
 

@@ -1,0 +1,23 @@
+{
+  "binary": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/final-fault-r2/weir-linux-arm64",
+  "binary_sha256": "ea8d8617052a53db7fa676df9b614fd8cfcc973004f1f0451e79539352a15687",
+  "patches": {
+    "github.com/iceisfun/golua": "./third_party/golua",
+    "google.golang.org/grpc": "./third_party/grpc"
+  },
+  "raw_sha256": "9e9c31f4245bbb4d3eeedd1df63595027455e48937b3678f2f2afde693b27da7",
+  "settings": {
+    "-buildmode": "exe",
+    "-compiler": "gc",
+    "-trimpath": "true",
+    "CGO_ENABLED": "0",
+    "GOARCH": "arm64",
+    "GOARM64": "v8.0",
+    "GOOS": "linux",
+    "vcs": "git",
+    "vcs.modified": "false",
+    "vcs.revision": "032fd8b8e2cfa0acf0e65c166d6265c3c30ad87b",
+    "vcs.time": "2026-10-17T04:54:20Z"
+  },
+  "source": "032fd8b8e2cfa0acf0e65c166d6265c3c30ad87b"
+}

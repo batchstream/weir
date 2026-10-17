@@ -1,0 +1,25 @@
+{
+  "binary": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/final-process-r1/app-race.test",
+  "binary_sha256": "84e8952cd837c2c70328c5758cc2e740dd0f94c407cc1227f2eed22149d6b4a0",
+  "patches": {
+    "github.com/iceisfun/golua": "./third_party/golua",
+    "google.golang.org/grpc": "./third_party/grpc"
+  },
+  "raw_sha256": "32e9276b625f2d2660caa6aa838bd5e0553fc5897c232c583436d12c63ac0f70",
+  "settings": {
+    "-buildmode": "exe",
+    "-compiler": "gc",
+    "-race": "true",
+    "-tags": "integration",
+    "-trimpath": "true",
+    "CGO_ENABLED": "1",
+    "GOARCH": "arm64",
+    "GOARM64": "v8.0",
+    "GOOS": "darwin",
+    "vcs": "git",
+    "vcs.modified": "false",
+    "vcs.revision": "69349eac568af9993c837fcd05c08337f5743a30",
+    "vcs.time": "2026-10-17T04:41:42Z"
+  },
+  "source": "69349eac568af9993c837fcd05c08337f5743a30"
+}
