@@ -12,7 +12,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
-	"runtime"
 	"strings"
 	"time"
 )
@@ -119,7 +118,7 @@ func Validate(profile ExecutionProfile, inputs ProvenanceInputs) (*ValidatedInpu
 	if err != nil {
 		return nil, err
 	}
-	driver, err := verifyExecutable(inputs.Driver, profile.Driver)
+	driver, err := verifyRunningDriver(inputs.Driver, profile.Driver)
 	if err != nil {
 		return nil, err
 	}
@@ -128,21 +127,6 @@ func Validate(profile ExecutionProfile, inputs ProvenanceInputs) (*ValidatedInpu
 	}
 	if err := verifyBuildSource(driver, inputs.Harness); err != nil {
 		return nil, err
-	}
-	current, err := os.Executable()
-	if err != nil {
-		return nil, err
-	}
-	currentInfo, err := os.Stat(current)
-	if err != nil {
-		return nil, err
-	}
-	driverInfo, err := os.Stat(inputs.Driver.Path)
-	if err != nil {
-		return nil, err
-	}
-	if !os.SameFile(currentInfo, driverInfo) || profile.Driver.OS != runtime.GOOS || profile.Driver.Arch != runtime.GOARCH {
-		return nil, fmt.Errorf("driver must be the actual native running test executable")
 	}
 	if inputs.Candidate != nil {
 		if err := verifyCandidate(profile, inputs, cli); err != nil {
@@ -253,6 +237,21 @@ func verifyExecutable(input Executable, target Target) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	object := executableObject{input: input, target: target, raw: raw, stat: stat}
+	return verifyExecutableObject(object)
+}
+
+type executableObject struct {
+	input  Executable
+	target Target
+	raw    []byte
+	stat   os.FileInfo
+}
+
+// Both CLI paths and kernel-bound driver descriptors share exactly these byte,
+// build-info, role, target and format checks.
+func verifyExecutableObject(object executableObject) ([]byte, error) {
+	input, target, raw, stat := object.input, object.target, object.raw, object.stat
 	if stat.Mode().Perm()&0111 == 0 || hash(raw) != input.SHA256 {
 		return nil, fmt.Errorf("%s executable mode/digest mismatch", input.Role)
 	}

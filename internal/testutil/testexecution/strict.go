@@ -157,34 +157,12 @@ func readFile(path string, limit int64) ([]byte, error) {
 // Only readFile and the manifest-qualified public gRPC source reader call this
 // primitive. It does not grant a sensitive-path exception on its own.
 func readRegularFile(path string, limit int64) ([]byte, error) {
-	if err := canonicalPath(path); err != nil {
-		return nil, err
-	}
-	root, err := os.OpenRoot(filepath.Dir(path))
+	file, _, err := openRegularFile(path, limit)
 	if err != nil {
 		return nil, err
 	}
-	defer root.Close()
-	before, err := root.Lstat(filepath.Base(path))
-	if err != nil {
-		return nil, err
-	}
-	if !before.Mode().IsRegular() || before.Size() > limit {
-		return nil, fmt.Errorf("bounded non-symlink regular file required")
-	}
-	f, err := root.Open(filepath.Base(path))
-	if err != nil {
-		return nil, err
-	}
-	defer f.Close()
-	stat, err := f.Stat()
-	if err != nil {
-		return nil, err
-	}
-	if !os.SameFile(before, stat) || !stat.Mode().IsRegular() || stat.Size() > limit {
-		return nil, fmt.Errorf("bounded regular file required: %s", path)
-	}
-	raw, err := io.ReadAll(io.LimitReader(f, limit+1))
+	defer file.Close()
+	raw, err := io.ReadAll(io.LimitReader(file, limit+1))
 	if err != nil {
 		return nil, err
 	}
@@ -192,6 +170,39 @@ func readRegularFile(path string, limit int64) ([]byte, error) {
 		return nil, fmt.Errorf("file exceeds bound")
 	}
 	return raw, nil
+}
+
+// Return a pinned descriptor and its fstat, never a later stat of its pathname.
+func openRegularFile(path string, limit int64) (*os.File, os.FileInfo, error) {
+	if err := canonicalPath(path); err != nil {
+		return nil, nil, err
+	}
+	root, err := os.OpenRoot(filepath.Dir(path))
+	if err != nil {
+		return nil, nil, err
+	}
+	defer root.Close()
+	before, err := root.Lstat(filepath.Base(path))
+	if err != nil {
+		return nil, nil, err
+	}
+	if !before.Mode().IsRegular() || before.Size() > limit {
+		return nil, nil, fmt.Errorf("bounded non-symlink regular file required")
+	}
+	file, err := root.Open(filepath.Base(path))
+	if err != nil {
+		return nil, nil, err
+	}
+	stat, err := file.Stat()
+	if err != nil {
+		_ = file.Close()
+		return nil, nil, err
+	}
+	if !os.SameFile(before, stat) || !stat.Mode().IsRegular() || stat.Size() > limit {
+		_ = file.Close()
+		return nil, nil, fmt.Errorf("bounded regular file required: %s", path)
+	}
+	return file, stat, nil
 }
 func DecodeProfile(raw []byte) (ExecutionProfile, error) {
 	var p ExecutionProfile

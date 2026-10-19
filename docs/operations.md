@@ -216,7 +216,28 @@ and `harness` objects (each `root` and full `revision`), and separate `cli` and
 literally `cli` and `driver`. The CLI must be the actual static Linux Weir ELF;
 the driver must be the actual running native Go test executable, not the CLI or
 a byte-identical copy at a different inode. Build info, object machine and actual
-file hashes are checked. Both source roots must be clean repository top levels
+file hashes are checked. Driver bytes and hashes come from one bounded, pinned
+file descriptor, with kernel-loaded-image identity checked before and after the
+read; replacing an executable pathname cannot substitute another inode or SHA256.
+Linux amd64/arm64 opens `/proc/self/exe` and compares its kernel executable object
+to that descriptor. Darwin arm64 queries the public libproc
+`PROC_PIDREGIONPATHINFO` for a function address in the running Go image and compares
+the executable VM mapping's vnode identity with descriptor `fstat`. Neither method
+trusts `os.Executable()` pathname stats or an init-time pathname snapshot. Renaming
+the actual backing file remains valid when its new path names the same inode;
+a missing/unlinked supplied path is not silently repaired. These checks bind the
+executable backing file, not a reconstruction of all resident process memory.
+
+The Darwin bridge reuses the already-pinned purego dependency and works with
+CGO disabled. Its public SDK record sizes/offsets are checked before native calls;
+short/failed observations, unavailable procfs/libproc, and unsupported platforms
+fail closed. Native driver validation is implemented only for Linux amd64/arm64
+and Darwin arm64. This is not implementation of the still-unsupported formal
+Linux executor. The test-only package has a Darwin dependency on the existing
+purego module; Linux's implementation uses only the standard library. No module
+pin/replacement or production command dependency changes are involved.
+
+Both source roots must be clean repository top levels
 at their declared revisions; the consumer also binds the harness root to its
 current module. Compile a driver first with `go test -c -tags=integration`, record
 that executable's hash, then supply it as the driver when invoking that test
@@ -264,7 +285,12 @@ go test -tags=integration -count=1 -timeout=120s -run '^TestExecutionProfileCont
 ```
 
 These tests verify decoding, local byte/source consistency, preserved policy and
-fail-closed dispatch, not runtime qualification. An optional
+fail-closed dispatch, not runtime qualification. An isolated owned-child contract
+requires native driver validation to succeed, rejects same-byte/new-inode and
+different-byte/claimed-SHA pathname replacements, and checks rename, restore and
+unlink behavior without starting a service. It runs under the same selector on
+Linux CI and Darwin arm64; an unsupported observation is a failure, not a skipped
+positive contract. An optional
 `WEIR_EXECUTION_CANDIDATE_EXAMPLE` points the candidate-byte contract at an existing
 local bundle. That regression checks the actual complete `verifyCandidate` path,
 including all source inputs in a read-only-used local checkout of the bundle's
