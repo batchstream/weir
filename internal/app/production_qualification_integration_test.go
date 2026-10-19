@@ -5,14 +5,11 @@ package app
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
-	"net/netip"
 	"os"
-	"path/filepath"
 	"runtime"
 	"slices"
 	"strings"
@@ -69,49 +66,21 @@ type qualificationSlowResult struct {
 	err     error
 }
 
-// The short opt-in is explicitly a smoke run. Only the default 600-second
-// measurement, following 30 seconds of warmup, is qualification evidence.
+// Explicit legacy Desktop reproduction retains the workload gates. Neither its
+// 600-second measurement nor its 120-second smoke confers formal qualification.
 func TestProductionProcessQualification(t *testing.T) {
 	if os.Getenv("WEIR_PRODUCTION_QUALIFICATION") != "1" {
 		t.Skip("requires explicit native Linux CLI production qualification")
 	}
-	if os.Getenv("WEIR_INTEGRATION") != "1" || os.Getenv("WEIR_SEARCH_INTEGRATION") != "elasticsearch" || os.Getenv("WEIR_MONGO_PROFILE") == "tls" {
-		t.Fatal("qualification requires the fixed plain MongoDB and Elasticsearch 8.19.22 fixtures")
-	}
-	duration := 600 * time.Second
-	smoke := os.Getenv("WEIR_PRODUCTION_QUALIFICATION_SMOKE") == "1"
-	if smoke {
-		duration = 120 * time.Second
-	}
-	binary := os.Getenv("WEIR_QUALIFICATION_BINARY")
-	if !filepath.IsAbs(binary) {
-		t.Fatal("qualification requires an explicit absolute Linux CLI path")
-	}
-	raw, err := os.ReadFile(binary)
-	if err != nil {
-		t.Fatal("explicit qualification binary unavailable", err)
-	}
-	digest := fmt.Sprintf("%x", sha256.Sum256(raw))
-	engine := strings.TrimSpace(packagedDocker(t, "info", "--format", "{{.OSType}}/{{.Architecture}}/{{.CgroupVersion}} kernel={{.KernelVersion}}"))
-	if !strings.HasPrefix(engine, "linux/aarch64/2 ") {
-		t.Fatal("requires native Linux arm64 cgroup-v2", engine)
-	}
-	image := strings.TrimSpace(packagedDocker(t, "image", "inspect", "--format", "{{.Os}}/{{.Architecture}} {{.Id}}", "busybox:1.37.0"))
-	if image != "linux/arm64 sha256:ad4f11f7c85f87c0a6d6c0fe492ad53f9cdcff6e8c88b881360c70eff701c67b" {
-		t.Fatal("qualification fixture image identity changed", image)
-	}
+	execution := loadProductionExecution(t, "load")
+	profile := execution.Profile()
+	duration := profile.Duration()
+	binary, digest := execution.CLIPath(), execution.CLISHA256()
+	adapter := inspectLegacyDesktop(t, execution)
 	mongo := testmongo.Open(t)
+	verifyLegacyMongoVersion(t, mongo)
 	search := testsearch.Open(t)
-	metadata := strings.Fields(packagedDocker(t, "inspect", "--type", "container", "--format", `{{.Id}} {{index .Config.Labels "weir.owner"}} {{.Config.Image}} {{(index .NetworkSettings.Networks "bridge").IPAddress}} {{.State.Running}}`, "weir-local-elasticsearch"))
-	if len(metadata) != 5 || len(metadata[0]) != 64 || metadata[1] != "weir-search-local" || metadata[2] != "docker.elastic.co/elasticsearch/elasticsearch@sha256:c2a3ed5f968be6d59c960aa0c60cfdaee667b6bc8211142021a41d0e85b43237" || metadata[4] != "true" {
-		t.Fatal("owned pinned Elasticsearch fixture identity mismatch", metadata)
-	}
-	bridgeIP, err := netip.ParseAddr(metadata[3])
-	if err != nil || !bridgeIP.Is4() || !bridgeIP.IsPrivate() {
-		t.Fatal("owned Elasticsearch fixture lacks its native private bridge address")
-	}
-	t.Logf("Search service_transport=http://%s:9200 host_oracle=%s container=%s image=%s", bridgeIP, search.URL, metadata[0], metadata[2])
-	t.Log("Search uses its Linux bridge: prior Desktop host-published hairpin independently produced TCP timeouts without Weir; direct bridge control had 0/1800 failures. Raw controls: native-http-diagnostic-probe.txt and native-http-diagnostic-network-probe.txt")
+	t.Logf("Search service_transport=%s host_oracle=%s container=%s image=%s", adapter.searchURL(), search.URL, adapter.searchID, legacySearchImage)
 	pads := []string{strings.Repeat("x", 1<<10), strings.Repeat("x", 256<<10), strings.Repeat("x", 2<<20), strings.Repeat("x", 8<<20)}
 	datasets := []*qualificationDataset{
 		{store: "mongo", root: mongo.DB + "/records", media: "application/bson", mongo: mongo, pads: pads, expected: make(map[string]qualificationRecord)},
@@ -120,24 +89,20 @@ func TestProductionProcessQualification(t *testing.T) {
 	for _, dataset := range datasets {
 		seedQualificationDataset(t, dataset)
 	}
-	mongoBackend := &Mongo{URI: "mongodb://host.docker.internal:27028/?directConnection=true&serverMonitoringMode=poll"}
-	searchBackend := &Search{URL: "http://" + bridgeIP.String() + ":9200"}
+	mongoBackend := &Mongo{URI: adapter.mongoURL()}
+	searchBackend := &Search{URL: adapter.searchURL()}
 	mongoLocal := &Local{Backend: BackendConfig{MongoDB: mongoBackend}}
 	searchLocal := &Local{Backend: BackendConfig{Search: searchBackend}}
 	mongoStore, searchStore := StoreConfig{Name: "mongo", Local: mongoLocal}, StoreConfig{Name: "search", Local: searchLocal}
 	cfg := DefaultConfig()
 	cfg.Routing.Stores = []StoreConfig{mongoStore, searchStore}
-	opts := memoryRecoveryOptions{binary: binary, capacityMiB: 1024, automatic: true, config: &cfg}
+	opts := memoryRecoveryOptions{binary: binary, capacityMiB: 1024, automatic: true, config: &cfg, execution: execution}
 	process := startMemoryRecoveryCLI(t, opts)
 	version := packagedDocker(t, "exec", process.name, "/weir", "version")
-	var identity map[string]string
-	if json.Unmarshal([]byte(version), &identity) != nil || identity["target"] != "linux/arm64" {
-		t.Fatal("unexpected service binary identity", version)
+	if err := execution.CheckVersion([]byte(version)); err != nil {
+		t.Fatal("CLI version cross-check failed", err)
 	}
-	if !smoke && (identity["state"] != "clean-commit" || identity["dirty"] != "false" || identity["revision"] != os.Getenv("WEIR_QUALIFICATION_SOURCE") || len(identity["revision"]) != 40 || digest != os.Getenv("WEIR_QUALIFICATION_SHA256")) {
-		t.Fatal("formal qualification requires an exact clean source and SHA256 receipt", version, digest)
-	}
-	t.Logf("qualification=%t duration=%s warmup=30s fixed_arrival=200RPC/s capacity=1073741824 CPUs=2 driver=%s/%s/%s engine=%s image=%s SHA256=%s version=%s", !smoke, duration, runtime.Version(), runtime.GOOS, runtime.GOARCH, engine, image, digest, strings.TrimSpace(version))
+	t.Logf("qualification=false profile=%s intent=%s duration=%s warmup=30s fixed_arrival=200RPC/s capacity=1073741824 CPUs=2 driver=%s/%s/%s engine=%s image=%s SHA256=%s version=%s", profile.ID, profile.Intent, duration, runtime.Version(), runtime.GOOS, runtime.GOARCH, adapter.engine, adapter.image, digest, strings.TrimSpace(version))
 	t.Log("driver_inflight_limit=512; service MaxInFlight=16/store, queue=1024 entries/32MiB, Node Native invocations=1024/total leases=32768/shared observed byte budget, batching=128/4MiB/20ms, stall=30s unchanged")
 	initial := process.sample(t)
 	native := qualificationExecutionMemory(t, initial, process.capacity)

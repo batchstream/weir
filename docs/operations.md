@@ -169,3 +169,108 @@ tagged compilation and short functional probes do not establish sustainable
 throughput or universal latency guarantees. Use the workload tooling in
 [weir-tests](https://github.com/batchstream/weir-tests) and write run artifacts under
 ignored `.testdata/`.
+
+## Test execution profiles and provenance inputs
+
+The integration-only production load and fault entrypoints retain their explicit
+`WEIR_PRODUCTION_QUALIFICATION=1` and `WEIR_PRODUCTION_FAULT_QUALIFICATION=1`
+opt-ins. Without opt-in they skip. With opt-in, `WEIR_EXECUTION_PROFILE` and
+`WEIR_PROVENANCE_INPUTS` must name existing, absolute, non-symlink JSON files.
+Missing, conflicting or unsupported inputs fail before fixtures, seed, proxies,
+listeners or CLI creation. Old qualification environment variables, if present,
+are consistency checks only; they never supply missing profile/provenance values.
+Ordinary memory/Lua/ingress tests are not migrated to this interface.
+
+`internal/testutil/testexecution` is test infrastructure, not a production command
+dependency. Its version-1 `ExecutionProfile` has these exact JSON fields:
+`schemaVersion`, `id`, `suite`, `intent`, `policy`, `executor`, `driver`, `cli`,
+`backends`. Targets contain `os` and `arch`; backend entries contain `product`,
+`version`, `transport`, and `endpoints` with distinct `driver`/`cli` role names,
+not caller-selected remote addresses. Policy is `production-v1`; SLOs and quotas
+are code constants, not JSON parameters. `LegacyProfile(id)` supplies the complete
+immutable legacy specification for tooling to serialize:
+
+| Profile ID | Suite / intent | Execution status |
+| --- | --- | --- |
+| `legacy-desktop-load-v1` | load / legacy; 30s warmup + 600s measurement | Desktop reproduction only |
+| `legacy-desktop-smoke-v1` | load / smoke; 30s warmup + 120s measurement | Desktop smoke only |
+| `legacy-desktop-fault-v1` | fault / legacy | Desktop fault reproduction only |
+| `linux-native-load-v1`, `linux-native-fault-v1` | load or fault / formal or smoke | Declarable, **not implemented**; fail closed |
+
+Legacy driver/CLI targets are Darwin arm64 and Linux arm64 respectively. MongoDB
+8.0.32 and Elasticsearch 8.19.22 use the named owned plain Desktop fixtures. The
+adapter independently checks the Mongo owner marker, actual PID/argv, version and
+replica-set identity; it inspects a fresh full Elasticsearch container ID, owner,
+pinned image and private bridge address each run. CLI cleanup requires the captured
+full ID and owner to match; mismatch refuses stop/removal and retains failure
+output. Desktop routes and proxy translation belong only to that named adapter.
+Linux declarations use matching native Linux amd64 or arm64 driver/CLI targets,
+`owned-local` endpoint roles, MongoDB 8.0.32 plus Elasticsearch 8.19.22 or OpenSearch
+3.3.0, and explicit plain/TLS transport. Declaration is not executability: this PR
+implements no Linux executor, backend resource controller, or TLS/OpenSearch load
+or fault adapter. Unsupported combinations do not skip, fall back, or pass.
+
+Version-1 `ProvenanceInputs` uses `schemaVersion`, `profileID`, separate `server`
+and `harness` objects (each `root` and full `revision`), and separate `cli` and
+`driver` objects (each `role`, absolute `path`, and lowercase `sha256`). Roles are
+literally `cli` and `driver`. The CLI must be the actual static Linux Weir ELF;
+the driver must be the actual running native Go test executable, not the CLI or
+a byte-identical copy at a different inode. Build info, object machine and actual
+file hashes are checked. Both source roots must be clean repository top levels
+at their declared revisions; the consumer also binds the harness root to its
+current module. Compile a driver first with `go test -c -tags=integration`, record
+that executable's hash, then supply it as the driver when invoking that test
+binary. Keep inputs/artifacts in ignored `.testdata/` so they do not dirty sources.
+
+Optional `candidate` contains `directory`, `deliverySHA256` and `receiptSHA256`.
+It references an already-present retained distribution bundle: `delivery.json`,
+`SHA256SUMS`, and the fixed `weir-first/` receipt, graph, four linked metadata files
+and four archives. Validation is read-only, bounds reads, checks exact file sets,
+source-input hashes and delivery/receipt/archive/member byte mappings, and rejects
+links, duplicate members, path escapes, unsupported tar extensions and trailing
+payloads without extracting archives. Sensitive source paths remain forbidden.
+The sole source-name exception is tracked non-test public `.go` members in the
+known patched gRPC module's `credentials/`, `internal/credentials/` and
+`experimental/credentials/` packages. Before any such member is read, its
+receipt hash must match the upstream/patch member manifest; the module, version,
+upstream checksum, patch identities and metadata bytes must match the declared
+Git source snapshot. Secret-style descendants, unlisted members and symlinks
+remain forbidden, and the generic file reader has no credentials-directory
+exception. The selected archive's CLI must match the
+actual CLI bytes. No candidate revision, workflow run or OCI index is a permanent
+allowlist. OCI index, platform manifest and image config/layer identities remain
+separate **receipt claims**: the retained bundle has no OCI runtime/layer bytes.
+
+`ValidatedInputs` has private state, cannot be JSON-decoded, and is returned only
+by validation. `passed`, `verified` and `formalEligible` inputs are not accepted.
+CLI `version` text is only a cross-check: linker flags can forge source strings.
+Clean roots, hashes and local metadata demonstrate consistency, **not independent
+build/workflow origin**. No result/qualification receipt or stable-promotion
+implementation is included here. Even a completed legacy 600s run logs
+`qualification=false`; 120s smoke cannot become formal evidence.
+
+Existing gates remain 2 CPU/1GiB for the load CLI and 2 CPU/512MiB for fault,
+memory=swap, 96 PIDs, nonroot/read-only/cap-drop, with driver/proxies outside the
+CLI quota. Workload remains 200 RPC/s, 32 eight-MiB slow consumers and 256 burst;
+p99 Read <=100ms, ordinary <=250ms, Lua/four-record batch <=500ms, max <=3s;
+final owners/gauges zero and memory recovery <=5s. Fault healthy/cancel <=3s,
+recovery <=5s and SIGTERM <=8s, no normal-load budget rejection, independent
+mutation oracle, UNKNOWN and no-replay assertions remain unchanged.
+
+The precise backend-free contract selector is:
+
+```sh
+go test -tags=integration -count=1 -timeout=120s -run '^TestExecutionProfileContract' ./internal/testutil/testexecution ./internal/app
+```
+
+These tests verify decoding, local byte/source consistency, preserved policy and
+fail-closed dispatch, not runtime qualification. An optional
+`WEIR_EXECUTION_CANDIDATE_EXAMPLE` points the candidate-byte contract at an existing
+local bundle. That regression checks the actual complete `verifyCandidate` path,
+including all source inputs in a read-only-used local checkout of the bundle's
+declared source revision, not the potentially dirty developer worktree. It does
+not run a CLI or produce `ValidatedInputs`, and it establishes neither origin
+nor runtime proof. Real Linux/cgroup-v2 execution,
+three-backend plain/TLS CI, formal measurements/pass receipts and same-byte stable
+promotion are separate follow-on work. Pinned local Mongo/LinuxKit compatibility
+blockers are not bypassed by changing versions or host settings.

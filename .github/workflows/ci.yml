@@ -40,6 +40,8 @@ jobs:
         run: |
           python3 scripts/check_dependencies.py
           CGO_ENABLED=0 timeout 12m go test -count=1 -timeout=180s ./...
+      - name: Offline execution-profile contracts (no backends or qualification)
+        run: CGO_ENABLED=0 timeout 3m go test -tags=integration -count=1 -timeout=120s -run '^TestExecutionProfileContract' ./internal/testutil/testexecution ./internal/app
       - name: Native CGO1 race tests
         run: CGO_ENABLED=1 timeout 12m go test -race -count=1 -timeout=180s ./...
       - name: Native receive ownership patch race tests
