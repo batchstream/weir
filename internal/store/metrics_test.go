@@ -108,6 +108,7 @@ func TestMetricsExactBatchOutcomesAdmissionAndConfiguredCapacity(t *testing.T) {
 		if h.GetSampleCount() != 1 || h.GetSampleSum() != 4 {
 			t.Fatal("batch count/size", h)
 		}
+		assertNativeCompletions(t, r, nil)
 		if testmetrics.Sum(families, "weir_store_pending_entries") != 0 || testmetrics.Sum(families, "weir_store_result_reserved_entries") != 0 {
 			t.Fatal("ledger not released")
 		}
@@ -125,7 +126,7 @@ func TestMetricsExactBatchOutcomesAdmissionAndConfiguredCapacity(t *testing.T) {
 	if testmetrics.Sum(families, "weir_store_batch_max_operations") != float64(limits.BatchOperations) || testmetrics.Sum(families, "weir_store_batch_max_bytes") != float64(limits.BatchBytes) {
 		t.Fatal("configured batch count or byte limit missing")
 	}
-	if testmetrics.Series(families) != 57 {
+	if testmetrics.Series(families) != 61 {
 		t.Fatal("Store series changed", testmetrics.Series(families))
 	}
 }
@@ -191,12 +192,135 @@ func TestMetricsQueuedReadAndNativeCancellation(t *testing.T) {
 				ticket.Ack()
 				assertRecordFailures(t, r, "read", want)
 				families := testmetrics.Gather(t, r)
+				wantNative := map[string]float64{}
+				if operation == "native" {
+					wantNative["not_started"] = 1
+				}
+				assertNativeCompletions(t, r, wantNative)
 				if testmetrics.Sum(families, "weir_store_records_total") != want || testmetrics.Sum(families, "weir_store_executions_total") != 0 {
 					t.Fatal("queued read/Native cancellation changed typed record or invocation counts")
 				}
 			}
 		})
 	}
+}
+
+func assertNativeCompletions(t *testing.T, r *Runtime, want map[string]float64) {
+	t.Helper()
+	family := testmetrics.Gather(t, r)["weir_store_native_completions_total"]
+	if len(family.GetMetric()) != 4 {
+		t.Fatal("Native completion counter must have exactly four static series", family)
+	}
+	for _, metric := range family.GetMetric() {
+		if len(metric.Label) != 1 || metric.Label[0].GetName() != "completion" {
+			t.Fatal("Native completion counter acquired dynamic labels", metric)
+		}
+		label := metric.Label[0].GetValue()
+		switch label {
+		case "not_started", "response_complete", "response_incomplete", "invalid":
+		default:
+			t.Fatal("Native completion counter acquired dynamic completion", label)
+		}
+		if got := metric.GetCounter().GetValue(); got != want[label] {
+			t.Fatalf("%s completions = %v, want %v", label, got, want[label])
+		}
+	}
+}
+
+func TestMetricsNativeTerminalCompletions(t *testing.T) {
+	cases := []struct {
+		name       string
+		completion pb.NativeCompletion
+		label      string
+	}{
+		{name: "not_started", completion: pb.NativeCompletion_NATIVE_NOT_STARTED, label: "not_started"},
+		{name: "complete", completion: pb.NativeCompletion_RESPONSE_COMPLETE, label: "response_complete"},
+		{name: "incomplete", completion: pb.NativeCompletion_RESPONSE_INCOMPLETE, label: "response_incomplete"},
+		{name: "unspecified", completion: pb.NativeCompletion_NATIVE_COMPLETION_UNSPECIFIED, label: "invalid"},
+		{name: "unknown", completion: pb.NativeCompletion(999), label: "invalid"},
+		{name: "negative", completion: pb.NativeCompletion(-1), label: "invalid"},
+	}
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			var failure *pb.Failure
+			if test.completion != pb.NativeCompletion_RESPONSE_COMPLETE {
+				failure = protocol.Fail(pb.FailureCode_UNAVAILABLE, "private backend error")
+			}
+			end := &pb.NativeEnd{Completion: test.completion, Failure: failure}
+			value := &pb.Event_NativeEnd{NativeEnd: end}
+			event := &pb.Event{Value: value}
+			adapter := &nativeAccountingAdapter{events: []*pb.Event{event}}
+			limits := DefaultLimits()
+			limits.BatchWait = 0
+			r := newRuntime(adapter, limits, nil)
+			session := r.NewSession()
+			defer session.Close()
+			assertNativeCompletions(t, r, nil)
+			work := plan(1, "native", false)
+			work.Command = nativeCall()
+			ticket, rejected, _ := r.Submit(t.Context(), work, session)
+			if rejected != nil {
+				t.Fatal(rejected)
+			}
+			defer ticket.Ack()
+			assertNativeCompletions(t, r, nil)
+			selected := selectCrossBatch(r)
+			if selected == nil {
+				t.Fatal("Native not dispatched")
+			}
+			r.execute(selected)
+			if final := recordEvent(t, ticket); final != event {
+				t.Fatal("unexpected terminal replacement", final)
+			}
+			want := map[string]float64{test.label: 1}
+			assertNativeCompletions(t, r, want)
+			// Completion precedes publication acknowledgement and client receipt.
+			session.Close()
+			for range 3 {
+				ticket.Ack()
+				assertNativeCompletions(t, r, want)
+				assertRecordFailures(t, r, "read", 0)
+				if testmetrics.Sum(testmetrics.Gather(t, r), "weir_store_records_total") != 0 {
+					t.Fatal("Native completion polluted typed record metrics")
+				}
+			}
+			waitReleased(t, r)
+		})
+	}
+}
+
+func TestMetricsNativeAdmissionDoesNotCountCompletion(t *testing.T) {
+	limits := DefaultLimits()
+	limits.QueueOperations = 1
+	r := newRuntime(nil, limits, nil)
+	session := r.NewSession()
+	defer session.Close()
+	work := plan(1, "native", false)
+	work.Command = nativeCall()
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	ticket, failure, _ := r.Submit(ctx, work, session)
+	if failure != nil {
+		t.Fatal(failure)
+	}
+	defer ticket.Ack()
+	if _, failure, _ := r.Submit(t.Context(), work, session); failure == nil {
+		t.Fatal("missing admission rejection")
+	}
+	assertNativeCompletions(t, r, nil)
+	cancel()
+	if _, failure, _ := r.Submit(ctx, work, session); failure == nil {
+		t.Fatal("admitted canceled Native")
+	}
+	assertNativeCompletions(t, r, nil)
+	r.mu.Lock()
+	r.cancelQueuedLocked()
+	r.mu.Unlock()
+	want := map[string]float64{"not_started": 1}
+	assertNativeCompletions(t, r, want)
+	session.Close()
+	ticket.Ack()
+	waitReleased(t, r)
 }
 
 func TestMetricsFinalRecordFailureAfterResultNormalization(t *testing.T) {

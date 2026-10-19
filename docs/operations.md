@@ -40,6 +40,7 @@ improved capacity.
 | `weir_store_batch_max_operations`, `weir_store_batch_max_bytes`, `weir_store_batch_max_wait_seconds` | Resolved aggregation policy |
 | `weir_store_records_total` | Final typed results: mutation effect (`applied`, `not_applied`, `not_started`, `unknown`, `invalid`) or read `success`/`failure` |
 | `weir_store_record_failures_total` | Final typed read/mutate results carrying `Failure`, including `APPLIED` with `Failure` |
+| `weir_store_native_completions_total` | Final Native forwarding terminal evidence (`not_started`, `response_complete`, `response_incomplete`, `invalid`), not backend business success, RPC status, or client receipt |
 | `weir_store_rejections_total` | Preparation/admission denials, not completed records |
 | Store queue and result metrics | Waiting work, dispatch and retained publication |
 | `weir_execution_memory_*` | Shared reservations, ownership, ingress and capacity denials |
@@ -70,15 +71,34 @@ missing record without `Failure` does not increment the failure counter.
 terminate with `Failure`, including queued cancellations; it does not count
 preparation/admission rejections, individual HTTP exchanges, Lua evaluations or
 retries, RPC completion, publication acknowledgements, or scrapes. No failure
-message, code, resource, ID, or backend text becomes a label. This adds exactly two
-series per Store: 57 runtime series, or 63 with Mongo connection metrics. The
-maximum 16-Store diagnostics fixture has 1,131 Weir series (excluding Go/process
-collectors).
+message, code, resource, ID, or backend text becomes a label. This failure counter
+adds exactly two series per Store.
 
 Both typed record counters exclude Native. Native is opaque forwarding: its
 `NativeEnd` describes transfer completion/failure, not a portable backend business
 result. In particular, a complete non-2xx HTTP response is not interpreted as a
 generic business failure. These counters are not generic Native failure metrics.
+
+`weir_store_native_completions_total` counts each admitted Native call once at the
+same Store terminal point, after final result-budget normalization. Its only label
+is the fixed `completion` vocabulary: `not_started` (`NATIVE_NOT_STARTED`),
+`response_complete` (`RESPONSE_COMPLETE`), `response_incomplete`
+(`RESPONSE_INCOMPLETE`), or `invalid` (unspecified, unknown or illegal enum values).
+Exactly these four series are initialized to zero; no enum string, failure detail,
+HTTP status, resource or identity becomes a label. Queued cancellations count as
+`not_started`; preparation/admission rejections do not count as completions.
+Result-budget degradation counts the final normalized terminal evidence, not the
+adapter's original event. Publication acknowledgements and scrapes do not count
+again.
+
+This is **Native forwarding terminal evidence**, not backend business success,
+RPC status or proof that the client received the response. An incomplete response
+with `Failure` can be delivered in an RPC that finishes gRPC OK; it still increments
+`completion="response_incomplete"`. A complete opaque HTTP 500 response increments
+`completion="response_complete"`, without inferring business failure or updating
+either typed record counter. Native completion adds exactly four series per Store:
+61 runtime series in total, or 67 with Mongo connection metrics. The maximum
+16-Store diagnostics fixture has 1,195 Weir series (excluding Go/process collectors).
 
 Search HTTP metrics include failed attempts and exclude Native relay. HTTP
 success does not prove every bulk item succeeded. Bulk elapsed time includes

@@ -52,11 +52,14 @@ func TestDiagnosticsMaximumStaticSeries(t *testing.T) {
 			delete(families, name)
 		}
 	}
-	// 16 Mongo Stores (57 runtime + 6 connection series each), two listener
+	// 16 Mongo Stores (61 runtime + 6 connection series each), two listener
 	// transports at 22 each, plus admission, directory, diagnostics, and Node.
-	const maximumSeries = 16*(57+6) + 2*22 + 8 + 2 + 3 + 66
+	const maximumSeries = 16*(61+6) + 2*22 + 8 + 2 + 3 + 66
 	if got := testmetrics.Series(families); got != maximumSeries {
 		t.Fatal("maximum static series changed", got)
+	}
+	if testmetrics.Sum(families, "weir_store_native_completions_total") != 0 || len(families["weir_store_native_completions_total"].GetMetric()) != 16*4 {
+		t.Fatal("Native completions must expose only four prewarmed series per Store without synthetic work")
 	}
 	if testmetrics.Sum(families, "weir_store_executions_total") != 0 {
 		t.Fatal("diagnostics executed database work")
