@@ -378,7 +378,12 @@ The existing long-running sampler is preserved. Actual driver/CLI bytes and
 process identities are checked again during the finite run. CLI SIGTERM/wait is
 bounded by 8s, exit must be 0 and OOM false. Execution/startup/driver bounds are
 240s overall, 90s backend readiness, 20s CLI readiness and at most60s driver;
-cleanup has a separate 60s bound.
+cleanup has a separate 60s bound. Readiness uses one absolute deadline, including
+backend inspection, HTTP and retry waits; command and HTTP timeouts use only the
+positive remaining budget. Deadline checks after inspection, response open/read
+and before acceptance reject late success. Standard-library socket timeouts are
+per blocking operation, not hard wall-clock cancellation of an in-progress read.
+The executor does not treat a late response as timely readiness.
 
 Cleanup guards are registered before creates, recover partial creates by unique
 name plus owner, and subsequently use full IDs. Every destructive action rechecks

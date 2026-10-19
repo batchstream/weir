@@ -124,7 +124,7 @@ class Contracts(unittest.TestCase):
         self.failure = ""
         self.primary = False
 
-    def command(self, args, timeout=15):
+    def command(self, args, timeout=15, deadline=None):
         self.calls.append(args)
         if "inspect" in args:
             template = args[args.index("--format") + 1]
@@ -447,8 +447,8 @@ class Contracts(unittest.TestCase):
             info = next(info for info in self.resources.values() if info["Id"] == backend.identity)
             info["State"] = copy.deepcopy(RECORDED_KEYSTORE_EXIT)
             original_wait(url, timeout, backend=backend)
-        def command(args, timeout=15):
-            result = self.command(args, timeout)
+        def command(args, timeout=15, deadline=None):
+            result = self.command(args, timeout, deadline=deadline)
             if args[0] == "logs":
                 logged.append(result)
             return result
@@ -556,6 +556,188 @@ class Contracts(unittest.TestCase):
                 self.controller.wait_http("http://127.0.0.1:1/", 1, backend=backend)
         self.assertEqual(self.calls, [])
 
+    def readiness_deadline_fixture(self):
+        self.opts.output.mkdir()
+        self.controller.deadline = 240
+        clock = dict(now=0.0)
+        backend = M.Resource("container", self.controller.owner + "-backend", "a" * 64)
+        state = dict(Running=True, ExitCode=0, OOMKilled=False)
+        info = dict(Id=backend.identity, Owner=self.controller.owner, State=state)
+        version = dict(number="8.19.22", build_flavor="default", build_hash="fixture")
+        identity = dict(cluster_name=self.controller.owner, version=version)
+        response = MagicMock(status=200)
+        response.__enter__.return_value = response
+        response.__exit__.return_value = False
+        response.read.return_value = json.dumps(identity).encode()
+        result = clock, backend, info, response
+        return result
+
+    def test_readiness_guard_89_to_100_cannot_start_http_after_90(self):
+        clock, backend, info, response = self.readiness_deadline_fixture()
+        clock["now"] = 89
+        initial = iter([0])
+        def now():
+            return next(initial, clock["now"])
+        deadlines = []
+        def guard(resource, deadline=None):
+            self.assertEqual(clock["now"], 89)
+            deadlines.append(deadline)
+            clock["now"] = 100
+            return info
+        with patch.object(M.time, "monotonic", side_effect=now), patch.object(self.controller, "guard", side_effect=guard), patch.object(self.controller.http, "open", return_value=response) as http:
+            with self.assertRaisesRegex(RuntimeError, "bounded readiness timeout"):
+                self.controller.wait_http("http://127.0.0.1:1/", 90, backend=backend)
+            http.assert_not_called()
+        self.assertEqual(deadlines, [90])
+
+    def test_inspect_remaining_deadline_reaches_subprocess_without_floor(self):
+        clock, backend, info, response = self.readiness_deadline_fixture()
+        clock["now"] = 89
+        observed = []
+        def inspect(args, **kwargs):
+            observed.append(kwargs["timeout"])
+            kwargs["stdout"].write(json.dumps(info).encode())
+            result = subprocess.CompletedProcess(args, 0)
+            return result
+        with patch.object(M.time, "monotonic", side_effect=lambda: clock["now"]), patch.object(M.subprocess, "run", side_effect=inspect) as execute:
+            self.assertEqual(self.controller.guard(backend, deadline=90), info)
+            self.assertEqual(observed, [1])
+            self.controller.deadline = 89.5
+            self.controller.guard(backend, deadline=90)
+            self.assertEqual(observed, [1, .5])
+            self.controller.deadline = 240
+            clock["now"] = 90
+            with self.assertRaisesRegex(RuntimeError, "deadline exceeded"):
+                self.controller.guard(backend, deadline=90)
+            self.assertEqual(execute.call_count, 2)
+        # Budget must also be recomputed after command setup, not before it.
+        clock["now"] = 89
+        original = M.tempfile.TemporaryFile
+        def setup(*args, **kwargs):
+            clock["now"] = 90
+            return original(*args, **kwargs)
+        with patch.object(M.time, "monotonic", side_effect=lambda: clock["now"]), patch.object(M.tempfile, "TemporaryFile", side_effect=setup), patch.object(M.subprocess, "run") as execute:
+            with self.assertRaisesRegex(RuntimeError, "deadline exceeded"):
+                self.controller.guard(backend, deadline=90)
+            execute.assert_not_called()
+
+    def test_readiness_http_open_read_close_and_acceptance_deadlines(self):
+        clock, backend, info, response = self.readiness_deadline_fixture()
+        body = response.read.return_value
+        for timeout, owned in ((90, backend), (20, None)):
+            for phase in ("open", "read", "close", "evidence"):
+                if phase == "evidence" and owned is None:
+                    continue
+                with self.subTest(timeout=timeout, phase=phase):
+                    clock["now"] = 0
+                    response.read.reset_mock()
+                    def open_http(url, timeout):
+                        if phase == "open":
+                            clock["now"] = 100
+                        return response
+                    def read(limit):
+                        if phase == "read":
+                            clock["now"] = 100
+                        return body
+                    def close(*args):
+                        if phase == "close":
+                            clock["now"] = 100
+                        return False
+                    def evidence(name, value):
+                        if phase == "evidence":
+                            clock["now"] = 100
+                    response.read.side_effect = read
+                    response.__exit__.side_effect = close
+                    with patch.object(M.time, "monotonic", side_effect=lambda: clock["now"]), patch.object(self.controller, "inspect", return_value=info), patch.object(self.controller.http, "open", side_effect=open_http), patch.object(self.controller, "evidence", side_effect=evidence):
+                        with self.assertRaisesRegex(RuntimeError, "bounded readiness timeout"):
+                            self.controller.wait_http("http://127.0.0.1:1/", timeout, backend=owned)
+                    if phase == "open":
+                        response.read.assert_not_called()
+
+    def test_readiness_predeadline_success_uses_actual_fractional_http_budget(self):
+        clock, backend, info, response = self.readiness_deadline_fixture()
+        clock["now"] = 89.5
+        initial = iter([0])
+        body = response.read.return_value
+        def now():
+            return next(initial, clock["now"])
+        def read(limit):
+            clock["now"] = 89.9
+            return body
+        response.read.side_effect = read
+        with patch.object(M.time, "monotonic", side_effect=now), patch.object(self.controller, "inspect", return_value=info) as inspect, patch.object(self.controller.http, "open", return_value=response) as http:
+            self.controller.wait_http("http://127.0.0.1:1/", 90, backend=backend)
+            inspect.assert_called_once_with(backend, deadline=90)
+            self.assertEqual(http.call_args.kwargs["timeout"], .5)
+        identity = json.loads((self.opts.output / "backend-identity.json").read_text())
+        self.assertEqual(identity["cluster_name"], self.controller.owner)
+
+    def test_readiness_expiration_starts_no_inspect_or_http(self):
+        clock, backend, info, response = self.readiness_deadline_fixture()
+        for controller_deadline, stage_timeout in ((0, 90), (240, 0)):
+            with self.subTest(controller_deadline=controller_deadline, stage_timeout=stage_timeout):
+                self.controller.deadline = controller_deadline
+                with patch.object(M.time, "monotonic", return_value=0), patch.object(self.controller, "inspect") as inspect, patch.object(self.controller.http, "open") as http:
+                    with self.assertRaisesRegex(RuntimeError, "bounded readiness timeout"):
+                        self.controller.wait_http("http://127.0.0.1:1/", stage_timeout, backend=backend)
+                    inspect.assert_not_called()
+                    http.assert_not_called()
+
+    def test_readiness_retry_sleep_does_not_extend_deadline(self):
+        clock, backend, info, response = self.readiness_deadline_fixture()
+        clock["now"] = 89.95
+        initial = iter([0])
+        def now():
+            return next(initial, clock["now"])
+        def sleep(seconds):
+            self.assertGreater(seconds, 0)
+            self.assertAlmostEqual(seconds, .05)
+            clock["now"] = 90
+        with patch.object(M.time, "monotonic", side_effect=now), patch.object(self.controller.http, "open", side_effect=TimeoutError) as http, patch.object(M.time, "sleep", side_effect=sleep) as pause:
+            with self.assertRaisesRegex(RuntimeError, "bounded readiness timeout"):
+                self.controller.wait_http("http://127.0.0.1:1/", 90)
+            self.assertEqual(http.call_count, 1)
+            self.assertAlmostEqual(http.call_args.kwargs["timeout"], .05)
+            self.assertEqual(pause.call_count, 1)
+
+    def test_readiness_deadline_failure_keeps_primary_logs_and_independent_cleanup(self):
+        for failure in ("", "logs"):
+            with self.subTest(failure=failure):
+                self.resources = {}
+                self.calls = []
+                self.failure = failure
+                self.opts.output = self.root / ("late-" + (failure or "clean"))
+                self.controller = M.Controller(self.opts)
+                self.controller.deadline = 240
+                clock = dict(now=0, readiness=False)
+                original_wait = self.controller.wait_http
+                def readiness(url, timeout, backend=None):
+                    clock["readiness"] = True
+                    try:
+                        original_wait(url, timeout, backend=backend)
+                    finally:
+                        clock["readiness"] = False
+                def command(args, timeout=15, deadline=None):
+                    result = self.command(args, timeout, deadline=deadline)
+                    if clock["readiness"] and args[:2] == ["container", "inspect"]:
+                        self.assertEqual(deadline, 90)
+                        clock["now"] = 100
+                    elif not clock["readiness"]:
+                        self.assertIsNone(deadline)
+                    return result
+                with patch.object(M.time, "monotonic", side_effect=lambda: clock["now"]), patch.object(M, "native_preflight", return_value="amd64"), patch.object(self.controller, "docker", side_effect=command), patch.object(self.controller, "driver", side_effect=self.driver), patch.object(self.controller, "wait_http", side_effect=readiness), patch.object(self.controller.http, "open") as http:
+                    with self.assertRaisesRegex(RuntimeError, "bounded readiness timeout"):
+                        self.controller.execute()
+                    http.assert_not_called()
+                self.assertEqual(self.resources, self.empty)
+                self.assertTrue(any(args[0] == "logs" for args in self.calls))
+                result = json.loads((self.opts.output / "finite-result.json").read_text())
+                self.assertEqual(result["primary_error"], "bounded readiness timeout")
+                self.assertEqual(bool(result["cleanup_errors"]), failure == "logs")
+                self.assertFalse(result["finite_complete"])
+                cleanup = json.loads((self.opts.output / "cleanup.json").read_text())
+                self.assertTrue(all(resource["absent"] for resource in cleanup["resources"]))
+
     def test_readiness_timeout_and_redirects_fail_closed(self):
         with patch.object(self.controller.http, "open", side_effect=TimeoutError), patch.object(M.time, "sleep"), patch.object(M.time, "monotonic", side_effect=[0, 0, 0, 2]):
             with self.assertRaisesRegex(RuntimeError, "readiness timeout"):
@@ -601,8 +783,8 @@ class Contracts(unittest.TestCase):
                 self.opts.output = self.root / ("wrong-" + field)
                 self.controller = M.Controller(self.opts)
                 original = self.command
-                def command(args, timeout=15):
-                    text = original(args, timeout)
+                def command(args, timeout=15, deadline=None):
+                    text = original(args, timeout, deadline=deadline)
                     if args[0] == "info":
                         info = json.loads(text)
                         info[field] = value
@@ -617,10 +799,10 @@ class Contracts(unittest.TestCase):
     def test_primary_and_cleanup_errors_retained_together(self):
         self.failure = "driver"
         original = self.command
-        def command(args, timeout=15):
+        def command(args, timeout=15, deadline=None):
             if args[0] == "logs":
                 raise RuntimeError("cleanup log failed")
-            return original(args, timeout)
+            return original(args, timeout, deadline=deadline)
         with patch.object(M, "native_preflight", return_value="amd64"), patch.object(M, "process_snapshot", side_effect=self.host_snapshot), patch.object(self.controller, "docker", side_effect=command), patch.object(self.controller, "driver", side_effect=self.driver), patch.object(self.controller, "wait_http"):
             with self.assertRaises(RuntimeError):
                 self.controller.execute()

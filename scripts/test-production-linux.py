@@ -211,12 +211,15 @@ class Controller:
         path = self.opts.output / name
         path.write_text(json.dumps(value, sort_keys=True, indent=2) + "\n")
 
-    def run(self, args, timeout=15):
+    def run(self, args, timeout=15, deadline=None):
         self.sequence += 1
-        limit = min(timeout, (self.cleanup_deadline if self.cleaning else self.deadline) - time.monotonic())
-        require(limit > 0, "controller overall deadline exceeded")
+        active_deadline = self.cleanup_deadline if self.cleaning else self.deadline
+        if deadline is not None:
+            active_deadline = min(active_deadline, deadline)
         path = self.opts.output / ("command-%04d.log" % self.sequence)
         with tempfile.TemporaryFile() as stream:
+            limit = min(timeout, active_deadline - time.monotonic())
+            require(limit > 0, "controller overall deadline exceeded" if deadline is None else "command deadline exceeded")
             try:
                 result = subprocess.run(args, cwd=self.opts.harness_root, stdout=stream, stderr=subprocess.STDOUT, timeout=limit, check=False)
             except subprocess.TimeoutExpired:
@@ -232,14 +235,14 @@ class Controller:
             raise CommandError(text, result.returncode)
         return text
 
-    def docker(self, args, timeout=15):
-        return self.run(self.docker_prefix + args, timeout)
+    def docker(self, args, timeout=15, deadline=None):
+        return self.run(self.docker_prefix + args, timeout, deadline=deadline)
 
-    def inspect(self, resource):
+    def inspect(self, resource, deadline=None):
         name = resource.identity or resource.name
         template = CONTAINER_FORMAT if resource.kind == "container" else NETWORK_FORMAT
         try:
-            return json.loads(self.docker([resource.kind, "inspect", "--format", template, name]))
+            return json.loads(self.docker([resource.kind, "inspect", "--format", template, name], deadline=deadline))
         except CommandError as error:
             # Only exact not-found text is absence. Daemon failure, permission,
             # malformed output and timeout mean UNKNOWN and must fail cleanup.
@@ -250,8 +253,8 @@ class Controller:
                 return None
             raise
 
-    def guard(self, resource):
-        info = self.inspect(resource)
+    def guard(self, resource, deadline=None):
+        info = self.inspect(resource, deadline=deadline)
         require(info is not None and info["Owner"] == self.owner and FULL_ID.fullmatch(info["Id"]), "resource owner/full-ID missing or changed; refuse mutation")
         require(not resource.identity or info["Id"] == resource.identity, "captured resource ID changed; refuse mutation")
         resource.identity = info["Id"]
@@ -307,25 +310,36 @@ class Controller:
 
     def wait_http(self, url, timeout, backend=None):
         deadline = min(self.deadline, time.monotonic() + timeout)
-        while time.monotonic() < deadline:
+
+        def remaining():
+            budget = deadline - time.monotonic()
+            require(budget > 0, "bounded readiness timeout")
+            return budget
+
+        while True:
+            remaining()
             if backend:
-                info = self.guard(backend)
+                info = self.guard(backend, deadline=deadline)
+                remaining()
                 state = info["State"]
                 require(state["Running"] and not state["OOMKilled"], "backend exited during readiness: exit=" + str(state["ExitCode"]) + " oom=" + str(state["OOMKilled"]))
             try:
-                with self.http.open(url, timeout=min(2, max(.01, deadline - time.monotonic()))) as response:
+                with self.http.open(url, timeout=min(2, remaining())) as response:
+                    remaining()
                     raw = response.read((64 << 10) + 1)
+                    remaining()
                     require(response.status == 200 and len(raw) <= 64 << 10, "readiness response bound/status")
+                remaining()
                 if backend:
                     body = json.loads(raw)
                     version = body.get("version")
                     require(isinstance(version, dict), "wrong backend version identity")
                     require(body.get("cluster_name") == self.owner and version.get("number") == "8.19.22" and version.get("build_flavor") == "default" and not version.get("distribution") and version.get("build_hash"), "wrong backend cluster/version/product")
                     self.evidence("backend-identity.json", body)
+                remaining()
                 return
             except (urllib.error.URLError, TimeoutError, ConnectionError):
-                time.sleep(.2)
-        raise RuntimeError("bounded readiness timeout")
+                time.sleep(min(.2, remaining()))
 
     def container(self, spec):
         resource = Resource("container", self.owner + "-" + spec["role"])
