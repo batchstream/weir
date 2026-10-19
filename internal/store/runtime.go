@@ -439,8 +439,15 @@ func (r *Runtime) completeLocked(t *Ticket, event *pb.Event) {
 		t.plan.ResultBytes = result
 	} else {
 		if err := t.executionLease.finishResult(proto.Size(event)+execution.ResultOverheadBytes, event.GetReadResult().GetDocument() != nil); err != nil {
+			// Capacity failure changes the result Failure, not existing mutation
+			// evidence. Missing or invalid evidence cannot prove NOT_STARTED.
+			outcome := pb.MutationOutcome_UNKNOWN
+			switch event.GetMutationResult().GetOutcome() {
+			case pb.MutationOutcome_APPLIED, pb.MutationOutcome_NOT_APPLIED, pb.MutationOutcome_NOT_STARTED, pb.MutationOutcome_UNKNOWN:
+				outcome = event.GetMutationResult().GetOutcome()
+			}
 			failure := protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, execution.ErrExecutionMemory.Error())
-			event = execution.FailedEvent(t.plan.Command, pb.MutationOutcome_NOT_STARTED, failure)
+			event = execution.FailedEvent(t.plan.Command, outcome, failure)
 			_ = t.executionLease.finishResult(execution.ResultOverheadBytes, false)
 		}
 		t.executionLease.markTerminal()
