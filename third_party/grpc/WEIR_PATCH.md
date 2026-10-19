@@ -30,6 +30,14 @@ execution ledger:
   a reservation, not measured RSS or unlimited idle-connection capacity. Native
   reader/writer termination detaches framer/loopy workspace before credit ends;
   failed constructors and transports rejected before serving also retire it.
+* Stream cancellation may enqueue cleanup before a concurrent response DATA
+  write. If the loopy writer has already removed that stream, it frees the
+  discarded frame's queued buffer reference rather than orphaning it until GC
+  or connection retirement. Caller references and live sibling streams retain
+  their normal ownership; no connection-wide abort or early credit return is
+  needed. Focused tests deterministically interleave native `write` and
+  `closeStream`, check both caller-release orders and rejected enqueues, and
+  verify the sibling's payload and final native release.
 * Compressed requests fail before body/decompression allocation. Weir does not
   register a request decompressor; a future compression feature must provide an
   uncompressed allocation estimate rather than accounting compressed length.

@@ -776,6 +776,9 @@ func (l *loopyWriter) writeHeader(streamID uint32, endStream bool, hf []hpack.He
 func (l *loopyWriter) preprocessData(df *dataFrame) {
 	str, ok := l.estdStreams[df.streamID]
 	if !ok {
+		// Stream cleanup can overtake a concurrent write's DATA enqueue.
+		// No stream reader will acquire this frame's queued reference.
+		df.data.Free()
 		return
 	}
 	// If we got data for a stream it means that

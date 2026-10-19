@@ -1,3 +1,9 @@
+--- a/internal/transport/controlbuf.go
++++ b/internal/transport/controlbuf.go
+@@ -778,0 +779,3 @@
++		// Stream cleanup can overtake a concurrent write's DATA enqueue.
++		// No stream reader will acquire this frame's queued reference.
++		df.data.Free()
 --- a/internal/transport/http2_server.go
 +++ b/internal/transport/http2_server.go
 @@ -105,0 +106,3 @@
