@@ -305,7 +305,7 @@ host settings.
 ### Finite native Linux executor
 
 `scripts/test-production-linux.py` runs the actual compiled native `app.test` on
-the host and owns a fresh internal Docker bridge, Elasticsearch and CLI. It takes
+the host and owns a fresh standard Docker bridge, Elasticsearch and CLI. It takes
 explicit `--server-root`, `--harness-root`, `--revision`, `--cli`, `--driver`,
 `--observer` and a **new** `--output` directory, all canonical absolute paths.
 Keep binaries/output in ignored `.testdata/`; prepare their parent directories
@@ -337,8 +337,15 @@ The server ES pin is the arm64 child `c2a3ed5f…`; public 8.19.22 index
 the exact selected native child and local image config identity; the companion
 repository's different pin is not substituted.
 
-Only loopback application, diagnostics and backend-oracle ports are published;
-CLI backend routing stays inside the owned network. CLI controls are 2CPU/1GiB,
+Only exact IPv4 `127.0.0.1` application, diagnostics and backend-oracle ports are
+published; missing, wildcard, extra or wrong bindings fail execution. CLI backend
+routing stays inside the uniquely owned network. The network must report
+`Driver=bridge` and `Internal=false`: an internal-only bridge did not program the
+required host publications on the supported CI runner. This standard bridge does
+**not provide egress isolation**. The executor creates/removes only its own network
+and does not change shared networks, host firewall/CNI rules, sysctls or daemon
+configuration. Cleanup rechecks the same network mode and requires an empty network
+after verified container absence. CLI controls are 2CPU/1GiB,
 memory=swap, 96 PIDs, nonroot/read-only/cap-drop/no-new-privileges. Backend controls
 are 2CPU/1536MiB, memory=swap, 512 PIDs, 512MiB heap, normal backend settings, and
 bounded disposable tmpfs data (256MiB), logs (32MiB), temporary storage (128MiB)

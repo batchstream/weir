@@ -1,4 +1,5 @@
 """Offline finite executor failure injection. No services, Docker or host changes."""
+import copy
 import importlib.util
 import json
 import os
@@ -14,6 +15,77 @@ M = importlib.util.module_from_spec(SPEC)
 sys.modules[SPEC.name] = M
 SPEC.loader.exec_module(M)
 ROOT = Path(__file__).resolve().parent.parent
+
+
+# Actual failed CI39333200153 command-0011/0013 inspect data; internal bridge, no published ports.
+RECORDED_INTERNAL_BACKEND = json.loads('''
+{
+  "CPU": 2000000000,
+  "Caps": [
+    "ALL"
+  ],
+  "Cgroupns": "private",
+  "Id": "74f73797d7a40c67c00c3f9d3079d28f695d6511d90fd8ec6f3ee1fdaa1dd9e0",
+  "Image": "sha256:5d068400eb33be90f060467b36ba31612ae488d928672a2a83b78abf334283b1",
+  "Memory": 1610612736,
+  "Mounts": [
+    {
+      "Destination": "/observer",
+      "Mode": "",
+      "Propagation": "rprivate",
+      "RW": false,
+      "Source": "/home/runner/work/weir/weir/.testdata/native-linux-finite/bin/observer",
+      "Type": "bind"
+    }
+  ],
+  "Networks": {
+    "weir-finite-d6da2c800fed443480909ff3c5d504b1": {
+      "Aliases": null,
+      "DNSNames": [
+        "weir-finite-d6da2c800fed443480909ff3c5d504b1-backend",
+        "74f73797d7a4"
+      ],
+      "DriverOpts": null,
+      "EndpointID": "a4a1ba3b434a344f474be247fdda3f5ff7125884e05d04073d4aea3d6e21deb9",
+      "Gateway": "",
+      "GlobalIPv6Address": "",
+      "GlobalIPv6PrefixLen": 0,
+      "GwPriority": 0,
+      "IPAMConfig": null,
+      "IPAddress": "172.18.0.2",
+      "IPPrefixLen": 16,
+      "IPv6Gateway": "",
+      "Links": null,
+      "MacAddress": "be:d4:62:b2:29:bd",
+      "NetworkID": "c498007cc074b17cc7ed101c72f3c3e2c2007f2b7054b64ed3c0a38f53c34545"
+    }
+  },
+  "Owner": "weir-finite-d6da2c800fed443480909ff3c5d504b1",
+  "PIDs": 512,
+  "PidMode": "",
+  "Ports": {},
+  "Privileged": false,
+  "Readonly": true,
+  "Security": [
+    "no-new-privileges:true"
+  ],
+  "State": {
+    "Dead": false,
+    "Error": "",
+    "ExitCode": 0,
+    "FinishedAt": "0001-01-01T00:00:00Z",
+    "OOMKilled": false,
+    "Paused": false,
+    "Pid": 8275,
+    "Restarting": false,
+    "Running": true,
+    "StartedAt": "2026-10-19T22:13:13.863990307Z",
+    "Status": "running"
+  },
+  "Swap": 1610612736,
+  "User": "1000:0"
+}
+''')
 
 
 class Contracts(unittest.TestCase):
@@ -50,13 +122,15 @@ class Contracts(unittest.TestCase):
             identity = str(len(self.resources) + 1) * 64
             if args[0] == "network":
                 containers = {}
-                info = dict(Id=identity, Owner=self.controller.owner, Internal=True, Containers=containers)
+                driver = next(a.split("=", 1)[1] for a in args if a.startswith("--driver="))
+                info = dict(Id=identity, Owner=self.controller.owner, Driver=driver, Internal="--internal" in args, Containers=containers)
             else:
                 flags = {a.split("=", 1)[0]: a.split("=", 1)[1] for a in args if a.startswith("--") and "=" in a}
                 net = self.resources[self.controller.owner]
                 ports = {}
                 for i, arg in enumerate(args):
-                    if arg == "--publish":
+                    # The real internal-only bridge did not program host publications.
+                    if arg == "--publish" and not net["Internal"]:
                         host, hostport, port = args[i + 1].split(":")
                         ports[port + "/tcp"] = [dict(HostIp=host, HostPort=hostport)]
                 mounts = [dict(Destination="/observer", Source=str(self.opts.observer), RW=False)]
@@ -77,6 +151,14 @@ class Contracts(unittest.TestCase):
             if pair is None:
                 raise M.CommandError("Error: No such " + args[0] + ": " + resource, 1)
             info = pair[1]
+            if pair[0] == self.controller.owner:
+                if self.failure == "network-driver":
+                    info = dict(info, Driver="overlay")
+                if self.failure == "network-internal":
+                    info = dict(info, Internal=True)
+                if self.failure == "network-populated":
+                    containers = dict(foreign="endpoint")
+                    info = dict(info, Containers=containers)
             if self.failure == "owner" and "-cli" in pair[0]:
                 info = dict(info, Owner="someone-else")
             if self.failure == "id" and "-cli" in pair[0]:
@@ -137,6 +219,12 @@ class Contracts(unittest.TestCase):
         result = json.loads((self.opts.output / "finite-result.json").read_text())
         self.assertTrue(result["finite_complete"])
         self.assertFalse(result["qualification"])
+        network_creates = [a for a in self.calls if a[:2] == ["network", "create"]]
+        self.assertEqual(len(network_creates), 1)
+        self.assertIn("--driver=bridge", network_creates[0])
+        self.assertNotIn("--internal", network_creates[0])
+        network_inspects = [a for a in self.calls if a[:2] == ["network", "inspect"]]
+        self.assertTrue(all("json .Driver" in a[a.index("--format") + 1] for a in network_inspects))
         creates = [a for a in self.calls if a[:2] == ["container", "create"]]
         self.assertEqual(len(creates), 2)
         for args in creates:
@@ -152,6 +240,88 @@ class Contracts(unittest.TestCase):
         receipts = json.loads((self.opts.output / "cleanup.json").read_text())
         self.assertEqual(len(receipts["resources"]), 3)
         self.assertTrue(all(r["absent"] for r in receipts["resources"]))
+
+    def recorded_backend(self):
+        info = copy.deepcopy(RECORDED_INTERNAL_BACKEND)
+        self.controller.owner = info["Owner"]
+        self.opts.observer = Path(info["Mounts"][0]["Source"])
+        self.opts.output.mkdir()
+        network_id = next(iter(info["Networks"].values()))["NetworkID"]
+        network = M.Resource("network", self.controller.owner, network_id)
+        resource = M.Resource("container", self.controller.owner + "-backend", info["Id"])
+        ports = {9200: 19200}
+        spec = dict(role="backend", image_id=info["Image"], memory=1536 << 20, pids=512, user="1000:0", network=network, ports=ports)
+        result = resource, spec, info
+        return result
+
+    def test_recorded_internal_backend_missing_publication_is_still_rejected(self):
+        resource, spec, info = self.recorded_backend()
+        self.assertEqual(info["Ports"], self.empty)
+        with patch.object(self.controller, "inspect", return_value=info), patch.object(self.controller, "docker") as docker:
+            with self.assertRaisesRegex(RuntimeError, "unexpected published ports"):
+                self.controller.check_container(resource, spec)
+            docker.assert_not_called()
+
+    def test_recorded_backend_requires_exact_loopback_ports_and_owned_network(self):
+        resource, spec, info = self.recorded_backend()
+        binding = dict(HostIp="127.0.0.1", HostPort="19200")
+        info["Ports"] = {"9200/tcp": [binding], "9300/tcp": None}
+        with patch.object(self.controller, "inspect", return_value=info), patch.object(self.controller, "docker") as docker:
+            self.assertEqual(self.controller.check_container(resource, spec), info)
+            docker.assert_not_called()
+        for failure in ("missing", "unbound", "wildcard", "ipv6", "wrong-port", "extra-port", "multiple-bindings", "foreign-network", "extra-network"):
+            with self.subTest(failure=failure):
+                invalid = copy.deepcopy(info)
+                ports = invalid["Ports"]
+                if failure == "missing":
+                    ports.clear()
+                elif failure == "unbound":
+                    ports["9200/tcp"] = None
+                elif failure in ("wildcard", "ipv6"):
+                    ports["9200/tcp"][0]["HostIp"] = "0.0.0.0" if failure == "wildcard" else "::"
+                elif failure == "wrong-port":
+                    ports["9200/tcp"][0]["HostPort"] = "19201"
+                elif failure == "extra-port":
+                    ports["9300/tcp"] = [binding]
+                elif failure == "multiple-bindings":
+                    ports["9200/tcp"].append(binding)
+                elif failure == "foreign-network":
+                    invalid["Networks"][self.controller.owner]["NetworkID"] = "f" * 64
+                else:
+                    invalid["Networks"]["foreign"] = dict(NetworkID="f" * 64)
+                message = "foreign/shared network" if "network" in failure else "unexpected published ports" if failure in ("missing", "unbound", "extra-port") else "non-loopback/wrong port publication"
+                with patch.object(self.controller, "inspect", return_value=invalid), patch.object(self.controller, "docker") as docker:
+                    with self.assertRaisesRegex(RuntimeError, message):
+                        self.controller.check_container(resource, spec)
+                    docker.assert_not_called()
+
+    def test_wrong_network_mode_is_not_used_or_removed(self):
+        for failure in ("network-driver", "network-internal"):
+            with self.subTest(failure=failure):
+                self.resources = {}
+                self.calls = []
+                self.failure = failure
+                self.opts.output = self.root / failure
+                self.controller = M.Controller(self.opts)
+                with self.assertRaisesRegex(RuntimeError, "owned network must be a standard bridge"):
+                    self.execute()
+                self.assertFalse(any(a[:2] == ["container", "create"] or a[:2] == ["network", "rm"] for a in self.calls))
+                self.assertEqual(len(self.resources), 1)
+                result = json.loads((self.opts.output / "finite-result.json").read_text())
+                self.assertIn("owned network must be a standard bridge", result["primary_error"])
+                self.assertTrue(result["cleanup_errors"])
+                self.assertFalse(result["finite_complete"])
+
+    def test_populated_owned_bridge_is_preserved_during_cleanup(self):
+        self.failure = "network-populated"
+        with self.assertRaises(RuntimeError):
+            self.execute()
+        self.assertEqual(list(self.resources), [self.controller.owner])
+        self.assertFalse(any(a[:2] == ["network", "rm"] for a in self.calls))
+        result = json.loads((self.opts.output / "finite-result.json").read_text())
+        self.assertIsNone(result["primary_error"])
+        self.assertTrue(result["cleanup_errors"])
+        self.assertFalse(result["finite_complete"])
 
     def test_failures_cleanup_and_primary_error_retention(self):
         for failure in ("preflight", "partial-network", "partial-container", "driver", "shutdown", "actual-controls", "observer-bytes", "pid1-bytes"):

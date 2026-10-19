@@ -43,7 +43,7 @@ CONTAINER_FORMAT = ('{"Id":{{json .Id}},"Owner":{{json (index .Config.Labels "we
                     '"Security":{{json .HostConfig.SecurityOpt}},"Privileged":{{json .HostConfig.Privileged}},'
                     '"PidMode":{{json .HostConfig.PidMode}},"Mounts":{{json .Mounts}},'
                     '"Networks":{{json .NetworkSettings.Networks}},"Ports":{{json .NetworkSettings.Ports}}}')
-NETWORK_FORMAT = '{"Id":{{json .Id}},"Owner":{{json (index .Labels "weir.owner")}},"Internal":{{json .Internal}},"Containers":{{json .Containers}}}'
+NETWORK_FORMAT = '{"Id":{{json .Id}},"Owner":{{json (index .Labels "weir.owner")}},"Driver":{{json .Driver}},"Internal":{{json .Internal}},"Containers":{{json .Containers}}}'
 IMAGE_FORMAT = '{"Id":{{json .Id}},"OS":{{json .Os}},"Arch":{{json .Architecture}},"Digests":{{json .RepoDigests}}}'
 MAX_OUTPUT = 4 << 20
 
@@ -241,6 +241,8 @@ class Controller:
         require(info is not None and info["Owner"] == self.owner and FULL_ID.fullmatch(info["Id"]), "resource owner/full-ID missing or changed; refuse mutation")
         require(not resource.identity or info["Id"] == resource.identity, "captured resource ID changed; refuse mutation")
         resource.identity = info["Id"]
+        if resource.kind == "network":
+            require(info.get("Driver") == "bridge" and info.get("Internal") is False, "owned network must be a standard bridge (non-internal)")
         return info
 
     def create(self, resource, args):
@@ -419,7 +421,7 @@ class Controller:
                     self.docker(["container", "rm", resource.identity], 5)
                 else:
                     require(all_absent, "container absence unverified; preserve network")
-                    require(info["Internal"] and not info["Containers"], "network not empty/owned-internal")
+                    require(not info["Containers"], "owned standard bridge is not empty")
                     self.guard(resource)
                     self.docker(["network", "rm", resource.identity], 5)
                 require(self.inspect(resource) is None, "resource remains after removal")
@@ -485,8 +487,10 @@ class Controller:
 
     def run_fixture(self):
         network = Resource("network", self.owner)
-        self.create(network, ["network", "create", "--driver=bridge", "--internal", "--label", "weir.owner=" + self.owner, network.name])
-        require(self.guard(network)["Internal"], "fresh network is not internal")
+        # Standard owned bridge permits the required loopback publications;
+        # it does not provide outbound network isolation.
+        self.create(network, ["network", "create", "--driver=bridge", "--label", "weir.owner=" + self.owner, network.name])
+        self.guard(network)
         oracle_port, app_port, diag_port = free_port(), free_port(), free_port()
         require(len({oracle_port, app_port, diag_port}) == 3, "ephemeral port collision; retry explicitly with fresh invocation")
         es_extra = ["--tmpfs=/usr/share/elasticsearch/data:rw,noexec,nosuid,size=268435456,uid=1000,gid=0", "--tmpfs=/usr/share/elasticsearch/logs:rw,noexec,nosuid,size=33554432,uid=1000,gid=0", "--tmpfs=/tmp:rw,nosuid,size=134217728,uid=1000,gid=0", "--env=cluster.name=" + self.owner, "--env=discovery.type=single-node", "--env=xpack.security.enabled=false", "--env=action.auto_create_index=false", "--env=ES_JAVA_OPTS=-Xms512m -Xmx512m"]
