@@ -167,11 +167,12 @@ func (s *programMemoryScope) close() {
 }
 
 func (s *programMemoryScope) filterCancelled(ctx context.Context, batch *programBatch, positions []int) []int {
-	kept := 0
+	kept, released := 0, 0
 	for i, position := range positions {
 		work := batch.plans[position]
 		if failure := programCallerFailure(ctx, work); failure != nil {
 			batch.results[position] = protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, failure)
+			released += cap(s.writes[i].Backend.(*plan).document)
 			continue
 		}
 		s.writes[kept], positions[kept] = s.writes[i], position
@@ -180,6 +181,11 @@ func (s *programMemoryScope) filterCancelled(ctx context.Context, batch *program
 	// Truncation alone leaves cancelled replacements reachable in the backing array.
 	clear(s.writes[kept:])
 	s.writes = s.writes[:kept]
+	// Only retire the charge after compaction and tail clearing remove every
+	// cancelled write reference. The next reservation retains all survivor bytes.
+	if s.memory != nil {
+		s.memory.held -= released
+	}
 	return positions[:kept]
 }
 

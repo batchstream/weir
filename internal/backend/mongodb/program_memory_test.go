@@ -266,70 +266,187 @@ func TestMongoProgramAttemptSplitRetiresParentBeforeChildren(t *testing.T) {
 	}
 }
 
+func TestMongoProgramAttemptCancellationReleasesWindowBeforeWrite(t *testing.T) {
+	probe := &recordMemoryProbe{limit: 7 << 20}
+	memory := &recordMemory{owner: probe, base: 8192, held: 4096}
+	ctx := context.WithValue(t.Context(), recordMemoryContextKey, memory)
+	scope := newProgramMemoryScope(ctx)
+	defer scope.close()
+	items := make(bson.A, 8)
+	for i := range items {
+		items[i] = bson.D{{Key: "ok", Value: 1}, {Key: "idx", Value: i}, {Key: "n", Value: 1}, {Key: "nModified", Value: 1}}
+	}
+	responses := []bson.D{programBulkResponse(items, len(items))}
+	writes := 0
+	monitor := &event.CommandMonitor{Started: func(_ context.Context, e *event.CommandStartedEvent) {
+		if e.CommandName != "bulkWrite" {
+			return
+		}
+		writes++
+		ops, err := e.Command.Lookup("ops").Array().Values()
+		if err != nil || len(ops) != 8 {
+			t.Error("survivor write batch was incomplete", len(ops), err)
+		}
+		for i, op := range ops {
+			id := op.Document().Lookup("filter").Document().Lookup("_id").StringValue()
+			if id != fmt.Sprint(i+8) {
+				t.Error("cancelled replacement reached the backend", id)
+			}
+		}
+	}}
+	adapter := batchMockAdapter(t, responses, monitor)
+	caller, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	plans := make([]*execution.Plan, 16)
+	positions := make([]int, len(plans))
+	for i := range plans {
+		id := fmt.Sprint(i)
+		work := memoryPreparedProgram(t, adapter, id, probe)
+		if i < 8 {
+			work.Context = caller
+		}
+		plans[i], positions[i] = work, i
+		document := bson.D{{Key: "_id", Value: id}, {Key: "n", Value: int32(0)}}
+		raw := expressionBSON(t, document)
+		scope.documents = append(scope.documents, raw)
+		memory.held += len(raw)
+	}
+	batch := &programBatch{plans: plans, results: make([]*pb.MutationResult, len(plans))}
+	scope.writes, positions = adapter.transformPrograms(ctx, batch, positions, scope.documents)
+	if len(scope.writes) != len(plans) {
+		t.Fatal("fixture did not retain all Lua replacements within the limit", len(scope.writes), batch.results)
+	}
+	expectedHeld, framing := scope.held, 0
+	for _, work := range scope.writes[8:] {
+		document := work.Backend.(*plan).document
+		expectedHeld += cap(document)
+		framing += 2*len(document) + execution.EntryOverheadBytes
+	}
+	staleWorking := memory.base + memory.held + framing
+	expectedWorking := memory.base + expectedHeld + framing
+	if staleWorking <= probe.limit || expectedWorking > probe.limit {
+		t.Fatal("fixture does not distinguish stale from survivor ownership", staleWorking, expectedWorking, probe.limit)
+	}
+	cancel()
+	workingBeforeFilter := probe.working
+	positions = scope.filterCancelled(ctx, batch, positions)
+	if probe.working != workingBeforeFilter {
+		t.Fatal("filter changed the working reservation instead of retiring ownership", probe.working, workingBeforeFilter)
+	}
+	if len(scope.writes) != 8 || len(positions) != 8 {
+		t.Fatal("filter did not preserve all survivors", len(scope.writes), positions)
+	}
+	replies, settled, err := adapter.writePrograms(ctx, scope.writes)
+	if err != nil || !settled || len(replies) != 8 || writes != 1 {
+		t.Fatalf("survivor write could not reuse cancelled replacement capacity: err=%v settled=%v replies=%d writes=%d held=%d wantHeld=%d staleWorking=%d survivorWorking=%d", err, settled, len(replies), writes, memory.held, expectedHeld, staleWorking, expectedWorking)
+	}
+	for _, reply := range replies {
+		if reply.GetOutcome() != pb.MutationOutcome_APPLIED || reply.GetFailure() != nil {
+			t.Fatal("survivor write failed", reply)
+		}
+	}
+	if memory.held != expectedHeld || probe.working != expectedWorking {
+		t.Fatal("survivor write used incorrect ownership", memory.held, expectedHeld, probe.working, expectedWorking)
+	}
+	for i := range 8 {
+		if batch.results[i].GetFailure().GetCode() != pb.FailureCode_CANCELLED {
+			t.Fatal("cancelled member lost its result", i, batch.results[i])
+		}
+	}
+	scope.close()
+	if memory.held != 4096 {
+		t.Fatal("retiring survivors removed parent ownership", memory.held)
+	}
+	t.Logf("stale request=%d exceeds limit=%d; cancelled replacements retired, survivor write succeeds at=%d", staleWorking, probe.limit, expectedWorking)
+}
+
 func TestMongoProgramAttemptCancellationClearsReplacementSlots(t *testing.T) {
-	for _, cancelled := range []string{"a", "b", "c", "all"} {
-		t.Run(cancelled, func(t *testing.T) {
-			probe := &recordMemoryProbe{}
-			memory := &recordMemory{owner: probe, base: 8192, held: 4096}
-			ctx := context.WithValue(t.Context(), recordMemoryContextKey, memory)
-			scope := newProgramMemoryScope(ctx)
-			defer scope.close()
-			config := Config{Store: "mongo"}
-			adapter := &Adapter{config: config}
-			caller, cancel := context.WithCancel(t.Context())
-			defer cancel()
-			var plans []*execution.Plan
-			for _, id := range []string{"a", "b", "c"} {
-				work := memoryPreparedProgram(t, adapter, id, probe)
-				if id == cancelled || cancelled == "all" {
-					work.Context = caller
+	for _, action := range []string{"replace", "delete", "mixed"} {
+		for _, cancelled := range []string{"a", "b", "c", "all"} {
+			t.Run(action+"/"+cancelled, func(t *testing.T) {
+				probe := &recordMemoryProbe{}
+				memory := &recordMemory{owner: probe, base: 8192, held: 4096}
+				ctx := context.WithValue(t.Context(), recordMemoryContextKey, memory)
+				scope := newProgramMemoryScope(ctx)
+				defer scope.close()
+				config := Config{Store: "mongo"}
+				adapter := &Adapter{config: config}
+				caller, cancel := context.WithCancel(t.Context())
+				defer cancel()
+				var plans []*execution.Plan
+				for _, id := range []string{"a", "b", "c"} {
+					work := memoryPreparedProgram(t, adapter, id, probe)
+					if action == "delete" || action == "mixed" && id == "b" {
+						work.Backend.(*plan).program.Source = `return function() return weir.delete() end`
+					}
+					if id == cancelled || cancelled == "all" {
+						work.Context = caller
+					}
+					plans = append(plans, work)
+					document := bson.D{{Key: "_id", Value: id}, {Key: "n", Value: int32(0)}}
+					raw := expressionBSON(t, document)
+					scope.documents = append(scope.documents, raw)
+					memory.held += len(raw)
 				}
-				plans = append(plans, work)
-				document := bson.D{{Key: "_id", Value: id}, {Key: "n", Value: int32(0)}}
-				raw := expressionBSON(t, document)
-				scope.documents = append(scope.documents, raw)
-				memory.held += len(raw)
-			}
-			batch := &programBatch{plans: plans, results: make([]*pb.MutationResult, len(plans))}
-			positions := []int{0, 1, 2}
-			scope.writes, positions = adapter.transformPrograms(ctx, batch, positions, scope.documents)
-			if len(scope.writes) != 3 || memory.held <= 4096 {
-				t.Fatal("test did not produce retained replacements", len(scope.writes), memory.held)
-			}
-			backing := scope.writes[:cap(scope.writes)]
-			documents := scope.documents[:cap(scope.documents)]
-			cancel()
-			positions = scope.filterCancelled(ctx, batch, positions)
-			want := 2
-			if cancelled == "all" {
-				want = 0
-			}
-			if len(scope.writes) != want || len(positions) != want {
-				t.Fatal("cancel filter lost a peer", len(scope.writes), positions)
-			}
-			for i, write := range backing {
-				if i >= want && write != nil {
-					t.Fatal("cancelled replacement remained in backing slot", i)
+				batch := &programBatch{plans: plans, results: make([]*pb.MutationResult, len(plans))}
+				positions := []int{0, 1, 2}
+				scope.writes, positions = adapter.transformPrograms(ctx, batch, positions, scope.documents)
+				if len(scope.writes) != 3 {
+					t.Fatal("test did not produce all writes", len(scope.writes))
 				}
-				if i < want && (write.Backend.(*plan).id == cancelled || cancelled == "all") {
-					t.Fatal("cancelled replacement survived compaction", i)
+				initialHeld, expectedHeld := scope.held, scope.held
+				for _, write := range scope.writes {
+					native := write.Backend.(*plan)
+					if native.action == "delete" && native.document != nil {
+						t.Fatal("delete fixture retained replacement bytes")
+					}
+					initialHeld += cap(native.document)
+					if native.id != cancelled && cancelled != "all" {
+						expectedHeld += cap(native.document)
+					}
 				}
-			}
-			scope.close()
-			for i, write := range backing {
-				if write != nil {
-					t.Fatal("attempt retained a write after retirement", i)
+				if memory.held != initialHeld {
+					t.Fatal("fixture did not charge its actual retained writes", memory.held, initialHeld)
 				}
-			}
-			for i, document := range documents {
-				if document != nil {
-					t.Fatal("attempt retained a source after retirement", i)
+				backing := scope.writes[:cap(scope.writes)]
+				documents := scope.documents[:cap(scope.documents)]
+				cancel()
+				positions = scope.filterCancelled(ctx, batch, positions)
+				want := 2
+				if cancelled == "all" {
+					want = 0
 				}
-			}
-			if memory.held != 4096 {
-				t.Fatal("cancel cleanup removed parent ownership", memory.held)
-			}
-		})
+				if len(scope.writes) != want || len(positions) != want || memory.held != expectedHeld {
+					t.Fatal("cancel filter lost peer ownership", len(scope.writes), positions, memory.held, expectedHeld)
+				}
+				for i, write := range backing {
+					if i >= want && write != nil {
+						t.Fatal("cancelled replacement remained in backing slot", i)
+					}
+					if i < want && (write.Backend.(*plan).id == cancelled || cancelled == "all") {
+						t.Fatal("cancelled replacement survived compaction", i)
+					}
+				}
+				positions = scope.filterCancelled(ctx, batch, positions)
+				if len(positions) != want || memory.held != expectedHeld {
+					t.Fatal("repeated filtering released the same write twice", positions, memory.held, expectedHeld)
+				}
+				scope.close()
+				for i, write := range backing {
+					if write != nil {
+						t.Fatal("attempt retained a write after retirement", i)
+					}
+				}
+				for i, document := range documents {
+					if document != nil {
+						t.Fatal("attempt retained a source after retirement", i)
+					}
+				}
+				if memory.held != 4096 {
+					t.Fatal("cancel cleanup removed parent ownership", memory.held)
+				}
+			})
+		}
 	}
 }
 
