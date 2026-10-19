@@ -3,12 +3,35 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
+import shutil
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
 import subprocess
 
 import release
+
+
+def asset_fixture(root):
+    product = root / 'weir-first'
+    product.mkdir()
+    source = 'a' * 40
+    archives, binaries = {}, {}
+    for target in ('linux-amd64', 'linux-arm64', 'darwin-amd64', 'darwin-arm64'):
+        name = 'weir-' + target + '.tar.gz'
+        raw = ('test-archive-' + target).encode()
+        (product / name).write_bytes(raw)
+        archives[name] = hashlib.sha256(raw).hexdigest()
+        binaries[target] = 'b' * 64
+        (product / (target + '-linked.json')).write_text('{}')
+    (product / 'module-graph.json').write_text('[]')
+    receipt = dict(source=source, archives=archives, binaries=binaries)
+    delivery = {'source': source, 'images': {'weir': {'binaries': binaries}}}
+    (root / 'delivery.json').write_text(json.dumps(delivery))
+    (product / 'receipt.json').write_text(json.dumps(receipt))
+    return delivery
 
 
 class ReleaseTests(unittest.TestCase):
@@ -99,40 +122,142 @@ class ReleaseTests(unittest.TestCase):
         for value in ('', 'latest', '1.0.0', 'v01.0.0', 'v1.0.0-rc.1', 'v1.0.0\n', '../v1.0.0', 'v1.0.0;echo unexpected'):
             self.assertFalse(release.version_valid(value))
 
-    def test_assets_require_source_and_exact_archive_hashes(self):
+    def test_assets_include_the_complete_bundle_and_checksums(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            product = root / 'weir-first'
-            product.mkdir()
-            source = 'a' * 40
-            archives, binaries = {}, {}
-            for target in ('linux-amd64', 'linux-arm64', 'darwin-amd64', 'darwin-arm64'):
-                name = 'weir-' + target + '.tar.gz'
-                raw = ('test-archive-' + target).encode()
-                (product / name).write_bytes(raw)
-                archives[name] = hashlib.sha256(raw).hexdigest()
-                binaries[target] = 'b' * 64
-                (product / (target + '-linked.json')).write_text('{}')
-            (product / 'module-graph.json').write_text('[]')
-            receipt = dict(source=source, archives=archives, binaries=binaries)
-            delivery = dict(source=source, images=dict(weir=dict(binaries=binaries)))
-            (root / 'delivery.json').write_text(json.dumps(delivery))
-            (product / 'receipt.json').write_text(json.dumps(receipt))
+            delivery = asset_fixture(root)
             assets = release.verify_assets(root, delivery)
             self.assertEqual(len(assets), 12)
-            self.assertEqual(len((root / 'SHA256SUMS').read_text().splitlines()), 11)
-            (product / 'weir-linux-amd64.tar.gz').write_bytes(b'corrupt')
-            with self.assertRaisesRegex(ValueError, 'archive checksum'):
-                release.verify_assets(root, delivery)
-            receipt['source'] = 'c' * 40
-            (product / 'receipt.json').write_text(json.dumps(receipt))
-            with self.assertRaisesRegex(ValueError, 'source or binary identity'):
-                release.verify_assets(root, delivery)
-            receipt['source'] = source
-            del receipt['archives']['weir-darwin-arm64.tar.gz']
-            (product / 'receipt.json').write_text(json.dumps(receipt))
-            with self.assertRaisesRegex(ValueError, 'exactly four'):
-                release.verify_assets(root, delivery)
+            checksums = (root / 'SHA256SUMS').read_text().splitlines()
+            self.assertEqual(len(checksums), 11)
+            self.assertEqual(checksums, [hashlib.sha256(item.read_bytes()).hexdigest() + '  ' + item.name
+                                         for item in assets[:-1]])
+            self.assertEqual(len({item.name for item in assets}), len(assets))
+
+    def verify_candidate(self, root, delivery):
+        environment = dict(WEIR_DELIVERY=json.dumps(delivery), GITHUB_SHA=delivery['source'])
+        # Empty version is the ordinary, non-release main candidate path.
+        argv = ['release.py', '--verify-only', '', str(root)]
+        with patch.dict(os.environ, environment), patch.object(sys, 'argv', argv), \
+             patch.object(release, 'run', return_value=delivery['source']) as command, \
+             patch.object(release, 'verify_assets', wraps=release.verify_assets) as verify, \
+             patch.object(release, 'check_source') as source_gate, \
+             patch.object(release, 'publish') as publish, \
+             patch.object(release, 'resume_release') as resume, \
+             patch.object(release.subprocess, 'check_output') as external, \
+             patch.object(release.subprocess, 'run') as invoke:
+            try:
+                release.main()
+            finally:
+                command.assert_called_once_with(['git', 'rev-parse', 'HEAD'])
+                verify.assert_called_once_with(root, delivery, checksum_layout='artifact')
+                source_gate.assert_not_called()
+                publish.assert_not_called()
+                resume.assert_not_called()
+                external.assert_not_called()
+                invoke.assert_not_called()
+
+    def test_verify_only_accepts_nonrelease_candidate_without_publishing(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            delivery = asset_fixture(root)
+            self.verify_candidate(root, delivery)
+            self.assertTrue((root / 'SHA256SUMS').is_file())
+
+    def assert_downloaded_checksums(self, directory, expected_paths):
+        entries = (directory / 'SHA256SUMS').read_text().splitlines()
+        self.assertEqual(len(entries), 11)
+        paths = []
+        for entry in entries:
+            expected_digest, relative = entry.split('  ', 1)
+            # Consume the manifest against downloaded bytes, not the generator's path calculation.
+            actual_digest = hashlib.sha256((directory / relative).read_bytes()).hexdigest()
+            self.assertEqual(actual_digest, expected_digest, relative)
+            paths.append(relative)
+        self.assertEqual(set(paths), expected_paths - {'SHA256SUMS'})
+
+    def test_candidate_checksums_verify_the_downloaded_artifact_layout(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            built, downloaded = root / 'built', root / 'downloaded'
+            built.mkdir()
+            downloaded.mkdir()
+            delivery = asset_fixture(built)
+            self.verify_candidate(built, delivery)
+            workflow = (Path(__file__).resolve().parent.parent / '.github/workflows/images.yml').read_text()
+            paths = re.findall(r'^            \.testdata/images/(.+)$', workflow, re.M)
+            self.assertEqual(len(paths), 12)
+            # Model upload/download-artifact's retained common-root directory structure.
+            for relative in paths:
+                destination = downloaded / relative
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(built / relative, destination)
+            self.assert_downloaded_checksums(downloaded, set(paths))
+
+    def test_release_checksums_verify_flat_downloaded_assets(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            built, downloaded = root / 'built', root / 'downloaded'
+            built.mkdir()
+            downloaded.mkdir()
+            delivery = asset_fixture(built)
+            self.verify_candidate(built, delivery)
+            environment = dict(GITHUB_SHA=delivery['source'])
+            with patch.dict(os.environ, environment), patch.object(release, 'run', return_value=delivery['source']):
+                # Ordinary publish replaces the retained candidate manifest with the flat release layout.
+                assets = release.verify_workflow_assets(built, delivery)
+            for item in assets:
+                shutil.copyfile(item, downloaded / item.name)
+            self.assert_downloaded_checksums(downloaded, {item.name for item in assets})
+
+    def test_verify_only_refuses_incomplete_or_changed_candidate_assets(self):
+        targets = ('linux-amd64', 'linux-arm64', 'darwin-amd64', 'darwin-arm64')
+        missing = ['weir-first/weir-' + target + '.tar.gz' for target in targets]
+        missing += ['weir-first/' + target + '-linked.json' for target in targets]
+        missing += ['weir-first/module-graph.json']
+        cases = missing + ['digest', 'source', 'binaries', 'archive_set', 'binary_set', 'delivery']
+        for change in cases:
+            with self.subTest(change=change), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                delivery = asset_fixture(root)
+                receipt_path = root / 'weir-first/receipt.json'
+                receipt = json.loads(receipt_path.read_text())
+                if change in missing:
+                    (root / change).unlink()
+                elif change == 'digest':
+                    (root / 'weir-first/weir-linux-amd64.tar.gz').write_bytes(b'corrupt')
+                elif change == 'source':
+                    receipt['source'] = 'c' * 40
+                elif change == 'binaries':
+                    receipt['binaries']['linux-amd64'] = 'c' * 64
+                elif change == 'archive_set':
+                    del receipt['archives']['weir-darwin-arm64.tar.gz']
+                elif change == 'binary_set':
+                    del receipt['binaries']['darwin-arm64']
+                    delivery['images']['weir']['binaries'] = receipt['binaries']
+                    (root / 'delivery.json').write_text(json.dumps(delivery))
+                else:
+                    (root / 'delivery.json').write_text('{}')
+                receipt_path.write_text(json.dumps(receipt))
+                with self.assertRaises((ValueError, FileNotFoundError)):
+                    self.verify_candidate(root, delivery)
+                self.assertFalse((root / 'SHA256SUMS').exists())
+
+    def test_verify_only_requires_workflow_and_checkout_source_identity(self):
+        for workflow_source, checkout in (('b' * 40, 'a' * 40), ('a' * 40, 'b' * 40)):
+            with self.subTest(workflow=workflow_source, checkout=checkout), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                delivery = asset_fixture(root)
+                environment = dict(WEIR_DELIVERY=json.dumps(delivery), GITHUB_SHA=workflow_source)
+                argv = ['release.py', '--verify-only', '', str(root)]
+                with patch.dict(os.environ, environment), patch.object(sys, 'argv', argv), \
+                     patch.object(release, 'run', return_value=checkout), \
+                     patch.object(release, 'verify_assets') as verify, patch.object(release, 'publish') as publish:
+                    with self.assertRaisesRegex(ValueError, 'workflow checkout'):
+                        release.main()
+                    verify.assert_not_called()
+                    publish.assert_not_called()
+                self.assertFalse((root / 'SHA256SUMS').exists())
 
 
 if __name__ == '__main__':

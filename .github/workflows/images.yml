@@ -91,8 +91,12 @@ jobs:
         run: python3 scripts/ci-images.py publish
       - name: Anonymous full pull and native amd64 smoke
         run: python3 scripts/ci-images.py anonymous
-      - name: Preserve verified release assets
-        if: github.event_name == 'release' || inputs.release_version != ''
+      # A retained candidate is distribution evidence, not formal production qualification.
+      - name: Verify candidate distribution bundle
+        env:
+          WEIR_DELIVERY: ${{ steps.publish.outputs.delivery }}
+        run: python3 scripts/release.py --verify-only "$RELEASE_VERSION" .testdata/images
+      - name: Preserve verified candidate and release assets
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: verified-release
@@ -101,8 +105,15 @@ jobs:
           include-hidden-files: true
           path: |
             .testdata/images/delivery.json
-            .testdata/images/weir-first/weir-*.tar.gz
-            .testdata/images/weir-first/*-linked.json
+            .testdata/images/SHA256SUMS
+            .testdata/images/weir-first/weir-linux-amd64.tar.gz
+            .testdata/images/weir-first/weir-linux-arm64.tar.gz
+            .testdata/images/weir-first/weir-darwin-amd64.tar.gz
+            .testdata/images/weir-first/weir-darwin-arm64.tar.gz
+            .testdata/images/weir-first/linux-amd64-linked.json
+            .testdata/images/weir-first/linux-arm64-linked.json
+            .testdata/images/weir-first/darwin-amd64-linked.json
+            .testdata/images/weir-first/darwin-arm64-linked.json
             .testdata/images/weir-first/module-graph.json
             .testdata/images/weir-first/receipt.json
       - name: Remove job registry login

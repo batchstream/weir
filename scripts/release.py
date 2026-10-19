@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Publish a stable version of already verified, merged-main artifacts."""
+"""Verify candidate assets or publish a stable, already verified merged-main release."""
 import argparse
 import hashlib
 import json
@@ -42,7 +42,9 @@ def check_source(version):
         raise ValueError('release source must be merged into main')
 
 
-def verify_assets(directory, delivery):
+def verify_assets(directory, delivery, *, checksum_layout='release'):
+    if checksum_layout not in ('release', 'artifact'):
+        raise ValueError('unknown checksum layout')
     source = delivery['source']
     if re.fullmatch('[0-9a-f]{40}', source) is None:
         raise ValueError('invalid source revision')
@@ -52,17 +54,22 @@ def verify_assets(directory, delivery):
     receipt = json.loads((product / 'receipt.json').read_text())
     if receipt['source'] != source or receipt['binaries'] != delivery['images']['weir']['binaries']:
         raise ValueError('release source or binary identity mismatch')
-    expected = {'weir-' + target + '.tar.gz'
-                for target in ('linux-amd64', 'linux-arm64', 'darwin-amd64', 'darwin-arm64')}
+    targets = {'linux-amd64', 'linux-arm64', 'darwin-amd64', 'darwin-arm64'}
+    expected = {'weir-' + target + '.tar.gz' for target in targets}
     if set(receipt['archives']) != expected:
         raise ValueError('release must contain exactly four platform archives')
+    if set(receipt['binaries']) != targets:
+        raise ValueError('release must contain exactly four platform binaries')
     for name, digest in receipt['archives'].items():
         if hashlib.sha256((product / name).read_bytes()).hexdigest() != digest:
             raise ValueError('release archive checksum mismatch: ' + name)
     assets = [directory / 'delivery.json', product / 'receipt.json', product / 'module-graph.json']
     assets += [product / name for name in sorted(expected)]
     assets += [product / (target + '-linked.json') for target in sorted(receipt['binaries'])]
-    checksums = ''.join(hashlib.sha256(item.read_bytes()).hexdigest() + '  ' + item.name + '\n' for item in assets)
+    checksums = ''
+    for item in assets:
+        name = item.relative_to(directory).as_posix() if checksum_layout == 'artifact' else item.name
+        checksums += hashlib.sha256(item.read_bytes()).hexdigest() + '  ' + name + '\n'
     checksum_file = directory / 'SHA256SUMS'
     checksum_file.write_text(checksums)
     return assets + [checksum_file]
@@ -94,15 +101,21 @@ def resume_release(version, assets):
     return True
 
 
+def verify_workflow_assets(directory, delivery, *, checksum_layout='release'):
+    source = delivery['source']
+    if source != os.environ['GITHUB_SHA'] or run(['git', 'rev-parse', 'HEAD']) != source:
+        raise ValueError('release source differs from workflow checkout')
+    assets = verify_assets(directory, delivery, checksum_layout=checksum_layout)
+    return assets
+
+
 def publish(version, directory):
     if not version_valid(version):
         raise ValueError('release version must be vMAJOR.MINOR.PATCH')
     check_source(version)
     delivery = json.loads(os.environ['WEIR_DELIVERY'])
     source = delivery['source']
-    if source != os.environ['GITHUB_SHA'] or run(['git', 'rev-parse', 'HEAD']) != source:
-        raise ValueError('release source differs from workflow checkout')
-    assets = verify_assets(directory, delivery)
+    assets = verify_workflow_assets(directory, delivery)
     # Verify both lightweight and annotated tags; never retarget a version.
     tag = 'refs/tags/' + version
     refs = dict(line.split()[::-1] for line in run(['git', 'ls-remote', '--tags', 'origin', tag, tag + '^{}']).splitlines())
@@ -145,8 +158,11 @@ def publish(version, directory):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--check-version', action='store_true')
-    parser.add_argument('--check-source', action='store_true')
+    modes = parser.add_mutually_exclusive_group()
+    modes.add_argument('--check-version', action='store_true')
+    modes.add_argument('--check-source', action='store_true')
+    modes.add_argument('--verify-only', action='store_true',
+                       help='verify candidate assets and write SHA256SUMS; no publication or qualification')
     parser.add_argument('version')
     parser.add_argument('directory', nargs='?', type=Path)
     args = parser.parse_args()
@@ -159,6 +175,10 @@ def main():
         return
     if args.directory is None:
         parser.error('release artifact directory is required')
+    if args.verify_only:
+        delivery = json.loads(os.environ['WEIR_DELIVERY'])
+        verify_workflow_assets(args.directory, delivery, checksum_layout='artifact')
+        return
     publish(args.version, args.directory)
 
 
