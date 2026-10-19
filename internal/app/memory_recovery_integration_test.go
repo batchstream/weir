@@ -19,6 +19,7 @@ import (
 
 	weirclient "github.com/batchstream/weir-go"
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
+	"github.com/batchstream/weir/internal/testutil/testexecution"
 	"github.com/batchstream/weir/internal/testutil/testmetrics"
 	"github.com/batchstream/weir/internal/testutil/testmongo"
 	dto "github.com/prometheus/client_model/go"
@@ -97,6 +98,8 @@ type memoryRecoveryOptions struct {
 	sharedMemoryMiB int
 	automatic       bool
 	config          *Config
+	// Only production load/fault consumers opt into the validated boundary.
+	execution *testexecution.ValidatedInputs
 }
 
 type memoryRecoveryCLI struct {
@@ -108,6 +111,11 @@ type memoryRecoveryCLI struct {
 
 func startMemoryRecoveryCLI(t *testing.T, opts memoryRecoveryOptions) *memoryRecoveryCLI {
 	t.Helper()
+	if opts.execution != nil {
+		if err := validateProductionCLIOptions(opts); err != nil {
+			t.Fatal(err)
+		}
+	}
 	directory := t.TempDir()
 	if err := os.Chmod(directory, 0755); err != nil {
 		t.Fatal(err)
@@ -123,6 +131,7 @@ func startMemoryRecoveryCLI(t *testing.T, opts memoryRecoveryOptions) *memoryRec
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = reservation.Close() })
 	applicationAddress := reservation.Addr().String()
 	if err := reservation.Close(); err != nil {
 		t.Fatal(err)
@@ -156,9 +165,11 @@ func startMemoryRecoveryCLI(t *testing.T, opts memoryRecoveryOptions) *memoryRec
 		args = append(args, fmt.Sprintf("--shm-size=%dm", opts.sharedMemoryMiB))
 	}
 	args = append(args, "busybox:1.37.0", "/weir", "serve", "--config", "/fixture/node.yaml", "--routes", "/fixture/node-routing.yaml")
+	// Install the guard before create; no post-create observation/log can bypass it.
+	containerID := ""
 	t.Cleanup(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-		check := exec.CommandContext(ctx, "docker", "inspect", "--type", "container", "--format", `{{index .Config.Labels "weir.owner"}}`, owner)
+		check := exec.CommandContext(ctx, "docker", "inspect", "--type", "container", "--format", `{{.Id}} {{index .Config.Labels "weir.owner"}}`, owner)
 		raw, err := check.CombinedOutput()
 		cancel()
 		if err != nil {
@@ -168,19 +179,18 @@ func startMemoryRecoveryCLI(t *testing.T, opts memoryRecoveryOptions) *memoryRec
 			t.Error("cleanup could not verify candidate ownership; preserving evidence", owner, err, string(raw))
 			return
 		}
-		label := strings.TrimSpace(string(raw))
-		if label != owner {
-			t.Error("refusing cleanup of a container without this test's owner label")
+		if err := validateContainerOwnership(string(raw), containerID, owner); err != nil {
+			t.Error(err)
 			return
 		}
 		ctx, cancel = context.WithTimeout(context.Background(), 12*time.Second)
-		raw, err = exec.CommandContext(ctx, "docker", "stop", "--timeout=8", owner).CombinedOutput()
+		raw, err = exec.CommandContext(ctx, "docker", "stop", "--timeout=8", containerID).CombinedOutput()
 		cancel()
 		if err != nil {
 			t.Error("cleanup stop failed", err, string(raw))
 		}
 		ctx, cancel = context.WithTimeout(context.Background(), 3*time.Second)
-		logs, logErr := exec.CommandContext(ctx, "docker", "logs", owner).CombinedOutput()
+		logs, logErr := exec.CommandContext(ctx, "docker", "logs", containerID).CombinedOutput()
 		cancel()
 		if logErr != nil {
 			t.Error("cleanup logs failed", logErr, string(logs))
@@ -188,35 +198,48 @@ func startMemoryRecoveryCLI(t *testing.T, opts memoryRecoveryOptions) *memoryRec
 			t.Logf("CLI logs=%s", strings.TrimSpace(string(logs)))
 		}
 		ctx, cancel = context.WithTimeout(context.Background(), 3*time.Second)
-		check = exec.CommandContext(ctx, "docker", "inspect", "--type", "container", "--format", `{{index .Config.Labels "weir.owner"}} {{.State.Running}} {{.State.OOMKilled}} {{.State.ExitCode}}`, owner)
+		check = exec.CommandContext(ctx, "docker", "inspect", "--type", "container", "--format", `{{.Id}} {{index .Config.Labels "weir.owner"}} {{.State.Running}} {{.State.OOMKilled}} {{.State.ExitCode}}`, owner)
 		raw, err = check.CombinedOutput()
 		cancel()
 		state := strings.Fields(string(raw))
-		if err != nil || len(state) != 4 || state[0] != owner || state[1] != "false" {
+		ownershipErr := validateContainerOwnership(string(raw), containerID, owner)
+		if err != nil || ownershipErr != nil || len(state) != 5 || state[2] != "false" {
 			t.Error("cleanup cannot confirm stopped owned container; preserving it", err, string(raw))
 			return
 		}
-		if state[2] != "false" || state[3] != "0" {
-			t.Error("CLI failed or required forced shutdown", state[2:])
+		if state[3] != "false" || state[4] != "0" {
+			t.Error("CLI failed or required forced shutdown", state[3:])
 		}
-		t.Logf("CLI exit=%s %s", state[2], state[3])
+		t.Logf("CLI exit=%s %s", state[3], state[4])
 		ctx, cancel = context.WithTimeout(context.Background(), 3*time.Second)
-		raw, err = exec.CommandContext(ctx, "docker", "rm", owner).CombinedOutput()
+		raw, err = exec.CommandContext(ctx, "docker", "rm", containerID).CombinedOutput()
 		cancel()
 		if err != nil {
 			t.Error("cleanup removal failed", err, string(raw))
 		}
 		ctx, cancel = context.WithTimeout(context.Background(), 3*time.Second)
-		check = exec.CommandContext(ctx, "docker", "inspect", "--type", "container", "--format", `{{index .Config.Labels "weir.owner"}}`, owner)
+		check = exec.CommandContext(ctx, "docker", "inspect", "--type", "container", "--format", `{{.Id}} {{index .Config.Labels "weir.owner"}}`, owner)
 		raw, err = check.CombinedOutput()
 		cancel()
 		if err == nil || strings.TrimSpace(string(raw)) != "Error response from daemon: No such container: "+owner {
 			t.Error("cleanup removal did not prove container absence", err, string(raw))
 		}
 	})
-	packagedDocker(t, args...)
-	packagedDocker(t, "start", owner)
-	service := &memoryRecoveryCLI{name: owner, capacity: float64(opts.capacityMiB << 20), automatic: opts.automatic, stores: stores}
+	if opts.execution != nil {
+		if err := opts.execution.RecheckCLI(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	containerID = strings.TrimSpace(packagedDocker(t, args...))
+	if !fullContainerID.MatchString(containerID) {
+		t.Fatal("Docker create did not return a full container ID; preserve evidence", containerID)
+	}
+	created := packagedDocker(t, "inspect", "--type", "container", "--format", `{{.Id}} {{index .Config.Labels "weir.owner"}}`, owner)
+	if err := validateContainerOwnership(created, containerID, owner); err != nil {
+		t.Fatal(err)
+	}
+	packagedDocker(t, "start", containerID)
+	service := &memoryRecoveryCLI{name: containerID, capacity: float64(opts.capacityMiB << 20), automatic: opts.automatic, stores: stores}
 	service.address = strings.TrimSpace(packagedDocker(t, "port", owner, "7447/tcp"))
 	if service.address != applicationAddress {
 		t.Fatal("Docker published address differs from the real advertised endpoint", service.address, applicationAddress)

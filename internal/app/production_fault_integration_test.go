@@ -15,8 +15,6 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
-	"path/filepath"
-	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -67,64 +65,33 @@ func TestProductionProcessFaultQualification(t *testing.T) {
 	if os.Getenv("WEIR_PRODUCTION_FAULT_QUALIFICATION") != "1" {
 		t.Skip("requires explicit owned Linux CLI fault qualification")
 	}
-	if runtime.GOOS != "darwin" || runtime.GOARCH != "arm64" || os.Getenv("WEIR_MONGO_PROFILE") != "" || os.Getenv("WEIR_SEARCH_INTEGRATION") != "elasticsearch" {
-		t.Fatal("requires Darwin arm64 driver and the owned plaintext Mongo/Elasticsearch profiles")
-	}
-	binary := os.Getenv("WEIR_QUALIFICATION_BINARY")
-	if !filepath.IsAbs(binary) {
-		t.Fatal("absolute WEIR_QUALIFICATION_BINARY required")
-	}
-	raw, err := os.ReadFile(binary)
-	if err != nil {
-		t.Fatal(err)
-	}
-	digest := fmt.Sprintf("%x", sha256.Sum256(raw))
-	engine := strings.TrimSpace(packagedDocker(t, "info", "--format", "{{.OSType}}/{{.Architecture}}/{{.CgroupVersion}}"))
-	image := strings.TrimSpace(packagedDocker(t, "image", "inspect", "--format", "{{.Os}}/{{.Architecture}} {{.Id}}", "busybox:1.37.0"))
-	if engine != "linux/aarch64/2" || image != "linux/arm64 sha256:ad4f11f7c85f87c0a6d6c0fe492ad53f9cdcff6e8c88b881360c70eff701c67b" {
-		t.Fatal("fixed native Linux cgroup-v2 runtime and cached pinned fixture image required", engine, image)
-	}
-	metadata := strings.Fields(packagedDocker(t, "inspect", "--type", "container", "--format", `{{.Id}} {{index .Config.Labels "weir.owner"}} {{.Config.Image}} {{.State.Running}}`, "weir-local-elasticsearch"))
-	if len(metadata) != 4 || len(metadata[0]) != 64 || metadata[1] != "weir-search-local" || metadata[2] != "docker.elastic.co/elasticsearch/elasticsearch@sha256:c2a3ed5f968be6d59c960aa0c60cfdaee667b6bc8211142021a41d0e85b43237" || metadata[3] != "true" {
-		t.Fatal("owned Elasticsearch container identity changed", metadata)
-	}
+	execution := loadProductionExecution(t, "fault")
+	profile := execution.Profile()
+	binary, digest := execution.CLIPath(), execution.CLISHA256()
+	adapter := inspectLegacyDesktop(t, execution)
 	mongo, search := testmongo.Open(t), testsearch.Open(t)
-	buildContext, stopBuild := context.WithTimeout(t.Context(), 3*time.Second)
-	buildCommand := bson.D{{Key: "buildInfo", Value: 1}}
-	var mongoBuild struct {
-		Version string `bson:"version"`
-	}
-	err = mongo.Admin.Database("admin").RunCommand(buildContext, buildCommand).Decode(&mongoBuild)
-	stopBuild()
-	if err != nil || mongoBuild.Version != "8.0.32" {
-		t.Fatal("owned MongoDB version changed", mongoBuild.Version, err)
-	}
-	t.Logf("actual backend MongoDB=%s replica_set=weir_local, Elasticsearch=%s container=%s", mongoBuild.Version, search.Profile, metadata[0])
+	verifyLegacyMongoVersion(t, mongo)
+	t.Logf("actual backend Elasticsearch=%s container=%s", search.Profile, adapter.searchID)
 	proxyOptions := testmongo.ProxyOptions{Fixture: mongo, ListenAddress: "0.0.0.0:0"}
 	mongoProxy := testmongo.StartProxyOn(t, proxyOptions)
 	mongoURI, err := url.Parse(mongoProxy.URI())
 	if err != nil {
 		t.Fatal(err)
 	}
-	mongoURI.Host = net.JoinHostPort("host.docker.internal", mongoURI.Port())
+	mongoURI.Host = adapter.proxyHost(mongoURI.Host)
 	searchProxy := startProcessFaultHTTPProxy(t, search.URL)
 	mongoConnection := &Mongo{URI: mongoURI.String()}
-	searchConnection := &Search{URL: searchProxy.containerURL()}
+	searchConnection := &Search{URL: adapter.proxyURL(searchProxy)}
 	mongoLocal := &Local{Backend: BackendConfig{MongoDB: mongoConnection}}
 	searchLocal := &Local{Backend: BackendConfig{Search: searchConnection}}
 	mongoStore, searchStore := StoreConfig{Name: "mongo", Local: mongoLocal}, StoreConfig{Name: "search", Local: searchLocal}
 	cfg := DefaultConfig()
 	cfg.Routing.Stores = []StoreConfig{mongoStore, searchStore}
-	opts := memoryRecoveryOptions{binary: binary, capacityMiB: 512, automatic: true, config: &cfg}
+	opts := memoryRecoveryOptions{binary: binary, capacityMiB: 512, automatic: true, config: &cfg, execution: execution}
 	process := startMemoryRecoveryCLI(t, opts)
 	version := packagedDocker(t, "exec", process.name, "/weir", "version")
-	var identity map[string]string
-	if json.Unmarshal([]byte(version), &identity) != nil || identity["target"] != "linux/arm64" {
-		t.Fatal("invalid Linux CLI identity", version)
-	}
-	exploratory := os.Getenv("WEIR_FAULT_EXPLORATORY") == "1"
-	if !exploratory && (identity["state"] != "clean-commit" || identity["dirty"] != "false" || identity["revision"] != os.Getenv("WEIR_QUALIFICATION_SOURCE") || len(identity["revision"]) != 40 || digest != os.Getenv("WEIR_QUALIFICATION_SHA256")) {
-		t.Fatal("formal fault qualification requires exact clean source and binary SHA256", version, digest)
+	if err := execution.CheckVersion([]byte(version)); err != nil {
+		t.Fatal("CLI version cross-check failed", err)
 	}
 	openContext, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	openOptions := weirclient.OpenOptions{Seed: process.address, Stores: []string{"mongo", "search"}}
@@ -139,7 +106,7 @@ func TestProductionProcessFaultQualification(t *testing.T) {
 		{store: "mongo", root: mongo.DB + "/records", media: "application/bson", mongo: mongo, mongoProxy: mongoProxy},
 		{store: "search", root: search.Index, media: "application/json", search: search, searchProxy: searchProxy},
 	}
-	t.Logf("qualification=%t source=%s SHA256=%s version=%s container=%s PID=%s capacity=512MiB CPUs=2 default_store_execution=16 default_stall=30s", !exploratory, identity["revision"], digest, strings.TrimSpace(version), process.name, suite.pid)
+	t.Logf("qualification=false profile=%s intent=%s source=%s SHA256=%s version=%s container=%s PID=%s capacity=512MiB CPUs=2 default_store_execution=16 default_stall=30s", profile.ID, profile.Intent, execution.ServerSource().Revision, digest, strings.TrimSpace(version), process.name, suite.pid)
 	t.Log("predeclared gates: healthy Read/Native <=3s during one held IO; cancellation and all resource credits <=3s; proxy recovery and same-SDK CRUD/Native <=5s; ack-loss native=INCOMPLETE, typed=UNKNOWN, oracle increment/version exactly one; fault SIGTERM <=8s exit=0 no OOM; no forced GC or database failpoints")
 	for _, backend := range backends {
 		if !t.Run(backend.store, func(t *testing.T) {
@@ -869,11 +836,6 @@ func (proxy *processFaultHTTPProxy) connectionState(conn net.Conn, state http.Co
 	if state == http.StateClosed || state == http.StateHijacked {
 		delete(proxy.conns, conn)
 	}
-}
-
-func (proxy *processFaultHTTPProxy) containerURL() string {
-	_, port, _ := net.SplitHostPort(proxy.listener.Addr().String())
-	return "http://" + net.JoinHostPort("host.docker.internal", port)
 }
 
 func (proxy *processFaultHTTPProxy) arm(fault processFaultHTTPFault) {
