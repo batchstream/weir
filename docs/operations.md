@@ -196,6 +196,7 @@ immutable legacy specification for tooling to serialize:
 | `legacy-desktop-smoke-v1` | load / smoke; 30s warmup + 120s measurement | Desktop smoke only |
 | `legacy-desktop-fault-v1` | fault / legacy | Desktop fault reproduction only |
 | `linux-native-load-v1`, `linux-native-fault-v1` | load or fault / formal or smoke | Declarable, **not implemented**; fail closed |
+| `linux-native-es-functional-v1` | functional / finite; at most 16 documents, 64KiB/document, 60s driver | Owned native Linux ES8.19.22/plain correctness only; not smoke/formal |
 
 Legacy driver/CLI targets are Darwin arm64 and Linux arm64 respectively. MongoDB
 8.0.32 and Elasticsearch 8.19.22 use the named owned plain Desktop fixtures. The
@@ -204,11 +205,11 @@ replica-set identity; it inspects a fresh full Elasticsearch container ID, owner
 pinned image and private bridge address each run. CLI cleanup requires the captured
 full ID and owner to match; mismatch refuses stop/removal and retains failure
 output. Desktop routes and proxy translation belong only to that named adapter.
-Linux declarations use matching native Linux amd64 or arm64 driver/CLI targets,
-`owned-local` endpoint roles, MongoDB 8.0.32 plus Elasticsearch 8.19.22 or OpenSearch
-3.3.0, and explicit plain/TLS transport. Declaration is not executability: this PR
-implements no Linux executor, backend resource controller, or TLS/OpenSearch load
-or fault adapter. Unsupported combinations do not skip, fall back, or pass.
+Formal/smoke Linux declarations use matching native Linux amd64 or arm64 driver/CLI
+targets, `owned-local` endpoint roles, MongoDB 8.0.32 plus Elasticsearch 8.19.22 or
+OpenSearch 3.3.0, and explicit plain/TLS transport. Those load/fault declarations
+remain unexecutable. Only the distinct finite ES/plain profile has an executor;
+unsupported combinations do not skip, fall back, or pass.
 
 Version-1 `ProvenanceInputs` uses `schemaVersion`, `profileID`, separate `server`
 and `harness` objects (each `root` and full `revision`), and separate `cli` and
@@ -296,7 +297,85 @@ local bundle. That regression checks the actual complete `verifyCandidate` path,
 including all source inputs in a read-only-used local checkout of the bundle's
 declared source revision, not the potentially dirty developer worktree. It does
 not run a CLI or produce `ValidatedInputs`, and it establishes neither origin
-nor runtime proof. Real Linux/cgroup-v2 execution,
-three-backend plain/TLS CI, formal measurements/pass receipts and same-byte stable
-promotion are separate follow-on work. Pinned local Mongo/LinuxKit compatibility
-blockers are not bypassed by changing versions or host settings.
+nor runtime proof. Three-backend plain/TLS CI, formal measurements/pass receipts
+and same-byte stable promotion are separate follow-on work. Pinned local
+Mongo/LinuxKit compatibility blockers are not bypassed by changing versions or
+host settings.
+
+### Finite native Linux executor
+
+`scripts/test-production-linux.py` runs the actual compiled native `app.test` on
+the host and owns a fresh internal Docker bridge, Elasticsearch and CLI. It takes
+explicit `--server-root`, `--harness-root`, `--revision`, `--cli`, `--driver`,
+`--observer` and a **new** `--output` directory, all canonical absolute paths.
+Keep binaries/output in ignored `.testdata/`; prepare their parent directories
+before invocation. Supply an explicitly clean-source CLI build with
+`-ldflags="-buildid= -X main.sourceRevision=$(git rev-parse HEAD)"`, not an ordinary
+dev binary; compile `app.test` with `go test -c -tags=integration` and the observer
+from `./internal/testutil/testresource`, all with CGO disabled. The preflight test
+uses the merged strict source, CLI, version and kernel-loaded-driver validation,
+then emits structured completion **before** any network/backend/CLI creation.
+The finite test repeats validation, executes real SDK Resolve, typed CRUD,
+Native, Lua and Batch4, independently checks all persisted effects and counts,
+closes the SDK and requires final ownership recovery. There is no business replay.
+An absent selected test, any skip, missing case/sample/record, or exit 0 alone
+cannot pass.
+The controller sets `WEIR_FINITE_NATIVE=1`; ordinary unselected integration runs
+retain an opt-in skip, which cannot satisfy the controller's completion contract.
+
+Execution supports same-architecture Linux amd64/arm64 only. Darwin, Desktop,
+remote/custom Docker endpoints, contexts, emulation, wrong ELF targets, missing
+prepared prerequisites, cgroup-v1 and insufficient resources fail before service
+changes. Require a local `/var/run/docker.sock`, at least two CPUs, 4GiB currently
+available host memory and 2GiB free host/Docker storage. No install, build, pull,
+Kubernetes action, host sysctl/cgroup write, or daemon configuration change occurs
+inside the executor. The separate CI preparation step pulls only immutable public
+images with a new empty Docker configuration. Execution always uses `pull=never`.
+Runtime base pins come from `deploy/docker/base.json`, not ARM-only BusyBox.
+The server ES pin is the arm64 child `c2a3ed5f…`; public 8.19.22 index
+`e98f9c3b…` also names amd64 child `f1e3d882…`. The controller records and verifies
+the exact selected native child and local image config identity; the companion
+repository's different pin is not substituted.
+
+Only loopback application, diagnostics and backend-oracle ports are published;
+CLI backend routing stays inside the owned network. CLI controls are 2CPU/1GiB,
+memory=swap, 96 PIDs, nonroot/read-only/cap-drop/no-new-privileges. Backend controls
+are 2CPU/1536MiB, memory=swap, 512 PIDs, 512MiB heap, normal backend settings, and
+bounded disposable tmpfs data (256MiB), logs (32MiB), temporary storage (128MiB)
+and rotated Docker logs (2MiB). Driver/probes/proxies are not placed in the CLI
+workload quota, except that the brief **in-container observer exec** itself is
+charged to the observed container: these are not formal workload-only accounting
+samples.
+
+The known read-only mounted observer runs through the captured full owned
+container ID with private cgroup namespace. Bounded `--once --identity-only`
+establishes PID1 executable path/SHA/start identity inside that namespace (a
+nonroot host runner cannot read another UID's executable). A second controls-only
+`--once --expected-sha256=… --pid=1` validates that byte identity, matching target/
+observer namespace membership and read-only unified-root mount mapping **before**
+reading cpu.max, memory.max, memory.swap.max, pids.max, throttle and memory/OOM
+counters. Host PID/start/membership are independently matched to the full container
+ID; Docker configuration alone or a host PID alone is not accepted as quota proof.
+The existing long-running sampler is preserved. Actual driver/CLI bytes and
+process identities are checked again during the finite run. CLI SIGTERM/wait is
+bounded by 8s, exit must be 0 and OOM false. Execution/startup/driver bounds are
+240s overall, 90s backend readiness, 20s CLI readiness and at most60s driver;
+cleanup has a separate 60s bound.
+
+Cleanup guards are registered before creates, recover partial creates by unique
+name plus owner, and subsequently use full IDs. Every destructive action rechecks
+ID and owner; log failures do not suppress cleanup, primary and cleanup failures
+are both retained, inspect uncertainty is not absence, and both ID/name absence
+must be verified. No shared prune, image/cache deletion or forced live removal.
+Sanitized selected metadata, bounded logs, digests, structured completion,
+controls, shutdown and cleanup evidence are retained under the owned output root.
+They are finite correctness evidence, **not a formal/pass-promotion receipt or
+an SLO claim**.
+
+The separate `native-linux-finite` CI job checks out the exact PR head (push SHA
+otherwise), prepares pinned Go/modules, builds those exact clean-source binaries,
+explicitly prepares images, and executes the real path on Ubuntu amd64. Offline
+Python and Go contracts remain a separate gate and cannot substitute for this
+live job. A passing native CI run is required before merge; Linux arm64 remains
+unexecuted until a native arm64 result exists. Formal load/fault, Mongo,
+OpenSearch, TLS and EKS are not enabled by this finite slice.

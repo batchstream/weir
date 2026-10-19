@@ -67,7 +67,11 @@ func counters(name string) (map[string]int64, error) {
 		if err != nil {
 			return nil, err
 		}
-		result[strings.TrimSuffix(fields[0], ":")] = n
+		key := strings.TrimSuffix(fields[0], ":")
+		if _, exists := result[key]; exists || n < 0 {
+			return nil, fmt.Errorf("duplicate or negative counter: %s", name)
+		}
+		result[key] = n
 	}
 	return result, nil
 }
@@ -188,7 +192,36 @@ func main() {
 	pid := flag.Int("pid", 0, "observed process PID")
 	output := flag.String("output", "", "task-owned sample file")
 	metrics := flag.String("metrics", "", "owned Weir metrics URL")
+	once := flag.Bool("once", false, "bounded controls-only snapshot on stdout inside an owned private cgroup namespace")
+	identityOnly := flag.Bool("identity-only", false, "once: establish PID1 byte identity without reading controls")
+	expected := flag.String("expected-sha256", "", "expected PID1 executable digest for once mode")
 	flag.Parse()
+	if *once {
+		if *output != "" || *metrics != "" {
+			panic("once cannot sample metrics or write output files")
+		}
+		opts := controlsOptions{Root: "/", PID: *pid, ExpectedSHA256: *expected, IdentityOnly: *identityOnly}
+		done := make(chan error, 1)
+		go func() {
+			sample, err := collectControls(opts)
+			if err == nil {
+				err = json.NewEncoder(os.Stdout).Encode(sample)
+			}
+			done <- err
+		}()
+		select {
+		case err := <-done:
+			if err != nil {
+				panic(err)
+			}
+		case <-time.After(3 * time.Second):
+			panic("controls observation deadline")
+		}
+		return
+	}
+	if *expected != "" || *identityOnly {
+		panic("expected-sha256 and identity-only require once")
+	}
 	if *pid <= 0 || *output == "" {
 		panic("pid and output required")
 	}
