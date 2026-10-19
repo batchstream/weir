@@ -57,3 +57,58 @@ jobs:
           python3 -m unittest discover -v -s scripts -p '*_test.py'
           python3 -O -m unittest discover -v -s scripts -p '*_test.py'
           git diff --exit-code
+
+  native-linux-finite:
+    # Separate from offline contracts and from the unsupported formal profiles.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Prepare fixed native SDK and public modules
+        run: python3 scripts/ci-tools.py test
+      - name: Build clean exact-source CLI, native app.test and observer
+        env:
+          CGO_ENABLED: '0'
+        run: |
+          test "$(uname -s)/$(uname -m)" = Linux/x86_64
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          revision=$(git rev-parse HEAD)
+          test "$revision" = '${{ github.event.pull_request.head.sha || github.sha }}'
+          mkdir -p .testdata/native-linux-finite/bin
+          go build -trimpath -buildvcs=false -ldflags="-buildid= -X main.sourceRevision=$revision" -o .testdata/native-linux-finite/bin/weir ./cmd/weir
+          go test -c -tags=integration -trimpath -buildvcs=false -o .testdata/native-linux-finite/bin/app.test ./internal/app
+          go build -trimpath -buildvcs=false -o .testdata/native-linux-finite/bin/observer ./internal/testutil/testresource
+          sha256sum .testdata/native-linux-finite/bin/* > .testdata/native-linux-finite/build-sha256.txt
+          printf '%s\n' "$revision" > .testdata/native-linux-finite/source-revision.txt
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+      - name: Explicit public immutable native image preparation (no credentials)
+        run: |
+          config=$(mktemp -d "$RUNNER_TEMP/weir-public-images.XXXXXX")
+          base=$(python3 -I -c 'import json; x=json.load(open("deploy/docker/base.json")); print(x["image"]+"@"+x["platforms"]["amd64"])')
+          backend=docker.elastic.co/elasticsearch/elasticsearch@sha256:f1e3d88299cb0db2131fc2ab9060faefccd88fd684d11a49256ae00d7dc3c857
+          docker --config "$config" --host=unix:///var/run/docker.sock pull --platform=linux/amd64 "$base"
+          docker --config "$config" --host=unix:///var/run/docker.sock pull --platform=linux/amd64 "$backend"
+      - name: Real finite native Linux ES8.19.22 plain execution (not qualification)
+        run: |
+          root=$(pwd -P)
+          python3 -I scripts/test-production-linux.py \
+            --server-root="$root" --harness-root="$root" --revision="$(git rev-parse HEAD)" \
+            --cli="$root/.testdata/native-linux-finite/bin/weir" \
+            --driver="$root/.testdata/native-linux-finite/bin/app.test" \
+            --observer="$root/.testdata/native-linux-finite/bin/observer" \
+            --output="$root/.testdata/native-linux-finite/evidence"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+      - name: Retain sanitized finite evidence, including failures
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: native-linux-amd64-finite-${{ github.event.pull_request.head.sha || github.sha }}
+          path: |
+            .testdata/native-linux-finite/evidence/
+            .testdata/native-linux-finite/build-sha256.txt
+            .testdata/native-linux-finite/source-revision.txt
+          if-no-files-found: warn
+          retention-days: 7

@@ -310,7 +310,8 @@ func CheckLegacyEnv(p ExecutionProfile, in ProvenanceInputs, env map[string]stri
 	if err := validateProfile(p); err != nil {
 		return err
 	}
-	expected := map[string]string{"WEIR_INTEGRATION": "1", "WEIR_SEARCH_INTEGRATION": p.Backends[1].Product, "WEIR_MONGO_PROFILE": "", "WEIR_QUALIFICATION_BINARY": in.CLI.Path, "WEIR_QUALIFICATION_SOURCE": in.Server.Revision, "WEIR_QUALIFICATION_SHA256": in.CLI.SHA256}
+	search := p.Backends[len(p.Backends)-1].Product
+	expected := map[string]string{"WEIR_INTEGRATION": "1", "WEIR_SEARCH_INTEGRATION": search, "WEIR_MONGO_PROFILE": "", "WEIR_QUALIFICATION_BINARY": in.CLI.Path, "WEIR_QUALIFICATION_SOURCE": in.Server.Revision, "WEIR_QUALIFICATION_SHA256": in.CLI.SHA256}
 	if p.Backends[0].Transport == "tls" {
 		expected["WEIR_MONGO_PROFILE"] = "tls"
 	}

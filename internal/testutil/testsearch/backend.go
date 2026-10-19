@@ -8,8 +8,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
+	"net/url"
 	"os"
+	"regexp"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -67,6 +71,36 @@ func Open(t *testing.T) *Backend {
 	verifyVersion(t, raw, profile, cluster)
 	t.Cleanup(transport.CloseIdleConnections)
 	b.Create(t, index, `{"settings":{"number_of_shards":1,"number_of_replicas":0},"mappings":{"properties":{"n":{"type":"long"}}}}`)
+	return b
+}
+
+type OwnedEndpoint struct {
+	URL, Owner string
+}
+
+// OpenOwned is only for the finite controller's fresh, loopback-published ES.
+// Open's historical fixed-address opt-ins and identities are unchanged.
+func OpenOwned(t *testing.T, opts OwnedEndpoint) *Backend {
+	t.Helper()
+	u, err := url.Parse(opts.URL)
+	if err != nil || u.Scheme != "http" || u.Hostname() != "127.0.0.1" || u.User != nil || u.Path != "" || u.RawQuery != "" || u.Fragment != "" {
+		t.Fatal("owned backend requires a plain loopback origin")
+	}
+	_, port, err := net.SplitHostPort(u.Host)
+	n, parseErr := strconv.Atoi(port)
+	if err != nil || parseErr != nil || n < 1 || n > 65535 || !regexp.MustCompile(`^weir-finite-[0-9a-f]{32}$`).MatchString(opts.Owner) {
+		t.Fatal("invalid finite endpoint/owner")
+	}
+	transport := &http.Transport{Proxy: nil, MaxConnsPerHost: 8, MaxIdleConnsPerHost: 8, DisableCompression: true}
+	client := &http.Client{Transport: transport, Timeout: 3 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	b := &Backend{URL: opts.URL, Product: "elasticsearch", Profile: "elasticsearch-8.19.22", Index: "weir_finite_" + strings.TrimPrefix(opts.Owner, "weir-finite-"), Client: client}
+	status, raw := b.Do(t, "GET", "/", "")
+	if status != http.StatusOK {
+		t.Fatal("owned backend identity status", status)
+	}
+	verifyVersion(t, raw, b.Profile, opts.Owner)
+	t.Cleanup(transport.CloseIdleConnections)
+	b.Create(t, b.Index, `{"settings":{"number_of_shards":1,"number_of_replicas":0},"mappings":{"properties":{"n":{"type":"long"}}}}`)
 	return b
 }
 

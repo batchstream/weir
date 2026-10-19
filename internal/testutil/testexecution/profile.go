@@ -12,6 +12,23 @@ const SchemaVersion = 1
 const PolicyID = "production-v1"
 const LegacyExecutor = "legacy-desktop-v1"
 const LinuxExecutor = "linux-native-v1"
+const LinuxFunctionalID = "linux-native-es-functional-v1"
+const FunctionalDeadline = 60 * time.Second
+const FunctionalDocuments = 16
+const FunctionalDocumentBytes = 64 << 10
+
+// LinuxFunctionalProfile is a finite correctness capability, never a load,
+// fault, smoke, TLS or formal qualification capability.
+func LinuxFunctionalProfile(arch string) (ExecutionProfile, error) {
+	target := Target{OS: "linux", Arch: arch}
+	roles := EndpointRoles{Driver: "owned-local", CLI: "owned-local"}
+	backend := Backend{Product: "elasticsearch", Version: "8.19.22", Transport: "plain", Endpoints: roles}
+	p := ExecutionProfile{SchemaVersion: SchemaVersion, ID: LinuxFunctionalID, Suite: "functional", Intent: "finite", Policy: PolicyID, Executor: LinuxExecutor, Driver: target, CLI: target, Backends: []Backend{backend}}
+	if arch != "amd64" && arch != "arm64" {
+		return p, fmt.Errorf("unsupported native Linux architecture")
+	}
+	return p, nil
+}
 
 // Workload and resource policy is code, never caller-supplied JSON tuning.
 const (
@@ -104,6 +121,13 @@ func validateProfile(p ExecutionProfile) error {
 		}
 		return nil
 	}
+	if p.ID == LinuxFunctionalID {
+		expected, err := LinuxFunctionalProfile(p.Driver.Arch)
+		if err != nil || !reflect.DeepEqual(p, expected) {
+			return fmt.Errorf("finite functional profile conflicts with immutable spec")
+		}
+		return nil
+	}
 	if p.Executor != LinuxExecutor || p.ID != "linux-native-"+p.Suite+"-v1" || (p.Suite != "load" && p.Suite != "fault") || (p.Intent != "formal" && p.Intent != "smoke") {
 		return fmt.Errorf("unknown profile/executor/suite/intent")
 	}
@@ -127,6 +151,9 @@ func validateProfile(p ExecutionProfile) error {
 	return nil
 }
 func (p ExecutionProfile) Duration() time.Duration {
+	if p.ID == LinuxFunctionalID {
+		return FunctionalDeadline
+	}
 	if p.Intent == "smoke" {
 		return SmokeMeasurement
 	}
@@ -140,12 +167,13 @@ func (p ExecutionProfile) CapacityMiB() int {
 }
 
 // RequireExecutable is deliberately separate from parsing and byte validation.
-// Linux declarations are not implementations and must not silently downgrade.
+// Formal/smoke Linux declarations are not implementations and must not downgrade.
+// Only the distinct finite functional capability has a native implementation.
 func (v *ValidatedInputs) RequireExecutable() error {
 	if v == nil || !v.valid {
 		return fmt.Errorf("validated inputs required")
 	}
-	if v.profile.Executor != LegacyExecutor {
+	if v.profile.Executor != LegacyExecutor && v.profile.ID != LinuxFunctionalID {
 		return fmt.Errorf("executor %q is declared but not implemented; no fixtures may be created", v.profile.Executor)
 	}
 	return nil
