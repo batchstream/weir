@@ -10,6 +10,7 @@ import (
 	"github.com/batchstream/weir-protocol/api/protocol"
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 	"github.com/batchstream/weir/internal/execution"
+	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -91,54 +92,82 @@ func TestLargeNativePublicationAccountingAndCancellation(t *testing.T) {
 }
 
 func TestNativeOversizedTerminalUsesFixedFailureInsideFullSharedBudget(t *testing.T) {
-	memory := testExecutionMemory(768 << 20)
-	other := plan(0, "held", false)
-	lease, failure, _ := memory.admit(other)
-	if failure != nil {
-		t.Fatal(failure)
+	cases := []struct {
+		name       string
+		completion pb.NativeCompletion
+		want       pb.NativeCompletion
+		label      string
+	}{
+		{name: "not_started", completion: pb.NativeCompletion_NATIVE_NOT_STARTED, want: pb.NativeCompletion_NATIVE_NOT_STARTED, label: "not_started"},
+		{name: "complete", completion: pb.NativeCompletion_RESPONSE_COMPLETE, want: pb.NativeCompletion_RESPONSE_INCOMPLETE, label: "response_incomplete"},
+		{name: "incomplete", completion: pb.NativeCompletion_RESPONSE_INCOMPLETE, want: pb.NativeCompletion_RESPONSE_INCOMPLETE, label: "response_incomplete"},
+		{name: "unknown", completion: pb.NativeCompletion(999), want: pb.NativeCompletion_RESPONSE_INCOMPLETE, label: "response_incomplete"},
 	}
-	defer lease.release()
-	large := protocol.Fail(pb.FailureCode_UNAVAILABLE, strings.Repeat("f", 2<<20))
-	end := protocol.NativeFailure(true, large)
-	value := &pb.Event_NativeEnd{NativeEnd: end}
-	event := &pb.Event{Value: value}
-	adapter := &nativeAccountingAdapter{events: []*pb.Event{event}}
-	limits := DefaultLimits()
-	runtime, err := New(adapter, limits, memory)
-	if err != nil {
-		t.Fatal(err)
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			memory := testExecutionMemory(768 << 20)
+			other := plan(0, "held", false)
+			lease, failure, _ := memory.admit(other)
+			if failure != nil {
+				t.Fatal(failure)
+			}
+			defer lease.release()
+			large := protocol.Fail(pb.FailureCode_UNAVAILABLE, strings.Repeat("f", 2<<20))
+			end := &pb.NativeEnd{Completion: test.completion, Failure: large}
+			if test.completion == pb.NativeCompletion_RESPONSE_COMPLETE {
+				// Future protobuf fields can enlarge a valid complete terminal
+				// without introducing an illegal RESPONSE_COMPLETE with Failure.
+				end.Failure = nil
+				unknown := protowire.AppendTag(nil, 100, protowire.BytesType)
+				unknown = protowire.AppendBytes(unknown, bytes.Repeat([]byte("f"), 2<<20))
+				end.ProtoReflect().SetUnknown(unknown)
+			}
+			value := &pb.Event_NativeEnd{NativeEnd: end}
+			event := &pb.Event{Value: value}
+			adapter := &nativeAccountingAdapter{events: []*pb.Event{event}}
+			limits := DefaultLimits()
+			runtime, err := New(adapter, limits, memory)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer runtime.Close(context.Background())
+			session := runtime.NewSession()
+			defer session.Close()
+			work := plan(1, "native", false)
+			work.Command = nativeCall()
+			// The other owner's actual response leaves only the fixed event windows
+			// and IO reserve. The terminal itself must not mint additional capacity.
+			publication := uint64(max(work.ResultBytes, 2*protocol.NativeChunk+execution.ResultOverheadBytes) - nativeQueuedWindow)
+			if started, _ := lease.start(int(memory.budget-memory.inputReserved-2*publication-1024), defaultNativeIOReserve); !started {
+				t.Fatal("could not fill the other owner's reservation")
+			}
+			ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+			defer cancel()
+			ticket, failure, _ := runtime.Submit(ctx, work, session)
+			if failure != nil {
+				t.Fatal(failure)
+			}
+			select {
+			case emission := <-session.Events:
+				terminal := emission.Event.GetNativeEnd()
+				if terminal.GetCompletion() != test.want || terminal.GetFailure().GetCode() != pb.FailureCode_RESOURCE_EXHAUSTED || proto.Size(emission.Event) >= protocol.NativeChunk {
+					t.Fatal("oversized terminal escaped fixed bounded failure", terminal)
+				}
+				emission.Release()
+			case <-ctx.Done():
+				t.Fatal("bounded terminal was not delivered")
+			}
+			if snapshot := memory.Snapshot(); snapshot.UsedBytes > snapshot.BudgetBytes {
+				t.Fatal("terminal broke the shared ownership bound", snapshot)
+			}
+			session.Close()
+			for range 3 {
+				ticket.Ack()
+				want := map[string]float64{test.label: 1}
+				assertNativeCompletions(t, runtime, want)
+				assertRecordFailures(t, runtime, "read", 0)
+			}
+			waitReleased(t, runtime)
+		})
 	}
-	defer runtime.Close(context.Background())
-	session := runtime.NewSession()
-	defer session.Close()
-	work := plan(1, "native", false)
-	work.Command = nativeCall()
-	// The other owner's actual response leaves only the fixed event windows
-	// and IO reserve. The terminal itself must not mint additional capacity.
-	publication := uint64(max(work.ResultBytes, 2*protocol.NativeChunk+execution.ResultOverheadBytes) - nativeQueuedWindow)
-	if started, _ := lease.start(int(memory.budget-memory.inputReserved-2*publication-1024), defaultNativeIOReserve); !started {
-		t.Fatal("could not fill the other owner's reservation")
-	}
-	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
-	defer cancel()
-	ticket, failure, _ := runtime.Submit(ctx, work, session)
-	if failure != nil {
-		t.Fatal(failure)
-	}
-	select {
-	case emission := <-session.Events:
-		terminal := emission.Event.GetNativeEnd()
-		if terminal.GetCompletion() != pb.NativeCompletion_RESPONSE_INCOMPLETE || terminal.GetFailure().GetCode() != pb.FailureCode_RESOURCE_EXHAUSTED || proto.Size(emission.Event) >= protocol.NativeChunk {
-			t.Fatal("oversized terminal escaped fixed bounded failure", terminal)
-		}
-		emission.Release()
-	case <-ctx.Done():
-		t.Fatal("bounded terminal was not delivered")
-	}
-	if snapshot := memory.Snapshot(); snapshot.UsedBytes > snapshot.BudgetBytes {
-		t.Fatal("terminal broke the shared ownership bound", snapshot)
-	}
-	session.Close()
-	ticket.Ack()
-	waitReleased(t, runtime)
 }
