@@ -402,3 +402,101 @@ Python and Go contracts remain a separate gate and cannot substitute for this
 live job. A passing native CI run is required before merge; Linux arm64 remains
 unexecuted until a native arm64 result exists. Formal load/fault, Mongo,
 OpenSearch, TLS and EKS are not enabled by this finite slice.
+
+### Held tmpfs config-copy prerequisite
+
+`scripts/test-production-volume-linux.py` is a separate native Linux filesystem
+probe, **not an executable OpenSearch production/functional profile**. The
+`native-linux-volume-copy` CI job checks out the exact PR head without persisted
+credentials, builds the stdlib-only `internal/testutil/testvolume` helper with
+native Go1.27.1 from clean source, records its SHA256/build information/source,
+and explicitly prepares public pinned native images in an empty Docker config.
+Because trimmed Go build information omits linker flags, a bounded pre-mutation
+helper identity command also verifies the embedded revision and loaded SHA256.
+Execution requires those prepared images and uses `--pull=never`; it never
+pulls, builds, installs, starts the stock OpenSearch process, or reads Docker/user
+authentication configuration. Darwin/Desktop, remote/context/TLS Docker,
+emulation, non-unified cgroups and unsupported hosts fail closed, not skip/PASS.
+No existing ES controller, profile, three-resource lifecycle or budget changes.
+
+This proves a specific storage prerequisite: a local Docker tmpfs volume may
+lose its copy-up contents on its last unmount between target create and start.
+A known-helper **read-only mount holder must already be running and verified
+before target CREATE**. Its otherwise-empty `/held` mount remains alive while
+Docker copies the pinned image's config into the same volume at
+`/usr/share/opensearch/config`. The holder writes nothing, including no ready
+file that could suppress copy-up. After target CREATE and before target START,
+a bounded read-only holder observer hashes the selected public files; the target
+must report those identical hashes after START and its owned writes. This proves
+held create-time data, rather than inferring copy-up timing from exit 0 or logs.
+The probe replaces the image entrypoint only
+with the known read-only-mounted filesystem helper. Both consumers use nonroot
+1000:1000, explicit working directory `/`, read-only roots, private cgroups,
+dropped capabilities,
+no-new-privileges, network=none, IPC=none (no writable shared-memory mount)
+and no ports. The volume is their only writable filesystem for probe operations.
+The holder has 0.1CPU/64MiB/memory=swap/32PIDs
+and a maximum 300s TTL; the target has 0.5CPU/128MiB/memory=swap/32PIDs and a
+finite 60s controller phase (55s helper TTL). The controller is bounded to 240s,
+with a separate 60s cleanup budget; positive remaining budgets have no floor.
+These are process/command budgets, not a claim of hard wallclock cancellation
+of arbitrary in-progress stdlib I/O.
+
+The single 16MiB local volume has exact `device=tmpfs`, `type=tmpfs` options
+`rw,noexec,nosuid,nodev,size=16777216,uid=1000,gid=1000` and local scope. Docker
+volumes have **no immutable 64hex ID**: identity is the exact
+Name/CreatedAt/Driver/Options/Labels/localScope tuple, including the fresh owner
+label. Same-name recreation, changed tuples and unknown inspection results are
+not absence. No host traversal of the daemon volume Mountpoint is performed.
+The helper checks actual tmpfs magic, capacity and restrictive mount flags,
+actual loaded PID1 bytes/start identity and actual private-cgroup CPU,
+memory/swap/PID controls. The controller binds these observations to the owned
+full container IDs and host PID1 membership/start identity. Holder and target
+must report the same filesystem device, without confusing observer/self
+cgroups with target controls.
+
+Only `opensearch.yml`, `jvm.options` and `log4j2.properties` are read: each must
+be a nonempty, bounded, regular non-symlink file; evidence records size/SHA256,
+never contents. The probe writes/reads/renames/removes exclusively-created
+run-owned files, fills only a new run-owned file in at most 273 attempts of
+64KiB each to ENOSPC within 16MiB, cleans it up, then rechecks the public input
+hashes.
+No stock config file is modified/deleted; no sensitive config/PEM/KEY/credential
+files are read. Exit 0, metadata, an empty directory, logs alone, skipped tests,
+late/duplicate/missing or identity-mismatched completion are not success.
+Structured helper effects, runtime observations, controlled shutdown and exact
+cleanup are all necessary. Offline mocks explicitly discard tmpfs contents on
+the last unmount and are **not real backend or filesystem runtime evidence**.
+
+Cleanup is reverse order: target, holder, volume. Every container mutation is
+guarded by fullID/name/owner; every volume mutation by unchanged tuple/owner.
+Both consumers must be absent by fullID and name, and **all containers including
+stopped consumers** must show no attachments before volume removal. Foreign
+consumers are never stopped/removed. There is no force, prune, shared cleanup,
+manual mount/unmount or host control change. Unknown inspection, changed
+identity, timeout, permission, logs/removal failure or remaining resources
+retain primary plus cleanup errors. Normal TERM/wait must finish within 8s with
+exit 0; TTL expiry is a bounded failure, never cleanup-success evidence.
+
+The target is OpenSearch 3.3.0, repository `opensearchproject/opensearch`, index
+`sha256:d96afaf6cbd2a6a3695aeb2f1d48c9a16ad5c8918eb849e5cbf43475f0f8e146`,
+native linux/amd64 child
+`sha256:59e9e49ac00f19c2af9094e367c8e6586f7d07e6c06465c3f4c43b40934309f2`
+and native linux/arm64 child
+`sha256:98db5375d94a62ee3d9073681bb40fe1087657d036f3dfa79053b0b1f83f5577`.
+The holder preserves `deploy/docker/base.json` pins. Public image metadata
+identifies `./opensearch-docker-entrypoint.sh`, CMD `opensearch`, USER 1000 and
+WORKDIR `/usr/share/opensearch`; this is not verification of pinned-image script
+bytes. This probe intentionally does not test that entrypoint, keystore,
+performance-analyzer, Java, Weir SDK, TLS or backend startup. A later actual
+OpenSearch profile must preserve normal startup checks and derive search
+integration selection from an already-validated profile. Its 16MiB config volume
+must be carved from the existing 128MiB temporary budget, leaving 112MiB `/tmp`,
+not added to it. Existing ES budgets remain unchanged.
+
+A passing new-head **actual native CI run** is required before this prerequisite
+can be accepted. The job retains bounded sanitized source/build/image/engine,
+container, mount, process, effects, shutdown and exact absence evidence even on
+failure. Only actual amd64 CI is evidence here; cross-compilation is not ARM
+runtime evidence. This does not admit OpenSearch SDK integration, production,
+load/fault/formal, Mongo replica-set failover, TLS, EKS or promotion qualification.
