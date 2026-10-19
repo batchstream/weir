@@ -42,7 +42,9 @@ def check_source(version):
         raise ValueError('release source must be merged into main')
 
 
-def verify_assets(directory, delivery):
+def verify_assets(directory, delivery, *, checksum_layout='release'):
+    if checksum_layout not in ('release', 'artifact'):
+        raise ValueError('unknown checksum layout')
     source = delivery['source']
     if re.fullmatch('[0-9a-f]{40}', source) is None:
         raise ValueError('invalid source revision')
@@ -64,7 +66,10 @@ def verify_assets(directory, delivery):
     assets = [directory / 'delivery.json', product / 'receipt.json', product / 'module-graph.json']
     assets += [product / name for name in sorted(expected)]
     assets += [product / (target + '-linked.json') for target in sorted(receipt['binaries'])]
-    checksums = ''.join(hashlib.sha256(item.read_bytes()).hexdigest() + '  ' + item.name + '\n' for item in assets)
+    checksums = ''
+    for item in assets:
+        name = item.relative_to(directory).as_posix() if checksum_layout == 'artifact' else item.name
+        checksums += hashlib.sha256(item.read_bytes()).hexdigest() + '  ' + name + '\n'
     checksum_file = directory / 'SHA256SUMS'
     checksum_file.write_text(checksums)
     return assets + [checksum_file]
@@ -96,11 +101,11 @@ def resume_release(version, assets):
     return True
 
 
-def verify_workflow_assets(directory, delivery):
+def verify_workflow_assets(directory, delivery, *, checksum_layout='release'):
     source = delivery['source']
     if source != os.environ['GITHUB_SHA'] or run(['git', 'rev-parse', 'HEAD']) != source:
         raise ValueError('release source differs from workflow checkout')
-    assets = verify_assets(directory, delivery)
+    assets = verify_assets(directory, delivery, checksum_layout=checksum_layout)
     return assets
 
 
@@ -172,7 +177,7 @@ def main():
         parser.error('release artifact directory is required')
     if args.verify_only:
         delivery = json.loads(os.environ['WEIR_DELIVERY'])
-        verify_workflow_assets(args.directory, delivery)
+        verify_workflow_assets(args.directory, delivery, checksum_layout='artifact')
         return
     publish(args.version, args.directory)
 

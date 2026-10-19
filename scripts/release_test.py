@@ -3,6 +3,8 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
+import shutil
 import sys
 import tempfile
 import unittest
@@ -148,7 +150,7 @@ class ReleaseTests(unittest.TestCase):
                 release.main()
             finally:
                 command.assert_called_once_with(['git', 'rev-parse', 'HEAD'])
-                verify.assert_called_once_with(root, delivery)
+                verify.assert_called_once_with(root, delivery, checksum_layout='artifact')
                 source_gate.assert_not_called()
                 publish.assert_not_called()
                 resume.assert_not_called()
@@ -161,6 +163,52 @@ class ReleaseTests(unittest.TestCase):
             delivery = asset_fixture(root)
             self.verify_candidate(root, delivery)
             self.assertTrue((root / 'SHA256SUMS').is_file())
+
+    def assert_downloaded_checksums(self, directory, expected_paths):
+        entries = (directory / 'SHA256SUMS').read_text().splitlines()
+        self.assertEqual(len(entries), 11)
+        paths = []
+        for entry in entries:
+            expected_digest, relative = entry.split('  ', 1)
+            # Consume the manifest against downloaded bytes, not the generator's path calculation.
+            actual_digest = hashlib.sha256((directory / relative).read_bytes()).hexdigest()
+            self.assertEqual(actual_digest, expected_digest, relative)
+            paths.append(relative)
+        self.assertEqual(set(paths), expected_paths - {'SHA256SUMS'})
+
+    def test_candidate_checksums_verify_the_downloaded_artifact_layout(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            built, downloaded = root / 'built', root / 'downloaded'
+            built.mkdir()
+            downloaded.mkdir()
+            delivery = asset_fixture(built)
+            self.verify_candidate(built, delivery)
+            workflow = (Path(__file__).resolve().parent.parent / '.github/workflows/images.yml').read_text()
+            paths = re.findall(r'^            \.testdata/images/(.+)$', workflow, re.M)
+            self.assertEqual(len(paths), 12)
+            # Model upload/download-artifact's retained common-root directory structure.
+            for relative in paths:
+                destination = downloaded / relative
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(built / relative, destination)
+            self.assert_downloaded_checksums(downloaded, set(paths))
+
+    def test_release_checksums_verify_flat_downloaded_assets(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            built, downloaded = root / 'built', root / 'downloaded'
+            built.mkdir()
+            downloaded.mkdir()
+            delivery = asset_fixture(built)
+            self.verify_candidate(built, delivery)
+            environment = dict(GITHUB_SHA=delivery['source'])
+            with patch.dict(os.environ, environment), patch.object(release, 'run', return_value=delivery['source']):
+                # Ordinary publish replaces the retained candidate manifest with the flat release layout.
+                assets = release.verify_workflow_assets(built, delivery)
+            for item in assets:
+                shutil.copyfile(item, downloaded / item.name)
+            self.assert_downloaded_checksums(downloaded, {item.name for item in assets})
 
     def test_verify_only_refuses_incomplete_or_changed_candidate_assets(self):
         targets = ('linux-amd64', 'linux-arm64', 'darwin-amd64', 'darwin-arm64')
