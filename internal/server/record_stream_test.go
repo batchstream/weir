@@ -14,6 +14,7 @@ import (
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 	"github.com/batchstream/weir/internal/execution"
 	"github.com/batchstream/weir/internal/store"
+	"github.com/batchstream/weir/internal/testutil/testmetrics"
 	dto "github.com/prometheus/client_model/go"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -214,6 +215,17 @@ func TestRecordStreamIndexedOperationFailureDoesNotStopLaterResults(t *testing.T
 		t.Fatal(err)
 	}
 	waitPeerIdle(t, server)
+	for range 3 {
+		families := testmetrics.Gather(t, local)
+		applied := map[string]string{"operation": "mutate", "outcome": "applied"}
+		if got := testmetrics.Sample(families, "weir_store_records_total", applied).GetCounter().GetValue(); got != 2 {
+			t.Fatal("stream lost applied evidence", got)
+		}
+		mutate := map[string]string{"operation": "mutate"}
+		if got := testmetrics.Sample(families, "weir_store_record_failures_total", mutate).GetCounter().GetValue(); got != 1 {
+			t.Fatal("OK stream must still count APPLIED with Failure exactly once", got)
+		}
+	}
 }
 
 func TestRecordPublicationCancellationReleasesSourceButKeepsEncodedCredits(t *testing.T) {

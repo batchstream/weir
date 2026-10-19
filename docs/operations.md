@@ -38,6 +38,9 @@ improved capacity.
 | `weir_node_state`, `weir_node_ready` | Lifecycle and readiness |
 | `weir_store_active_executions`, `weir_store_active_executions_limit` | Per-Store backend invocations; limit zero means unlimited |
 | `weir_store_batch_max_operations`, `weir_store_batch_max_bytes`, `weir_store_batch_max_wait_seconds` | Resolved aggregation policy |
+| `weir_store_records_total` | Final typed results: mutation effect (`applied`, `not_applied`, `not_started`, `unknown`, `invalid`) or read `success`/`failure` |
+| `weir_store_record_failures_total` | Final typed read/mutate results carrying `Failure`, including `APPLIED` with `Failure` |
+| `weir_store_rejections_total` | Preparation/admission denials, not completed records |
 | Store queue and result metrics | Waiting work, dispatch and retained publication |
 | `weir_execution_memory_*` | Shared reservations, ownership, ingress and capacity denials |
 | `weir_memory_*` | Actual observations, capacity, overload latch and runtime policy |
@@ -49,6 +52,33 @@ Execution memory reports `budget_bytes`, `used_bytes`, `resident_bytes`,
 workspace promise; `ingress_bytes` and `ingress_reserved_bytes` describe receive
 ownership. These are reservation estimates, not RSS measurements. Compare them
 with actual memory metrics and `budget_rejections_total`.
+
+Typed record counters are updated once at Store completion, after final result
+normalization (including result-budget failures). Result-budget normalization can
+replace `Failure` with `RESOURCE_EXHAUSTED`, but preserves an already reported
+legal mutation effect; missing or invalid effect evidence falls back to `UNKNOWN`,
+not an assertion that the mutation was never started. `weir_store_records_total`
+preserves mutation effect evidence: `outcome="applied"` does **not** mean business
+success. For example, a query-visibility barrier can fail after application,
+producing `APPLIED` with `Failure` even when backend HTTP returns 200 and the RPC
+completes OK. This increments both `records_total{operation="mutate",outcome="applied"}`
+and `record_failures_total{operation="mutate"}`. A successful document read or a
+missing record without `Failure` does not increment the failure counter.
+
+`weir_store_record_failures_total` has only the fixed `operation` label (`read`,
+`mutate`), with both series initialized to zero. It counts admitted records that
+terminate with `Failure`, including queued cancellations; it does not count
+preparation/admission rejections, individual HTTP exchanges, Lua evaluations or
+retries, RPC completion, publication acknowledgements, or scrapes. No failure
+message, code, resource, ID, or backend text becomes a label. This adds exactly two
+series per Store: 57 runtime series, or 63 with Mongo connection metrics. The
+maximum 16-Store diagnostics fixture has 1,131 Weir series (excluding Go/process
+collectors).
+
+Both typed record counters exclude Native. Native is opaque forwarding: its
+`NativeEnd` describes transfer completion/failure, not a portable backend business
+result. In particular, a complete non-2xx HTTP response is not interpreted as a
+generic business failure. These counters are not generic Native failure metrics.
 
 Search HTTP metrics include failed attempts and exclude Native relay. HTTP
 success does not prove every bulk item succeeded. Bulk elapsed time includes

@@ -6,24 +6,28 @@ import (
 )
 
 type runtimeMetrics struct {
-	executions, rejections, records *prometheus.CounterVec
-	queue, duration                 *prometheus.HistogramVec
-	batch                           prometheus.Histogram
+	executions, rejections, records, failures *prometheus.CounterVec
+	queue, duration                           *prometheus.HistogramVec
+	batch                                     prometheus.Histogram
 }
 
 func newRuntimeMetrics() runtimeMetrics {
-	recordOptions := prometheus.CounterOpts{Name: "weir_store_records_total", Help: "Per-record backend terminal evidence; not delivery acknowledgements."}
+	recordOptions := prometheus.CounterOpts{Name: "weir_store_records_total", Help: "Final typed record results by mutation effect or read success/failure; applied does not imply business success. Not RPC completions, HTTP exchanges, or delivery acknowledgements."}
+	failureOptions := prometheus.CounterOpts{Name: "weir_store_record_failures_total", Help: "Final typed read/mutate results with Failure, including applied mutations; counted once after result normalization. Excludes Native, admission rejections, RPC status, and HTTP status."}
 	execOptions := prometheus.CounterOpts{Name: "weir_store_executions_total", Help: "Physical unified adapter invocations."}
 	rejectOptions := prometheus.CounterOpts{Name: "weir_store_rejections_total", Help: "Preparation and admission denials."}
 	queueOptions := prometheus.HistogramOpts{Name: "weir_store_queue_wait_seconds", Help: "Time from admission to dispatch.", Buckets: []float64{.001, .01, .1, 1, 10}}
 	durationOptions := prometheus.HistogramOpts{Name: "weir_store_execution_seconds", Help: "Adapter invocation duration including bounded streaming output.", Buckets: []float64{.001, .01, .1, 1, 10}}
 	batchOptions := prometheus.HistogramOpts{Name: "weir_store_batch_operations", Help: "Operations per bounded invocation.", Buckets: []float64{1, 2, 4, 8, 16, 128}}
-	metrics := runtimeMetrics{records: prometheus.NewCounterVec(recordOptions, []string{"operation", "outcome"}), executions: prometheus.NewCounterVec(execOptions, []string{"kind"}), rejections: prometheus.NewCounterVec(rejectOptions, []string{"reason"}), queue: prometheus.NewHistogramVec(queueOptions, []string{"kind"}), duration: prometheus.NewHistogramVec(durationOptions, []string{"kind"}), batch: prometheus.NewHistogram(batchOptions)}
+	metrics := runtimeMetrics{failures: prometheus.NewCounterVec(failureOptions, []string{"operation"}), records: prometheus.NewCounterVec(recordOptions, []string{"operation", "outcome"}), executions: prometheus.NewCounterVec(execOptions, []string{"kind"}), rejections: prometheus.NewCounterVec(rejectOptions, []string{"reason"}), queue: prometheus.NewHistogramVec(queueOptions, []string{"kind"}), duration: prometheus.NewHistogramVec(durationOptions, []string{"kind"}), batch: prometheus.NewHistogram(batchOptions)}
 	for _, outcome := range []string{"applied", "not_applied", "not_started", "unknown", "invalid"} {
 		metrics.records.WithLabelValues("mutate", outcome)
 	}
 	for _, outcome := range []string{"success", "failure"} {
 		metrics.records.WithLabelValues("read", outcome)
+	}
+	for _, operation := range []string{"read", "mutate"} {
+		metrics.failures.WithLabelValues(operation)
 	}
 	metrics.executions.WithLabelValues("execution")
 	metrics.queue.WithLabelValues("execution")
@@ -56,7 +60,7 @@ func (r *Runtime) Collect(ch chan<- prometheus.Metric) {
 	if collector, ok := r.adapter.(prometheus.Collector); ok {
 		collector.Collect(ch)
 	}
-	collectors := []prometheus.Collector{r.metrics.records, r.metrics.executions, r.metrics.rejections, r.metrics.queue, r.metrics.duration, r.metrics.batch}
+	collectors := []prometheus.Collector{r.metrics.records, r.metrics.failures, r.metrics.executions, r.metrics.rejections, r.metrics.queue, r.metrics.duration, r.metrics.batch}
 	for _, collector := range collectors {
 		collector.Collect(ch)
 	}
@@ -72,12 +76,16 @@ func (r *Runtime) terminalLocked(t *Ticket, event *pb.Event) {
 		label := "success"
 		if event.GetReadResult().GetFailure() != nil {
 			label = "failure"
+			r.metrics.failures.WithLabelValues("read").Inc()
 		}
 		r.metrics.records.WithLabelValues("read", label).Inc()
 		return
 	}
 	if t.plan.Command.GetMutate() == nil {
 		return
+	}
+	if event.GetMutationResult().GetFailure() != nil {
+		r.metrics.failures.WithLabelValues("mutate").Inc()
 	}
 	label := "invalid"
 	switch event.GetMutationResult().GetOutcome() {
