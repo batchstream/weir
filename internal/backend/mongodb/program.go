@@ -86,7 +86,6 @@ func (a *Adapter) runPrograms(ctx context.Context, batch *programBatch) {
 		}
 		session.EndSession(cleanup)
 	}()
-	txctx := mongo.NewSessionContext(ctx, session)
 	for attempt := 0; attempt < a.options().RetryAttempts && ctx.Err() == nil; attempt++ {
 		batch.cancelled(ctx)
 		active = batch.active()
@@ -98,133 +97,17 @@ func (a *Adapter) runPrograms(ctx context.Context, batch *programBatch) {
 			batch.fail(pb.MutationOutcome_NOT_APPLIED, backendFailure(ctx, err))
 			return
 		}
-		readPlans := make([]*execution.Plan, len(active))
-		for i, position := range active {
-			readPlans[i] = batch.plans[position]
-		}
-		documents, readErr := a.readPrograms(txctx, readPlans)
-		if readErr != nil {
-			var commandError mongo.CommandError
-			settled := errors.As(readErr, &commandError) && len(commandError.Raw) != 0 || errors.Is(readErr, errProgramBatchBound)
-			aborted := a.abortProgramTransaction(session, settled)
-			if !aborted {
-				batch.fail(pb.MutationOutcome_NOT_APPLIED, protocol.Fail(pb.FailureCode_UNAVAILABLE, "MongoDB transaction rollback unconfirmed"))
-				return
-			}
-			if errors.Is(readErr, errProgramBatchBound) && len(active) > 1 {
-				a.splitPrograms(ctx, batch, active)
-				return
-			}
-			if programHasLabel(readErr, "TransientTransactionError") && pauseProgram(ctx, a.options().RetryBackoff) {
-				continue
-			}
-			failure := backendFailure(ctx, readErr)
-			if errors.Is(readErr, execution.ErrExecutionMemory) {
-				failure = recordMemoryFailure()
-			}
-			batch.fail(pb.MutationOutcome_NOT_APPLIED, failure)
+		state := &programAttempt{batch: batch, session: session, active: active, number: attempt, ambiguous: &ambiguous}
+		switch a.runProgramAttempt(ctx, state) {
+		case programAttemptFinished:
 			return
-		}
-		writes, writePositions := a.transformPrograms(txctx, batch, active, documents)
-		// A cancellation during another member's Lua evaluation only excludes
-		// this caller's not-yet-sent write. Nothing is retracted after W starts.
-		keptWrites := writes[:0]
-		keptPositions := writePositions[:0]
-		for i, position := range writePositions {
-			work := batch.plans[position]
-			if failure := programCallerFailure(ctx, work); failure != nil {
-				batch.results[position] = protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, failure)
-				continue
-			}
-			keptWrites = append(keptWrites, writes[i])
-			keptPositions = append(keptPositions, position)
-		}
-		writes, writePositions = keptWrites, keptPositions
-		if len(writes) == 0 {
-			a.abortProgramTransaction(session, true)
+		case programAttemptSplit:
+			a.splitPrograms(ctx, batch, batch.active())
 			return
+		case programAttemptRetry:
+			continue
 		}
-		replies, settled, writeErr := a.writePrograms(txctx, writes)
-		if writeErr != nil {
-			var commandError mongo.CommandError
-			settled := errors.As(writeErr, &commandError) && len(commandError.Raw) != 0 || errors.Is(writeErr, errProgramBatchBound)
-			aborted := a.abortProgramTransaction(session, settled)
-			if !aborted {
-				batch.fail(pb.MutationOutcome_NOT_APPLIED, protocol.Fail(pb.FailureCode_UNAVAILABLE, "MongoDB transaction rollback unconfirmed"))
-				return
-			}
-			if errors.Is(writeErr, errProgramBatchBound) && len(batch.active()) > 1 {
-				a.splitPrograms(ctx, batch, batch.active())
-				return
-			}
-			if programHasLabel(writeErr, "TransientTransactionError") && pauseProgram(ctx, a.options().RetryBackoff) {
-				continue
-			}
-			failure := backendFailure(ctx, writeErr)
-			if errors.Is(writeErr, execution.ErrExecutionMemory) {
-				failure = recordMemoryFailure()
-			}
-			batch.fail(pb.MutationOutcome_NOT_APPLIED, failure)
-			return
-		}
-		rejected, retry := false, false
-		for i, reply := range replies {
-			if reply == nil || reply.Outcome == pb.MutationOutcome_UNKNOWN {
-				rejected = true
-				continue
-			}
-			if reply.Outcome != pb.MutationOutcome_APPLIED {
-				rejected = true
-				// A missing insert can race an external writer. One fresh
-				// snapshot distinguishes that race from a stable constraint.
-				if reply.GetFailure().GetCode() == pb.FailureCode_CONFLICT || writes[i].Backend.(*plan).action == "create" && attempt == 0 {
-					retry = true
-				}
-			}
-		}
-		if rejected {
-			aborted := a.abortProgramTransaction(session, settled)
-			if !aborted {
-				batch.fail(pb.MutationOutcome_NOT_APPLIED, protocol.Fail(pb.FailureCode_UNAVAILABLE, "MongoDB transaction rollback unconfirmed"))
-				return
-			}
-			if !retry {
-				for i, reply := range replies {
-					if reply != nil && reply.Outcome == pb.MutationOutcome_NOT_APPLIED {
-						batch.results[writePositions[i]] = reply
-					}
-				}
-				if len(batch.active()) == len(active) {
-					batch.fail(pb.MutationOutcome_NOT_APPLIED, protocol.Fail(pb.FailureCode_UNAVAILABLE, "MongoDB batch write acknowledgement incomplete"))
-					return
-				}
-			}
-			if pauseProgram(ctx, a.options().RetryBackoff) {
-				continue
-			}
-			break
-		}
-		retryTransaction := false
-		for commitAttempt := 0; commitAttempt < a.options().RetryAttempts && ctx.Err() == nil; commitAttempt++ {
-			commitContext, release := nativeAttemptContext(txctx)
-			err = session.CommitTransaction(commitContext)
-			release()
-			if err == nil {
-				batch.fail(pb.MutationOutcome_APPLIED, nil)
-				return
-			}
-			if !ambiguous && !programHasLabel(err, "UnknownTransactionCommitResult") && programHasLabel(err, "TransientTransactionError") {
-				retryTransaction = true
-				break
-			}
-			ambiguous = true
-			if !pauseProgram(ctx, a.options().RetryBackoff) {
-				break
-			}
-		}
-		if !retryTransaction || !pauseProgram(ctx, a.options().RetryBackoff) {
-			break
-		}
+		break
 	}
 	outcome := pb.MutationOutcome_NOT_APPLIED
 	failure := protocol.Fail(pb.FailureCode_CONFLICT, "MongoDB transaction retry limit exceeded")
@@ -237,6 +120,191 @@ func (a *Adapter) runPrograms(ctx context.Context, batch *programBatch) {
 	}
 	batch.fail(outcome, failure)
 	return
+}
+
+type programAttemptStatus uint8
+
+const (
+	programAttemptFinished programAttemptStatus = iota
+	programAttemptRetry
+	programAttemptSplit
+	programAttemptExhausted
+)
+
+type programAttempt struct {
+	batch     *programBatch
+	session   *mongo.Session
+	active    []int
+	number    int
+	ambiguous *bool
+}
+
+// Each attempt retires its retained documents before another snapshot, split,
+// or group can reuse the shared record window. Results have separate owners.
+type programMemoryScope struct {
+	memory    *recordMemory
+	held      int
+	documents []bson.Raw
+	writes    []*execution.Plan
+}
+
+func newProgramMemoryScope(ctx context.Context) *programMemoryScope {
+	scope := &programMemoryScope{}
+	if memory, ok := ctx.Value(recordMemoryContextKey).(*recordMemory); ok {
+		scope.memory, scope.held = memory, memory.held
+	}
+	return scope
+}
+
+func (s *programMemoryScope) close() {
+	clear(s.documents[:cap(s.documents)])
+	s.documents = nil
+	clear(s.writes[:cap(s.writes)])
+	s.writes = nil
+	if s.memory != nil {
+		s.memory.held = s.held
+	}
+}
+
+func (s *programMemoryScope) filterCancelled(ctx context.Context, batch *programBatch, positions []int) []int {
+	kept := 0
+	for i, position := range positions {
+		work := batch.plans[position]
+		if failure := programCallerFailure(ctx, work); failure != nil {
+			batch.results[position] = protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, failure)
+			continue
+		}
+		s.writes[kept], positions[kept] = s.writes[i], position
+		kept++
+	}
+	// Truncation alone leaves cancelled replacements reachable in the backing array.
+	clear(s.writes[kept:])
+	s.writes = s.writes[:kept]
+	return positions[:kept]
+}
+
+func (a *Adapter) runProgramAttempt(ctx context.Context, state *programAttempt) programAttemptStatus {
+	scope := newProgramMemoryScope(ctx)
+	defer scope.close()
+	batch, session, active, attempt := state.batch, state.session, state.active, state.number
+	txctx := mongo.NewSessionContext(ctx, session)
+	readPlans := make([]*execution.Plan, len(active))
+	for i, position := range active {
+		readPlans[i] = batch.plans[position]
+	}
+	var readErr error
+	scope.documents, readErr = a.readPrograms(txctx, readPlans)
+	if readErr != nil {
+		var commandError mongo.CommandError
+		settled := errors.As(readErr, &commandError) && len(commandError.Raw) != 0 || errors.Is(readErr, errProgramBatchBound)
+		aborted := a.abortProgramTransaction(session, settled)
+		if !aborted {
+			batch.fail(pb.MutationOutcome_NOT_APPLIED, protocol.Fail(pb.FailureCode_UNAVAILABLE, "MongoDB transaction rollback unconfirmed"))
+			return programAttemptFinished
+		}
+		if errors.Is(readErr, errProgramBatchBound) && len(active) > 1 {
+			return programAttemptSplit
+		}
+		if programHasLabel(readErr, "TransientTransactionError") && pauseProgram(ctx, a.options().RetryBackoff) {
+			return programAttemptRetry
+		}
+		failure := backendFailure(ctx, readErr)
+		if errors.Is(readErr, execution.ErrExecutionMemory) {
+			failure = recordMemoryFailure()
+		}
+		batch.fail(pb.MutationOutcome_NOT_APPLIED, failure)
+		return programAttemptFinished
+	}
+	var writePositions []int
+	scope.writes, writePositions = a.transformPrograms(txctx, batch, active, scope.documents)
+	// A cancellation during another member's Lua evaluation only excludes
+	// this caller's not-yet-sent write. Nothing is retracted after W starts.
+	writePositions = scope.filterCancelled(ctx, batch, writePositions)
+	if len(scope.writes) == 0 {
+		a.abortProgramTransaction(session, true)
+		return programAttemptFinished
+	}
+	replies, settled, writeErr := a.writePrograms(txctx, scope.writes)
+	if writeErr != nil {
+		var commandError mongo.CommandError
+		settled := errors.As(writeErr, &commandError) && len(commandError.Raw) != 0 || errors.Is(writeErr, errProgramBatchBound)
+		aborted := a.abortProgramTransaction(session, settled)
+		if !aborted {
+			batch.fail(pb.MutationOutcome_NOT_APPLIED, protocol.Fail(pb.FailureCode_UNAVAILABLE, "MongoDB transaction rollback unconfirmed"))
+			return programAttemptFinished
+		}
+		if errors.Is(writeErr, errProgramBatchBound) && len(batch.active()) > 1 {
+			return programAttemptSplit
+		}
+		if programHasLabel(writeErr, "TransientTransactionError") && pauseProgram(ctx, a.options().RetryBackoff) {
+			return programAttemptRetry
+		}
+		failure := backendFailure(ctx, writeErr)
+		if errors.Is(writeErr, execution.ErrExecutionMemory) {
+			failure = recordMemoryFailure()
+		}
+		batch.fail(pb.MutationOutcome_NOT_APPLIED, failure)
+		return programAttemptFinished
+	}
+	rejected, retry := false, false
+	for i, reply := range replies {
+		if reply == nil || reply.Outcome == pb.MutationOutcome_UNKNOWN {
+			rejected = true
+			continue
+		}
+		if reply.Outcome != pb.MutationOutcome_APPLIED {
+			rejected = true
+			// A missing insert can race an external writer. One fresh
+			// snapshot distinguishes that race from a stable constraint.
+			if reply.GetFailure().GetCode() == pb.FailureCode_CONFLICT || scope.writes[i].Backend.(*plan).action == "create" && attempt == 0 {
+				retry = true
+			}
+		}
+	}
+	if rejected {
+		aborted := a.abortProgramTransaction(session, settled)
+		if !aborted {
+			batch.fail(pb.MutationOutcome_NOT_APPLIED, protocol.Fail(pb.FailureCode_UNAVAILABLE, "MongoDB transaction rollback unconfirmed"))
+			return programAttemptFinished
+		}
+		if !retry {
+			for i, reply := range replies {
+				if reply != nil && reply.Outcome == pb.MutationOutcome_NOT_APPLIED {
+					batch.results[writePositions[i]] = reply
+				}
+			}
+			if len(batch.active()) == len(active) {
+				batch.fail(pb.MutationOutcome_NOT_APPLIED, protocol.Fail(pb.FailureCode_UNAVAILABLE, "MongoDB batch write acknowledgement incomplete"))
+				return programAttemptFinished
+			}
+		}
+		if pauseProgram(ctx, a.options().RetryBackoff) {
+			return programAttemptRetry
+		}
+		return programAttemptExhausted
+	}
+	retryTransaction := false
+	for commitAttempt := 0; commitAttempt < a.options().RetryAttempts && ctx.Err() == nil; commitAttempt++ {
+		commitContext, release := nativeAttemptContext(txctx)
+		err := session.CommitTransaction(commitContext)
+		release()
+		if err == nil {
+			batch.fail(pb.MutationOutcome_APPLIED, nil)
+			return programAttemptFinished
+		}
+		if !*state.ambiguous && !programHasLabel(err, "UnknownTransactionCommitResult") && programHasLabel(err, "TransientTransactionError") {
+			retryTransaction = true
+			break
+		}
+		*state.ambiguous = true
+		if !pauseProgram(ctx, a.options().RetryBackoff) {
+			break
+		}
+	}
+	if !retryTransaction || !pauseProgram(ctx, a.options().RetryBackoff) {
+		return programAttemptExhausted
+	}
+	return programAttemptRetry
 }
 
 func (b *programBatch) active() []int {
@@ -327,7 +395,15 @@ func (a *Adapter) readPrograms(ctx context.Context, plans []*execution.Plan) ([]
 	}
 	command = bson.Raw(encoded)
 	state := &recordCursor{target: target, items: len(ids)}
+	scope := newProgramMemoryScope(ctx)
+	complete := false
+	defer func() {
+		if !complete {
+			scope.close()
+		}
+	}()
 	documents := make([]bson.Raw, len(plans))
+	scope.documents = documents
 	received := 0
 	for page := 0; page <= len(plans); page++ {
 		if err := reserveRecordWorking(ctx, plans, 0); err != nil {
@@ -369,6 +445,8 @@ func (a *Adapter) readPrograms(ctx context.Context, plans []*execution.Plan) ([]
 			received++
 		}
 		if state.cursor == 0 {
+			// The attempt takes ownership only after complete read evidence.
+			complete = true
 			return documents, nil
 		}
 		command = bson.D{{Key: "getMore", Value: state.cursor}, {Key: "collection", Value: target.collection}, {Key: "batchSize", Value: a.programBatchSize(max(1, len(plans)-received))}}
