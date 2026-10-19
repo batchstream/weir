@@ -3,6 +3,7 @@ import copy
 import importlib.util
 import json
 import os
+import shlex
 from pathlib import Path
 import subprocess
 import sys
@@ -88,6 +89,25 @@ RECORDED_INTERNAL_BACKEND = json.loads('''
 ''')
 
 
+# Actual CI39335210270 read-only config bootstrap failure; never executed.
+RECORDED_KEYSTORE_ERROR = 'java.nio.file.FileSystemException: /usr/share/elasticsearch/config/elasticsearch.keystore.tmp: Read-only file system\n\tat java.base/sun.nio.fs.UnixException.translateToIOException(UnixException.java:102)\n\tat java.base/sun.nio.fs.UnixException.rethrowAsIOException(UnixException.java:108)\n\tat java.base/sun.nio.fs.UnixException.rethrowAsIOException(UnixException.java:113)\n\tat java.base/sun.nio.fs.UnixFileSystemProvider.newFileChannel(UnixFileSystemProvider.java:214)\n\tat java.base/sun.nio.fs.UnixFileSystemProvider.newByteChannel(UnixFileSystemProvider.java:245)\n\tat java.base/java.nio.file.spi.FileSystemProvider.newOutputStream(FileSystemProvider.java:426)\n\tat java.base/java.nio.file.Files.newOutputStream(Files.java:215)\n\tat org.apache.lucene.store.FSDirectory$FSIndexOutput.<init>(FSDirectory.java:394)\n\tat org.apache.lucene.store.FSDirectory$FSIndexOutput.<init>(FSDirectory.java:387)\n\tat org.apache.lucene.store.FSDirectory.createOutput(FSDirectory.java:220)\n\tat org.elasticsearch.common.settings.KeyStoreWrapper.save(KeyStoreWrapper.java:454)\n\tat org.elasticsearch.common.settings.KeyStoreWrapper.save(KeyStoreWrapper.java:444)\n\tat org.elasticsearch.common.settings.KeyStoreWrapper.bootstrap(KeyStoreWrapper.java:230)\n\tat org.elasticsearch.server.cli.KeyStoreLoader.bootstrap(KeyStoreLoader.java:38)\n\tat org.elasticsearch.server.cli.ServerCli.execute(ServerCli.java:94)\n\tat org.elasticsearch.common.cli.EnvironmentAwareCommand.execute(EnvironmentAwareCommand.java:55)\n\tat org.elasticsearch.cli.Command.mainWithoutErrorHandling(Command.java:101)\n\tat org.elasticsearch.cli.Command.main(Command.java:54)\n\tat org.elasticsearch.launcher.CliToolLauncher.main(CliToolLauncher.java:65)\n'
+RECORDED_KEYSTORE_EXIT = json.loads('''
+{
+  "Dead": false,
+  "Error": "",
+  "ExitCode": 74,
+  "FinishedAt": "2026-10-19T22:29:56.682287834Z",
+  "OOMKilled": false,
+  "Paused": false,
+  "Pid": 0,
+  "Restarting": false,
+  "Running": false,
+  "StartedAt": "2026-10-19T22:29:55.571636034Z",
+  "Status": "exited"
+}
+''')
+
+
 class Contracts(unittest.TestCase):
     def setUp(self):
         temp = tempfile.TemporaryDirectory()
@@ -138,6 +158,10 @@ class Contracts(unittest.TestCase):
                 membership = dict(NetworkID=net["Id"])
                 networks = {self.controller.owner: membership}
                 info = dict(Id=identity, Owner=self.controller.owner, Image="sha256:" + "b" * 64, State=state, Memory=int(flags["--memory"]), Swap=int(flags["--memory-swap"]), CPU=2_000_000_000, PIDs=int(flags["--pids-limit"]), Cgroupns="private", Readonly=True, User=flags["--user"], Caps=["ALL"], Security=["no-new-privileges:true"], Privileged=False, PidMode="", Networks=networks, Ports=ports, Mounts=mounts)
+                image_index = next(i for i, arg in enumerate(args) if arg in (self.controller.es_ref, self.controller.base_ref))
+                info["Cmd"] = args[image_index + 1:]
+                info["Entrypoint"] = ["/weir"] if name.endswith("-cli") else ["/bin/tini", "--", "/usr/local/bin/docker-entrypoint.sh"]
+                info["Tmpfs"] = dict(arg[len("--tmpfs="):].split(":", 1) for arg in args if arg.startswith("--tmpfs="))
             self.resources[name] = info
             if self.failure == "partial-" + args[0]:
                 self.failure = ""
@@ -181,14 +205,21 @@ class Contracts(unittest.TestCase):
             return json.dumps(sample)
         if args[:2] == ["container", "start"]:
             pair[1]["State"]["Running"] = True
+            if pair[0].endswith("-backend") and not pair[1]["Cmd"]:
+                # Do not invent a working read-only keystore: this is the actual
+                # terminal state reached without configuration staging.
+                pair[1]["State"] = copy.deepcopy(RECORDED_KEYSTORE_EXIT)
         elif args[0] in ("kill", "stop"):
             pair[1]["State"]["Running"] = False
         elif args[0] == "wait":
             if self.failure == "shutdown":
                 pair[1]["State"]["ExitCode"] = 1
             return "0\n"
-        elif args[0] == "logs" and self.failure == "logs":
-            raise RuntimeError("logs unavailable")
+        elif args[0] == "logs":
+            if self.failure == "logs":
+                raise RuntimeError("logs unavailable")
+            if pair[1]["State"]["ExitCode"] == 74:
+                return RECORDED_KEYSTORE_ERROR
         elif args[1] == "rm":
             if self.failure != "remains":
                 del self.resources[pair[0]]
@@ -266,6 +297,7 @@ class Contracts(unittest.TestCase):
         resource, spec, info = self.recorded_backend()
         binding = dict(HostIp="127.0.0.1", HostPort="19200")
         info["Ports"] = {"9200/tcp": [binding], "9300/tcp": None}
+        info.update(Entrypoint=M.ES_ENTRYPOINT, Cmd=M.ES_COMMAND, Tmpfs=M.ES_TMPFS)
         with patch.object(self.controller, "inspect", return_value=info), patch.object(self.controller, "docker") as docker:
             self.assertEqual(self.controller.check_container(resource, spec), info)
             docker.assert_not_called()
@@ -322,6 +354,117 @@ class Contracts(unittest.TestCase):
         self.assertIsNone(result["primary_error"])
         self.assertTrue(result["cleanup_errors"])
         self.assertFalse(result["finite_complete"])
+
+    def test_backend_staging_contract_rejects_missing_unbounded_or_unsafe_configuration(self):
+        resource, spec, info = self.recorded_backend()
+        binding = dict(HostIp="127.0.0.1", HostPort="19200")
+        info["Ports"] = {"9200/tcp": [binding]}
+        info.update(Entrypoint=M.ES_ENTRYPOINT, Cmd=M.ES_COMMAND, Tmpfs=M.ES_TMPFS)
+        for failure in ("missing-command", "wrong-copy", "wrong-config-path", "missing-export", "missing-fail-fast", "bypass-entrypoint", "wrong-pid1", "missing-tmpfs", "unbounded-tmpfs", "wrong-uid", "writable-bind", "config-bind"):
+            with self.subTest(failure=failure):
+                invalid = copy.deepcopy(info)
+                if failure == "missing-command":
+                    invalid["Cmd"] = ["eswrapper"]
+                elif failure == "wrong-copy":
+                    invalid["Cmd"][2] = invalid["Cmd"][2].replace("config/.", "config/*")
+                elif failure == "wrong-config-path":
+                    invalid["Cmd"][2] = invalid["Cmd"][2].replace("/tmp/weir-es-config", "/usr/share/elasticsearch/config")
+                elif failure == "missing-export":
+                    invalid["Cmd"][2] = invalid["Cmd"][2].replace("export ES_PATH_CONF", "ES_PATH_CONF")
+                elif failure == "missing-fail-fast":
+                    invalid["Cmd"][1] = "-uc"
+                elif failure == "bypass-entrypoint":
+                    invalid["Cmd"][2] = invalid["Cmd"][2].replace("/usr/local/bin/docker-entrypoint.sh eswrapper", "/usr/share/elasticsearch/bin/elasticsearch")
+                elif failure == "wrong-pid1":
+                    invalid["Entrypoint"] = ["/bin/bash"]
+                elif failure == "missing-tmpfs":
+                    invalid["Tmpfs"].pop("/tmp")
+                elif failure == "unbounded-tmpfs":
+                    invalid["Tmpfs"]["/tmp"] = "rw,nosuid,uid=1000,gid=0"
+                elif failure == "wrong-uid":
+                    invalid["Tmpfs"]["/tmp"] = invalid["Tmpfs"]["/tmp"].replace("uid=1000", "uid=0")
+                elif failure == "writable-bind":
+                    invalid["Mounts"][0]["Destination"] = "/tmp"
+                else:
+                    mount = dict(Destination="/usr/share/elasticsearch/config", Source="/foreign-config", RW=True)
+                    invalid["Mounts"].append(mount)
+                with patch.object(self.controller, "inspect", return_value=invalid), patch.object(self.controller, "docker") as docker:
+                    with self.assertRaises(RuntimeError):
+                        self.controller.check_container(resource, spec)
+                    docker.assert_not_called()
+
+    def test_staging_copies_complete_config_and_preserves_source_before_stock_startup(self):
+        source = self.root / "image-config"
+        source.mkdir()
+        nested = source / "jvm.options.d"
+        nested.mkdir()
+        files = ("elasticsearch.yml", "jvm.options", "log4j2.properties", "jvm.options.d/example.options", ".hidden-fixture")
+        for name in files:
+            (source / name).write_text("immutable fixture " + name)
+        before = {name: (source / name).read_bytes() for name in files}
+        destination = self.root / "staged-config"
+        entrypoint = self.root / "stock-entrypoint-stub"
+        # This is our inert test stub, not downloaded Elasticsearch code.
+        entrypoint.write_text('#!/bin/bash\nset -eu\ntest "$1" = eswrapper\ntest -d "$ES_PATH_CONF"\nprintf staged > "$ES_PATH_CONF/elasticsearch.keystore.tmp"\n')
+        entrypoint.chmod(0o755)
+        script = M.ES_COMMAND[2].replace("/usr/share/elasticsearch/config/.", shlex.quote(str(source)) + "/.")
+        script = script.replace("/tmp/weir-es-config", shlex.quote(str(destination)))
+        script = script.replace("/usr/local/bin/docker-entrypoint.sh", shlex.quote(str(entrypoint)))
+        command = ["/bin/bash", "-euc", script]
+        result = subprocess.run(command, capture_output=True, check=False)
+        self.assertEqual(result.returncode, 0, result.stderr.decode())
+        staged = {name: (destination / name).read_bytes() for name in files}
+        unchanged = {name: (source / name).read_bytes() for name in files}
+        self.assertEqual(staged, before)
+        self.assertEqual(unchanged, before)
+        self.assertEqual((destination / "elasticsearch.keystore.tmp").read_text(), "staged")
+        self.assertFalse((source / "elasticsearch.keystore.tmp").exists())
+        self.assertEqual(destination.stat().st_mode & 0o777, 0o700)
+        # Existing destination must not be reused, even if it contains valid data.
+        again = subprocess.run(command, capture_output=True, check=False)
+        self.assertNotEqual(again.returncode, 0)
+        missing = script.replace(shlex.quote(str(source)), shlex.quote(str(self.root / "missing-image-config")))
+        missing = missing.replace(shlex.quote(str(destination)), shlex.quote(str(self.root / "failed-stage")))
+        failed = subprocess.run(["/bin/bash", "-euc", missing], capture_output=True, check=False)
+        self.assertNotEqual(failed.returncode, 0)
+        self.assertFalse((self.root / "failed-stage/elasticsearch.keystore.tmp").exists())
+
+    def test_readiness_detects_recorded_backend_exit_before_http(self):
+        backend = M.Resource("container", self.controller.owner + "-backend", "a" * 64)
+        info = dict(Id=backend.identity, Owner=self.controller.owner, State=RECORDED_KEYSTORE_EXIT)
+        with patch.object(self.controller, "inspect", return_value=info), patch.object(self.controller.http, "open") as http, patch.object(M.time, "sleep") as sleep:
+            with self.assertRaisesRegex(RuntimeError, "backend exited during readiness: exit=74 oom=False"):
+                self.controller.wait_http("http://127.0.0.1:1/", 90, backend=backend)
+            http.assert_not_called()
+            sleep.assert_not_called()
+        self.assertIn("elasticsearch.keystore.tmp: Read-only file system", RECORDED_KEYSTORE_ERROR)
+
+    def test_readiness_terminal_error_keeps_logs_and_verified_cleanup(self):
+        original_wait = self.controller.wait_http
+        logged = []
+        def readiness(url, timeout, backend=None):
+            self.assertIsNotNone(backend)
+            info = next(info for info in self.resources.values() if info["Id"] == backend.identity)
+            info["State"] = copy.deepcopy(RECORDED_KEYSTORE_EXIT)
+            original_wait(url, timeout, backend=backend)
+        def command(args, timeout=15):
+            result = self.command(args, timeout)
+            if args[0] == "logs":
+                logged.append(result)
+            return result
+        with patch.object(M, "native_preflight", return_value="amd64"), patch.object(self.controller, "docker", side_effect=command), patch.object(self.controller, "driver", side_effect=self.driver), patch.object(self.controller, "wait_http", side_effect=readiness), patch.object(self.controller.http, "open") as http:
+            with self.assertRaisesRegex(RuntimeError, "backend exited during readiness: exit=74 oom=False"):
+                self.controller.execute()
+            http.assert_not_called()
+        self.assertEqual(logged, [RECORDED_KEYSTORE_ERROR])
+        self.assertEqual(self.resources, self.empty)
+        self.assertEqual(len([a for a in self.calls if a[:2] == ["container", "create"]]), 1)
+        result = json.loads((self.opts.output / "finite-result.json").read_text())
+        self.assertIn("backend exited during readiness: exit=74 oom=False", result["primary_error"])
+        self.assertEqual(result["cleanup_errors"], [])
+        self.assertFalse(result["finite_complete"])
+        cleanup = json.loads((self.opts.output / "cleanup.json").read_text())
+        self.assertTrue(all(resource["absent"] for resource in cleanup["resources"]))
 
     def test_failures_cleanup_and_primary_error_retention(self):
         for failure in ("preflight", "partial-network", "partial-container", "driver", "shutdown", "actual-controls", "observer-bytes", "pid1-bytes"):
@@ -405,9 +548,12 @@ class Contracts(unittest.TestCase):
             def read(self, limit):
                 return b'{"cluster_name":"unrelated","version":{"number":"8.19.22"}}'
         self.opts.output.mkdir()
-        with patch.object(self.controller.http, "open", return_value=Response()):
+        backend = M.Resource("container", self.controller.owner + "-backend", "a" * 64)
+        state = dict(Running=True, ExitCode=0, OOMKilled=False)
+        info = dict(Id=backend.identity, Owner=self.controller.owner, State=state)
+        with patch.object(self.controller, "inspect", return_value=info), patch.object(self.controller.http, "open", return_value=Response()):
             with self.assertRaisesRegex(RuntimeError, "wrong backend"):
-                self.controller.wait_http("http://127.0.0.1:1/", 1, identity=True)
+                self.controller.wait_http("http://127.0.0.1:1/", 1, backend=backend)
         self.assertEqual(self.calls, [])
 
     def test_readiness_timeout_and_redirects_fail_closed(self):

@@ -32,6 +32,19 @@ ES_PINS = {
     "amd64": "sha256:f1e3d88299cb0db2131fc2ab9060faefccd88fd684d11a49256ae00d7dc3c857",
     "arm64": "sha256:c2a3ed5f968be6d59c960aa0c60cfdaee667b6bc8211142021a41d0e85b43237",
 }
+# The pinned image's tini/stock entrypoint supports a custom CMD. Stage only
+# in the existing bounded /tmp, then re-enter its normal eswrapper startup.
+# cp -R includes dotfiles via /. without preserving root-owned file ownership.
+ES_ENTRYPOINT = ["/bin/tini", "--", "/usr/local/bin/docker-entrypoint.sh"]
+ES_COMMAND = ["/bin/bash", "-euc", 'export ES_PATH_CONF=/tmp/weir-es-config\n'
+              'mkdir -m 0700 "$ES_PATH_CONF"\n'
+              'cp -R /usr/share/elasticsearch/config/. "$ES_PATH_CONF/"\n'
+              'exec /usr/local/bin/docker-entrypoint.sh eswrapper']
+ES_TMPFS = {
+    "/usr/share/elasticsearch/data": "rw,noexec,nosuid,size=268435456,uid=1000,gid=0",
+    "/usr/share/elasticsearch/logs": "rw,noexec,nosuid,size=33554432,uid=1000,gid=0",
+    "/tmp": "rw,nosuid,size=134217728,uid=1000,gid=0",
+}
 FULL_ID = re.compile(r"[0-9a-f]{64}\Z")
 FINITE_CASES = ["Resolve", "Put", "Read", "Native", "Lua", "Batch4", "Update", "Delete", "oracle", "SDK-close", "ownership-zero"]
 CONTAINER_FORMAT = ('{"Id":{{json .Id}},"Owner":{{json (index .Config.Labels "weir.owner")}},'
@@ -42,7 +55,8 @@ CONTAINER_FORMAT = ('{"Id":{{json .Id}},"Owner":{{json (index .Config.Labels "we
                     '"User":{{json .Config.User}},"Caps":{{json .HostConfig.CapDrop}},'
                     '"Security":{{json .HostConfig.SecurityOpt}},"Privileged":{{json .HostConfig.Privileged}},'
                     '"PidMode":{{json .HostConfig.PidMode}},"Mounts":{{json .Mounts}},'
-                    '"Networks":{{json .NetworkSettings.Networks}},"Ports":{{json .NetworkSettings.Ports}}}')
+                    '"Networks":{{json .NetworkSettings.Networks}},"Ports":{{json .NetworkSettings.Ports}},'
+                    '"Entrypoint":{{json .Config.Entrypoint}},"Cmd":{{json .Config.Cmd}},"Tmpfs":{{json .HostConfig.Tmpfs}}}')
 NETWORK_FORMAT = '{"Id":{{json .Id}},"Owner":{{json (index .Labels "weir.owner")}},"Driver":{{json .Driver}},"Internal":{{json .Internal}},"Containers":{{json .Containers}}}'
 IMAGE_FORMAT = '{"Id":{{json .Id}},"OS":{{json .Os}},"Arch":{{json .Architecture}},"Digests":{{json .RepoDigests}}}'
 MAX_OUTPUT = 4 << 20
@@ -291,14 +305,18 @@ class Controller:
         options = dict(path=target, stage=stage, revision=self.opts.revision, pid=child.pid, stdout=raw.decode("utf-8"))
         return completion(options)
 
-    def wait_http(self, url, timeout, identity=None):
+    def wait_http(self, url, timeout, backend=None):
         deadline = min(self.deadline, time.monotonic() + timeout)
         while time.monotonic() < deadline:
+            if backend:
+                info = self.guard(backend)
+                state = info["State"]
+                require(state["Running"] and not state["OOMKilled"], "backend exited during readiness: exit=" + str(state["ExitCode"]) + " oom=" + str(state["OOMKilled"]))
             try:
                 with self.http.open(url, timeout=min(2, max(.01, deadline - time.monotonic()))) as response:
                     raw = response.read((64 << 10) + 1)
                     require(response.status == 200 and len(raw) <= 64 << 10, "readiness response bound/status")
-                if identity:
+                if backend:
                     body = json.loads(raw)
                     version = body.get("version")
                     require(isinstance(version, dict), "wrong backend version identity")
@@ -341,6 +359,9 @@ class Controller:
             require(info["Ports"][str(port) + "/tcp"] == [dict(HostIp="127.0.0.1", HostPort=str(host))], "non-loopback/wrong port publication")
         observer = [m for m in info["Mounts"] if m["Destination"] == "/observer"]
         require(len(observer) == 1 and observer[0]["Source"] == str(self.opts.observer) and not observer[0]["RW"], "unknown/writable observer mount")
+        if spec["role"] == "backend":
+            require(info.get("Entrypoint") == ES_ENTRYPOINT and info.get("Cmd") == ES_COMMAND, "backend stock entrypoint/config staging mismatch")
+            require(info.get("Tmpfs") == ES_TMPFS and len(info["Mounts"]) == 1, "backend bounded staging/tmpfs mounts mismatch")
         self.evidence(spec["role"] + "-container.json", info)
         return info
 
@@ -493,12 +514,13 @@ class Controller:
         self.guard(network)
         oracle_port, app_port, diag_port = free_port(), free_port(), free_port()
         require(len({oracle_port, app_port, diag_port}) == 3, "ephemeral port collision; retry explicitly with fresh invocation")
-        es_extra = ["--tmpfs=/usr/share/elasticsearch/data:rw,noexec,nosuid,size=268435456,uid=1000,gid=0", "--tmpfs=/usr/share/elasticsearch/logs:rw,noexec,nosuid,size=33554432,uid=1000,gid=0", "--tmpfs=/tmp:rw,nosuid,size=134217728,uid=1000,gid=0", "--env=cluster.name=" + self.owner, "--env=discovery.type=single-node", "--env=xpack.security.enabled=false", "--env=action.auto_create_index=false", "--env=ES_JAVA_OPTS=-Xms512m -Xmx512m"]
+        es_extra = ["--tmpfs=" + path + ":" + options for path, options in ES_TMPFS.items()]
+        es_extra += ["--env=cluster.name=" + self.owner, "--env=discovery.type=single-node", "--env=xpack.security.enabled=false", "--env=action.auto_create_index=false", "--env=ES_JAVA_OPTS=-Xms512m -Xmx512m"]
         es_ports = {9200: oracle_port}
-        es_spec = dict(role="backend", memory=1536 << 20, pids=512, user="1000:0", network=network, ports=es_ports, extra=es_extra, image=self.es_ref, image_id=self.es_image["Id"])
+        es_spec = dict(role="backend", memory=1536 << 20, pids=512, user="1000:0", network=network, ports=es_ports, extra=es_extra, image=self.es_ref, image_id=self.es_image["Id"], command=ES_COMMAND)
         backend = self.container(es_spec)
         oracle = "http://127.0.0.1:" + str(oracle_port)
-        self.wait_http(oracle + "/", 90, identity=True)
+        self.wait_http(oracle + "/", 90, backend=backend)
         backend_before = self.observe(backend, es_spec, "before")
         basic = 'listeners:\n  application: "0.0.0.0:7447"\ndiagnostics:\n  address: "0.0.0.0:7449"\n  allow_intranet: true\ndiscovery:\n  advertise: ["127.0.0.1:%d"]\n' % app_port
         routing = 'stores:\n  - name: search\n    backend:\n      search:\n        url: "http://%s:9200"\n' % backend.name

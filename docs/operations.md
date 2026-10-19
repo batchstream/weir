@@ -349,8 +349,19 @@ after verified container absence. CLI controls are 2CPU/1GiB,
 memory=swap, 96 PIDs, nonroot/read-only/cap-drop/no-new-privileges. Backend controls
 are 2CPU/1536MiB, memory=swap, 512 PIDs, 512MiB heap, normal backend settings, and
 bounded disposable tmpfs data (256MiB), logs (32MiB), temporary storage (128MiB)
-and rotated Docker logs (2MiB). Driver/probes/proxies are not placed in the CLI
-workload quota, except that the brief **in-container observer exec** itself is
+and rotated Docker logs (2MiB). The backend copies the complete immutable image
+`config/.` tree, including dotfiles, without preserving ownership into a newly
+created private `/tmp/weir-es-config` directory. This shares the existing 128MiB
+`/tmp` tmpfs; it adds no writable root or storage/memory allowance. The static
+startup command exports `ES_PATH_CONF` to that same staged directory, then execs
+the stock `docker-entrypoint.sh eswrapper`. The pinned image's `/bin/tini` remains
+PID1, and normal startup/keystore checks run unchanged. Runtime inspection requires
+the exact staging command, stock entrypoint and original finite tmpfs settings;
+configuration is not substituted with a partial hand-written file or a host bind.
+No container environment enumeration or secret input is used. An exited owned
+backend fails readiness immediately, retaining logs and guarded cleanup instead
+of waiting for the full HTTP deadline. Driver/probes/proxies are not placed in the
+CLI workload quota, except that the brief **in-container observer exec** itself is
 charged to the observed container: these are not formal workload-only accounting
 samples.
 
