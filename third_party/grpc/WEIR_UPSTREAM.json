@@ -563,6 +563,11 @@
   },
   "patchedFiles": [
     {
+      "path": "internal/transport/controlbuf.go",
+      "upstream_sha256": "9d0148757ecf51ad6155b62d4b33802635806a5651c79b6f6bdaba6843e1823b",
+      "sha256": "9d29eb7de50eed7d0165941f412f2bae8bf804e792c6b00456706e0c4de4d101"
+    },
+    {
       "path": "internal/transport/http2_server.go",
       "upstream_sha256": "84ad3bde6a86be6ab86af02adc250ae04418fb24aafa628292141fb6fc9ed093",
       "sha256": "60de29847e2a902cf3f8beba37f5d9969535cc5959603bbc9cfd77abd0b40d87"
@@ -591,11 +596,11 @@
   "newFiles": [
     {
       "path": "WEIR_PATCH.diff",
-      "sha256": "9dd32310820026cc104396581a18e5278d64345097ffe59ba9b7f86c83bec1d8"
+      "sha256": "032f5d91c2f858aff74ab309354d7315286fdfb1a10cb59bf30c6f3b56ccce8a"
     },
     {
       "path": "WEIR_PATCH.md",
-      "sha256": "90ae8a98d2a4a6d16af80c830e4b3d46887a30ef1318706436327689c9ca10ca"
+      "sha256": "d19d52cf44efe9506bed5e5ccbb94c938107aa229d5fd933c61cd456304e5f6a"
     },
     {
       "path": "internal/transport/receive_memory.go",
@@ -603,7 +608,7 @@
     },
     {
       "path": "internal/transport/receive_memory_test.go",
-      "sha256": "7f5081eca665c64723d09318b7143cddcd399b5dcfbd280ad6be7028feea3296"
+      "sha256": "6302a671e5934f73f6355de8a589c39713735b99e0e32cecee4519ca6145cd51"
     },
     {
       "path": "mem/receive_memory.go",

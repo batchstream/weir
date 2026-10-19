@@ -1,6 +1,7 @@
 package transport
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
@@ -14,6 +15,7 @@ import (
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/hpack"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/internal/channelz"
 	"google.golang.org/grpc/keepalive"
 	"google.golang.org/grpc/mem"
 	"google.golang.org/grpc/status"
@@ -149,6 +151,139 @@ func TestReceiveFinishStreamDrainsChannelBacklogAndReaderTail(t *testing.T) {
 	stream.closeReceiveBuffers()
 	if live.Load() != 0 {
 		t.Fatal("repeated cancellation changed owner accounting")
+	}
+}
+
+// cancelOnLenBuffer injects cancellation after write's stream-state check but
+// before it acquires the queued DATA reference, without a scheduler-dependent race.
+type cancelOnLenBuffer struct {
+	mem.Buffer
+	cancel func()
+}
+
+func (buffer *cancelOnLenBuffer) Len() int {
+	if buffer.cancel != nil {
+		cancel := buffer.cancel
+		buffer.cancel = nil
+		cancel()
+	}
+	return buffer.Buffer.Len()
+}
+
+func TestReceiveCanceledStreamLateDataReleasesOnlyTransportReference(t *testing.T) {
+	for _, freeBeforeLoopy := range []bool{false, true} {
+		name := "caller-frees-after-loopy"
+		if freeBeforeLoopy {
+			name = "caller-frees-before-loopy"
+		}
+		t.Run(name, func(t *testing.T) {
+			done := make(chan struct{})
+			native := &http2Server{controlBuf: newControlBuffer(done), activeStreams: make(map[uint32]*ServerStream), channelz: &channelz.Socket{}}
+			defer native.controlBuf.finish()
+			var wire bytes.Buffer
+			writer := newBufWriter(&wire, 0, nil)
+			framer := &framer{writer: writer, fr: http2.NewFramer(&wire, &wire)}
+			loopy := &loopyWriter{estdStreams: make(map[uint32]*outStream), activeStreams: newOutStreamList(), sendQuota: defaultWindowSize, oiws: defaultWindowSize, framer: framer}
+			streams := make([]*ServerStream, 0, 2)
+			for _, id := range []uint32{1, 3} {
+				ctx, cancel := context.WithCancel(t.Context())
+				defer cancel()
+				stream := &ServerStream{cancel: cancel}
+				stream.id, stream.ctx = id, ctx
+				stream.headerSent.Store(true)
+				stream.wq.init(defaultWriteQuota, ctx.Done())
+				native.activeStreams[id] = stream
+				registration := &registerStream{streamID: id, wq: &stream.wq}
+				loopy.registerStreamHandler(registration)
+				streams = append(streams, stream)
+			}
+			var expiredReleases, siblingReleases atomic.Int32
+			siblingBuffer := mem.TrackReceiveBuffer(mem.SliceBuffer([]byte("confirmed")), func() { siblingReleases.Add(1) })
+			siblingData := mem.BufferSlice{siblingBuffer}
+			err := native.write(streams[1], nil, siblingData, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			siblingData.Free() // Only the native queued reference remains.
+			handleNext := func() {
+				item, err := native.controlBuf.get(false)
+				if err != nil || item == nil {
+					t.Fatal("missing queued transport item", item, err)
+				}
+				if err := loopy.handle(item); err != nil {
+					t.Fatal(err)
+				}
+			}
+			handleNext() // Keep the sibling's DATA owned by its live stream.
+
+			expiredBuffer := mem.TrackReceiveBuffer(mem.SliceBuffer(make([]byte, 1025)), func() { expiredReleases.Add(1) })
+			lateBuffer := &cancelOnLenBuffer{Buffer: expiredBuffer, cancel: func() {
+				native.closeStream(streams[0], false, http2.ErrCodeCancel, false)
+			}}
+			lateData := mem.BufferSlice{lateBuffer}
+			err = native.write(streams[0], nil, lateData, nil)
+			if err != nil || streams[0].ctx.Err() != context.Canceled {
+				t.Fatal("cancellation did not interleave with successful DATA enqueue", err, streams[0].ctx.Err())
+			}
+			if freeBeforeLoopy {
+				lateData.Free()
+			}
+			handleNext() // RST/deadline cleanup removes stream 1 first.
+			handleNext() // Its concurrently enqueued DATA must be discarded and freed.
+			if !freeBeforeLoopy {
+				if expiredReleases.Load() != 0 || len(expiredBuffer.ReadOnlyData()) != 1025 {
+					t.Fatal("discarding DATA released the caller's reference")
+				}
+				lateData.Free()
+			}
+			if expiredReleases.Load() != 1 {
+				t.Fatal("late DATA leaked its transport reference after RPC cancellation", expiredReleases.Load())
+			}
+			if siblingReleases.Load() != 0 || len(native.activeStreams) != 1 || native.activeStreams[3] != streams[1] {
+				t.Fatal("canceling one RPC retired its sibling's ownership", siblingReleases.Load())
+			}
+			if _, err := loopy.processData(); err != nil {
+				t.Fatal(err)
+			}
+			reader := http2.NewFramer(nil, &wire)
+			frame, err := reader.ReadFrame()
+			if err != nil {
+				t.Fatal(err)
+			}
+			data, ok := frame.(*http2.DataFrame)
+			if !ok || data.StreamID != 3 || string(data.Data()) != "confirmed" || siblingReleases.Load() != 1 {
+				t.Fatal("sibling DATA lost its payload or final native release", frame, siblingReleases.Load())
+			}
+			// Closing the control buffer after a discarded frame must not free it twice.
+			native.controlBuf.finish()
+			if expiredReleases.Load() != 1 || siblingReleases.Load() != 1 {
+				t.Fatal("transport shutdown repeated final buffer release")
+			}
+		})
+	}
+}
+
+func TestReceiveRejectedDataEnqueueReleasesOnlyTransportReference(t *testing.T) {
+	done := make(chan struct{})
+	native := &http2Server{controlBuf: newControlBuffer(done)}
+	native.controlBuf.finish()
+	stream := &ServerStream{}
+	stream.headerSent.Store(true)
+	stream.wq.init(defaultWriteQuota, done)
+	var releases atomic.Int32
+	buffer := mem.TrackReceiveBuffer(mem.SliceBuffer(make([]byte, 1025)), func() { releases.Add(1) })
+	data := mem.BufferSlice{buffer}
+	// BufferSlice copies alias the same ref-counted buffers. A failed enqueue
+	// returns only write's Ref, leaving SendMsg's deferred Free valid.
+	callerData := data
+	err := native.write(stream, nil, data, nil)
+	if !errors.Is(err, ErrConnClosing) || releases.Load() != 0 || len(buffer.ReadOnlyData()) != 1025 {
+		t.Fatal("failed enqueue consumed the caller's buffer reference", err, releases.Load())
+	}
+	callerData.Free()
+	native.controlBuf.finish()
+	if releases.Load() != 1 {
+		t.Fatal("failed enqueue or repeated close leaked its final reference", releases.Load())
 	}
 }
 
