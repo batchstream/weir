@@ -39,11 +39,12 @@ type processFaultBackend struct {
 }
 
 type processFaultSuite struct {
-	process        *memoryRecoveryCLI
-	client         *weirclient.Client
-	pid            string
-	nativeShutdown func(*testing.T, *processFaultGate)
-	nativePID      func(*testing.T) string
+	process               *memoryRecoveryCLI
+	client                *weirclient.Client
+	pid                   string
+	nativePrepareShutdown func(*testing.T)
+	nativeShutdown        func(*testing.T, *processFaultGate) time.Time
+	nativePID             func(*testing.T) string
 }
 
 type processFaultGate struct {
@@ -716,7 +717,11 @@ func processFaultShutdown(t *testing.T, suite *processFaultSuite, backend proces
 	processFaultSeed(t, backend, id)
 	gate := processFaultArm(backend, id, "shutdown")
 	defer gate.close()
-	ctx, cancel := context.WithTimeout(t.Context(), 12*time.Second)
+	callerBound := 12 * time.Second
+	if suite.nativePrepareShutdown != nil {
+		callerBound = 25 * time.Second
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), callerBound)
 	defer cancel()
 	request, err := processFaultNative(backend, id, true)
 	if err != nil {
@@ -730,6 +735,9 @@ func processFaultShutdown(t *testing.T, suite *processFaultSuite, backend proces
 		done <- err
 	}()
 	processFaultWait(t, gate.ack, "ack lost while service receives SIGTERM")
+	if suite.nativePrepareShutdown != nil {
+		suite.nativePrepareShutdown(t)
+	}
 	select {
 	case err := <-done:
 		t.Fatal("fault caller retired before SIGTERM", err)
@@ -737,7 +745,7 @@ func processFaultShutdown(t *testing.T, suite *processFaultSuite, backend proces
 	}
 	start := time.Now()
 	if suite.nativeShutdown != nil {
-		suite.nativeShutdown(t, gate)
+		start = suite.nativeShutdown(t, gate)
 	} else {
 		packagedDocker(t, "kill", "--signal=TERM", suite.process.name)
 		// Release the observer after SIGTERM so the service drains a real failed IO
@@ -755,10 +763,20 @@ func processFaultShutdown(t *testing.T, suite *processFaultSuite, backend proces
 			t.Fatal("fault shutdown OOM", oom)
 		}
 	}
+	joinBound := time.Second
+	if suite.nativeShutdown != nil {
+		joinBound = time.Until(start.Add(8 * time.Second))
+		if joinBound <= 0 {
+			t.Fatal("fault caller join exceeded actual SIGTERM deadline")
+		}
+	}
 	select {
 	case <-done:
-	case <-time.After(time.Second):
+	case <-time.After(joinBound):
 		t.Fatal("fault caller did not retire after service shutdown")
+	}
+	if suite.nativeShutdown != nil && time.Since(start) > 8*time.Second {
+		t.Fatal("fault caller retired beyond actual SIGTERM deadline")
 	}
 	n, _ := processFaultOracle(t, backend, id)
 	if n != 1 {

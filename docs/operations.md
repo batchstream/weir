@@ -388,10 +388,16 @@ healthy Read/Native, lost native and typed acknowledgements, cancellation after
 ack, held IO with healthy concurrent calls, and proxy unavailability/recovery.
 Existing <=3s healthy/cancellation/credit-return, <=5s same-SDK recovery, independent
 durable mutation effects, typed UNKNOWN, native INCOMPLETE and no-replay gates
-remain. The final acknowledged mutation stays held while the controller delivers
-real SIGTERM; the driver releases the proxy only after signal confirmation. The
-controller checks actual wait/exit 0, no OOM, and <=8s from the absolute signal
-operation boundary; the driver also bounds its whole shutdown handshake to 8s.
+remain. With the final acknowledged mutation still held and its caller uncancelled,
+a separate <=8s preparation handshake completes the final cgroup observation.
+Only then may the driver request real SIGTERM; it releases the proxy only after
+signal confirmation. The controller checks actual wait/exit 0 and no OOM against
+one monotonic <=8s deadline beginning at the signal operation, and sends its
+matching host-clock deadline to the driver. Driver wait and caller join use that
+same absolute deadline, never a restarted eight-second budget. Preparation is not
+charged to the signal gate, and cannot itself release the observer or caller.
+Fast handshake polling remains 20ms; owned dependency storage scans run at most
+once per two seconds, with unchanged fail-closed scan and overall deadlines.
 Default drain 5s and retirement 2s are not overridden. Proxy/socket and SDK joins,
 owned database/index drops, and independent shutdown oracle precede structured
 completion. The controller then verifies native dependency retirement, container/

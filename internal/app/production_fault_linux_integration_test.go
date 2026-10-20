@@ -31,6 +31,7 @@ type nativeFaultMessage struct {
 	PID        int    `json:"pid"`
 	StartTicks string `json:"start_ticks"`
 	Exit       int    `json:"exit"`
+	DeadlineNS int64  `json:"deadline_ns"`
 }
 
 func nativeFaultPublish(t *testing.T, name string, message nativeFaultMessage) {
@@ -203,18 +204,33 @@ func TestProductionLinuxFault(t *testing.T) {
 		}
 		return strconv.Itoa(running.PID)
 	}
-	shutdown := func(t *testing.T, gate *processFaultGate) {
+	prepareShutdown := func(t *testing.T) {
 		t.Helper()
-		start := time.Now()
-		nativeFaultPublish(t, "shutdown.json", message)
-		nativeFaultWait(t, "signaled.json", start.Add(8*time.Second))
-		gate.close()
-		result := nativeFaultWait(t, "stopped.json", start.Add(8*time.Second))
-		if result.Exit != 0 {
-			t.Fatal("owned fault CLI nonzero exit", result.Exit)
-		}
+		nativeFaultPublish(t, "observe.json", message)
+		nativeFaultWait(t, "observed.json", time.Now().Add(8*time.Second))
 	}
-	suite := processFaultSuite{process: process, client: client, pid: pidCheck(t), nativePID: pidCheck, nativeShutdown: shutdown}
+	shutdown := func(t *testing.T, gate *processFaultGate) time.Time {
+		t.Helper()
+		requested := time.Now()
+		nativeFaultPublish(t, "shutdown.json", message)
+		signaled := nativeFaultWait(t, "signaled.json", requested.Add(8*time.Second))
+		received := time.Now()
+		remaining := time.Unix(0, signaled.DeadlineNS).Sub(received)
+		// Project the controller's host-clock boundary onto this process's
+		// monotonic clock once; later clock adjustments cannot renew the budget.
+		deadline := received.Add(remaining)
+		start := deadline.Add(-8 * time.Second)
+		if start.Before(requested) || start.After(received) || remaining <= 0 {
+			t.Fatal("invalid actual SIGTERM deadline")
+		}
+		gate.close()
+		result := nativeFaultWait(t, "stopped.json", deadline)
+		if result.Exit != 0 || result.DeadlineNS != signaled.DeadlineNS {
+			t.Fatal("owned fault CLI exit/deadline mismatch", result.Exit)
+		}
+		return start
+	}
+	suite := processFaultSuite{process: process, client: client, pid: pidCheck(t), nativePID: pidCheck, nativePrepareShutdown: prepareShutdown, nativeShutdown: shutdown}
 	backends := []processFaultBackend{
 		{store: "mongo", root: fixture.DB + "/records", media: "application/bson", mongo: fixture, mongoProxy: mongoProxy},
 		{store: "search", root: search.Index, media: "application/json", search: search, searchProxy: searchProxy},

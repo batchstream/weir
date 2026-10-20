@@ -132,7 +132,7 @@ class Contracts(unittest.TestCase):
 
     def test_fault_message_is_bounded_owned_and_single_publication(self):
         self.opts.output.mkdir()
-        message = dict(owner=self.controller.owner, driver_pid=123, mongo="mongodb://127.0.0.1:1234/", search="http://127.0.0.1:1235", pid=0, start_ticks="", exit=0)
+        message = dict(owner=self.controller.owner, driver_pid=123, mongo="mongodb://127.0.0.1:1234/", search="http://127.0.0.1:1235", pid=0, start_ticks="", exit=0, deadline_ns=0)
         self.controller.fault_publish("proxies.json", message)
         self.assertEqual(self.controller.fault_message("proxies.json", 123), message)
         with self.assertRaisesRegex(RuntimeError, "already published"):
@@ -341,7 +341,7 @@ class Contracts(unittest.TestCase):
         self.controller.owner = "weir-finite-" + "1" * 32
         stages = []
         pid = 4242
-        message = dict(owner=self.controller.owner, driver_pid=pid, mongo="mongodb://127.0.0.1:28001/?directConnection=true&serverMonitoringMode=poll", search="http://127.0.0.1:28002", pid=0, start_ticks="", exit=0)
+        message = dict(owner=self.controller.owner, driver_pid=pid, mongo="mongodb://127.0.0.1:28001/?directConnection=true&serverMonitoringMode=poll", search="http://127.0.0.1:28002", pid=0, start_ticks="", exit=0, deadline_ns=0)
 
         def mongo():
             self.controller.mongo_uri = "mongodb://127.0.0.1:27099/?replicaSet=" + self.controller.owner
@@ -379,6 +379,9 @@ class Contracts(unittest.TestCase):
             routes = (self.opts.output / "routes.yaml").read_text()
             self.assertIn(message["mongo"], routes)
             self.assertIn(message["search"], routes)
+            self.controller.fault_publish("observe.json", message)
+            self.controller.fault_progress(pid)
+            self.assertIsNotNone(self.controller.fault_message("observed.json", pid))
             self.controller.fault_publish("shutdown.json", message)
             self.controller.fault_progress(pid)
             self.assertIsNotNone(self.controller.fault_message("signaled.json", pid))
@@ -396,6 +399,77 @@ class Contracts(unittest.TestCase):
         self.assertFalse(result["qualification"])
         self.assertEqual(self.resources, {})
         self.assertTrue((self.opts.output / "load-storage-cleanup.json").is_file())
+
+    def test_fault_observation_is_outside_actual_signal_deadline(self):
+        for shutdown_seconds in (5, 8.1):
+            with self.subTest(shutdown_seconds=shutdown_seconds):
+                self.opts.output = self.root / ("clock-" + str(shutdown_seconds))
+                self.opts.output.mkdir()
+                controller = M.Controller(self.opts)
+                controller.deadline = 1000
+                controller.cli_resource = M.Resource("container", "owned-cli", "a" * 64)
+                controller.fault_cli_spec = {}
+                sample = dict(start_ticks=123, sha256="b" * 64, cpu=dict(usage_usec=1), memory_events=dict(oom=0))
+                controller.fault_before = sample
+                clock = dict(now=0.0)
+                message = dict(owner=controller.owner, driver_pid=123, mongo="", search="", pid=0, start_ticks="", exit=0, deadline_ns=0)
+
+                def observe(*args):
+                    clock["now"] += 4
+                    return sample
+
+                def docker(args, timeout=15, deadline=None):
+                    if args[0] == "wait":
+                        clock["now"] += shutdown_seconds
+                    return "0\n"
+
+                terminal = dict(State=dict(Running=False, ExitCode=0, OOMKilled=False))
+                with patch.object(M.time, "monotonic", side_effect=lambda: clock["now"]), patch.object(M.time, "time_ns", side_effect=lambda: int(clock["now"] * 1e9)), patch.object(controller, "observe", side_effect=observe) as observer, patch.object(controller, "guard", return_value=terminal), patch.object(controller, "docker", side_effect=docker):
+                    controller.fault_publish("observe.json", message)
+                    controller.fault_progress(123)
+                    self.assertEqual(clock["now"], 4)
+                    self.assertFalse((self.opts.output / "signaled.json").exists())
+                    controller.fault_publish("shutdown.json", message)
+                    if shutdown_seconds > 8:
+                        with self.assertRaisesRegex(RuntimeError, "SIGTERM/exit/OOM"):
+                            controller.fault_progress(123)
+                        self.assertFalse((self.opts.output / "stopped.json").exists())
+                    else:
+                        controller.fault_progress(123)
+                        self.assertEqual(clock["now"], 9)
+                        signaled = controller.fault_message("signaled.json", 123)
+                        stopped = controller.fault_message("stopped.json", 123)
+                        self.assertEqual(signaled["deadline_ns"], 12_000_000_000)
+                        self.assertEqual(stopped["deadline_ns"], signaled["deadline_ns"])
+                    self.assertEqual(observer.call_count, 1)
+
+    def test_fault_fast_handshake_uses_two_second_storage_cadence(self):
+        self.opts.output.mkdir()
+        self.opts.profile = M.FAULT_PROFILE
+        controller = M.Controller(self.opts)
+        controller.deadline = 1000
+        controller.hashes = dict(driver="a" * 64)
+        clock = dict(now=0.0)
+        child = MagicMock(pid=123, returncode=0)
+        child.poll.return_value = 0
+        waits = []
+
+        def wait(timeout):
+            waits.append(timeout)
+            clock["now"] += timeout
+            if clock["now"] < 4.1:
+                raise M.subprocess.TimeoutExpired("driver", timeout)
+            return 0
+
+        child.wait.side_effect = wait
+        samples = []
+        snapshot = dict(sha256="a" * 64, membership="outside")
+        with patch.object(M.time, "monotonic", side_effect=lambda: clock["now"]), patch.object(M.subprocess, "Popen", return_value=child), patch.object(M, "process_snapshot", return_value=snapshot), patch.object(controller, "fault_progress") as progress, patch.object(controller, "monitor_load_storage", side_effect=lambda: samples.append(clock["now"])), patch.object(M, "completion", return_value={}):
+            controller.driver("fault", {})
+        self.assertGreater(progress.call_count, 200)
+        self.assertTrue(all(wait == .02 for wait in waits))
+        self.assertEqual(len(samples), 3)
+        self.assertTrue(all(after - before >= 2 for before, after in zip(samples, samples[1:])))
 
     def test_formal_host_mode_requires_exact_capability_and_actual_mode(self):
         resource, spec, info = self.recorded_backend()

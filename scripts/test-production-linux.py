@@ -407,10 +407,13 @@ class Controller:
                 self.evidence(stage + "-driver-runtime.json", snapshot)
                 budget()
                 if stage in ("load", "fault"):
+                    next_storage = time.monotonic()
                     while True:
                         if stage == "fault":
                             self.fault_progress(child.pid)
-                        self.monitor_load_storage()
+                        if stage == "load" or time.monotonic() >= next_storage:
+                            self.monitor_load_storage()
+                            next_storage = time.monotonic() + 2
                         try:
                             child.wait(timeout=min(.02 if stage == "fault" else 2, budget()))
                             break
@@ -758,7 +761,7 @@ class Controller:
             return None
         require(not path.is_symlink() and path.stat().st_size <= 4096, "bounded owned fault message required")
         message = json.loads(path.read_text(), object_pairs_hook=unique_fields)
-        require(set(message) == {"owner", "driver_pid", "mongo", "search", "pid", "start_ticks", "exit"} and message["owner"] == self.owner and type(message["driver_pid"]) is int and message["driver_pid"] == pid, "fault message identity/schema mismatch")
+        require(set(message) == {"owner", "driver_pid", "mongo", "search", "pid", "start_ticks", "exit", "deadline_ns"} and message["owner"] == self.owner and type(message["driver_pid"]) is int and message["driver_pid"] == pid, "fault message identity/schema mismatch")
         return message
 
     def fault_publish(self, name, message):
@@ -807,26 +810,41 @@ class Controller:
             self.fault_identity = identity
             reply = dict(message, pid=identity["pid"], start_ticks=str(identity["start_ticks"]))
             self.fault_publish("running.json", reply)
+        elif not hasattr(self, "fault_observed"):
+            message = self.fault_message("observe.json", pid)
+            if message is None:
+                return
+            preparation_deadline = time.monotonic() + min(8, self.remaining())
+            self.phase_deadline = preparation_deadline
+            try:
+                after = self.observe(self.cli_resource, self.fault_cli_spec, "after")
+                require(after["start_ticks"] == self.fault_before["start_ticks"] and after["sha256"] == self.fault_before["sha256"], "fault CLI replaced")
+                for group in ("cpu", "memory_events"):
+                    require(all(after[group][key] >= value for key, value in self.fault_before[group].items()), "fault controls regressed")
+                self.remaining(preparation_deadline)
+                self.fault_publish("observed.json", message)
+                self.fault_observed = True
+            finally:
+                self.phase_deadline = None
         elif not hasattr(self, "fault_stopped"):
             message = self.fault_message("shutdown.json", pid)
             if message is None:
                 return
-            after = self.observe(self.cli_resource, self.fault_cli_spec, "after")
-            require(after["start_ticks"] == self.fault_before["start_ticks"] and after["sha256"] == self.fault_before["sha256"], "fault CLI replaced")
-            for group in ("cpu", "memory_events"):
-                require(all(after[group][key] >= value for key, value in self.fault_before[group].items()), "fault controls regressed")
-            callback = lambda: self.fault_publish("signaled.json", message)
-            self.shutdown_cli(self.cli_resource, callback)
+            def signaled(deadline_ns):
+                message["deadline_ns"] = deadline_ns
+                self.fault_publish("signaled.json", message)
+            self.shutdown_cli(self.cli_resource, signaled)
             self.fault_publish("stopped.json", message)
             self.fault_stopped = True
 
     def shutdown_cli(self, resource, on_signal=None):
+        self.guard(resource)
         started = time.monotonic()
+        deadline_ns = time.time_ns() + 8_000_000_000
         end = started + min(8, self.remaining())
-        self.guard(resource, end)
         self.docker(["kill", "--signal=TERM", resource.identity], 2, end)
         if on_signal is not None:
-            on_signal()
+            on_signal(deadline_ns)
         self.guard(resource, end)
         self.docker(["wait", resource.identity], self.remaining(end), end)
         info = self.guard(resource)
