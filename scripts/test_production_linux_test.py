@@ -323,6 +323,54 @@ class Contracts(unittest.TestCase):
         (material / "ca.pem").write_text("new mocked fixture CA")
         (material / "server.key").write_text("new mocked private fixture")
 
+    def test_tls_search_mounts_only_readable_allowlist_not_private_material_root(self):
+        self.opts.profile, self.opts.transport = M.LOAD_PROFILE, "tls"
+        self.opts.output.mkdir()
+        self.controller.prepare_load_storage()
+        material = self.opts.output / "tls-material"
+        readable = ("ca.pem", "server.pem", "server.key", "admin.pem", "admin.key", "elasticsearch.yml", "opensearch.yml", "users", "users_roles", "roles.yml")
+        for name in readable:
+            path = material / name
+            path.write_text("new mocked Search fixture file")
+            path.chmod(0o644)
+        security = material / "security"
+        security.mkdir(mode=0o755)
+        (security / "roles.yml").write_text("new mocked security configuration")
+        private = ("state.json", "mongo.pem", "mongo-cluster", "routes.yaml")
+        for name in private:
+            path = material / name
+            path.write_text("new mocked runner-only material")
+            path.chmod(0o600)
+        for product in ("elasticsearch", "opensearch"):
+            with self.subTest(product=product):
+                self.opts.product = product
+                extra = ["--env=xpack.security.enabled=false", "--env=DISABLE_SECURITY_PLUGIN=true"]
+                spec = dict(extra=extra)
+                self.controller.tls_backend_spec(spec)
+                base = "/usr/share/" + product + "/config"
+                names = ["ca.pem", "server.pem", "server.key"]
+                if product == "opensearch":
+                    names += ["admin.pem", "admin.key", "security"]
+                expected = [(material / name, base + "/weir/" + name) for name in names]
+                expected.append((material / (product + ".yml"), base + "/" + product + ".yml"))
+                if product == "elasticsearch":
+                    expected += [(material / name, base + "/" + name) for name in ("users", "users_roles", "roles.yml")]
+                self.assertEqual(spec["tls_mounts"], expected)
+                self.assertNotIn("--env=xpack.security.enabled=false", spec["extra"])
+                self.assertNotIn("--env=DISABLE_SECURITY_PLUGIN=true", spec["extra"])
+                for source, destination in spec["tls_mounts"]:
+                    self.assertNotEqual(source, material)
+                    self.assertNotIn(source.name, private)
+                    self.assertEqual(source.stat().st_mode & 0o044, 0o044)
+                    mount = "type=bind,src=" + str(source) + ",dst=" + destination + ",readonly"
+                    self.assertIn(mount, spec["extra"])
+                for name in private:
+                    self.assertEqual((material / name).stat().st_mode & 0o777, 0o600)
+        self.controller.cleaning = True
+        self.controller.cleanup_deadline = M.time.monotonic() + 60
+        self.controller.cleanup_load_storage()
+        self.assertFalse(material.exists())
+
     def test_partial_tls_generation_is_removed_before_any_backend_start(self):
         self.opts.profile, self.opts.transport = M.LOAD_PROFILE, "tls"
         self.controller = M.Controller(self.opts)
@@ -381,7 +429,7 @@ class Contracts(unittest.TestCase):
             self.assertFalse((self.opts.output / "tls-material").exists())
             backend = json.loads((self.opts.output / "backend-container.json").read_text())
             tls_mounts = [m for m in backend["Mounts"] if "/config/" in m["Destination"]]
-            self.assertEqual(len(tls_mounts), 5 if product == "elasticsearch" else 2)
+            self.assertEqual(len(tls_mounts), 7)
             self.assertTrue(all(not m["RW"] for m in tls_mounts))
             bootstrap = [args for args in self.calls if any("securityadmin.sh" in arg for arg in args)]
             self.assertEqual(len(bootstrap), int(product == "opensearch"))

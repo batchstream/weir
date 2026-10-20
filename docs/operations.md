@@ -389,9 +389,12 @@ the same real backend identities and durable effects. Mock-loopback contracts ch
 untrusted frontend rejection, wrong upstream identity rejection and exactly-once
 forwarding with a lost acknowledgement; they are not live database evidence.
 
-Only the newly allocated material directory is exposed read-only to the stock
-Search image, using the finite secure fixture's config files. The CLI receives only
-the CA and its dedicated routes, never server private keys. Certificates, generated
+Only an explicit read-only allowlist of Search certificates/config files is exposed
+to the stock Search image; OpenSearch additionally receives its admin certificate
+and dedicated security-config subdirectory. The material root, Mongo keys and
+runner-only state/routes are never mounted into Search or copied by Elasticsearch's
+existing config staging. The CLI receives only the CA and its dedicated routes,
+never server private keys. Certificates, generated
 credentials and credential-bearing routes live below the guarded `tls-material`
 directory, excluded from artifact globs and removed after owned processes/containers
 join using the existing marker/inode/no-follow cleanup. Interrupted generation or

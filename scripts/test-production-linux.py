@@ -1064,7 +1064,13 @@ class Controller:
         material = self.opts.output / "tls-material"
         base = "/usr/share/" + product + "/config"
         extra = [arg for arg in spec["extra"] if arg not in ("--env=xpack.security.enabled=false", "--env=DISABLE_SECURITY_PLUGIN=true")]
-        mounts = [(material, base + "/weir"), (material / (product + ".yml"), base + "/" + product + ".yml")]
+        # Never expose the material root: ES stages config recursively as UID1000,
+        # while runner-only Mongo keys, state and routes must remain private.
+        names = ["ca.pem", "server.pem", "server.key"]
+        if product == "opensearch":
+            names += ["admin.pem", "admin.key", "security"]
+        mounts = [(material / name, base + "/weir/" + name) for name in names]
+        mounts.append((material / (product + ".yml"), base + "/" + product + ".yml"))
         if product == "elasticsearch":
             mounts += [(material / name, base + "/" + name) for name in ("users", "users_roles", "roles.yml")]
         for source, destination in mounts:
