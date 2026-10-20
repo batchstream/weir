@@ -15,7 +15,10 @@ var ErrExecutionMemory = errors.New("execution working memory capacity exhausted
 // retained allocation, excluding the wire publication reserved by the runtime.
 // Both may shrink after the corresponding references have actually been cleared.
 type Memory interface {
-	SetWorking(int) error
+	// Growth may wait only for a captured cohort of other initial Native
+	// invocations, and only with the actual allocation context's deadline.
+	// A successful return owns the full reservation before allocation begins.
+	SetWorking(context.Context, int) error
 	ReserveResult(int) error
 }
 

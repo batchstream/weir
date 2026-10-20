@@ -85,6 +85,18 @@ workspace promise; `ingress_bytes` and `ingress_reserved_bytes` describe receive
 ownership. These are reservation estimates, not RSS measurements. Compare them
 with actual memory metrics and `budget_rejections_total`.
 
+An admitted record's later working-memory growth may await a finite snapshot of
+other Native invocations still in initial preparation, only within the actual
+allocation/evaluation context's deadline. This is FIFO scheduling precedence over
+fresh execution starts across the Node, not extra memory credit: allocations
+remain forbidden until the complete reservation fits the unchanged ledger.
+Native initial IO can continue growing, converging or retiring while growth waits.
+Other records, settled slow outputs and future Native starts cannot extend that
+snapshot. If its remaining speculative working reservations cannot make the growth
+fit, or the snapshot finishes without releasing sufficient capacity, growth fails
+rather than awaiting a consumer Ack. A missing deadline fails promptly under
+pressure; cancellation removes the scheduling claim without releasing live data.
+
 Typed record counters are updated once at Store completion, after final result
 normalization (including result-budget failures). Result-budget normalization can
 replace `Failure` with `RESOURCE_EXHAUSTED`, but preserves an already reported

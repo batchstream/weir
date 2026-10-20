@@ -248,7 +248,7 @@ func (a *sharedTypedMemoryAdapter) Execute(ctx context.Context, plans []*executi
 		event := &pb.Event{Value: &pb.Event_ReadResult{ReadResult: read}}
 		_ = emit(work, event)
 	}
-	_ = plans[0].Memory.SetWorking(0)
+	_ = plans[0].Memory.SetWorking(ctx, 0)
 }
 
 func TestExecutionMemoryReadyResultRetainsActualCapacityBeyondEncodedLength(t *testing.T) {

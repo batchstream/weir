@@ -59,7 +59,7 @@ type recordMemory struct {
 	scratch int
 }
 
-func (m *recordMemory) set(sources, frame, scratch int) error {
+func (m *recordMemory) set(ctx context.Context, sources, frame, scratch int) error {
 	if m.base < 0 || m.reply < 0 || sources < 0 || frame < 0 || scratch < 0 {
 		return execution.ErrExecutionMemory
 	}
@@ -85,7 +85,7 @@ func (m *recordMemory) set(sources, frame, scratch int) error {
 		workspace += sources
 	}
 	if m.owner != nil {
-		if err := m.owner.SetWorking(held + workspace); err != nil {
+		if err := m.owner.SetWorking(ctx, held+workspace); err != nil {
 			return err
 		}
 	}
@@ -110,7 +110,7 @@ func reserveSearchScratch(ctx context.Context, bytes int) error {
 		header.mu.Unlock()
 	}
 	if memory := searchMemory(ctx); memory != nil {
-		return memory.set(memory.sources, memory.frame, bytes)
+		return memory.set(ctx, memory.sources, memory.frame, bytes)
 	}
 	return nil
 }

@@ -318,20 +318,68 @@ func (t *Ticket) Wait(ctx context.Context) (*pb.Event, error) {
 	}
 }
 
-func (t *Ticket) SetWorking(bytes int) error {
+func (t *Ticket) SetWorking(ctx context.Context, bytes int) error {
 	r := t.runtime
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if t.batch == nil {
+	if ctx == nil {
 		return execution.ErrExecutionMemory
 	}
-	b := t.batch
-	if err := b.owner.setWorking(bytes); err != nil {
-		return err
+	var wait *workingWait
+	var owner *executionLease
+	defer func() {
+		if wait != nil {
+			owner.memory.cancelWorkingWait(wait)
+		}
+	}()
+	for {
+		r.mu.Lock()
+		b := t.batch
+		if b == nil || t.plan == nil {
+			r.mu.Unlock()
+			return execution.ErrExecutionMemory
+		}
+		owner = b.owner
+		// A canceled allocation cannot acquire new ownership. Shrink still
+		// releases references that the adapter has actually cleared.
+		if bytes > b.workingBytes {
+			for _, live := range []context.Context{ctx, t.ctx, b.ctx} {
+				if err := live.Err(); err != nil {
+					r.mu.Unlock()
+					return err
+				}
+			}
+			if t.abandoned {
+				r.mu.Unlock()
+				return context.Canceled
+			}
+		}
+		live := func() error {
+			if err := t.ctx.Err(); err != nil {
+				return err
+			}
+			return b.ctx.Err()
+		}
+		wake, err := owner.requestWorking(ctx, bytes, &wait, live)
+		if err != nil {
+			r.mu.Unlock()
+			return err
+		}
+		if wake == nil {
+			r.workingBytes += bytes - b.workingBytes
+			b.workingBytes = bytes
+			r.mu.Unlock()
+			return nil
+		}
+		r.mu.Unlock()
+		select {
+		case <-wake:
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-t.ctx.Done():
+			return t.ctx.Err()
+		case <-b.ctx.Done():
+			return b.ctx.Err()
+		}
 	}
-	r.workingBytes += bytes - b.workingBytes
-	b.workingBytes = bytes
-	return nil
 }
 
 func (t *Ticket) ReserveResult(bytes int) error {

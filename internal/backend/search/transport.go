@@ -77,7 +77,7 @@ func (a *Adapter) request(ctx context.Context, call exchange) (status int, raw [
 	}
 	_, standardTransport := transport.(*http.Transport)
 	var acquiring, connected atomic.Bool
-	header := &nativeHeaderMemory{}
+	header := &nativeHeaderMemory{ctx: ctx}
 	defer header.finish()
 	if memory := searchMemory(ctx); memory != nil {
 		header.memory = memory.owner

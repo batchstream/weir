@@ -31,8 +31,8 @@ type replicaLuaMemory struct {
 	actualTicket              atomic.Bool
 }
 
-func (m *replicaLuaMemory) SetWorking(n int) error {
-	err := m.owner.SetWorking(n)
+func (m *replicaLuaMemory) SetWorking(ctx context.Context, n int) error {
+	err := m.owner.SetWorking(ctx, n)
 	if err == nil {
 		m.working.Store(int64(n))
 		if m.workingCalls.Add(1) > 4096 {

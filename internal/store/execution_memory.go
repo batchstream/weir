@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"sync"
 
 	"github.com/batchstream/weir-protocol/api/protocol"
@@ -61,6 +62,14 @@ type ExecutionMemory struct {
 	leases                                          map[*executionLease]struct{}
 	wakes                                           map[chan struct{}]struct{}
 	ingressHandoffs                                 map[*execution.Plan]*IngressInput
+	workingWaits                                    []*workingWait
+}
+
+// A wait is a scheduling claim, never ledger credit. Its donor identities are
+// captured once; later Native starts and retained outputs cannot extend it.
+type workingWait struct {
+	donors map[*executionLease]struct{}
+	wake   chan struct{}
 }
 
 type ExecutionMemorySnapshot struct {
@@ -149,6 +158,12 @@ func (m *ExecutionMemory) unregister(wake chan struct{}) {
 }
 
 func (m *ExecutionMemory) signalLocked() {
+	for _, wait := range m.workingWaits {
+		select {
+		case wait.wake <- struct{}{}:
+		default:
+		}
+	}
 	for wake := range m.wakes {
 		select {
 		case wake <- struct{}{}:
@@ -178,7 +193,7 @@ func (m *ExecutionMemory) resizeInputLocked() {
 		m.inputReserved = target
 		m.used -= delta
 		m.resident -= delta
-	} else if target > m.inputReserved && m.used < m.budget && m.resident < m.residentLimitLocked() {
+	} else if len(m.workingWaits) == 0 && target > m.inputReserved && m.used < m.budget && m.resident < m.residentLimitLocked() {
 		// New automatic credit leaves short-RPC entry space. Existing input
 		// promises remain intact while other resident owners grow; only the
 		// trusted-capacity shrink above may revoke their unused portion.
@@ -293,6 +308,12 @@ func (l *executionLease) start(working, reserve int) (bool, bool) {
 	m.reserve = max(m.reserve, ioReserve)
 	m.resizeInputLocked()
 	additional := uint64(working) + uint64(l.publication-l.window)
+	// Existing initial Native invocations finish through GrowIO/EndIO, not
+	// start. Do not let fresh speculative execution spend an older growth
+	// claimant's next real release, even across different Store runtimes.
+	if additional != 0 && len(m.workingWaits) != 0 {
+		return false, true
+	}
 	if l.state == nativeWaiting && l.working == 0 && (m.used > m.budget || additional > m.budget-m.used) {
 		l.reclaimUnusedInputLocked(additional, 0)
 	}
@@ -348,6 +369,97 @@ func (l *executionLease) setWorking(working int) error {
 	}
 	l.working = working
 	return nil
+}
+
+// requestWorking runs with the Ticket's Runtime locked. It never sleeps or
+// advances ownership speculatively. The caller drops that lock before waiting
+// and validates the live batch again before retrying this atomic ledger check.
+func (l *executionLease) requestWorking(ctx context.Context, working int, wait **workingWait, live func() error) (<-chan struct{}, error) {
+	m := l.memory
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if l.released || working < 0 {
+		return nil, errExecutionMemory
+	}
+	if working <= l.working {
+		m.used -= uint64(l.working - working)
+		l.working = working
+		m.removeWorkingWaitLocked(*wait)
+		m.signalLocked()
+		return nil, nil
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if err := live(); err != nil {
+		return nil, err
+	}
+	delta := uint64(working - l.working)
+	first := len(m.workingWaits) == 0 || m.workingWaits[0] == *wait
+	if first && m.used <= m.budget && delta <= m.budget-m.used {
+		m.used += delta
+		l.working = working
+		m.removeWorkingWaitLocked(*wait)
+		m.signalLocked()
+		return nil, nil
+	}
+	if !first && *wait != nil && m.used <= m.budget && delta <= m.budget-m.used {
+		// This already captured claimant needs no further release. Yield only
+		// its scheduling turn to older claims, never wait for their ownership.
+		return (*wait).wake, nil
+	}
+	if _, bounded := ctx.Deadline(); !bounded || l.native {
+		m.rejections++
+		return nil, errExecutionMemory
+	}
+	captured := *wait == nil
+	if captured {
+		donors := make(map[*executionLease]struct{})
+		for donor := range m.leases {
+			if donor != l && donor.native && donor.preparing {
+				donors[donor] = struct{}{}
+			}
+		}
+		pending := &workingWait{donors: donors, wake: make(chan struct{}, 1)}
+		*wait = pending
+	}
+	// Only actual current speculative working bytes form an optimistic
+	// feasibility bound. Inputs, result/wire windows and all other owners stay
+	// charged. Converting a donor to equally large retained output ends its
+	// eligibility; it does not permit waiting for the consumer's later Ack.
+	reclaimable := uint64(0)
+	for donor := range (*wait).donors {
+		if !donor.released && donor.native && donor.preparing {
+			reclaimable += uint64(donor.working)
+		}
+	}
+	remaining := m.used - reclaimable
+	if reclaimable == 0 || remaining > m.budget || delta > m.budget-remaining {
+		m.rejections++
+		return nil, errExecutionMemory
+	}
+	if captured {
+		m.workingWaits = append(m.workingWaits, *wait)
+	}
+	return (*wait).wake, nil
+}
+
+func (m *ExecutionMemory) removeWorkingWaitLocked(wait *workingWait) {
+	for index, pending := range m.workingWaits {
+		if pending == wait {
+			copy(m.workingWaits[index:], m.workingWaits[index+1:])
+			m.workingWaits[len(m.workingWaits)-1] = nil
+			m.workingWaits = m.workingWaits[:len(m.workingWaits)-1]
+			break
+		}
+	}
+}
+
+func (m *ExecutionMemory) cancelWorkingWait(wait *workingWait) {
+	m.mu.Lock()
+	m.removeWorkingWaitLocked(wait)
+	m.signalLocked()
+	m.mu.Unlock()
 }
 
 func (l *executionLease) reserveResult(bytes int) error {
@@ -521,6 +633,9 @@ func (l *executionLease) beginRead(extra int) (bool, bool) {
 	m := l.memory
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if extra != 0 && len(m.workingWaits) != 0 && !l.preparing {
+		return false, true
+	}
 	if m.used > m.budget || uint64(extra) > m.budget-m.used {
 		if m.convergingLocked() {
 			return false, true

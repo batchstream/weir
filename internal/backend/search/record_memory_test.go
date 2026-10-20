@@ -24,7 +24,7 @@ type recordMemoryProbe struct {
 	working, peak, result, calls int
 }
 
-func (p *recordMemoryProbe) SetWorking(bytes int) error {
+func (p *recordMemoryProbe) SetWorking(_ context.Context, bytes int) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if p.limit != 0 && bytes > p.limit {

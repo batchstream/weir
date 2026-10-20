@@ -464,7 +464,8 @@ func TestBulkReplyScratchFloorIncludesDynamicSourcesAndFramesOnce(t *testing.T) 
 	} {
 		want := max(memory.base, state.frame) + state.sources + max(reply, state.scratch)
 		probe.limit = want
-		if err := memory.set(state.sources, state.frame, state.scratch); err != nil || probe.working != want {
+		err := memory.set(t.Context(), state.sources, state.frame, state.scratch)
+		if err != nil || probe.working != want {
 			t.Fatal("ACK scratch was shrunk, consumed by held sources, or counted twice", state, err, probe.working, want)
 		}
 		headerMinimum := max(memory.base, state.frame) + state.sources + reply
@@ -489,7 +490,8 @@ func TestBulkReplyScratchFloorIncludesDynamicSourcesAndFramesOnce(t *testing.T) 
 	} {
 		probe := &recordMemoryProbe{}
 		memory := &recordMemory{owner: probe, base: state.base, reply: state.reply}
-		if err := memory.set(state.sources, state.frame, state.scratch); !errors.Is(err, execution.ErrExecutionMemory) || probe.working != 0 {
+		err := memory.set(t.Context(), state.sources, state.frame, state.scratch)
+		if !errors.Is(err, execution.ErrExecutionMemory) || probe.working != 0 {
 			t.Fatal("invalid total working reached the shared owner", state, err, probe.working)
 		}
 	}

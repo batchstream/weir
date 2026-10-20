@@ -57,7 +57,7 @@ func reserveRecordWorking(ctx context.Context, plans []*execution.Plan, extra in
 	if working < 0 || extra < -working || extra > math.MaxInt-working {
 		return execution.ErrExecutionMemory
 	}
-	return owner.SetWorking(working + extra)
+	return owner.SetWorking(ctx, working+extra)
 }
 
 func programWorking(parts ...int) (int, error) {

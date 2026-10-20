@@ -149,7 +149,8 @@ func (a *Adapter) evaluateProgram(ctx context.Context, work *execution.Plan, cur
 			if err != nil {
 				return nil, protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, recordMemoryFailure())
 			}
-			if err := memory.set(sources, memory.frame, max(0, memory.scratch-cap(source))); err != nil {
+			memoryErr := memory.set(ctx, sources, memory.frame, max(0, memory.scratch-cap(source)))
+			if memoryErr != nil {
 				return nil, protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, recordMemoryFailure())
 			}
 		}

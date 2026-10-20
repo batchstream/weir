@@ -23,7 +23,7 @@ type recordMemoryProbe struct {
 	denyRestore, reduced                             bool
 }
 
-func (p *recordMemoryProbe) SetWorking(bytes int) error {
+func (p *recordMemoryProbe) SetWorking(_ context.Context, bytes int) error {
 	if p.limit != 0 && bytes > p.limit {
 		return execution.ErrExecutionMemory
 	}
