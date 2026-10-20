@@ -225,8 +225,12 @@ func TestExecutionProfileContractDeclaredNotExecutable(t *testing.T) {
 					if err := inputs.RequireExecutable(); err == nil {
 						callbacks++
 					}
-					if callbacks != 0 {
-						t.Fatal("unsupported Linux/TLS/product declaration reached fixtures")
+					want := 0
+					if arch == "amd64" && suite == "load" && transport == "plain" && product == "elasticsearch" {
+						want = 1
+					}
+					if callbacks != want {
+						t.Fatal("exact native capability dispatch differs", profile, callbacks, want)
 					}
 				}
 			}
@@ -239,9 +243,9 @@ func TestExecutionProfileContractActualObjects(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if runtime.GOOS == "linux" {
+	if runtime.GOOS == "linux" && runtime.GOARCH != "amd64" {
 		if err := validated.RequireExecutable(); err == nil {
-			t.Fatal("unimplemented Linux executor allowed")
+			t.Fatal("unsupported Linux architecture allowed")
 		}
 	} else if err := validated.RequireExecutable(); err != nil {
 		t.Fatal(err)

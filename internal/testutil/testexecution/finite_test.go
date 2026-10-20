@@ -48,7 +48,7 @@ func TestExecutionProfileContractFiniteCapability(t *testing.T) {
 	if _, err := LinuxFunctionalProfile(LinuxFunctionalID, "386"); err == nil {
 		t.Fatal("accepted unsupported architecture")
 	}
-	// Every previously declared Linux formal/smoke/fault cell stays fail-closed.
+	// Only the exact native plain-load cell opens; finite semantics stay distinct.
 	for _, suite := range []string{"load", "fault"} {
 		for _, intent := range []string{"formal", "smoke"} {
 			p, _ := LegacyProfile("legacy-desktop-load-v1")
@@ -66,8 +66,8 @@ func TestExecutionProfileContractFiniteCapability(t *testing.T) {
 				t.Fatal(err)
 			}
 			v := &ValidatedInputs{valid: true, profile: p}
-			if v.RequireExecutable() == nil {
-				t.Fatal("formal/smoke capability accidentally opened", suite, intent)
+			if (v.RequireExecutable() == nil) != (suite == "load" && intent == "formal") {
+				t.Fatal("incorrect exact formal capability dispatch", suite, intent)
 			}
 		}
 	}

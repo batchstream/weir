@@ -252,7 +252,12 @@ func TestExecutionProfileContractLoadBoundary(t *testing.T) {
 		t.Fatal("invalid inputs reached fixture callback")
 	}
 	if p.Executor == LinuxExecutor {
-		if err := createOnlyIfExecutable(opts); err == nil || callbacks != 0 {
+		err := createOnlyIfExecutable(opts)
+		if p.NativePlainLoad() {
+			if err != nil || callbacks != 1 {
+				t.Fatal("supported exact native load did not reach fixture callback", err, callbacks)
+			}
+		} else if err == nil || callbacks != 0 {
 			t.Fatal("unsupported Linux executor reached fixture callback")
 		}
 	}
