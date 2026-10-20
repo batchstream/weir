@@ -175,6 +175,187 @@ func TestExecutionMemoryObservationBlockedSinkHoldsNoRuntimeOrLedgerLock(t *test
 	}
 }
 
+// The sink is deliberately blocked on a diagnostic caller while the SAME
+// runtime must dispatch new work, grant a queued Native resume, cancel an active
+// adapter and join Close. Merely acquiring the two mutexes would miss a stalled
+// single dispatch loop or a logger blocking backend retirement.
+func TestExecutionMemoryObservationDiagnosticSinkCannotStallSchedulerOrRetirement(t *testing.T) {
+	for _, queuedDeadline := range []bool{false, true} {
+		name := "scheduler-start-rejection"
+		if queuedDeadline {
+			name = "scheduler-queued-deadline"
+		}
+		t.Run(name, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
+			defer cancel()
+			memory := NewExecutionMemory()
+			memory.known, memory.trusted, memory.budget = true, true, 128<<20
+			entered := make(chan executionMemoryObservation, executionMemoryObservationLimit)
+			release := make(chan struct{})
+			var unblock sync.Once
+			memory.observations.sink = func(observation executionMemoryObservation) {
+				entered <- observation
+				<-release
+			}
+			gate := make(chan struct{})
+			adapter := &nativeResumeAdapter{entered: make(chan string, 16), gate: gate}
+			limits := DefaultLimits()
+			limits.MaxInFlight, limits.BatchOperations, limits.BatchWait = 1, 1, 0
+			// Queue before starting the real dispatch loop so the external Submit
+			// cannot race to flush a failure produced by that loop.
+			runtime := newRuntime(adapter, limits, memory)
+			defer func() {
+				unblock.Do(func() { close(release) })
+				cancel()
+				cleanup, stop := context.WithTimeout(context.Background(), time.Second)
+				defer stop()
+				if err := runtime.Close(cleanup); err != nil {
+					t.Error(err)
+				}
+			}()
+			var active *Ticket
+			if queuedDeadline {
+				work := plan(1, "active", true)
+				var failure *pb.Failure
+				active, failure, _ = runtime.Submit(ctx, work, nil)
+				if failure != nil {
+					t.Fatal(failure)
+				}
+			}
+			caller := ctx
+			stopCaller := func() {}
+			work := plan(2, "failure", true)
+			if queuedDeadline {
+				caller, stopCaller = context.WithTimeout(ctx, 50*time.Millisecond)
+			} else {
+				work.WorkingBytes = int(memory.budget) + 1
+			}
+			defer stopCaller()
+			rejected, failure, _ := runtime.Submit(caller, work, nil)
+			if failure != nil {
+				t.Fatal("failure bypassed actual scheduler boundary", failure)
+			}
+			go runtime.loop()
+			event, err := rejected.Wait(ctx)
+			if err != nil || event.GetReadResult().GetFailure() == nil {
+				t.Fatal("scheduler did not return its strict failure", event, err)
+			}
+			rejected.Ack()
+			if !memory.observations.ready.Load() {
+				t.Fatal("scheduler observation was lost without an external pull")
+			}
+			select {
+			case observation := <-entered:
+				t.Fatal("scheduler invoked the sink itself", observation)
+			default:
+			}
+			diagnosticDone := make(chan struct{})
+			go func() {
+				memory.FlushObservations()
+				close(diagnosticDone)
+			}()
+			select {
+			case observation := <-entered:
+				expected := memoryStart
+				if queuedDeadline {
+					expected = memoryQueuedDeadline
+				}
+				if observation.Reason != expected {
+					t.Fatal("diagnostic pull lost actual scheduler reason", observation)
+				}
+			case <-ctx.Done():
+				t.Fatal("external diagnostic did not pull pending scheduler evidence")
+			}
+			if active != nil {
+				close(gate)
+				if _, err := active.Wait(ctx); err != nil {
+					t.Fatal("existing adapter could not retire beside blocked diagnostic", err)
+				}
+				active.Ack()
+			}
+			healthy := plan(3, "healthy", true)
+			ticket, failure, _ := runtime.Submit(ctx, healthy, nil)
+			if failure != nil {
+				t.Fatal("additional same-runtime Submit blocked or failed", failure)
+			}
+			if _, err := ticket.Wait(ctx); err != nil {
+				t.Fatal("blocked diagnostic stalled actual same-runtime dispatch", err)
+			}
+			ticket.Ack()
+			session := runtime.NewSession()
+			defer session.Close()
+			nativeWork := plan(4, "native", false)
+			nativeWork.Command = nativeCall()
+			nativeTicket, failure, _ := runtime.Submit(ctx, nativeWork, session)
+			if failure != nil {
+				t.Fatal(failure)
+			}
+			select {
+			case emission := <-session.Events:
+				if emission.Event.GetHead() == nil {
+					t.Fatal("Native did not reach its real runtime IO boundary", emission.Event)
+				}
+				emission.Release()
+			case <-ctx.Done():
+				t.Fatal("blocked diagnostic stalled Native dispatch")
+			}
+			resumed := false
+			for !resumed {
+				select {
+				case key := <-adapter.entered:
+					resumed = key == "resume-native"
+				case <-ctx.Done():
+					t.Fatal("blocked diagnostic stalled queued Native BeginIO resume")
+				}
+			}
+			for {
+				select {
+				case emission := <-session.Events:
+					terminal := emission.Event == nil
+					emission.Release()
+					if terminal {
+						goto nativeFinished
+					}
+				case <-ctx.Done():
+					t.Fatal("blocked diagnostic stalled Native execution/publication retirement")
+				}
+			}
+		nativeFinished:
+			nativeTicket.Ack()
+			session.Close()
+			adapter.gate = make(chan struct{})
+			cancelWork := plan(5, "active", true)
+			cancelTicket, failure, _ := runtime.Submit(ctx, cancelWork, nil)
+			if failure != nil {
+				t.Fatal(failure)
+			}
+			select {
+			case key := <-adapter.entered:
+				if key != "active" {
+					t.Fatal("cancel fixture did not enter the adapter", key)
+				}
+			case <-ctx.Done():
+				t.Fatal("blocked diagnostic prevented dispatch before cancellation")
+			}
+			cancelTicket.Abandon()
+			closing, stop := context.WithTimeout(ctx, time.Second)
+			defer stop()
+			if err := runtime.Close(closing); err != nil {
+				t.Fatal("blocked diagnostic prevented cancellation/Close from joining", err)
+			}
+			if snapshot := memory.Snapshot(); snapshot.Count != 0 || snapshot.UsedBytes != 0 {
+				t.Fatal("runtime did not retire ownership while diagnostic remained blocked", snapshot)
+			}
+			unblock.Do(func() { close(release) })
+			select {
+			case <-diagnosticDone:
+			case <-ctx.Done():
+				t.Fatal("external diagnostic caller did not join after sink release")
+			}
+		})
+	}
+}
+
 func TestExecutionMemoryObservationNormalFlushAllocatesNothing(t *testing.T) {
 	memory := NewExecutionMemory()
 	allocations := testing.AllocsPerRun(100, func() { memory.flushObservations() })

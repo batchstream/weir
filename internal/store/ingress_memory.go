@@ -22,7 +22,6 @@ type IngressMemory struct {
 }
 
 func (m *ExecutionMemory) NewIngress(ctx context.Context, fixed int) (*IngressMemory, error) {
-	defer m.flushObservations()
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if fixed < 0 || !m.ingressFitsLocked(uint64(fixed), false) {
@@ -78,7 +77,6 @@ func (a *IngressMemory) resizeLocked(message, raw, decoded uint64, large bool) b
 }
 
 func (a *IngressMemory) ReserveMessage(length int) error {
-	defer a.memory.flushObservations()
 	if length < 0 {
 		return execution.ErrExecutionMemory
 	}
@@ -138,7 +136,6 @@ func (a *IngressMemory) ReserveMessage(length int) error {
 }
 
 func (a *IngressMemory) Buffer(capacity int) (func(), error) {
-	defer a.memory.flushObservations()
 	if capacity < 0 {
 		return nil, execution.ErrExecutionMemory
 	}
@@ -249,7 +246,6 @@ func (a *IngressMemory) removeLocked() {
 // the codec allocates it. The full raw message is already owned; never wait on
 // another partially uploaded message while retaining that raw storage.
 func (a *IngressMemory) ReserveDecode(bytes int) error {
-	defer a.memory.flushObservations()
 	m := a.memory
 	m.mu.Lock()
 	defer m.mu.Unlock()

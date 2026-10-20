@@ -195,10 +195,18 @@ func (m *ExecutionMemory) observeLocked(request executionMemoryObservationReques
 	observations.ready.Store(true)
 }
 
-// Only outer operations call flush, after dropping Runtime.mu as well as the
-// ledger lock. Normal operations perform one atomic load and allocate nothing.
-// A slow logger can delay that failure's caller, but cannot hold up ownership
-// release or any other caller by retaining a runtime or ledger mutex.
+// FlushObservations emits pending bounded failure snapshots from an external
+// diagnostic/caller-owned context. It must not run on dispatch, adapter IO or
+// runtime retirement paths: a blocked sink must never prevent their joining.
+// Node diagnostic collection uses this pull boundary even after new RPCs stop.
+func (m *ExecutionMemory) FlushObservations() {
+	m.flushObservations()
+}
+
+// Only external caller/diagnostic operations flush. Capture itself never logs.
+// Normal operations perform one atomic load and allocate nothing. A slow logger
+// may delay its external caller, but dispatch and backend retirement never wait
+// for that caller or acquire any logger-owned state.
 func (m *ExecutionMemory) flushObservations() {
 	if !m.observations.ready.Load() {
 		return

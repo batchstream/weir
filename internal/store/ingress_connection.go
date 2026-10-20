@@ -17,7 +17,6 @@ import (
 const IngressConnectionBytes = 512 << 10
 
 func (m *ExecutionMemory) ReserveIngressConnection() (func(), error) {
-	defer m.flushObservations()
 	m.mu.Lock()
 	if !m.ingressFitsLocked(IngressConnectionBytes, false) {
 		m.observeIngressLocked(memoryIngressConnection, IngressConnectionBytes)

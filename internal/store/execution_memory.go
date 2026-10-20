@@ -608,7 +608,6 @@ func (l *executionLease) reserveWire(bytes int) (*WireReservation, error) {
 // ReserveWire accounts a response without an admitted operation, such as an
 // admission failure. It uses the same finite count/input promise and lifetime.
 func (m *ExecutionMemory) ReserveWire(bytes int) (*WireReservation, error) {
-	defer m.flushObservations()
 	plan := &execution.Plan{Bytes: execution.EntryOverheadBytes, ResultBytes: execution.ResultOverheadBytes}
 	lease, failure, _ := m.admit(plan)
 	if failure != nil {
