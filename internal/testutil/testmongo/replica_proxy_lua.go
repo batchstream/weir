@@ -13,8 +13,8 @@ import (
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
-// Four stable cases plus one commit/abort pair at each existing topology action.
-const replicaLuaLimit = 8
+// Four stable, four topology, and three finite lifecycle identities.
+const replicaLuaLimit = 11
 const replicaLuaAttempts = 5
 const replicaLuaEvents = 32
 const replicaLuaWatchdog = 20 * time.Second
@@ -84,6 +84,7 @@ type LuaAttemptSnapshot struct {
 type LuaSnapshot struct {
 	Attempts, Events   int
 	SessionDigest      [32]byte
+	FindPeer           string
 	Attempt            [replicaLuaAttempts]LuaAttemptSnapshot
 	Expired, Completed bool
 	Error              string
@@ -101,6 +102,7 @@ type LuaWatch struct {
 	deadline  time.Time
 	snapshot  LuaSnapshot
 	commit    *luaCommitState
+	lifecycle *luaLifecycle
 	snapshots [replicaLuaAttempts]luaGate
 	abort     luaGate
 }
@@ -118,6 +120,7 @@ type luaMatch struct {
 type luaBeginOptions struct {
 	message []byte
 	member  int
+	peer    string
 }
 
 func newLuaGate() luaGate {
@@ -297,6 +300,7 @@ func (r *luaRegistry) begin(opts luaBeginOptions) (*luaMatch, error) {
 			}
 			attempt = w.snapshot.Attempts
 			if attempt == 0 {
+				w.snapshot.FindPeer = opts.peer
 				w.deadline = time.Now().Add(replicaLuaWatchdog)
 			}
 			if time.Now().After(w.deadline) {
@@ -372,7 +376,12 @@ func (r *luaRegistry) begin(opts luaBeginOptions) (*luaMatch, error) {
 		}
 	case "abortTransaction":
 		s.AbortRequests++
-		if w.commit != nil || attempt != 0 || s.AbortRequests != 1 || !s.Conflict || s.WriteItems != 1 || s.WriteReplies != 1 || s.WriteForwarded != 1 {
+		if w.lifecycle != nil && w.lifecycle.phase == LuaCancelSnapshot {
+			if attempt != 0 || s.AbortRequests != 1 || s.WriteRequests != 0 || s.CommitRequests != 0 {
+				r.failure = "unexpected canceled Lua cleanup"
+				return nil, errReplicaProxyWire
+			}
+		} else if w.commit != nil || attempt != 0 || s.AbortRequests != 1 || !s.Conflict || s.WriteItems != 1 || s.WriteReplies != 1 || s.WriteForwarded != 1 {
 			r.failure = "Lua abort before settled conflict"
 			return nil, errReplicaProxyWire
 		}
@@ -523,7 +532,7 @@ func (r *luaRegistry) received(m *luaMatch, response []byte) bool {
 			s.WriteDigest = sha256.Sum256(doc)
 		}
 	case "abortTransaction":
-		valid = operationNumber(doc.Lookup("ok"), 1) || operationNumber(doc.Lookup("ok"), 0) && operationNumber(doc.Lookup("code"), 251) && s.Conflict && s.WriteReplies == 1
+		valid = operationNumber(doc.Lookup("ok"), 1) || operationNumber(doc.Lookup("ok"), 0) && operationNumber(doc.Lookup("code"), 251) && (s.Conflict && s.WriteReplies == 1 || w.lifecycle != nil && w.lifecycle.phase == LuaCancelSnapshot)
 		if valid {
 			if operationNumber(doc.Lookup("code"), 251) {
 				s.AbortCode = 251
@@ -551,6 +560,9 @@ func (r *luaRegistry) received(m *luaMatch, response []byte) bool {
 // hold never treats observer timeout or cleanup interruption as a successful
 // release/drop. The original bytes are written by the relay only after release.
 func (r *luaRegistry) hold(m *luaMatch, done <-chan struct{}, timeout time.Duration) (bool, bool) {
+	if m != nil && m.watch.lifecycle != nil && m.command != "find" {
+		return true, false
+	}
 	if m != nil && m.watch.commit != nil && m.command == "commitTransaction" {
 		return m.watch.holdCommit(done, timeout)
 	}

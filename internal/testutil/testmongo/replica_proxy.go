@@ -342,3 +342,38 @@ func (p *ReplicaProxy) CheckLuaCommitCases(t *testing.T, cases []LuaCommitCase, 
 		t.Logf("lua_commit phase=%s drop_all=%t observation=%+v durable=%+v", phase, c.Watch.commit.all, c.Watch.Snapshot(), expected)
 	}
 }
+
+func (p *ReplicaProxy) WatchLuaLifecycle(op LuaOperation, phase LuaLifecyclePhase) (*LuaWatch, error) {
+	if phase > LuaRetireCommit {
+		return nil, errReplicaProxyWire
+	}
+	w, err := p.lua.watchCommit(op, false, 1)
+	if err != nil {
+		return nil, err
+	}
+	p.lua.mu.Lock()
+	w.lifecycle = &luaLifecycle{phase: phase, close: make(chan struct{})}
+	p.lua.mu.Unlock()
+	return w, nil
+}
+func (p *ReplicaProxy) CheckLuaLifecycleCases(t *testing.T, watches []*LuaWatch, phase string) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
+	defer cancel()
+	for _, w := range watches {
+		if err := w.ValidateLifecycle(true); err != nil {
+			t.Fatal("persistent Lua lifecycle proof", phase, err, w.Snapshot())
+		}
+		expected := LuaLedger{N: 1, Candidate: 1}
+		if w.lifecycle.phase == LuaCancelSnapshot {
+			expected.N = 0
+			expected.Candidate = 0
+		}
+		p.CheckLuaLedger(t, ctx, w, expected)
+		p.lua.mu.Lock()
+		natural := w.lifecycle.natural
+		w.snapshot.Completed = true
+		p.lua.mu.Unlock()
+		t.Logf("lua_lifecycle phase=%s case=%d natural_product_EOF=%t deliberate_drop=false observation=%+v durable=%+v", phase, w.lifecycle.phase, natural, w.Snapshot(), expected)
+	}
+}

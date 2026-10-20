@@ -93,7 +93,7 @@ func replicaCLIReadPending(t *testing.T, call *replicaCLIRead, remaining time.Du
 		t.Fatal("early cleanup/observer intervention before SIGTERM", s)
 	}
 }
-func replicaCLISentReadRetirement(t *testing.T, lifetime *replyLossLifetime) (processStopResult, []*testmongo.ReadWatch) {
+func replicaCLISentReadRetirement(t *testing.T, lifetime *replyLossLifetime) (processStopResult, []*testmongo.ReadWatch, []*testmongo.LuaWatch) {
 	t.Helper()
 	replicaCLIIdle(t, lifetime.service, time.Now().Add(3*time.Second))
 	replyLossGauges(t, lifetime, "read_idle_baseline", false)
@@ -104,6 +104,7 @@ func replicaCLISentReadRetirement(t *testing.T, lifetime *replyLossLifetime) (pr
 		t.Fatal(err)
 	}
 	lifetime.primary = primary
+	luaWatches := replicaCLILuaLifecycleCancel(t, lifetime)
 	first := replicaCLIReadArm(t, lifetime, "cli-cancel-read")
 	// Prepare the final watch now, before the final fresh caller's 12s clock.
 	final := replicaCLIReadArm(t, lifetime, "cli-retire-read")
@@ -154,12 +155,29 @@ func replicaCLISentReadRetirement(t *testing.T, lifetime *replyLossLifetime) (pr
 	replicaCLIIdle(t, lifetime.service, time.Now().Add(3*time.Second))
 	replyLossGauges(t, lifetime, "read_idle_after_recovery", false)
 	// All topology/health/old-effect preparation precedes the fresh caller.
+	lua := replicaCLILuaLifecycleStart(t, lifetime, testmongo.LuaRetireCommit)
+	if err := lua.watch.ValidateCommitHeld(); err != nil {
+		t.Fatal(err)
+	}
 	retirement := replicaCLIReadStart(t, lifetime, final, "cli-retire-read")
 	defer retirement.cancel()
 	replicaCLIReadBarrier(t, final, false, time.Now().Add(3*time.Second))
 	replyLossGauges(t, lifetime, "read_actual_SIGTERM_active", true)
 	replicaCLIReadPending(t, retirement, 8*time.Second)
 	t.Logf("sent_read phase=CLI_immediately_before_SIGTERM same_PID=%d caller_pending=true uncancelled=true original_deadline_remaining=%s find_reply_held=true cleanup_not_started=true", lifetime.pid, time.Until(retirement.deadline))
+	if lua.ctx.Err() != nil {
+		t.Fatal("Lua caller canceled before actual SIGTERM")
+	}
+	luaDeadline, _ := lua.ctx.Deadline()
+	if time.Until(luaDeadline) < 8*time.Second {
+		t.Fatal("original Lua caller insufficient SIGTERM budget")
+	}
+	select {
+	case receipt := <-lua.done:
+		t.Fatal("Lua returned before actual SIGTERM", receipt)
+	default:
+	}
+	signalStarted := time.Now()
 	terminal := lifetime.service.stop(t)
 	if !terminal.successful() || terminal.Elapsed < 5*time.Second {
 		t.Fatal("actual sent-read CLI full drain/default retirement exit", terminal)
@@ -188,6 +206,8 @@ func replicaCLISentReadRetirement(t *testing.T, lifetime *replyLossLifetime) (pr
 		t.Fatal("retired read invented successful document receipt", receipt)
 	}
 	t.Logf("sent_read case=CLI_retirement same_PID=%d actual_Wait=true wait_error=%v exit_code_valid=%t exit_code=%d timed_out=%t elapsed=%s original_caller_alive=true caller_error=%v caller_failure=%t", lifetime.pid, terminal.WaitErr, terminal.ExitCodeValid, terminal.ExitCode, terminal.TimedOut, terminal.Elapsed, receipt.err, receipt.failure)
+	replicaCLILuaRetired(t, lua, signalStarted.Add(8*time.Second))
+	luaWatches = append(luaWatches, lua.watch)
 	watches := []*testmongo.ReadWatch{first, final}
-	return terminal, watches
+	return terminal, watches, luaWatches
 }
