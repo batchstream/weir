@@ -240,11 +240,58 @@ marker-checked fixture cleanup follow exit code zero within the existing eight
 second SIGTERM gate. Linux CI retains all three serial command logs on failure
 and measures the combined envelope without increasing its 15-minute job limit.
 
-These focused functional cases do **not** qualify cursor/Ack ownership, Lua
+The reply-loss cases alone do **not** qualify cursor/Ack ownership, Lua
 ambiguous commit/rollback, cgroups, sustained load, SLOs or production. Direct TLS
 coverage remains separate. A proxy's pre-forward barrier is already after Weir
 dispatch; `ok:1` alone is not majority/business evidence, and Native callers must
 request majority explicitly.
+
+The same three serialized native commands also cover eight live sent/unreceived
+read lifecycle cases, without adding a fixture or CLI start. Backend
+`TestMongoReplicaProxyDiscoveryRecovery/{plain,tls}/sent_read_retirement` uses
+an unchanged real adapter/driver in `store.Runtime` with `store.DefaultLimits`:
+ordinary cancellation must spend the caller-independent two-second cleanup
+allowance and actually return its execution/session/raw sockets before adapter
+close. Final retirement holds a real ready read's unacknowledged ticket and
+publisher alongside a second active read, preserves the full five-second drain
+and two-second retirement, and checks actual execution/publisher/adapter joins.
+Two charged record tickets remain after close; real `Ticket.Ack` reduces ownership
+from two to one and the owning `Session.Close` releases the final ticket/credit.
+
+`TestMongoReplicaCLIReplyLoss/{plain,tls}/typed/sent_read_retirement` cancels a
+real sent read and checks caller completion and product-credit recovery within
+three seconds while both replies remain held, then independently establishes
+primary-majority usability and same-PID/SDK immutable health plus new-ID business
+success within five seconds. After an idle-zero recheck, a fresh original
+12-second caller is proved active, pending and uncancelled immediately before
+actual SIGTERM. The CLI must drain/retire and actually Wait with exit zero within
+eight seconds, without releasing either reply. Native CLI lifetimes retain their
+original idle-exit behavior. All twelve mutation cases, four complete Native
+business-error controls and persistent old effect/no-replay checks remain through
+actual CLI exit and whole relay join.
+
+The separate bounded read observer watches only fixture `records` IDs across the
+three frontends and captures immutable first-find session identity. Cleanup
+matches the original session in the `killSessions` **target array**, not the
+cleanup command's potentially different implicit session. Each phase requires
+one matched request, one complete upstream write and one real correlated
+successful reply received but zero forwarded; replay, owned-session getMore or
+killCursors, malformed/ambiguous boundaries and partial writes fail closed. A real
+find reply may have cursor zero: withholding the whole reply proves cursor state
+is **unknown to Weir**, not that a nonzero remote cursor was allocated. The
+40-second read-observer watchdog is test-only, records failure on expiry and
+closes without forwarding. It does not extend the mutation observer's 20 seconds
+or any product budget. Targeted observer tails are closed/joined only after
+independent product-owner proof; backend cancellation additionally checks the
+exact raw sockets and driver session baseline, while CLI uses actual process
+Wait and the final raw-owner-zero marker, not private session-pool claims.
+`^TestReplicaProxy` includes deterministic `TestReplicaProxyRead` identity,
+forwarding, replay, correlation, watchdog-failure and targeted-tail-join controls
+in both existing normal and race CI commands.
+
+The native CI job retains its 15-minute job and 10-minute Go limits, pinned
+tools and race/serial settings. These focused lifecycle tests do not establish
+sustained-load, cgroup, SLO, EKS or immutable-release qualification.
 
 The [weir-tests](https://github.com/batchstream/weir-tests) repository contains
 matched direct/Weir workloads and blackbox integration. Keep generated logs,

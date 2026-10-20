@@ -51,6 +51,7 @@ type Proxy struct {
 	clientTLS       *tls.Config
 	discovery       *replicaAddressMap
 	operations      *operationRegistry
+	reads           *readRegistry
 	memberIndex     int
 	observations    []ReplicaProxyConnection
 	replicaRequests int
@@ -85,6 +86,7 @@ type proxyOptions struct {
 	listener             net.Listener
 	discovery            *replicaAddressMap
 	operations           *operationRegistry
+	reads                *readRegistry
 	memberIndex          int
 }
 
@@ -106,7 +108,7 @@ func startProxy(t *testing.T, opts proxyOptions) *Proxy {
 	if err != nil {
 		t.Fatal("invalid owned fixture URI")
 	}
-	p := &Proxy{listener: listener, backendAddress: upstream.Host, conns: make(map[net.Conn]struct{}), done: make(chan struct{}), discovery: opts.discovery, operations: opts.operations, memberIndex: opts.memberIndex}
+	p := &Proxy{listener: listener, backendAddress: upstream.Host, conns: make(map[net.Conn]struct{}), done: make(chan struct{}), discovery: opts.discovery, operations: opts.operations, reads: opts.reads, memberIndex: opts.memberIndex}
 	if opts.serverTLS != nil {
 		// Test-only TLS termination observes decrypted commands for fault injection.
 		// Production direct-to-mongod TLS is qualified separately.
@@ -238,6 +240,10 @@ func (p *Proxy) SetUnavailable(unavailable bool) {
 
 func (p *Proxy) relay(client net.Conn) {
 	defer p.group.Done()
+	tail := &readTail{client: client, done: make(chan struct{})}
+	if p.reads != nil {
+		defer p.reads.joined(tail)
+	}
 	defer p.closeConnection(client)
 	defer func() {
 		p.mu.Lock()
@@ -275,6 +281,7 @@ func (p *Proxy) relay(client net.Conn) {
 	p.peakUpstream = max(p.peakUpstream, p.upstream)
 	p.mu.Unlock()
 	rawBackend := backend
+	tail.upstream = rawBackend
 	defer func() {
 		// Keep the original proxy's raw Close semantics after backend is wrapped
 		// in TLS; waiting for close_notify would manufacture a retirement tail.
@@ -340,6 +347,14 @@ func (p *Proxy) relay(client net.Conn) {
 				return
 			}
 		}
+		var readMatch *readMatch
+		if p.reads != nil {
+			opts := readBeginOptions{message: request, member: p.memberIndex, connection: observation, tail: tail}
+			readMatch, err = p.reads.begin(opts)
+			if err != nil {
+				return
+			}
+		}
 		fault := p.takeFault(name, request)
 		if fault != nil {
 			if fault.Started != nil {
@@ -360,7 +375,13 @@ func (p *Proxy) relay(client net.Conn) {
 			cancel()
 		}
 		written, writeErr := backend.Write(request)
+		if p.reads != nil && !p.reads.forwarded(readMatch, written, len(request)) {
+			return
+		}
 		if writeErr != nil || written != len(request) {
+			if readMatch != nil {
+				p.reads.fail()
+			}
 			if p.operations != nil && len(matches) != 0 {
 				p.operations.fail()
 			}
@@ -377,11 +398,17 @@ func (p *Proxy) relay(client net.Conn) {
 		p.mu.Unlock()
 		response, err := readMessage(backend)
 		if err != nil {
+			if readMatch != nil {
+				p.reads.fail()
+			}
 			return
 		}
 		if p.discovery != nil {
 			rewritten, rewriteErr := p.discovery.rewriteReply(request, response)
 			if rewriteErr != nil {
+				if readMatch != nil {
+					p.reads.fail()
+				}
 				p.rejectReplicaMessage(response, true, rewriteErr)
 				return
 			}
@@ -405,6 +432,13 @@ func (p *Proxy) relay(client net.Conn) {
 			if err != nil {
 				return
 			}
+		}
+		if readMatch != nil {
+			if !p.reads.received(readMatch, response) {
+				return
+			}
+			p.reads.wait(readMatch, p.done, replicaReadWatchdog)
+			return
 		}
 		if p.operations != nil {
 			held := p.operations.received(matches, reply)

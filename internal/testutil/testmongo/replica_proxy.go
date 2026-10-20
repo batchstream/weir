@@ -21,6 +21,7 @@ type ReplicaProxy struct {
 	mapping    *replicaAddressMap
 	members    [3]*Proxy
 	operations *operationRegistry
+	reads      *readRegistry
 }
 
 func StartReplicaProxy(t *testing.T, fixture *Replica) *ReplicaProxy {
@@ -55,9 +56,10 @@ func StartReplicaProxy(t *testing.T, fixture *Replica) *ReplicaProxy {
 		t.Fatal("invalid owned replica frontend mapping")
 	}
 	registry := &operationRegistry{}
-	proxy := &ReplicaProxy{fixture: fixture, mapping: mapping, operations: registry}
+	reads := &readRegistry{namespace: fixture.DB + ".records"}
+	proxy := &ReplicaProxy{fixture: fixture, mapping: mapping, operations: registry, reads: reads}
 	for i, listener := range listeners {
-		opts := proxyOptions{uri: "mongodb://" + actual[i], listener: listener, discovery: mapping, operations: registry, memberIndex: i}
+		opts := proxyOptions{uri: "mongodb://" + actual[i], listener: listener, discovery: mapping, operations: registry, reads: reads, memberIndex: i}
 		if fixture.secure {
 			host, _, _ := net.SplitHostPort(actual[i])
 			opts.serverTLS = fixture.proxyTLS[i]
@@ -221,4 +223,10 @@ func (p *ReplicaProxy) CheckWireCoverage(primary int, command string) error {
 		}
 	}
 	return nil
+}
+
+// WatchRead persists across every frontend for one bounded fixture record.
+func (p *ReplicaProxy) WatchRead(id string) (*ReadWatch, error) { return p.reads.watch(id) }
+func (p *ReplicaProxy) ArmReadHold(member int, watch *ReadWatch) error {
+	return p.reads.arm(member, watch)
 }

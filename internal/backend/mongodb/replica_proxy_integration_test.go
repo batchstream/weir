@@ -105,14 +105,28 @@ func TestMongoReplicaProxyDiscoveryRecovery(t *testing.T) {
 			if adapter.client.NumberSessionsInProgress() != 0 {
 				t.Fatal("completed work retained a checked-out session")
 			}
-			ctx, cancel = context.WithTimeout(t.Context(), 3*time.Second)
-			closed := time.Now()
-			err = adapter.Close(ctx)
-			cancel()
-			if err != nil || time.Since(closed) > 3*time.Second {
-				t.Fatal("adapter retirement", err)
+			var readWatches []*testmongo.ReadWatch
+			t.Run("sent_read_retirement", func(t *testing.T) {
+				readOptions := replicaReadRuntimeOptions{adapter: adapter, fixture: fixture, proxy: proxy, primary: primary}
+				readWatches = replicaReadRuntime(t, readOptions)
+			})
+			if t.Failed() {
+				return
 			}
 			ownerZero(t, adapter.dialer)
+			replicaFinalReplyLoss(t, heldOptions, watches)
+			for _, watch := range readWatches {
+				replicaReadFacts(t, watch, "backend_parent_product_owner_zero")
+				ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+				err := watch.CloseHeldRelays(ctx)
+				cancel()
+				if err != nil {
+					t.Fatal(err)
+				}
+				if s := watch.Snapshot(); s.Joined != 2 || s.Tails != 2 {
+					t.Fatal("actual read relay join", s)
+				}
+			}
 			proxy.Close()
 			for i, snapshot := range proxy.Snapshots() {
 				if snapshot.Active != 0 || snapshot.Rejections != 0 {

@@ -109,7 +109,18 @@ func TestMongoReplicaCLIReplyLoss(t *testing.T) {
 					}
 					replicaCLIIdle(t, service, time.Now().Add(3*time.Second))
 					replyLossOracles(t, lifetime, "before_CLI_exit")
-					terminal := service.stop(t)
+					var terminal processStopResult
+					var readWatches []*testmongo.ReadWatch
+					if kind == "bulkWrite" {
+						t.Run("sent_read_retirement", func(t *testing.T) {
+							terminal, readWatches = replicaCLISentReadRetirement(t, lifetime)
+						})
+						if t.Failed() {
+							return
+						}
+					} else {
+						terminal = service.stop(t)
+					}
 					t.Logf("reply_loss final_same_PID=%d SIGTERM_elapsed=%s wait_complete=true exit_valid=%t exit_code=%d timed_out=%t wait_error=%v", lifetime.pid, terminal.Elapsed, terminal.ExitCodeValid, terminal.ExitCode, terminal.TimedOut, terminal.WaitErr)
 					if !terminal.successful() {
 						t.Fatal("actual CLI exit gate failed")
@@ -119,6 +130,18 @@ func TestMongoReplicaCLIReplyLoss(t *testing.T) {
 					}
 					replicaClosedOwner(t, service)
 					replyLossOracles(t, lifetime, "after_actual_CLI_exit")
+					for _, watch := range readWatches {
+						replicaCLIReadFacts(t, watch, "parent_actual_Wait_and_product_owner_zero")
+						ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+						err := watch.CloseHeldRelays(ctx)
+						cancel()
+						if err != nil {
+							t.Fatal(err)
+						}
+						if s := watch.Snapshot(); s.Joined != 2 || s.Tails != 2 {
+							t.Fatal("actual targeted read relay join", s)
+						}
+					}
 					proxy.Close()
 					for i, snapshot := range proxy.Snapshots() {
 						if snapshot.Active != 0 || snapshot.Rejections != 0 {
