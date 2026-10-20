@@ -352,7 +352,7 @@ func (p *ReplicaProxy) WatchLuaLifecycle(op LuaOperation, phase LuaLifecyclePhas
 		return nil, err
 	}
 	p.lua.mu.Lock()
-	w.lifecycle = &luaLifecycle{phase: phase, close: make(chan struct{})}
+	w.lifecycle = &luaLifecycle{phase: phase, close: make(chan struct{}), observed: make(chan struct{})}
 	p.lua.mu.Unlock()
 	return w, nil
 }
@@ -360,20 +360,30 @@ func (p *ReplicaProxy) CheckLuaLifecycleCases(t *testing.T, watches []*LuaWatch,
 	t.Helper()
 	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
 	defer cancel()
+	p.CheckLuaLifecycleCasesContext(t, ctx, watches, phase)
+}
+
+// Initial cancellation proof receives the original absolute caller gate. Later
+// persistent checks use the bounded wrapper above after this proof completes.
+func (p *ReplicaProxy) CheckLuaLifecycleCasesContext(t *testing.T, ctx context.Context, watches []*LuaWatch, phase string) {
+	t.Helper()
 	for _, w := range watches {
 		if err := w.ValidateLifecycle(true); err != nil {
 			t.Fatal("persistent Lua lifecycle proof", phase, err, w.Snapshot())
 		}
-		expected := LuaLedger{N: 1, Candidate: 1}
-		if w.lifecycle.phase == LuaCancelSnapshot {
-			expected.N = 0
-			expected.Candidate = 0
-		}
-		p.CheckLuaLedger(t, ctx, w, expected)
+	}
+	read := func(original context.Context, w *LuaWatch, expected LuaLedger) error {
+		p.CheckLuaLedger(t, original, w, expected)
+		return nil
+	}
+	if err := checkLuaLifecycleLedgers(ctx, watches, read); err != nil {
+		t.Fatal("Lua lifecycle original ledger deadline", phase, err)
+	}
+	for _, w := range watches {
 		p.lua.mu.Lock()
 		natural := w.lifecycle.natural
 		w.snapshot.Completed = true
 		p.lua.mu.Unlock()
-		t.Logf("lua_lifecycle phase=%s case=%d natural_product_EOF=%t deliberate_drop=false observation=%+v durable=%+v", phase, w.lifecycle.phase, natural, w.Snapshot(), expected)
+		t.Logf("lua_lifecycle phase=%s case=%d natural_product_EOF=%t deliberate_drop=false observation=%+v", phase, w.lifecycle.phase, natural, w.Snapshot())
 	}
 }

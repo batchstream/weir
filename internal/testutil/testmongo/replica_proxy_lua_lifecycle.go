@@ -21,6 +21,7 @@ type luaLifecycle struct {
 	phase                   LuaLifecyclePhase
 	tail                    *readTail
 	close                   chan struct{}
+	observed                chan struct{}
 	natural, joined, closed bool
 }
 
@@ -53,6 +54,7 @@ func (r *luaRegistry) passiveLifecycle(m *luaMatch, client net.Conn, tail *readT
 	} else {
 		l.natural = true
 	}
+	close(l.observed)
 	r.mu.Unlock()
 	timer := time.NewTimer(max(time.Until(w.deadline), 0))
 	defer timer.Stop()
@@ -75,7 +77,74 @@ func (r *luaRegistry) lifecycleJoined(tail *readTail) {
 		}
 	}
 }
+
+// CheckLuaLifecycleDeadline rejects an expired absolute deadline even when a
+// ready observation wins a select before context cancellation is published.
+func CheckLuaLifecycleDeadline(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if deadline, ok := ctx.Deadline(); ok && !time.Now().Before(deadline) {
+		return context.DeadlineExceeded
+	}
+	return nil
+}
+
+// WaitLifecycleEOF observes only the relay's completed real socket read. It
+// never releases a gate or closes a socket to synchronize product retirement.
+func (w *LuaWatch) WaitLifecycleEOF(ctx context.Context) error {
+	if err := CheckLuaLifecycleDeadline(ctx); err != nil {
+		return err
+	}
+	r := w.registry
+	r.mu.Lock()
+	l := w.lifecycle
+	if l == nil || l.phase == LuaHealthyPeer || r.failure != "" {
+		r.mu.Unlock()
+		return errReplicaProxyWire
+	}
+	observed := l.observed
+	r.mu.Unlock()
+	select {
+	case <-observed:
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	if err := CheckLuaLifecycleDeadline(ctx); err != nil {
+		return err
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.failure != "" || w.snapshot.Expired || !l.natural {
+		return errReplicaProxyWire
+	}
+	return nil
+}
+
+func checkLuaLifecycleLedgers(ctx context.Context, watches []*LuaWatch, read func(context.Context, *LuaWatch, LuaLedger) error) error {
+	for _, w := range watches {
+		if err := CheckLuaLifecycleDeadline(ctx); err != nil {
+			return err
+		}
+		expected := LuaLedger{N: 1, Candidate: 1}
+		if w.lifecycle.phase == LuaCancelSnapshot {
+			expected.N = 0
+			expected.Candidate = 0
+		}
+		if err := read(ctx, w, expected); err != nil {
+			return err
+		}
+		if err := CheckLuaLifecycleDeadline(ctx); err != nil {
+			return err
+		}
+	}
+	return CheckLuaLifecycleDeadline(ctx)
+}
+
 func (w *LuaWatch) CloseLifecycleTail(ctx context.Context) error {
+	if err := CheckLuaLifecycleDeadline(ctx); err != nil {
+		return err
+	}
 	r := w.registry
 	r.mu.Lock()
 	l := w.lifecycle
@@ -89,7 +158,7 @@ func (w *LuaWatch) CloseLifecycleTail(ctx context.Context) error {
 	r.mu.Unlock()
 	select {
 	case <-tail.done:
-		return nil
+		return CheckLuaLifecycleDeadline(ctx)
 	case <-ctx.Done():
 		return ctx.Err()
 	}

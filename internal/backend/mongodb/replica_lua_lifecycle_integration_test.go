@@ -159,6 +159,9 @@ func replicaLuaLifecycleCancel(t *testing.T, opts replicaLuaRuntimeOptions) []*t
 	if held.Retained != 1 || held.Ready != 1 || held.WorkingBytes != 0 || held.ResultBytes <= 0 || credit.Count != 1 || credit.InputUsedBytes == 0 || !canceled.mirror.actualTicket.Load() {
 		t.Fatal("canceled Lua actual retained Ticket", held, credit)
 	}
+	if err := canceled.watch.WaitLifecycleEOF(wait); err != nil {
+		t.Fatal("canceled Lua EOF observation", err)
+	}
 	if err := canceled.watch.ValidateLifecycle(false); err != nil {
 		t.Fatal("natural cancellation EOF/no replay", err, canceled.watch.Snapshot())
 	}
@@ -168,11 +171,11 @@ func replicaLuaLifecycleCancel(t *testing.T, opts replicaLuaRuntimeOptions) []*t
 	if err := canceled.watch.CloseLifecycleTail(wait); err != nil {
 		t.Fatal(err)
 	}
-	if elapsed := time.Since(started); elapsed > 3*time.Second || wait.Err() != nil {
-		t.Fatal("Lua cancellation final join exceeded original 3s", elapsed, wait.Err())
+	watches := []*testmongo.LuaWatch{canceled.watch, peer.watch}
+	opts.proxy.CheckLuaLifecycleCasesContext(t, wait, watches, "backend_cancel_join")
+	if elapsed := time.Since(started); elapsed > 3*time.Second || testmongo.CheckLuaLifecycleDeadline(wait) != nil {
+		t.Fatal("Lua cancellation final join and majority ledgers exceeded original 3s", elapsed, wait.Err())
 	}
 	t.Logf("lua_lifecycle cancellation_elapsed=%s actual_execution_join=true Ack_before_SessionClose=true peer_APPLIED=true separate_concurrent_transactions=true coalesced_batch_coverage=false", time.Since(started))
-	watches := []*testmongo.LuaWatch{canceled.watch, peer.watch}
-	opts.proxy.CheckLuaLifecycleCases(t, watches, "backend_cancel_join")
 	return watches
 }

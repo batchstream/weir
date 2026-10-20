@@ -127,18 +127,21 @@ func replicaCLILuaLifecycleCancel(t *testing.T, lifetime *replyLossLifetime) []*
 		t.Fatal("canceled Lua truthful transport/typed boundary", receipt)
 	}
 	replicaCLIIdle(t, lifetime.service, started.Add(3*time.Second))
+	if err := canceled.watch.WaitLifecycleEOF(wait); err != nil {
+		t.Fatal("CLI canceled Lua EOF observation", err)
+	}
 	if err := canceled.watch.ValidateLifecycle(false); err != nil {
 		t.Fatal("CLI canceled Lua natural retirement", err, canceled.watch.Snapshot())
 	}
 	if err := canceled.watch.CloseLifecycleTail(wait); err != nil {
 		t.Fatal(err)
 	}
-	if elapsed := time.Since(started); elapsed > 3*time.Second || wait.Err() != nil {
-		t.Fatal("CLI Lua cancellation final join exceeded original 3s", elapsed, wait.Err())
+	watches := []*testmongo.LuaWatch{canceled.watch, peer.watch}
+	lifetime.proxy.CheckLuaLifecycleCasesContext(t, wait, watches, "CLI_cancel_join")
+	if elapsed := time.Since(started); elapsed > 3*time.Second || testmongo.CheckLuaLifecycleDeadline(wait) != nil {
+		t.Fatal("CLI Lua cancellation final join and majority ledgers exceeded original 3s", elapsed, wait.Err())
 	}
 	t.Logf("lua_lifecycle CLI_cancel_elapsed=%s actual_SDK_join=true peer_APPLIED=true separate_concurrent_transactions=true coalesced_batch_coverage=false typed_receipt=%t transport_error=%v", time.Since(started), receipt.result != nil, receipt.err)
-	watches := []*testmongo.LuaWatch{canceled.watch, peer.watch}
-	lifetime.proxy.CheckLuaLifecycleCases(t, watches, "CLI_cancel_join")
 	return watches
 }
 func replicaCLILuaRetired(t *testing.T, call *replicaCLILuaCall, retireDeadline time.Time) {
@@ -160,11 +163,20 @@ func replicaCLILuaRetired(t *testing.T, call *replicaCLILuaCall, retireDeadline 
 		}
 		t.Logf("lua_lifecycle CLI_actual_Wait delivered_typed_UNKNOWN=false transport_interruption=%v", receipt.err)
 	}
+	if err := call.watch.WaitLifecycleEOF(wait); err != nil {
+		t.Fatal("CLI shutdown Lua EOF observation", err)
+	}
 	if err := call.watch.ValidateLifecycle(false); err != nil {
 		t.Fatal("Lua natural product EOF after actual Wait", err, call.watch.Snapshot())
 	}
 	if err := call.watch.CloseLifecycleTail(wait); err != nil {
 		t.Fatal(err)
+	}
+	if err := testmongo.CheckLuaLifecycleDeadline(wait); err != nil {
+		t.Fatal("CLI Lua SDK/EOF/relay joins exceeded original shutdown 8s", err)
+	}
+	if call.ctx.Err() != nil {
+		t.Fatal("original Lua 12s caller expired before shutdown joins", call.ctx.Err())
 	}
 	call.cancel()
 }

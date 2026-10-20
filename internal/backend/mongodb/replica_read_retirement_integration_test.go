@@ -299,8 +299,11 @@ func replicaReadRuntime(t *testing.T, opts replicaReadRuntimeOptions) ([]*testmo
 	t.Logf("sent_read phase=backend_after_close elapsed=%s execution_adapter_publisher_join=true sessions_baseline=%d raw_owner=%+v snapshot=%+v memory=%+v", elapsed, baseline, a.dialer.snapshot(), after, credit)
 	// Retire the additional Lua owner explicitly before preserving the original
 	// ready-read Ack 2->1 and owning Session.Close 1->0 assertions.
-	wait, stop = context.WithTimeout(t.Context(), time.Second)
+	wait, stop = context.WithDeadline(t.Context(), started.Add(8*time.Second))
 	luaResult := replicaLuaLifecycleReceipt(t, wait, lua, true)
+	if err := lua.watch.WaitLifecycleEOF(wait); err != nil {
+		t.Fatal("shutdown Lua EOF observation", err)
+	}
 	stop()
 	if luaResult.GetOutcome() != pb.MutationOutcome_UNKNOWN || luaResult.GetFailure() == nil {
 		t.Fatal("retired Lua commit uncertainty", luaResult)
@@ -315,7 +318,7 @@ func replicaReadRuntime(t *testing.T, opts replicaReadRuntimeOptions) ([]*testmo
 		t.Fatal("Lua actual Ack 3->2 before Session.Close", withoutLua, withoutLuaCredit)
 	}
 	replicaLuaLifecycleForget(luaOptions, lua)
-	joinLua, stop := context.WithTimeout(t.Context(), time.Second)
+	joinLua, stop := context.WithDeadline(t.Context(), started.Add(8*time.Second))
 	if err := lua.watch.CloseLifecycleTail(joinLua); err != nil {
 		t.Fatal(err)
 	}

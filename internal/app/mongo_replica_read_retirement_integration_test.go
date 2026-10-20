@@ -178,6 +178,9 @@ func replicaCLISentReadRetirement(t *testing.T, lifetime *replyLossLifetime) (pr
 	default:
 	}
 	signalStarted := time.Now()
+	shutdownDeadline := signalStarted.Add(8 * time.Second)
+	shutdown, stopShutdown := context.WithDeadline(t.Context(), shutdownDeadline)
+	defer stopShutdown()
 	terminal := lifetime.service.stop(t)
 	if !terminal.successful() || terminal.Elapsed < 5*time.Second {
 		t.Fatal("actual sent-read CLI full drain/default retirement exit", terminal)
@@ -187,7 +190,7 @@ func replicaCLISentReadRetirement(t *testing.T, lifetime *replyLossLifetime) (pr
 	if retirement.ctx.Err() != nil {
 		t.Fatal("original 12s caller expired during actual Wait", retirement.ctx.Err())
 	}
-	replicaCLIReadBarrier(t, final, true, time.Now().Add(time.Second))
+	replicaCLIReadBarrier(t, final, true, shutdownDeadline)
 	replicaCLIReadFacts(t, first, "CLI_actual_process_Wait")
 	replicaCLIReadFacts(t, final, "CLI_actual_process_Wait")
 	for _, watch := range []*testmongo.ReadWatch{first, final} {
@@ -195,18 +198,28 @@ func replicaCLISentReadRetirement(t *testing.T, lifetime *replyLossLifetime) (pr
 			t.Fatal("observer intervened before actual CLI Wait", s)
 		}
 	}
-	timer = time.NewTimer(time.Until(retirement.deadline))
+	if err := testmongo.CheckLuaLifecycleDeadline(shutdown); err != nil {
+		t.Fatal("CLI read SDK join original shutdown deadline", err)
+	}
 	select {
 	case receipt = <-retirement.done:
-	case <-timer.C:
-		t.Fatal("SDK read worker did not join after actual CLI Wait")
+	case <-shutdown.Done():
+		t.Fatal("SDK read worker did not join inside original shutdown 8s", shutdown.Err())
 	}
-	timer.Stop()
+	if err := testmongo.CheckLuaLifecycleDeadline(shutdown); err != nil {
+		t.Fatal("CLI read SDK join exceeded original shutdown 8s", err)
+	}
 	if receipt.document || receipt.err == nil && !receipt.failure {
 		t.Fatal("retired read invented successful document receipt", receipt)
 	}
 	t.Logf("sent_read case=CLI_retirement same_PID=%d actual_Wait=true wait_error=%v exit_code_valid=%t exit_code=%d timed_out=%t elapsed=%s original_caller_alive=true caller_error=%v caller_failure=%t", lifetime.pid, terminal.WaitErr, terminal.ExitCodeValid, terminal.ExitCode, terminal.TimedOut, terminal.Elapsed, receipt.err, receipt.failure)
-	replicaCLILuaRetired(t, lua, signalStarted.Add(8*time.Second))
+	replicaCLILuaRetired(t, lua, shutdownDeadline)
+	if err := testmongo.CheckLuaLifecycleDeadline(shutdown); err != nil {
+		t.Fatal("CLI final read/Lua shutdown joins exceeded original 8s", err)
+	}
+	if retirement.ctx.Err() != nil {
+		t.Fatal("original read 12s caller expired before shutdown joins", retirement.ctx.Err())
+	}
 	luaWatches = append(luaWatches, lua.watch)
 	watches := []*testmongo.ReadWatch{first, final}
 	return terminal, watches, luaWatches
