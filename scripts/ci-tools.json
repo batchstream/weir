@@ -26,5 +26,16 @@
       "url": "https://github.com/regclient/regclient/releases/download/v0.11.6/regctl-linux-amd64",
       "sha256": "8e0e62a497fcdb8048d18aa927a139613176ba0531f412bc541044e28f9856bd"
     }
+  },
+  "mongo": {
+    "linux-amd64": {
+      "version": "8.0.32",
+      "url": "https://fastdl.mongodb.org/linux/mongodb-linux-x86_64-ubuntu2404-8.0.32.tgz",
+      "sha256": "b411be17c31ef249767ed91974d876e007c91afd5f45e1534057d247eada9f0d",
+      "size": 105534528,
+      "member": "mongodb-linux-x86_64-ubuntu2404-8.0.32/bin/mongod",
+      "member_size": 222890240,
+      "member_sha256": "15c7caf565edeaca228c76fbe6c4503b1cff7ae6517f344cc555552423b3209a"
+    }
   }
 }

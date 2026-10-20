@@ -66,7 +66,7 @@ func TestMongoServerQualificationUsesTopologyOnly(t *testing.T) {
 			}}
 			responses := []bson.D{test.response}
 			adapter := batchMockAdapter(t, responses, monitor)
-			err := adapter.qualify(context.Background())
+			err := adapter.qualify(context.Background(), "")
 			if test.wantErr == "" {
 				if err != nil {
 					t.Fatal("topology qualification requires no server version query", err)

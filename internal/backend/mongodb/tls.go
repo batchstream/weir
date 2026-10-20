@@ -12,7 +12,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"strings"
 	"sync/atomic"
 	"time"
 
@@ -24,54 +23,35 @@ const mongoConnectTimeout = 2 * time.Second
 
 var errTLSProfile = errors.New("invalid MongoDB TLS or OCSP profile")
 
-// Keep authentication out of the driver's stored URI and supply it with SetAuth.
-// Load the separately configured CA from a regular file instead of URI userinfo.
-// ValidateConfig must precede this function (including all file and DNS access).
-func connectionOptions(cfg Config, dialer *connectionOwner) (*options.ClientOptions, error) {
-	parsed, err := url.Parse(cfg.URI)
-	if err != nil {
-		return nil, errors.New("invalid MongoDB connection profile")
+// The profile must be parsed before any trust-file or network access.
+func connectionOptions(cfg Config, dialer *connectionOwner, profile connectionProfile) (*options.ClientOptions, error) {
+	opts := options.Client().SetHosts(profile.hosts).SetDirect(profile.direct)
+	if profile.replicaSet != "" {
+		opts.SetReplicaSet(profile.replicaSet)
 	}
-	query := parsed.Query()
-	caFile := cfg.CAFile
-	authSource := ""
-	authMechanism := ""
-	for key, values := range query {
-		switch strings.ToLower(key) {
-		case "authsource":
-			authSource = values[0]
-			query.Del(key)
-		case "authmechanism":
-			authMechanism = values[0]
-			query.Del(key)
-		}
-	}
-	parsed.RawQuery = query.Encode()
-	opts := options.Client().ApplyURI(parsed.String())
 	if cfg.Username != "" {
 		credential := options.Credential{
-			AuthMechanism: authMechanism,
-			AuthSource:    authSource,
+			AuthMechanism: profile.authMechanism,
+			AuthSource:    profile.authSource,
 			Username:      cfg.Username,
 			Password:      cfg.Password,
 			PasswordSet:   true,
 		}
 		opts.SetAuth(credential)
 	}
-	if err := opts.Validate(); err != nil {
-		return nil, errors.New("invalid MongoDB connection profile")
-	}
-	if caFile != "" {
-		pool, err := mongoRoots(caFile)
-		if err != nil {
-			return nil, err
+	if profile.tls {
+		config := &tls.Config{}
+		if cfg.CAFile != "" {
+			pool, err := mongoRoots(cfg.CAFile)
+			if err != nil {
+				return nil, err
+			}
+			config.RootCAs = pool
 		}
-		opts.TLSConfig.RootCAs = pool
+		dialer.tlsConfig = config
 	}
-	dialer.tlsConfig = opts.TLSConfig
-	// The dialer performs the pinned driver's TLS + OCSP sequence before exposing
-	// decrypted Mongo frames. Disable the second TLS wrapping, never verification.
-	opts.TLSConfig = nil
+	// The owner performs verified TLS + OCSP for each actual member address.
+	// Leave driver TLS disabled to avoid wrapping the same socket twice.
 	opts.SetDialer(dialer)
 	return opts, nil
 }

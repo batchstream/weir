@@ -39,30 +39,68 @@ type process struct {
 	stderr     *bytes.Buffer
 	done       chan error
 	once       sync.Once
+	stopResult processStopResult
 }
 
-func (p *process) stop(t *testing.T) {
+type processStopResult struct {
+	WaitErr       error
+	ExitCode      int
+	ExitCodeValid bool
+	TimedOut      bool
+	Elapsed       time.Duration
+}
+
+func (result processStopResult) successful() bool {
+	return result.WaitErr == nil && result.ExitCodeValid && result.ExitCode == 0 && !result.TimedOut && result.Elapsed <= 8*time.Second
+}
+
+// waitForStop reads terminal state and stderr only after the Wait result arrives.
+// Its caller owns the once guard, so concurrent cleanup never consumes done twice.
+func (p *process) waitForStop() processStopResult {
+	result := processStopResult{ExitCode: -1}
+	started := time.Now()
+	_ = p.command.Process.Signal(syscall.SIGTERM)
+	timer := time.NewTimer(8 * time.Second)
+	defer timer.Stop()
+	select {
+	case result.WaitErr = <-p.done:
+	case <-timer.C:
+		result.TimedOut = true
+		_ = p.command.Process.Kill()
+		result.WaitErr = <-p.done
+	}
+	result.Elapsed = time.Since(started)
+	if state := p.command.ProcessState; state != nil {
+		result.ExitCode = state.ExitCode()
+		result.ExitCodeValid = state.Exited()
+	}
+	return result
+}
+
+func (p *process) stop(t *testing.T) processStopResult {
 	t.Helper()
 	p.once.Do(func() {
-		_ = p.command.Process.Signal(syscall.SIGTERM)
-		select {
-		case err := <-p.done:
-			if err != nil {
-				t.Errorf("Weir process exit: %v %s", err, p.stderr.String())
-			}
-		case <-time.After(8 * time.Second):
-			_ = p.command.Process.Kill()
-			<-p.done
-			t.Error("Weir process drain exceeded bound")
+		p.stopResult = p.waitForStop()
+		result := p.stopResult
+		if result.TimedOut {
+			t.Errorf("Weir process drain exceeded bound: elapsed=%s exit_valid=%t exit_code=%d wait_error=%v", result.Elapsed, result.ExitCodeValid, result.ExitCode, result.WaitErr)
+		} else if !result.successful() {
+			t.Errorf("Weir process exit: elapsed=%s exit_valid=%t exit_code=%d wait_error=%v %s", result.Elapsed, result.ExitCodeValid, result.ExitCode, result.WaitErr, p.stderr.String())
 		}
 	})
+	return p.stopResult
 }
 
 func startProcess(t *testing.T, binary string, cfg Config) *process {
 	t.Helper()
+	return startProcessWithLifetime(t, binary, cfg, 60*time.Second)
+}
+
+func startProcessWithLifetime(t *testing.T, binary string, cfg Config, lifetime time.Duration) *process {
+	t.Helper()
 	name := filepath.Join(t.TempDir(), "node.yaml")
 	routingFilename := writeConfigFiles(t, name, cfg, 0600)
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), lifetime)
 	t.Cleanup(cancel)
 	args := []string{"serve", "--config", name, "--routes", routingFilename}
 	command := exec.CommandContext(ctx, binary, args...)

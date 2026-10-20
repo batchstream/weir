@@ -172,7 +172,11 @@ func TestMongoDriverRetirementOwnership(t *testing.T) {
 	if err := ValidateConfig(cfg); err != nil {
 		t.Fatal(err)
 	}
-	opts, err := connectionOptions(cfg, d)
+	profile, err := parseConfig(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	opts, err := connectionOptions(cfg, d, profile)
 	if err != nil {
 		t.Fatal(err)
 	}
