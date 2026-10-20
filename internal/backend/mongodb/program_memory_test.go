@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"testing"
+	"time"
 
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 	"github.com/batchstream/weir/internal/execution"
@@ -11,6 +12,127 @@ import (
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/event"
 )
+
+type allocationContextMemory struct {
+	recordMemoryProbe
+	entered chan context.Context
+	calls   int
+	blockAt int
+}
+
+func (m *allocationContextMemory) SetWorking(ctx context.Context, bytes int) error {
+	m.calls++
+	// The first reservation covers decoded inputs; the second is the Lua
+	// evaluation budget's initial allocation, before parsing or executing Lua.
+	blockAt := m.blockAt
+	if blockAt == 0 {
+		blockAt = 2
+	}
+	if m.calls == blockAt {
+		m.entered <- ctx
+		<-ctx.Done()
+		return ctx.Err()
+	}
+	return m.recordMemoryProbe.SetWorking(ctx, bytes)
+}
+
+func TestMongoLuaAllocationWaitUsesEvaluationContext(t *testing.T) {
+	owner := &allocationContextMemory{entered: make(chan context.Context, 1)}
+	memory := &recordMemory{owner: owner, base: 8192}
+	batch, stopBatch := context.WithTimeout(t.Context(), 2*time.Second)
+	defer stopBatch()
+	ctx := context.WithValue(batch, recordMemoryContextKey, memory)
+	allocation, cancel := context.WithTimeout(batch, time.Second)
+	defer cancel()
+	work := memoryProgramWork(`return function() return weir.keep() end`, owner)
+	work.Context = allocation
+	results := make(chan *pb.MutationResult, 1)
+	go func() {
+		_, result := transformProgram(ctx, work, nil)
+		results <- result
+	}()
+	select {
+	case actual := <-owner.entered:
+		actualDeadline, bounded := actual.Deadline()
+		expected, _ := allocation.Deadline()
+		if !bounded || !actualDeadline.Equal(expected) {
+			cancel()
+			t.Error("Lua allocation inherited the batch's later deadline", actualDeadline, expected)
+		}
+	case <-batch.Done():
+		t.Fatal("Lua allocation callback did not begin")
+	}
+	cancel()
+	select {
+	case result := <-results:
+		if batch.Err() != nil || result.GetOutcome() != pb.MutationOutcome_NOT_APPLIED || result.GetFailure().GetCode() != pb.FailureCode_CANCELLED {
+			t.Fatal("evaluation cancellation did not bound allocation wait before mutation", result, batch.Err())
+		}
+	case <-batch.Done():
+		t.Fatal("Lua allocation waited for batch cancellation")
+	}
+}
+
+func TestMongoInitialLuaReservationDeadlinePreservesEvidence(t *testing.T) {
+	for _, mode := range []string{"record-deadline", "explicit-cancel", "parent-deadline"} {
+		t.Run(mode, func(t *testing.T) {
+			owner := &allocationContextMemory{entered: make(chan context.Context, 1), blockAt: 1}
+			memory := &recordMemory{owner: owner, base: 8192}
+			batchDuration, recordDuration := 2*time.Second, 25*time.Millisecond
+			if mode == "explicit-cancel" {
+				recordDuration = time.Second
+			} else if mode == "parent-deadline" {
+				batchDuration, recordDuration = 25*time.Millisecond, time.Second
+			}
+			batch, stopBatch := context.WithTimeout(t.Context(), batchDuration)
+			defer stopBatch()
+			ctx := context.WithValue(batch, recordMemoryContextKey, memory)
+			allocation, cancel := context.WithTimeout(t.Context(), recordDuration)
+			defer cancel()
+			work := memoryProgramWork(`return function() return weir.keep() end`, owner)
+			work.Context = allocation
+			results := make(chan *pb.MutationResult, 1)
+			go func() {
+				_, result := transformProgram(ctx, work, nil)
+				results <- result
+			}()
+			var actual context.Context
+			select {
+			case actual = <-owner.entered:
+				actualDeadline, bounded := actual.Deadline()
+				recordDeadline, _ := allocation.Deadline()
+				batchDeadline, _ := batch.Deadline()
+				expected := recordDeadline
+				if batchDeadline.Before(expected) {
+					expected = batchDeadline
+				}
+				if !bounded || !actualDeadline.Equal(expected) {
+					t.Error("evaluation extended the earliest actual deadline", actualDeadline, expected)
+				}
+			case <-time.After(time.Second):
+				t.Fatal("initial reservation did not begin")
+			}
+			if mode == "explicit-cancel" {
+				cancel()
+			}
+			select {
+			case result := <-results:
+				code, expectedErr := pb.FailureCode_DEADLINE_EXCEEDED, context.DeadlineExceeded
+				if mode == "explicit-cancel" {
+					code, expectedErr = pb.FailureCode_CANCELLED, context.Canceled
+				}
+				if actual.Err() != expectedErr || result.GetOutcome() != pb.MutationOutcome_NOT_APPLIED || result.GetFailure().GetCode() != code {
+					t.Fatal("initial allocation changed cancellation/deadline evidence", result, actual.Err())
+				}
+				if owner.calls != 1 || owner.peak != 0 || owner.result != 0 || !work.Backend.(*plan).program.ObservedAt.IsZero() {
+					t.Fatal("failed reservation permitted decoding, VM entry or write ownership", owner.calls, owner.peak, owner.result)
+				}
+			case <-time.After(time.Second):
+				t.Fatal("initial allocation ignored its earlier context")
+			}
+		})
+	}
+}
 
 func memoryProgramWork(source string, owner execution.Memory) *execution.Plan {
 	program := &luaengine.Program{Source: source}

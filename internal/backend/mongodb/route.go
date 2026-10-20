@@ -86,7 +86,7 @@ func (a *Adapter) Execute(ctx context.Context, works []*execution.Plan, emit exe
 			}
 		}
 		if work.Memory != nil {
-			_ = work.Memory.SetWorking(0)
+			_ = work.Memory.SetWorking(ctx, 0)
 		}
 		for i, result := range results {
 			_ = emit(works[i], result)

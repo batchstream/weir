@@ -215,8 +215,8 @@ func (a *Adapter) runProgramAttempt(ctx context.Context, state *programAttempt) 
 			return programAttemptRetry
 		}
 		failure := backendFailure(ctx, readErr)
-		if errors.Is(readErr, execution.ErrExecutionMemory) {
-			failure = recordMemoryFailure()
+		if errors.Is(readErr, execution.ErrExecutionMemory) || errors.Is(readErr, errRecordReservation) {
+			failure = execution.ReservationFailure(ctx, readErr)
 		}
 		batch.fail(pb.MutationOutcome_NOT_APPLIED, failure)
 		return programAttemptFinished
@@ -246,8 +246,8 @@ func (a *Adapter) runProgramAttempt(ctx context.Context, state *programAttempt) 
 			return programAttemptRetry
 		}
 		failure := backendFailure(ctx, writeErr)
-		if errors.Is(writeErr, execution.ErrExecutionMemory) {
-			failure = recordMemoryFailure()
+		if errors.Is(writeErr, execution.ErrExecutionMemory) || errors.Is(writeErr, errRecordReservation) {
+			failure = execution.ReservationFailure(ctx, writeErr)
 		}
 		batch.fail(pb.MutationOutcome_NOT_APPLIED, failure)
 		return programAttemptFinished
@@ -489,12 +489,26 @@ func transformProgram(ctx context.Context, work *execution.Plan, raw bson.Raw) (
 	}
 	if work.Context != nil {
 		programContext, cancel := context.WithCancel(ctx)
+		deadlineInstalled := false
 		if deadline, exists := work.Context.Deadline(); exists {
 			cancel()
 			programContext, cancel = context.WithDeadline(ctx, deadline)
+			deadlineInstalled = true
 		}
-		stop := context.AfterFunc(work.Context, cancel)
-		defer stop()
+		forwarded := make(chan struct{})
+		stop := context.AfterFunc(work.Context, func() {
+			defer close(forwarded)
+			// The child already has this deadline. Forward explicit cancellation
+			// only: cancel() racing its timer would erase deadline evidence.
+			if !deadlineInstalled || work.Context.Err() != context.DeadlineExceeded {
+				cancel()
+			}
+		})
+		defer func() {
+			if !stop() {
+				<-forwarded
+			}
+		}()
 		defer cancel()
 		ctx = programContext
 	}
@@ -518,7 +532,7 @@ func transformProgram(ctx context.Context, work *execution.Plan, raw bson.Raw) (
 		return nil, protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, recordMemoryFailure())
 	}
 	if err := reserveRecordWorking(ctx, plans, decodedWorking); err != nil {
-		return nil, protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, recordMemoryFailure())
+		return nil, protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, execution.ReservationFailure(ctx, err))
 	}
 	native := work.Backend.(*plan)
 	missing := raw == nil
@@ -633,7 +647,7 @@ func transformProgram(ctx context.Context, work *execution.Plan, raw bson.Raw) (
 			return nil, protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, recordMemoryFailure())
 		}
 		if err := reserveRecordWorking(ctx, plans, working); err != nil {
-			return nil, protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, recordMemoryFailure())
+			return nil, protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, execution.ReservationFailure(ctx, err))
 		}
 		encoded, encodeErr := Encode(ctx, replacement)
 		if encodeErr != nil {

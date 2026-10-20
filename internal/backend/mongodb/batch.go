@@ -36,7 +36,7 @@ func (a *Adapter) executeRecords(ctx context.Context, plans []*execution.Plan) [
 	}
 	if err := reserveRecordWorking(ctx, active, 0); err != nil {
 		for i, work := range active {
-			results[positions[i]] = execution.FailedEvent(work.Command, pb.MutationOutcome_NOT_STARTED, recordMemoryFailure())
+			results[positions[i]] = execution.FailedEvent(work.Command, pb.MutationOutcome_NOT_STARTED, execution.ReservationFailure(ctx, err))
 		}
 		return results
 	}
@@ -333,8 +333,8 @@ func (a *Adapter) executeReads(ctx context.Context, plans []*execution.Plan) []*
 			failure := protocol.Fail(pb.FailureCode_UNAVAILABLE, "point read acknowledgement unavailable or incomplete")
 			if stopped && p.Context != nil && p.Context.Err() != nil {
 				failure = protocol.ContextFailure(p.Context)
-			} else if errors.Is(err, execution.ErrExecutionMemory) {
-				failure = recordMemoryFailure()
+			} else if errors.Is(err, execution.ErrExecutionMemory) || errors.Is(err, errRecordReservation) {
+				failure = execution.ReservationFailure(ctx, err)
 			} else if err != nil {
 				failure = backendFailure(ctx, err)
 			}
@@ -368,7 +368,7 @@ func (a *Adapter) executeWrites(ctx context.Context, plans []*execution.Plan) []
 		for i, work := range plans {
 			results[i] = unstarted(ctx, work)
 			if results[i] == nil {
-				results[i] = execution.FailedEvent(work.Command, pb.MutationOutcome_NOT_STARTED, recordMemoryFailure())
+				results[i] = execution.FailedEvent(work.Command, pb.MutationOutcome_NOT_STARTED, execution.ReservationFailure(ctx, err))
 			}
 		}
 		return results

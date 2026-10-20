@@ -3,6 +3,7 @@ package search
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strconv"
 
 	"github.com/batchstream/weir-protocol/api/protocol"
@@ -86,22 +87,22 @@ func (a *Adapter) bulkResults(ctx context.Context, response bulkResponse) []*pb.
 	failure := protocol.Fail(pb.FailureCode_UNAVAILABLE, "backend write acknowledgement invalid or incomplete")
 	// A timeout changes what we know about the reply, never whether a connected
 	// mutation might have committed. Keep causes fixed and omit native bodies.
-	switch err {
-	case errWriteMemoryNotSent:
+	switch {
+	case errors.Is(err, errWriteMemoryNotSent):
 		outcome = pb.MutationOutcome_NOT_APPLIED
-		failure = recordMemoryFailure()
-	case execution.ErrExecutionMemory:
-		failure = recordMemoryFailure()
-	case errWriteNotSent:
+		failure = execution.ReservationFailure(ctx, err)
+	case errors.Is(err, errRecordReservation), errors.Is(err, execution.ErrExecutionMemory):
+		failure = execution.ReservationFailure(ctx, err)
+	case err == errWriteNotSent:
 		outcome = pb.MutationOutcome_NOT_APPLIED
 		failure = protocol.Fail(pb.FailureCode_UNAVAILABLE, "write request not sent to backend")
-	case errTimeout:
+	case err == errTimeout:
 		failure = protocol.Fail(pb.FailureCode_DEADLINE_EXCEEDED, "backend write deadline exceeded; acknowledgement unavailable")
-	case errCanceled:
+	case err == errCanceled:
 		failure = protocol.Fail(pb.FailureCode_CANCELLED, "backend write canceled; acknowledgement unavailable")
-	case errTransport:
+	case err == errTransport:
 		failure = protocol.Fail(pb.FailureCode_UNAVAILABLE, "backend write transport failed; acknowledgement unavailable")
-	case errResponse:
+	case err == errResponse:
 		failure = protocol.Fail(pb.FailureCode_UNAVAILABLE, "backend write response invalid or incomplete; acknowledgement unavailable")
 	}
 	for i, work := range works {

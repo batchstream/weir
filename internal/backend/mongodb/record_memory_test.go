@@ -3,6 +3,7 @@ package mongodb
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"runtime"
@@ -17,13 +18,48 @@ import (
 	"go.mongodb.org/mongo-driver/v2/event"
 )
 
+type reservationCauseMemory struct {
+	recordMemoryProbe
+	cause error
+}
+
+func (memory *reservationCauseMemory) SetWorking(context.Context, int) error {
+	return memory.cause
+}
+
+func TestMongoWorkingReservationProvenancePreservesBackendUncertainty(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		err  error
+		code pb.FailureCode
+	}{
+		{name: "cancel", err: context.Canceled, code: pb.FailureCode_CANCELLED},
+		{name: "deadline", err: context.DeadlineExceeded, code: pb.FailureCode_DEADLINE_EXCEEDED},
+		{name: "capacity", err: execution.ErrExecutionMemory, code: pb.FailureCode_RESOURCE_EXHAUSTED},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			owner := &reservationCauseMemory{cause: test.err}
+			memory := &recordMemory{owner: owner, base: 8192}
+			ctx := context.WithValue(t.Context(), recordMemoryContextKey, memory)
+			err := reserveRecordWorking(ctx, nil, 0)
+			if !errors.Is(err, errRecordReservation) || !errors.Is(err, test.err) || execution.ReservationFailure(ctx, err).GetCode() != test.code {
+				t.Fatal("actual SetWorking error lost provenance or cause", err)
+			}
+			backend := fmt.Errorf("backend response unavailable: %w", test.err)
+			if errors.Is(backend, errRecordReservation) || backendFailure(ctx, backend).GetCode() != pb.FailureCode_UNAVAILABLE {
+				t.Fatal("backend-shaped error became an allocation failure", backend)
+			}
+		})
+	}
+}
+
 type recordMemoryProbe struct {
 	limit, resultLimit, peak, result, calls, working int
 	resultWorking                                    []int
 	denyRestore, reduced                             bool
 }
 
-func (p *recordMemoryProbe) SetWorking(bytes int) error {
+func (p *recordMemoryProbe) SetWorking(_ context.Context, bytes int) error {
 	if p.limit != 0 && bytes > p.limit {
 		return execution.ErrExecutionMemory
 	}

@@ -2,6 +2,7 @@ package search
 
 import (
 	"bytes"
+	"context"
 	"math"
 	"sync"
 
@@ -17,6 +18,7 @@ type nativeHeaderKey struct{}
 // wire bytes cover growing line/metadata buffers and encoded output. This is a
 // memory bound, without imposing a new fixed HTTP header-size/count quota.
 type nativeHeaderMemory struct {
+	ctx           context.Context
 	mu            sync.Mutex
 	io            execution.NativeIO
 	memory        execution.Memory
@@ -83,7 +85,7 @@ func (m *nativeHeaderMemory) read(data []byte) error {
 	// even when one physical Trailer line contains thousands of short names.
 	working := m.base + 8192 + m.bytes*8 + entries*512
 	if m.memory != nil {
-		return m.memory.SetWorking(max(m.minimum, working))
+		return m.memory.SetWorking(m.ctx, max(m.minimum, working))
 	}
 	return m.io.GrowIO(working)
 }
@@ -97,8 +99,9 @@ func (m *nativeHeaderMemory) setBody(scratch int) error {
 	// destination map while Go also holds its temporary MIME map: the wire
 	// window covers new entries/strings; two existing map capacities cover
 	// destination growth without assuming a favorable map load factor.
-	if err := m.records.set(m.records.sources, m.records.frame, scratch+m.window+2*m.trailer); err != nil {
-		return err
+	memoryErr := m.records.set(m.ctx, m.records.sources, m.records.frame, scratch+m.window+2*m.trailer)
+	if memoryErr != nil {
+		return memoryErr
 	}
 	m.body = scratch
 	return nil
@@ -108,6 +111,7 @@ func (m *nativeHeaderMemory) finish() {
 	m.mu.Lock()
 	m.completed = true
 	// Detached HTTP transport contexts must not retain the Runtime or input.
+	m.ctx = nil
 	m.io = nil
 	m.memory = nil
 	m.records = nil

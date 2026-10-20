@@ -181,7 +181,7 @@ func TestTypedTrailersStayBudgetedThroughEOFAndConnectionReuse(t *testing.T) {
 				t.Fatal("trailer body did not leave IO after cancellation or EOF")
 			}
 			observer.guard.mu.Lock()
-			detached := observer.guard.completed && observer.guard.records == nil && observer.guard.memory == nil && observer.guard.io == nil
+			detached := observer.guard.completed && observer.guard.ctx == nil && observer.guard.records == nil && observer.guard.memory == nil && observer.guard.io == nil
 			observer.guard.mu.Unlock()
 			if calls.Load() != 1 || !detached {
 				t.Fatal("exchange replayed or retained owner/context after release", calls.Load(), detached)

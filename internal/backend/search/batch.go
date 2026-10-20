@@ -156,8 +156,8 @@ func (a *Adapter) mgetUnique(ctx context.Context, works []*execution.Plan) []obs
 		}
 		failure := protocol.Fail(pb.FailureCode_UNAVAILABLE, "record response unavailable or incomplete")
 		switch {
-		case errors.Is(err, execution.ErrExecutionMemory):
-			failure = recordMemoryFailure()
+		case errors.Is(err, execution.ErrExecutionMemory), errors.Is(err, errRecordReservation):
+			failure = execution.ReservationFailure(ctx, err)
 		case ctx.Err() != nil:
 			failure = protocol.ContextFailure(ctx)
 		case err == nil && (status == 429 || status == 503):
@@ -177,7 +177,7 @@ func (a *Adapter) mgetUnique(ctx context.Context, works []*execution.Plan) []obs
 		}
 		if err := reserveSearchScratch(ctx, cap(raw)+jsonDecodeWorking(raw)); err != nil {
 			for _, i := range indexes {
-				observed[i].failure = recordMemoryFailure()
+				observed[i].failure = execution.ReservationFailure(ctx, err)
 			}
 			continue
 		}
@@ -190,9 +190,10 @@ func (a *Adapter) mgetUnique(ctx context.Context, works []*execution.Plan) []obs
 			for _, reply := range envelope.Docs {
 				bytes += cap(reply.Source)
 			}
-			if err := memory.set(memory.sources+bytes, memory.frame, 0); err != nil {
+			memoryErr := memory.set(ctx, memory.sources+bytes, memory.frame, 0)
+			if memoryErr != nil {
 				for _, i := range indexes {
-					observed[i].failure = recordMemoryFailure()
+					observed[i].failure = execution.ReservationFailure(ctx, memoryErr)
 				}
 				continue
 			}
@@ -213,7 +214,7 @@ func (a *Adapter) mgetUnique(ctx context.Context, works []*execution.Plan) []obs
 			if reply.Found != nil && *reply.Found && len(reply.Source) != 0 {
 				if err := reserveSearchScratch(ctx, jsonDecodeWorking(reply.Source)); err != nil {
 					observation.reply = nil
-					observation.failure = recordMemoryFailure()
+					observation.failure = execution.ReservationFailure(ctx, err)
 					observed[indexes[i]] = observation
 					continue
 				}
@@ -245,7 +246,7 @@ func (a *Adapter) mgetUnique(ctx context.Context, works []*execution.Plan) []obs
 			}
 			observed[indexes[i]] = observation
 			if memory := searchMemory(ctx); memory != nil {
-				_ = memory.set(memory.sources, memory.frame, 0)
+				_ = memory.set(ctx, memory.sources, memory.frame, 0)
 			}
 		}
 	}
@@ -282,6 +283,7 @@ func (b *recordBatch) callerFailure(work *execution.Plan) *pb.Failure {
 // appendWrite frames one document at a time. Generated Lua sources are released
 // after framing; a single large entry can exceed the batch window.
 func (b *recordBatch) appendWrite(work *execution.Plan, position int, current *getReply) {
+	ctx := b.ctx
 	native := work.Backend.(*plan)
 	if len(b.pending) != 0 && b.pending[0].work.Backend.(*plan).waitUntilVisible != native.waitUntilVisible {
 		b.flush()
@@ -305,8 +307,9 @@ func (b *recordBatch) appendWrite(work *execution.Plan, position int, current *g
 	upper := 6*(len(native.index)+len(native.id)) + len(native.source) + 2048
 	if memory := searchMemory(b.ctx); memory != nil {
 		peak := b.request.Cap() + upper + 2*(b.request.Len()+upper)
-		if err := memory.set(memory.sources, peak, 0); err != nil {
-			b.results[position] = execution.FailedEvent(work.Command, pb.MutationOutcome_NOT_APPLIED, recordMemoryFailure())
+		memoryErr := memory.set(ctx, memory.sources, peak, 0)
+		if memoryErr != nil {
+			b.results[position] = execution.FailedEvent(work.Command, pb.MutationOutcome_NOT_APPLIED, execution.ReservationFailure(ctx, memoryErr))
 			return
 		}
 	}
@@ -331,13 +334,13 @@ func (b *recordBatch) appendWrite(work *execution.Plan, position int, current *g
 	pending := recordWrite{work: work, position: position, start: start, end: b.request.Len()}
 	b.pending = append(b.pending, pending)
 	if memory := searchMemory(b.ctx); memory != nil {
-		_ = memory.set(memory.sources, b.request.Cap(), 0)
+		_ = memory.set(ctx, memory.sources, b.request.Cap(), 0)
 	}
 	if native.program != nil {
 		bytes := cap(native.source)
 		native.source = nil
 		if memory := searchMemory(b.ctx); memory != nil {
-			_ = memory.set(max(0, memory.sources-bytes), memory.frame, 0)
+			_ = memory.set(ctx, max(0, memory.sources-bytes), memory.frame, 0)
 		}
 	}
 	if b.request.Len() >= window {
@@ -540,7 +543,7 @@ func (a *Adapter) executeRecords(ctx context.Context, works []*execution.Plan) [
 				// All groups and their complete source validation have finished.
 				// Retain actual sources while their Tickets acquire ownership.
 				memory.reply = 0
-				_ = memory.set(memory.sources, memory.frame, 0)
+				_ = memory.set(ctx, memory.sources, memory.frame, 0)
 			}
 			for offset, record := range records {
 				i := readPositions[offset]
@@ -564,7 +567,7 @@ func (a *Adapter) executeRecords(ctx context.Context, works []*execution.Plan) [
 				for _, reply := range observed {
 					bytes += cap(reply.Source)
 				}
-				_ = memory.set(bytes, memory.frame, 0)
+				_ = memory.set(ctx, bytes, memory.frame, 0)
 			}
 			for _, i := range chunk {
 				work := works[i]
@@ -586,13 +589,28 @@ func (a *Adapter) executeRecords(ctx context.Context, works []*execution.Plan) [
 				if native.action == "program" {
 					batch.attempts[i]++
 					programContext, cancel := context.WithCancel(ctx)
+					deadlineInstalled := false
+					var forwarded chan struct{}
 					var stop func() bool
 					if work.Context != nil {
-						stop = context.AfterFunc(work.Context, cancel)
+						if deadline, bounded := work.Context.Deadline(); bounded {
+							cancel()
+							programContext, cancel = context.WithDeadline(ctx, deadline)
+							deadlineInstalled = true
+						}
+						forwarded = make(chan struct{})
+						stop = context.AfterFunc(work.Context, func() {
+							defer close(forwarded)
+							// Preserve the installed deadline's error instead of
+							// racing its timer with an unconditional cancellation.
+							if !deadlineInstalled || work.Context.Err() != context.DeadlineExceeded {
+								cancel()
+							}
+						})
 					}
 					next, mutation := a.evaluateProgram(programContext, work, current)
-					if stop != nil {
-						stop()
+					if stop != nil && !stop() {
+						<-forwarded
 					}
 					cancel()
 					if denied := batch.callerFailure(work); denied != nil {
@@ -613,7 +631,7 @@ func (a *Adapter) executeRecords(ctx context.Context, works []*execution.Plan) [
 				if memory := searchMemory(ctx); memory != nil && current != nil {
 					bytes := cap(current.Source)
 					current = nil
-					_ = memory.set(max(0, memory.sources-bytes), memory.frame, 0)
+					_ = memory.set(ctx, max(0, memory.sources-bytes), memory.frame, 0)
 				}
 			}
 			start = end

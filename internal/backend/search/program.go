@@ -36,7 +36,7 @@ func (a *Adapter) evaluateProgram(ctx context.Context, work *execution.Plan, cur
 		return nil, protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, recordMemoryFailure())
 	}
 	if err := reserveSearchScratch(ctx, decodedWorking); err != nil {
-		return nil, protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, recordMemoryFailure())
+		return nil, protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, execution.ReservationFailure(ctx, err))
 	}
 	currentValue := value.Value{Kind: value.Missing}
 	if *current.Found {
@@ -119,7 +119,7 @@ func (a *Adapter) evaluateProgram(ctx context.Context, work *execution.Plan, cur
 			return nil, protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, recordMemoryFailure())
 		}
 		if err := reserveSearchScratch(ctx, working); err != nil {
-			return nil, protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, recordMemoryFailure())
+			return nil, protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, execution.ReservationFailure(ctx, err))
 		}
 		if err := luaengine.ReserveValueValidation(transformed.Allocations, transformed.Value); err != nil {
 			return nil, execution.LuaFailure(ctx, err)
@@ -149,8 +149,9 @@ func (a *Adapter) evaluateProgram(ctx context.Context, work *execution.Plan, cur
 			if err != nil {
 				return nil, protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, recordMemoryFailure())
 			}
-			if err := memory.set(sources, memory.frame, max(0, memory.scratch-cap(source))); err != nil {
-				return nil, protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, recordMemoryFailure())
+			memoryErr := memory.set(ctx, sources, memory.frame, max(0, memory.scratch-cap(source)))
+			if memoryErr != nil {
+				return nil, protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, execution.ReservationFailure(ctx, memoryErr))
 			}
 		}
 		next.source = source

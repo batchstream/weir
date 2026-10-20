@@ -10,6 +10,31 @@ import (
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 )
 
+func TestReservationFailurePreservesContextCauseAndCapacityEvidence(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		err  error
+		code pb.FailureCode
+	}{
+		{name: "canceled", err: context.Canceled, code: pb.FailureCode_CANCELLED},
+		{name: "deadline", err: context.DeadlineExceeded, code: pb.FailureCode_DEADLINE_EXCEEDED},
+		{name: "capacity", err: ErrExecutionMemory, code: pb.FailureCode_RESOURCE_EXHAUSTED},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			wrapped := fmt.Errorf("private source detail: %w", test.err)
+			failure := ReservationFailure(t.Context(), wrapped)
+			if failure.GetCode() != test.code || strings.Contains(failure.GetMessage(), "private source detail") {
+				t.Fatal("reservation lost actual cause or leaked source detail", failure)
+			}
+		})
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	if failure := ReservationFailure(ctx, ErrExecutionMemory); failure.GetCode() != pb.FailureCode_CANCELLED {
+		t.Fatal("actual caller cancellation was replaced by capacity rejection", failure)
+	}
+}
+
 func TestLuaFailurePreservesCallerStatusAndSanitizesErrors(t *testing.T) {
 	canceled, cancel := context.WithCancel(t.Context())
 	cancel()

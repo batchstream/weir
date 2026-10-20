@@ -111,7 +111,7 @@ func TestReadWorkspaceRejectsOverflowBeforeOwner(t *testing.T) {
 	for _, current := range cases {
 		probe := &recordMemoryProbe{}
 		memory := &recordMemory{owner: probe, base: current.base, reply: 64 << 10}
-		err := memory.set(current.sources, 0, current.scratch)
+		err := memory.set(t.Context(), current.sources, 0, current.scratch)
 		if !errors.Is(err, execution.ErrExecutionMemory) || probe.working != 0 {
 			t.Fatal("read workspace overflow reached its owner", current, err, probe.working)
 		}
