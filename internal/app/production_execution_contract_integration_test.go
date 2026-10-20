@@ -129,8 +129,8 @@ func TestExecutionProfileContractConsumerOrder(t *testing.T) {
 	}
 }
 
-// Product selection must follow strict validation, and repeat validation must
-// accept the derived opt-ins rather than accidentally reverting to ES.
+// Product/transport selection must follow strict validation, and repeat
+// validation must accept the derived opt-ins for finite and formal cells.
 func TestExecutionProfileContractFiniteProductPropagation(t *testing.T) {
 	for _, id := range []string{testexecution.LinuxFunctionalID, testexecution.LinuxOpenSearchFunctionalID} {
 		profile, err := testexecution.LinuxFunctionalProfile(id, "amd64")
@@ -160,6 +160,36 @@ func TestExecutionProfileContractFiniteProductPropagation(t *testing.T) {
 			}
 		}
 	}
+	for _, suite := range []string{"load", "fault"} {
+		for _, product := range []string{"elasticsearch", "opensearch"} {
+			for _, transport := range []string{"plain", "tls"} {
+				roles := testexecution.EndpointRoles{Driver: "owned-local", CLI: "owned-local"}
+				mongo := testexecution.Backend{Product: "mongodb", Version: "8.0.32", Transport: transport, Endpoints: roles}
+				version := "8.19.22"
+				if product == "opensearch" {
+					version = "3.3.0"
+				}
+				search := testexecution.Backend{Product: product, Version: version, Transport: transport, Endpoints: roles}
+				target := testexecution.Target{OS: "linux", Arch: "amd64"}
+				profile := testexecution.ExecutionProfile{SchemaVersion: 1, ID: "linux-native-" + suite + "-v1", Suite: suite, Intent: "formal", Policy: testexecution.PolicyID, Executor: testexecution.LinuxExecutor, Driver: target, CLI: target, Backends: []testexecution.Backend{mongo, search}}
+				provenance := testexecution.ProvenanceInputs{ProfileID: profile.ID}
+				mongoProfile, conflictProfile := "", "tls"
+				if transport == "tls" {
+					mongoProfile, conflictProfile = "tls", ""
+				}
+				derived := map[string]string{"WEIR_INTEGRATION": "1", "WEIR_SEARCH_INTEGRATION": product, "WEIR_MONGO_PROFILE": mongoProfile}
+				for range 2 {
+					if err := testexecution.CheckLegacyEnv(profile, provenance, derived); err != nil {
+						t.Fatal("native transport revalidation", suite, product, transport, err)
+					}
+				}
+				conflict := map[string]string{"WEIR_MONGO_PROFILE": conflictProfile}
+				if testexecution.CheckLegacyEnv(profile, provenance, conflict) == nil {
+					t.Fatal("conflicting Mongo transport opt-in accepted", suite, product, transport)
+				}
+			}
+		}
+	}
 	root := testutil.Root(t)
 	raw, err := os.ReadFile(filepath.Join(root, "internal", "app", "production_execution_integration_test.go"))
 	if err != nil {
@@ -176,5 +206,10 @@ func TestExecutionProfileContractFiniteProductPropagation(t *testing.T) {
 	}
 	if !strings.Contains(text, "profile := inputs.Profile()") || !strings.Contains(text, "product := profile.Backends[len(profile.Backends)-1].Product") {
 		t.Fatal("validated product not propagated")
+	}
+	transport := "if profile.Backends[0].Transport == \"tls\" {\n\t\tmongoProfile = \"tls\"\n\t}"
+	mongoOptIn := strings.Index(text, `t.Setenv("WEIR_MONGO_PROFILE", mongoProfile)`)
+	if !strings.Contains(text, `mongoProfile := ""`) || !strings.Contains(text, transport) || mongoOptIn <= product {
+		t.Fatal("validated Mongo transport not propagated after strict preflight")
 	}
 }

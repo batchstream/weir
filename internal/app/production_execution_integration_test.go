@@ -61,7 +61,11 @@ func loadProductionExecution(t *testing.T, suite string) *testexecution.Validate
 	profile := inputs.Profile()
 	product := profile.Backends[len(profile.Backends)-1].Product
 	t.Setenv("WEIR_SEARCH_INTEGRATION", product)
-	t.Setenv("WEIR_MONGO_PROFILE", "")
+	mongoProfile := ""
+	if profile.Backends[0].Transport == "tls" {
+		mongoProfile = "tls"
+	}
+	t.Setenv("WEIR_MONGO_PROFILE", mongoProfile)
 	return inputs
 }
 func inspectLegacyDesktop(t *testing.T, inputs *testexecution.ValidatedInputs) *legacyDesktopExecution {
