@@ -8,6 +8,185 @@ import (
 	"github.com/batchstream/weir/internal/overload"
 )
 
+func TestIngressWorkingBoundaryExchangesOnlyBoundedUnusedInput(t *testing.T) {
+	for _, boundary := range []struct {
+		name         string
+		budget, free uint64
+	}{
+		{name: "main", budget: 501079517, free: 7286},
+		{name: "PR112", budget: 460395314, free: 6112},
+	} {
+		t.Run(boundary.name, func(t *testing.T) {
+			memory := NewExecutionMemory()
+			memory.known, memory.trusted, memory.budget = true, true, boundary.budget
+			work := plan(1, "working", false)
+			work.Command = nativeCall()
+			work.Bytes = 310293 - nativeQueuedWindow
+			lease, failure, _ := memory.admit(work)
+			if failure != nil {
+				t.Fatal(failure)
+			}
+			defer lease.release()
+			var accounts []*IngressMemory
+			defer func() {
+				for _, account := range accounts {
+					account.Close()
+					account.Retire()
+				}
+				lease.release()
+				if snapshot := memory.Snapshot(); snapshot.UsedBytes != 0 || snapshot.ResidentBytes != 0 || snapshot.InputReservedBytes != 0 || snapshot.InputUsedBytes != 0 {
+					t.Error("owners retained after cleanup", snapshot)
+				}
+			}()
+			before := memory.Snapshot()
+			working := int(boundary.budget-before.UsedBytes-boundary.free) - (lease.publication - lease.window)
+			if started, _ := lease.start(working, defaultNativeIOReserve); !started {
+				t.Fatal("could not form observed total-budget boundary", memory.Snapshot())
+			}
+			before = memory.Snapshot()
+			if before.BudgetBytes-before.UsedBytes != boundary.free || before.InputReservedBytes != 32<<20 || before.InputUsedBytes != 310293 {
+				t.Fatal("wrong boundary", before)
+			}
+			account, err := memory.NewIngress(t.Context(), 8504)
+			if err != nil {
+				t.Fatal("fresh ingress starved behind unused queue reservation", err)
+			}
+			accounts = append(accounts, account)
+			after := memory.Snapshot()
+			shortage := uint64(8504) - boundary.free
+			if after.UsedBytes != after.BudgetBytes || after.InputReservedBytes != before.InputReservedBytes-shortage || after.InputUsedBytes != before.InputUsedBytes || after.ResidentBytes != before.ResidentBytes+boundary.free {
+				t.Fatal("exchange did not conserve exact ownership", before, after)
+			}
+			// Spend the remainder through a second real owner. Repeated requests
+			// cannot exchange more than the existing bounded progress allowance.
+			remainder := uint64(ingressProgressReserve) - shortage
+			account, err = memory.NewIngress(t.Context(), int(remainder))
+			if err != nil {
+				t.Fatal(err)
+			}
+			accounts = append(accounts, account)
+			before = memory.Snapshot()
+			if _, err := memory.NewIngress(t.Context(), 1); err == nil {
+				t.Fatal("repeated ingress drained the input promise")
+			}
+			after = memory.Snapshot()
+			if after.UsedBytes != before.UsedBytes || after.ResidentBytes != before.ResidentBytes || after.InputReservedBytes != before.InputReservedBytes || after.InputUsedBytes != before.InputUsedBytes || before.InputReservedBytes != (32<<20)-ingressProgressReserve {
+				t.Fatal("denied ingress mutated accounting", before, after)
+			}
+			// Already admitted input remains fully promised, while future input
+			// admission draws from the reduced reservation without a new charge.
+			work.Bytes = 128
+			second, failure, _ := memory.admit(work)
+			if failure != nil {
+				t.Fatal("exchange revoked an admitted input promise", failure)
+			}
+			second.release()
+			for _, account := range accounts {
+				account.Close()
+				account.Retire()
+			}
+			memory.mu.Lock()
+			memory.resizeInputLocked()
+			memory.mu.Unlock()
+			after = memory.Snapshot()
+			if after.InputReservedBytes != 32<<20 || after.UsedBytes != boundary.budget-boundary.free || after.InputUsedBytes != 310293 {
+				t.Fatal("released ingress did not permit exact reservation restoration", after)
+			}
+			account, err = memory.NewIngress(t.Context(), 8504)
+			if err != nil {
+				t.Fatal(err)
+			}
+			accounts = append(accounts, account)
+			if err := account.ReserveMessage(86); err != nil {
+				t.Fatal("short ingress could not progress past its header", err)
+			}
+			input := account.Input(account.Decoded())
+			short := plan(2, "short", true)
+			input.Bind(short)
+			before = memory.Snapshot()
+			second, failure, _ = memory.admit(short)
+			if failure != nil {
+				input.Release()
+				t.Fatal("decoded ingress could not hand off at working capacity", failure)
+			}
+			after = memory.Snapshot()
+			if after.UsedBytes > before.UsedBytes || after.UsedBytes > after.BudgetBytes || after.InputUsedBytes > after.InputReservedBytes || after.ResidentBytes > memory.residentLimitLocked() {
+				t.Fatal("handoff minted credit or lost input ownership", before, after)
+			}
+			if err := second.terminal(200); err != nil {
+				t.Fatal("handoff lost its promised publication window", err)
+			}
+			second.release()
+			var group sync.WaitGroup
+			for index := range 4 {
+				group.Go(func() {
+					concurrent, err := memory.NewIngress(t.Context(), 8504)
+					if err != nil {
+						t.Error("concurrent ingress failed", err)
+						return
+					}
+					defer concurrent.Retire()
+					defer concurrent.Close()
+					if err := concurrent.ReserveMessage(86); err != nil {
+						t.Error("concurrent message failed", err)
+						return
+					}
+					input := concurrent.Input(concurrent.Decoded())
+					request := plan(uint64(index+3), "concurrent", true)
+					input.Bind(request)
+					admitted, failure, _ := memory.admit(request)
+					if failure != nil {
+						input.Release()
+						t.Error("concurrent handoff failed", failure)
+						return
+					}
+					defer admitted.release()
+					if err := admitted.terminal(200); err != nil {
+						t.Error("concurrent publication lost its promise", err)
+					}
+				})
+			}
+			group.Wait()
+		})
+	}
+}
+
+func TestIngressExchangePreservesLiveInputAndResidentLimit(t *testing.T) {
+	memory := testExecutionMemory(768 << 20)
+	work := plan(1, "queued", false)
+	work.Bytes = int(memory.inputTargetLocked()) - nativeQueuedWindow - 100
+	lease, failure, _ := memory.admit(work)
+	if failure != nil {
+		t.Fatal(failure)
+	}
+	defer lease.release()
+	before := memory.Snapshot()
+	account, err := memory.NewIngress(t.Context(), int(memory.residentLimitLocked()-before.ResidentBytes))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer account.Retire()
+	defer account.Close()
+	before = memory.Snapshot()
+	if _, err := memory.NewIngress(t.Context(), 101); err == nil {
+		t.Fatal("ingress revoked live queued input")
+	}
+	after := memory.Snapshot()
+	if after.UsedBytes != before.UsedBytes || after.ResidentBytes != before.ResidentBytes || after.InputReservedBytes != before.InputReservedBytes {
+		t.Fatal("failed resident/input exchange changed accounting", before, after)
+	}
+	short, err := memory.NewIngress(t.Context(), 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer short.Retire()
+	defer short.Close()
+	after = memory.Snapshot()
+	if after.InputReservedBytes != after.InputUsedBytes || after.ResidentBytes != before.ResidentBytes || after.ResidentBytes != memory.residentLimitLocked() || after.UsedBytes != before.UsedBytes {
+		t.Fatal("exchange crossed real input or resident limit", before, after)
+	}
+}
+
 func TestIngressPartialUploadsKeepShortRequestProgressAcrossInputPromise(t *testing.T) {
 	for _, scenario := range []string{"first-promise", "observer-refill"} {
 		t.Run(scenario, func(t *testing.T) {

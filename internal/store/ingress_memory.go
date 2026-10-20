@@ -45,7 +45,36 @@ func (m *ExecutionMemory) ingressFitsLocked(additional uint64, large bool) bool 
 	if large {
 		limit -= min(limit, uint64(ingressProgressReserve))
 	}
-	return m.trusted && m.used <= m.budget && additional <= m.budget-m.used && m.resident <= limit && additional <= limit-m.resident
+	if !m.trusted {
+		return false
+	}
+	if m.used <= m.budget && additional <= m.budget-m.used && m.resident <= limit && additional <= limit-m.resident {
+		return true
+	}
+	if large {
+		return false
+	}
+	// The automatic queue reservation promises future admission, not storage
+	// beyond inputUsed: every admitted input and publication window is already
+	// included there. Exchange at most its last 1MiB for real ingress owners.
+	// Keeping this floor prevents repeated streams from draining the queue, and
+	// leaves execution growth and its FIFO claims entirely unchanged.
+	progress := min(uint64(ingressProgressReserve), m.inputTargetLocked())
+	floor := max(m.inputUsed, m.inputTargetLocked()-progress)
+	if m.inputReserved <= floor {
+		return false
+	}
+	unused := m.inputReserved - floor
+	used, resident := m.used-unused, m.resident-unused
+	if used > m.budget || additional > m.budget-used || resident > limit || additional > limit-resident {
+		return false
+	}
+	retained := min(unused, m.budget-used-additional, limit-resident-additional)
+	reclaimed := unused - retained
+	m.inputReserved -= reclaimed
+	m.used -= reclaimed
+	m.resident -= reclaimed
+	return true
 }
 
 func (a *IngressMemory) resizeLocked(message, raw, decoded uint64, large bool) bool {
