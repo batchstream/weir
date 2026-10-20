@@ -9,6 +9,62 @@ import (
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
+func TestReplicaProxyLuaTopologyUsabilityFirstTimestamp(t *testing.T) {
+	first := time.Now().Add(-6 * time.Second)
+	observed := make(chan int, 1)
+	calls := 0
+	observe := func(ctx context.Context, exclude int) (int, time.Time, error) {
+		calls++
+		observed <- exclude
+		return 2, first, nil
+	}
+	await := ObserveLuaTopologyUsability(t, observe, 1)
+	// The independent observation completes before the old-work phase joins.
+	select {
+	case exclude := <-observed:
+		if exclude != 1 {
+			t.Fatal("old primary exclusion changed", exclude)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("independent observer did not start")
+	}
+	primary, usable, err := await()
+	if err != nil || primary != 2 || usable != first || calls != 1 {
+		t.Fatal("first observation reset or repeated", primary, usable, calls, err)
+	}
+	ctx, cancel := context.WithDeadline(t.Context(), usable.Add(5*time.Second))
+	defer cancel()
+	if ctx.Err() != context.DeadlineExceeded {
+		t.Fatal("old work granted hidden new-work head-start")
+	}
+}
+
+func TestReplicaProxyLuaTopologyUsabilityCleanupJoins(t *testing.T) {
+	entered := make(chan struct{})
+	returned := make(chan struct{})
+	t.Run("unconsumed_observation", func(t *testing.T) {
+		observe := func(ctx context.Context, exclude int) (int, time.Time, error) {
+			defer close(returned)
+			close(entered)
+			<-ctx.Done()
+			var zero time.Time
+			return -1, zero, ctx.Err()
+		}
+		_ = ObserveLuaTopologyUsability(t, observe, 1)
+		select {
+		case <-entered:
+		case <-time.After(time.Second):
+			t.Fatal("observer did not start")
+		}
+		// No await: the same cleanup used on a fatal path must cancel/join it.
+	})
+	select {
+	case <-returned:
+	default:
+		t.Fatal("cleanup returned without observer join")
+	}
+}
+
 func commitTestReady(t *testing.T, all bool) (*luaRegistry, *LuaWatch) {
 	t.Helper()
 	r := &luaRegistry{}
@@ -135,6 +191,44 @@ func TestReplicaProxyLuaCommitOnceAndAll(t *testing.T) {
 		})
 	}
 }
+func TestReplicaProxyLuaCommitConfirmationNewPrimary(t *testing.T) {
+	for _, name := range []string{"confirmation", "new_txn", "write", "abort"} {
+		t.Run(name, func(t *testing.T) {
+			r, w := commitTestReady(t, false)
+			commitTestFirstDrop(t, r, w)
+			command := commitTestCommand(10)
+			switch name {
+			case "new_txn":
+				command = commitTestCommand(11)
+			case "write":
+				command = luaTestWrite(10, false)
+			case "abort":
+				command = luaTestControl("abortTransaction", 10)
+			}
+			opts := luaBeginOptions{message: ownedMessage(t, command), member: 2}
+			m, err := r.begin(opts)
+			if name != "confirmation" {
+				if err == nil {
+					t.Fatal("topology allowed other than original commit confirmation", name)
+				}
+				return
+			}
+			if err != nil || m == nil {
+				t.Fatal("original confirmation on new primary", err)
+			}
+			if !r.forwarded(m, len(opts.message), len(opts.message)) {
+				t.Fatal("actual upstream confirmation write")
+			}
+			reply := bson.D{{Key: "ok", Value: 1}}
+			response := luaTestReceive(t, r, m, reply)
+			luaTestForward(t, r, m, response)
+			if err := w.CompleteCommit(); err != nil {
+				t.Fatal(err, w.Snapshot())
+			}
+		})
+	}
+}
+
 func TestReplicaProxyLuaCommitRejectsCommands(t *testing.T) {
 	for _, name := range []string{"new_txn", "malformed_txn", "abort", "second_find", "second_write", "weak_concern", "wrong_member", "unsupported_selector", "unsettled_write"} {
 		t.Run(name, func(t *testing.T) {

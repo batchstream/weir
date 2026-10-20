@@ -28,13 +28,15 @@ type replyLossRecord struct {
 	watch    *testmongo.OperationWatch
 }
 type replyLossLifetime struct {
-	fixture      *testmongo.Replica
-	proxy        *testmongo.ReplicaProxy
-	client       *weirclient.Client
-	service      *process
-	primary, pid int
-	kind         string
-	records      []replyLossRecord
+	fixture         *testmongo.Replica
+	proxy           *testmongo.ReplicaProxy
+	client          *weirclient.Client
+	service         *process
+	primary, pid    int
+	kind            string
+	records         []replyLossRecord
+	topologyAborts  []testmongo.LuaCase
+	topologyCommits []testmongo.LuaCommitCase
 }
 type replyLossReceipt struct {
 	valid       bool
@@ -213,6 +215,8 @@ func replyLossEffect(t *testing.T, lifetime *replyLossLifetime, record replyLoss
 }
 func replyLossOracles(t *testing.T, lifetime *replyLossLifetime, phase string) {
 	t.Helper()
+	lifetime.proxy.CheckLuaCases(t, lifetime.topologyAborts, phase)
+	lifetime.proxy.CheckLuaCommitCases(t, lifetime.topologyCommits, phase)
 	for _, record := range lifetime.records {
 		replyLossEffect(t, lifetime, record)
 		s := record.watch.Snapshot()
@@ -308,6 +312,10 @@ func replyLossCase(t *testing.T, lifetime *replyLossLifetime, transition string)
 		t.Fatal("caller not alive", ctx.Err())
 	}
 	t.Logf("reply_loss held kind=%s transition=%s PID=%d primary=%d caller_alive=true independent_n=1 observation=%+v", lifetime.kind, transition, lifetime.pid, primary, s)
+	var luaTopology *replicaCLILuaTopology
+	if lifetime.kind == "bulkWrite" && transition != "stable" {
+		luaTopology = replicaCLILuaTopologyBegin(t, lifetime, transition)
+	}
 	started := time.Now()
 	if transition == "stepdown" {
 		action, cancel := context.WithTimeout(t.Context(), 10*time.Second)
@@ -320,6 +328,11 @@ func replyLossCase(t *testing.T, lifetime *replyLossLifetime, transition string)
 		lifetime.fixture.LosePrimary(t, primary)
 	}
 	actionCompleted := time.Now()
+	var observeUsability func() (int, time.Time, error)
+	if luaTopology != nil {
+		observeUsability = testmongo.ObserveLuaTopologyUsability(t, lifetime.fixture.WaitUsable, primary)
+		luaTopology.drop(t)
+	}
 	// Drop promptly after the action, before the separate external election wait.
 	if err := watch.DropReply(); err != nil {
 		t.Fatal("deliberate drop", err)
@@ -342,6 +355,9 @@ func replyLossCase(t *testing.T, lifetime *replyLossLifetime, transition string)
 	case <-ctx.Done():
 		t.Fatal("actual receipt missing", ctx.Err())
 	}
+	if luaTopology != nil {
+		luaTopology.finish(t)
+	}
 	lifetime.records = append(lifetime.records, record)
 	// Election time is external. Check counters immediately, but do not put a
 	// short independent read ahead of the external majority-usability barrier.
@@ -356,9 +372,15 @@ func replyLossCase(t *testing.T, lifetime *replyLossLifetime, transition string)
 	if transition != "stable" {
 		exclude = primary
 	}
-	external, cancel = context.WithTimeout(t.Context(), 45*time.Second)
-	next, usable, err := lifetime.fixture.WaitUsable(external, exclude)
-	cancel()
+	var next int
+	var usable time.Time
+	if observeUsability != nil {
+		next, usable, err = observeUsability()
+	} else {
+		external, cancel = context.WithTimeout(t.Context(), 45*time.Second)
+		next, usable, err = lifetime.fixture.WaitUsable(external, exclude)
+		cancel()
+	}
 	if err != nil {
 		t.Fatal("external majority usability", err)
 	}
@@ -378,6 +400,10 @@ func replyLossCase(t *testing.T, lifetime *replyLossLifetime, transition string)
 		}
 	}
 	replyLossNewWork(t, recovery, lifetime, "healthy-"+transition)
+	if luaTopology != nil {
+		lifetime.topologyAborts[len(lifetime.topologyAborts)-1].RecoveryID = "healthy-" + transition
+		lifetime.topologyCommits[len(lifetime.topologyCommits)-1].RecoveryID = "healthy-" + transition
+	}
 	completed := time.Now()
 	cancel()
 	if completed.Sub(usable) > 5*time.Second || lifetime.service.command.Process.Pid != lifetime.pid {

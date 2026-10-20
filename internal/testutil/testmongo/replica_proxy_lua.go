@@ -7,15 +7,50 @@ import (
 	"net"
 	"strings"
 	"sync"
+	"testing"
 	"time"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
-const replicaLuaLimit = 4
+// Four stable cases plus one commit/abort pair at each existing topology action.
+const replicaLuaLimit = 8
 const replicaLuaAttempts = 5
 const replicaLuaEvents = 32
 const replicaLuaWatchdog = 20 * time.Second
+
+type luaTopologyUsability struct {
+	primary int
+	usable  time.Time
+	err     error
+}
+
+// ObserveLuaTopologyUsability starts independently of held-reply release and old
+// receipts. Its single WaitUsable result retains the first successful T0 even if
+// the caller joins old work later. Cleanup cancels and joins the actual observer.
+func ObserveLuaTopologyUsability(t *testing.T, observe func(context.Context, int) (int, time.Time, error), exclude int) func() (int, time.Time, error) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(t.Context(), 45*time.Second)
+	result := make(chan luaTopologyUsability, 1)
+	joined := make(chan struct{})
+	go func() {
+		defer close(joined)
+		primary, usable, err := observe(ctx, exclude)
+		observation := luaTopologyUsability{primary: primary, usable: usable, err: err}
+		result <- observation
+	}()
+	join := func() {
+		cancel()
+		<-joined
+	}
+	t.Cleanup(join)
+	await := func() (int, time.Time, error) {
+		observation := <-result
+		join()
+		return observation.primary, observation.usable, observation.err
+	}
+	return await
+}
 
 // ReplicaLuaSource deliberately mutates three separate VM-owned surfaces. Both
 // attempted replacements must carry fresh sentinels and one observation time.
@@ -284,7 +319,7 @@ func (r *luaRegistry) begin(opts luaBeginOptions) (*luaMatch, error) {
 			w.snapshot.SessionDigest = session
 			w.snapshot.Attempts++
 			w.snapshot.Attempt[attempt].Transaction = txn
-		} else if bound < 0 || !present || sessionErr != nil || !txnOK || opts.member != w.member {
+		} else if bound < 0 || !present || sessionErr != nil || !txnOK || opts.member != w.member && !(name == "commitTransaction" && w.commit != nil && w.snapshot.Attempt[0].CommitDropped > 0) {
 			r.failure = "Lua command identity mismatch"
 			return nil, errReplicaProxyWire
 		}
