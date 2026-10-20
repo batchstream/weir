@@ -190,6 +190,125 @@ func TestSearchPreSendReservationDeadlineRetainsCauseAndNoAttempt(t *testing.T) 
 	}
 }
 
+type postSendReservationBody struct {
+	io.Reader
+	eof    bool
+	closed bool
+	cancel context.CancelFunc
+}
+
+func (body *postSendReservationBody) Read(data []byte) (int, error) {
+	count, err := body.Reader.Read(data)
+	body.eof = body.eof || err == io.EOF
+	return count, err
+}
+
+func (body *postSendReservationBody) Close() error {
+	body.closed = true
+	if body.cancel != nil {
+		body.cancel()
+	}
+	return nil
+}
+
+type postSendReservationTransport struct {
+	body  *postSendReservationBody
+	bytes int
+	calls int
+}
+
+func (transport *postSendReservationTransport) RoundTrip(request *http.Request) (*http.Response, error) {
+	transport.calls++
+	response := &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: transport.body, ContentLength: int64(transport.bytes), Request: request}
+	return response, nil
+}
+
+type postSendReservationMemory struct {
+	recordMemoryProbe
+	body  *postSendReservationBody
+	cause error
+	calls int
+}
+
+func (memory *postSendReservationMemory) SetWorking(ctx context.Context, bytes int) error {
+	if !memory.body.closed {
+		return memory.recordMemoryProbe.SetWorking(ctx, bytes)
+	}
+	memory.calls++
+	if bytes <= memory.working {
+		return errors.New("post-EOF reservation did not request additional workspace")
+	}
+	if memory.cause == execution.ErrExecutionMemory {
+		return memory.cause
+	}
+	<-ctx.Done()
+	return ctx.Err()
+}
+
+func TestSearchPostSendValidationReservationPreservesUnknownAndCause(t *testing.T) {
+	for _, test := range []struct {
+		name  string
+		cause error
+		code  pb.FailureCode
+	}{
+		{name: "capacity", cause: execution.ErrExecutionMemory, code: pb.FailureCode_RESOURCE_EXHAUSTED},
+		{name: "cancel", cause: context.Canceled, code: pb.FailureCode_CANCELLED},
+		{name: "deadline", cause: context.DeadlineExceeded, code: pb.FailureCode_DEADLINE_EXCEEDED},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			allocation, cancel := context.WithTimeout(t.Context(), time.Second)
+			if test.cause == context.DeadlineExceeded {
+				cancel()
+				allocation, cancel = context.WithTimeout(t.Context(), 100*time.Millisecond)
+			}
+			defer cancel()
+			raw := `{"errors":false,"took":1,"items":[` + strings.Repeat(`{},`, 255) + `{}]}`
+			body := &postSendReservationBody{Reader: strings.NewReader(raw)}
+			if test.cause == context.Canceled {
+				body.cancel = cancel
+			}
+			owner := &postSendReservationMemory{body: body, cause: test.cause}
+			memory := &recordMemory{owner: owner, base: 8192, reply: 64 << 10}
+			ctx := context.WithValue(allocation, recordMemoryContextKey, memory)
+			transport := &postSendReservationTransport{body: body, bytes: len(raw)}
+			client := &http.Client{Transport: transport}
+			config := Config{Store: "search", URL: "http://unused.invalid"}
+			adapter := &Adapter{ctx: t.Context(), config: config, client: client}
+			call := exchange{path: "/_bulk", mutation: true, operation: "bulk"}
+			status, reply, err := adapter.request(ctx, call)
+			if status != http.StatusOK || reply != nil || !body.eof || !body.closed || owner.calls != 1 || transport.calls != 1 || !errors.Is(err, errRecordReservation) || !errors.Is(err, test.cause) || errors.Is(err, errWriteMemoryNotSent) {
+				t.Fatal("failure did not originate in post-send EOF validation reservation", status, err, body.eof, body.closed, owner.calls, transport.calls)
+			}
+			work := memoryProgramWork(`return function() return weir.keep() end`, owner)
+			response := bulkResponse{works: []*execution.Plan{work}, status: status, err: err}
+			result := adapter.bulkResults(t.Context(), response)[0].GetMutationResult()
+			if result.GetOutcome() != pb.MutationOutcome_UNKNOWN || result.GetFailure().GetCode() != test.code || transport.calls != 1 {
+				t.Fatal("post-send reservation lost its cause, changed effect or replayed", result, transport.calls)
+			}
+		})
+	}
+}
+
+func TestSearchBulkReservationMatchingExcludesUnrelatedContextErrors(t *testing.T) {
+	for _, test := range []struct {
+		cause error
+		code  pb.FailureCode
+	}{
+		{cause: context.Canceled, code: pb.FailureCode_UNAVAILABLE},
+		{cause: context.DeadlineExceeded, code: pb.FailureCode_UNAVAILABLE},
+		{cause: execution.ErrExecutionMemory, code: pb.FailureCode_RESOURCE_EXHAUSTED},
+	} {
+		wrapped := errors.Join(errors.New("backend-shaped error"), test.cause)
+		work := memoryProgramWork(`return function() return weir.keep() end`, nil)
+		response := bulkResponse{works: []*execution.Plan{work}, err: wrapped}
+		adapter := &Adapter{}
+		result := adapter.bulkResults(t.Context(), response)[0].GetMutationResult()
+		if errors.Is(wrapped, errRecordReservation) || result.GetOutcome() != pb.MutationOutcome_UNKNOWN || result.GetFailure().GetCode() != test.code {
+			t.Fatal("unrelated backend context error acquired reservation semantics", wrapped, result)
+		}
+	}
+}
+
 func memoryProgramWork(source string, owner execution.Memory) *execution.Plan {
 	program := &luaengine.Program{Source: source}
 	native := &plan{id: "item", index: "records", program: program}

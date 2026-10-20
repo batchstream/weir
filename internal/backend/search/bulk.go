@@ -91,7 +91,7 @@ func (a *Adapter) bulkResults(ctx context.Context, response bulkResponse) []*pb.
 	case errors.Is(err, errWriteMemoryNotSent):
 		outcome = pb.MutationOutcome_NOT_APPLIED
 		failure = execution.ReservationFailure(ctx, err)
-	case err == execution.ErrExecutionMemory:
+	case errors.Is(err, errRecordReservation), errors.Is(err, execution.ErrExecutionMemory):
 		failure = execution.ReservationFailure(ctx, err)
 	case err == errWriteNotSent:
 		outcome = pb.MutationOutcome_NOT_APPLIED
