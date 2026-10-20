@@ -46,34 +46,42 @@ type ProxyFault struct {
 const proxyFaultTimeout = 20 * time.Second
 
 type Proxy struct {
-	backendAddress string
-	uri            string
-	clientTLS      *tls.Config
-	Monitor        *event.CommandMonitor
-	listener       net.Listener
-	mu             sync.Mutex
-	events         []WireEvent
-	forwarded      []string
-	conns          map[net.Conn]struct{}
-	group          sync.WaitGroup
-	closed         bool
-	unavailable    bool
-	upstream       int
-	peakUpstream   int
-	fault          *ProxyFault
-	done           chan struct{}
-	DropCommand    string
-	DropGate       <-chan struct{}
-	DropRemaining  atomic.Int64
-	AlterCommand   string
-	AlterMode      string
-	AlterRemaining atomic.Int64
+	backendAddress  string
+	uri             string
+	clientTLS       *tls.Config
+	discovery       *replicaAddressMap
+	observations    []ReplicaProxyConnection
+	replicaRequests int
+	rejections      int
+	lastRejection   ReplicaProxyRejection
+	closeOnce       sync.Once
+	Monitor         *event.CommandMonitor
+	listener        net.Listener
+	mu              sync.Mutex
+	events          []WireEvent
+	forwarded       []string
+	conns           map[net.Conn]struct{}
+	group           sync.WaitGroup
+	closed          bool
+	unavailable     bool
+	upstream        int
+	peakUpstream    int
+	fault           *ProxyFault
+	done            chan struct{}
+	DropCommand     string
+	DropGate        <-chan struct{}
+	DropRemaining   atomic.Int64
+	AlterCommand    string
+	AlterMode       string
+	AlterRemaining  atomic.Int64
 }
 
 type proxyOptions struct {
 	uri                  string
 	listenAddress        string
 	serverTLS, clientTLS *tls.Config
+	listener             net.Listener
+	discovery            *replicaAddressMap
 }
 
 func startProxy(t *testing.T, opts proxyOptions) *Proxy {
@@ -82,15 +90,19 @@ func startProxy(t *testing.T, opts proxyOptions) *Proxy {
 	if address == "" {
 		address = "127.0.0.1:0"
 	}
-	listener, err := net.Listen("tcp", address)
-	if err != nil {
-		t.Fatal(err)
+	listener := opts.listener
+	var err error
+	if listener == nil {
+		listener, err = net.Listen("tcp", address)
+		if err != nil {
+			t.Fatal(err)
+		}
 	}
 	upstream, err := url.Parse(opts.uri)
 	if err != nil {
 		t.Fatal("invalid owned fixture URI")
 	}
-	p := &Proxy{listener: listener, backendAddress: upstream.Host, conns: make(map[net.Conn]struct{}), done: make(chan struct{})}
+	p := &Proxy{listener: listener, backendAddress: upstream.Host, conns: make(map[net.Conn]struct{}), done: make(chan struct{}), discovery: opts.discovery}
 	if opts.serverTLS != nil {
 		// Test-only TLS termination observes decrypted commands for fault injection.
 		// Production direct-to-mongod TLS is qualified separately.
@@ -120,18 +132,31 @@ func startProxy(t *testing.T, opts proxyOptions) *Proxy {
 			go p.relay(conn)
 		}
 	}()
-	t.Cleanup(func() {
-		_ = listener.Close()
+	t.Cleanup(p.Close)
+	return p
+}
+
+// Close interrupts owned sockets and joins every relay before fixture cleanup.
+func (p *Proxy) Close() {
+	p.closeOnce.Do(func() {
+		_ = p.listener.Close()
 		p.mu.Lock()
 		p.closed = true
 		close(p.done)
 		for conn := range p.conns {
-			_ = conn.Close()
+			p.closeConnection(conn)
 		}
 		p.mu.Unlock()
 		p.group.Wait()
 	})
-	return p
+}
+
+func (p *Proxy) closeConnection(conn net.Conn) {
+	if secure, ok := conn.(*tls.Conn); ok && p.discovery != nil {
+		_ = secure.NetConn().Close()
+		return
+	}
+	_ = conn.Close()
 }
 
 // ArmFault replaces a consumed fault only after the caller has observed its
@@ -209,17 +234,39 @@ func (p *Proxy) SetUnavailable(unavailable bool) {
 
 func (p *Proxy) relay(client net.Conn) {
 	defer p.group.Done()
-	defer client.Close()
+	defer p.closeConnection(client)
 	defer func() {
 		p.mu.Lock()
 		delete(p.conns, client)
 		p.mu.Unlock()
 	}()
+	observation := -1
+	if p.discovery != nil {
+		observation = p.beginReplicaConnection()
+		if observation < 0 {
+			return
+		}
+		if secure, ok := client.(*tls.Conn); ok {
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			err := secure.HandshakeContext(ctx)
+			cancel()
+			if err != nil {
+				return
+			}
+			p.replicaTLS(observation, false)
+		}
+	}
 	backend, err := net.DialTimeout("tcp", p.backendAddress, time.Second)
 	if err != nil {
 		return
 	}
 	p.mu.Lock()
+	if p.closed {
+		p.mu.Unlock()
+		_ = backend.Close()
+		return
+	}
+	p.conns[backend] = struct{}{}
 	p.upstream++
 	p.peakUpstream = max(p.peakUpstream, p.upstream)
 	p.mu.Unlock()
@@ -229,6 +276,7 @@ func (p *Proxy) relay(client net.Conn) {
 		// in TLS; waiting for close_notify would manufacture a retirement tail.
 		_ = rawBackend.Close()
 		p.mu.Lock()
+		delete(p.conns, rawBackend)
 		p.upstream--
 		p.mu.Unlock()
 	}()
@@ -241,6 +289,9 @@ func (p *Proxy) relay(client net.Conn) {
 			return
 		}
 		backend = secure
+		if p.discovery != nil {
+			p.replicaTLS(observation, true)
+		}
 	}
 	p.mu.Lock()
 	if p.closed || p.unavailable {
@@ -262,10 +313,20 @@ func (p *Proxy) relay(client net.Conn) {
 			return
 		}
 		doc := commandDocument(request)
+		if p.discovery != nil {
+			doc, _, err = replicaWireDocument(request, false)
+			if err != nil {
+				p.rejectReplicaMessage(request, false, err)
+				return
+			}
+		}
 		elements, _ := doc.Elements()
 		name := ""
 		if len(elements) > 0 {
 			name = elements[0].Key()
+		}
+		if p.discovery != nil && !p.reserveReplicaRequest(name) {
+			return
 		}
 		fault := p.takeFault(name, request)
 		if fault != nil {
@@ -286,8 +347,12 @@ func (p *Proxy) relay(client net.Conn) {
 			p.Monitor.Started(ctx, e)
 			cancel()
 		}
-		if _, err = backend.Write(request); err != nil {
+		written, writeErr := backend.Write(request)
+		if writeErr != nil || written != len(request) {
 			return
+		}
+		if p.discovery != nil {
+			p.recordReplicaCommand(observation, name)
 		}
 		p.mu.Lock()
 		p.forwarded = append(p.forwarded, name)
@@ -295,6 +360,19 @@ func (p *Proxy) relay(client net.Conn) {
 		response, err := readMessage(backend)
 		if err != nil {
 			return
+		}
+		if p.discovery != nil {
+			rewritten, rewriteErr := p.discovery.rewriteReply(request, response)
+			if rewriteErr != nil {
+				p.rejectReplicaMessage(response, true, rewriteErr)
+				return
+			}
+			response = rewritten
+			if replicaHello(name) {
+				p.mu.Lock()
+				p.observations[observation].DiscoveryReplies++
+				p.mu.Unlock()
+			}
 		}
 		e := WireEvent{Command: name}
 		if n, ok := doc.Lookup("txnNumber").Int64OK(); ok {
