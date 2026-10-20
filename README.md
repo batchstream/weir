@@ -61,8 +61,10 @@ The example intentionally uses isolated MongoDB **direct mode**, without failove
 For automatic primary discovery in an ordinary replica set, configure one to seven
 explicit seeds and its set name instead, for example
 `mongodb://mongo-a:27017,mongo-b:27017,mongo-c:27017/?replicaSet=orders`.
-Discovery restores new primary operations; it does not replay uncertain writes
-or transparently migrate Native cursors, sessions or transactions. See the
+Replica-set clients use a one-second topology polling interval; direct mode retains
+the driver default. Discovery restores new primary operations; it does not replay
+uncertain writes or transparently migrate Native cursors, sessions or transactions.
+See the
 [MongoDB connection profiles](docs/configuration.md#store-settings) for strict URI,
 authentication and per-member TLS requirements.
 
