@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Owned native Linux finite Search correctness or exact formal plain load.
+"""Owned native Linux finite Search correctness or exact formal plain load/fault.
 
 Execution observations are not build-origin or promotion receipts.
 
@@ -67,6 +67,7 @@ OS_PINS = {
     "amd64": "sha256:59e9e49ac00f19c2af9094e367c8e6586f7d07e6c06465c3f4c43b40934309f2",
     "arm64": "sha256:98db5375d94a62ee3d9073681bb40fe1087657d036f3dfa79053b0b1f83f5577",
 }
+OS_LOAD_COMMAND = ["/bin/bash", "-euc", "umask 0002\nexec ./opensearch-docker-entrypoint.sh opensearch"]
 OS_TMPFS = {
     "/tmp": "rw,nosuid,nodev,size=134217728,uid=1000,gid=1000",
     "/usr/share/opensearch/data": "rw,noexec,nosuid,nodev,size=268435456,uid=1000,gid=1000",
@@ -101,6 +102,16 @@ class Options:
     output: Path
     profile: str = PROFILE
     mongod: Path | None = None
+    product: str = "elasticsearch"
+
+
+def backend_product(opts):
+    require(opts.product in ("elasticsearch", "opensearch"), "unsupported formal backend product")
+    if opts.profile in FORMAL_PROFILES:
+        version = "3.3.0" if opts.product == "opensearch" else "8.19.22"
+        return opts.product, version
+    require(opts.product == "elasticsearch", "product option is only supported for formal profiles")
+    return PROFILES[opts.profile]
 
 
 @dataclass
@@ -135,6 +146,7 @@ def sanitized(raw):
 
 def native_preflight(opts):
     require(opts.profile in PROFILES, "exact implemented profile required")
+    backend_product(opts)
     # No Docker command or fixture action is reachable on unsupported hosts.
     require(platform.system() == "Linux", "native Linux required; Darwin/Desktop unsupported")
     arch = {"x86_64": "amd64", "aarch64": "arm64"}.get(platform.machine())
@@ -483,7 +495,7 @@ class Controller:
                     body = json.loads(raw)
                     version = body.get("version")
                     require(isinstance(version, dict), "wrong backend version identity")
-                    product, number = PROFILES[self.opts.profile]
+                    product, number = backend_product(self.opts)
                     identity = version.get("distribution") == "opensearch" if product == "opensearch" else version.get("build_flavor") == "default" and not version.get("distribution")
                     require(body.get("cluster_name") == self.owner and version.get("number") == number and identity and version.get("build_hash"), "wrong backend cluster/version/product")
                     self.evidence("backend-identity.json", body)
@@ -533,16 +545,18 @@ class Controller:
         observer = [m for m in info["Mounts"] if m["Destination"] == "/observer"]
         require(len(observer) == 1 and observer[0]["Source"] == str(self.opts.observer) and not observer[0]["RW"], "unknown/writable observer mount")
         if spec["role"] == "backend":
-            if self.opts.profile == OS_PROFILE:
-                require(info.get("Entrypoint") == ["./opensearch-docker-entrypoint.sh"] and info.get("Cmd") == ["opensearch"], "backend stock entrypoint changed")
+            if backend_product(self.opts)[0] == "opensearch":
+                expected_command = OS_LOAD_COMMAND if self.opts.profile in FORMAL_PROFILES else ["opensearch"]
+                require(info.get("Entrypoint") == ["./opensearch-docker-entrypoint.sh"] and info.get("Cmd") == expected_command, "backend stock entrypoint changed")
                 expected_tmpfs = OS_TMPFS
             else:
                 expected_command = ES_LOAD_COMMAND if self.opts.profile in FORMAL_PROFILES else ES_COMMAND
                 require(info.get("Entrypoint") == ES_ENTRYPOINT and info.get("Cmd") == expected_command, "backend stock entrypoint/config staging mismatch")
                 expected_tmpfs = ES_TMPFS
             if self.opts.profile in FORMAL_PROFILES:
-                expected_tmpfs = {path: options for path, options in ES_TMPFS.items() if path != "/usr/share/elasticsearch/data"}
-                data_mounts = [m for m in info["Mounts"] if m["Destination"] == "/usr/share/elasticsearch/data"]
+                data_destination = "/usr/share/" + backend_product(self.opts)[0] + "/data"
+                expected_tmpfs = {path: options for path, options in expected_tmpfs.items() if path != data_destination}
+                data_mounts = [m for m in info["Mounts"] if m["Destination"] == data_destination]
                 require(len(data_mounts) == 1 and data_mounts[0]["Source"] == str(spec["data_directory"]) and data_mounts[0]["RW"], "owned load dependency storage mismatch")
             require(info.get("Tmpfs") == expected_tmpfs and len(info["Mounts"]) == (2 if self.opts.profile in FORMAL_PROFILES else 1), "backend bounded tmpfs/foreign mounts mismatch")
         self.evidence(spec["role"] + "-container.json", info)
@@ -550,7 +564,7 @@ class Controller:
 
     def observe(self, resource, spec, phase):
         info = self.check_container(resource, spec)
-        if spec["role"] == "backend" and self.opts.profile == OS_PROFILE:
+        if spec["role"] == "backend" and backend_product(self.opts)[0] == "opensearch":
             # External dependency context, not database process/JVM qualification.
             context = dict(pid=info["State"]["Pid"], image=info["Image"])
             self.evidence("backend-" + phase + "-context.json", context)
@@ -971,7 +985,7 @@ class Controller:
         self.evidence("engine.json", info)
         target = dict(os="linux", arch=self.arch)
         roles = dict(driver="owned-local", cli="owned-local")
-        product, version = PROFILES[self.opts.profile]
+        product, version = backend_product(self.opts)
         backend = dict(product=product, version=version, transport="plain", endpoints=roles)
         backends = [backend]
         if self.opts.profile in FORMAL_PROFILES:
@@ -987,7 +1001,7 @@ class Controller:
         self.evidence("provenance.json", provenance)
         base = json.loads((self.opts.harness_root / "deploy/docker/base.json").read_text())
         self.base_ref = base["image"] + "@" + base["platforms"][self.arch]
-        self.es_ref = (OS_REPOSITORY + "@" + OS_PINS[self.arch]) if self.opts.profile == OS_PROFILE else ES_REPOSITORY + "@" + ES_PINS[self.arch]
+        self.es_ref = (OS_REPOSITORY + "@" + OS_PINS[self.arch]) if product == "opensearch" else ES_REPOSITORY + "@" + ES_PINS[self.arch]
         self.base_image, self.es_image = self.image(self.base_ref), self.image(self.es_ref)
         images = dict(base=self.base_image, backend=self.es_image, backend_reference=self.es_ref, base_reference=self.base_ref)
         self.evidence("images.json", images)
@@ -1012,12 +1026,16 @@ class Controller:
             es_extra = [arg for arg in es_extra if not arg.startswith("--tmpfs=/usr/share/elasticsearch/data:")]
             es_extra += ["--mount", "type=bind,src=" + str(data) + ",dst=/usr/share/elasticsearch/data"]
             es_spec.update(extra=es_extra, data_directory=data, command=ES_LOAD_COMMAND)
-        if self.opts.profile == OS_PROFILE:
+        if backend_product(self.opts)[0] == "opensearch":
             extra = ["--tmpfs=" + path + ":" + options for path, options in OS_TMPFS.items()]
             extra += ["--env=DISABLE_SECURITY_PLUGIN=true", "--env=DISABLE_INSTALL_DEMO_CONFIG=true",
                       "--env=cluster.name=" + self.owner, "--env=discovery.type=single-node", "--env=action.auto_create_index=false",
                       "--env=OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m"]
             es_spec.update(user="1000:1000", extra=extra, command=[], readonly=False)
+            if self.opts.profile in FORMAL_PROFILES:
+                extra = [arg for arg in extra if not arg.startswith("--tmpfs=/usr/share/opensearch/data:")]
+                extra += ["--mount", "type=bind,src=" + str(data) + ",dst=/usr/share/opensearch/data"]
+                es_spec.update(extra=extra, command=OS_LOAD_COMMAND)
         self.phase_deadline = min(self.deadline, time.monotonic() + 90)
         backend = self.container(es_spec)
         oracle = "http://127.0.0.1:" + str(oracle_port)
@@ -1103,8 +1121,9 @@ def main():
         parser.add_argument("--" + name, required=True)
     parser.add_argument("--profile", required=True, choices=tuple(PROFILES))
     parser.add_argument("--mongod")
+    parser.add_argument("--product", choices=("elasticsearch", "opensearch"), default="elasticsearch", help="exact formal search product; finite profiles select their own product")
     args = parser.parse_args()
-    opts = Options(server_root=Path(args.server_root), harness_root=Path(args.harness_root), revision=args.revision, cli=Path(args.cli), driver=Path(args.driver), observer=Path(args.observer), output=Path(args.output), profile=args.profile, mongod=Path(args.mongod) if args.mongod else None)
+    opts = Options(server_root=Path(args.server_root), harness_root=Path(args.harness_root), revision=args.revision, cli=Path(args.cli), driver=Path(args.driver), observer=Path(args.observer), output=Path(args.output), profile=args.profile, mongod=Path(args.mongod) if args.mongod else None, product=args.product)
     require(opts.output.is_absolute() and opts.output.parent.resolve() == opts.output.parent and not opts.output.exists(), "new canonical task-owned evidence directory required")
     controller = Controller(opts)
     controller.execute()

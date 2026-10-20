@@ -177,7 +177,7 @@ func (p ExecutionProfile) CapacityMiB() int {
 
 // NativePlainLoad names the implemented formal Linux load capability.
 func (p ExecutionProfile) NativePlainLoad() bool {
-	return validateProfile(p) == nil && p.Executor == LinuxExecutor && p.ID == "linux-native-load-v1" && p.Suite == "load" && p.Intent == "formal" && p.Driver.OS == "linux" && p.Driver.Arch == "amd64" && p.CLI == p.Driver && len(p.Backends) == 2 && p.Backends[0].Product == "mongodb" && p.Backends[0].Transport == "plain" && p.Backends[1].Product == "elasticsearch" && p.Backends[1].Transport == "plain"
+	return validateProfile(p) == nil && p.Executor == LinuxExecutor && p.ID == "linux-native-load-v1" && p.Suite == "load" && p.Intent == "formal" && p.Driver.OS == "linux" && p.Driver.Arch == "amd64" && p.CLI == p.Driver && len(p.Backends) == 2 && p.Backends[0].Product == "mongodb" && p.Backends[0].Transport == "plain" && (p.Backends[1].Product == "elasticsearch" || p.Backends[1].Product == "opensearch") && p.Backends[1].Transport == "plain"
 }
 
 // NativePlainFault deliberately admits only the exact native plain fault cell.

@@ -166,7 +166,7 @@ func TestProductionLinuxFault(t *testing.T) {
 			t.Error(err)
 		}
 	})
-	owned := testsearch.OwnedEndpoint{URL: os.Getenv("WEIR_NATIVE_LOAD_ORACLE"), Owner: os.Getenv("WEIR_NATIVE_LOAD_OWNER"), Product: "elasticsearch"}
+	owned := testsearch.OwnedEndpoint{URL: os.Getenv("WEIR_NATIVE_LOAD_ORACLE"), Owner: os.Getenv("WEIR_NATIVE_LOAD_OWNER"), Product: inputs.Profile().Backends[1].Product}
 	search := testsearch.OpenOwned(t, owned)
 	mongoProxy := testmongo.StartProxy(t, fixture)
 	searchProxy := startProcessFaultHTTPProxyOn(t, search.URL, "127.0.0.1:0")

@@ -226,11 +226,22 @@ func TestExecutionProfileContractDeclaredNotExecutable(t *testing.T) {
 						callbacks++
 					}
 					want := 0
-					if arch == "amd64" && transport == "plain" && product == "elasticsearch" {
+					if arch == "amd64" && transport == "plain" {
 						want = 1
 					}
 					if callbacks != want {
 						t.Fatal("exact native capability dispatch differs", profile, callbacks, want)
+					}
+					profile.Intent = "smoke"
+					inputs.profile = profile
+					if err := inputs.RequireExecutable(); err == nil {
+						t.Fatal("smoke cell became executable", profile)
+					}
+					profile.Intent = "formal"
+					profile.Backends[1].Version = "3.4.0"
+					inputs.profile = profile
+					if err := inputs.RequireExecutable(); err == nil {
+						t.Fatal("unpinned search version became executable", profile)
 					}
 				}
 			}
