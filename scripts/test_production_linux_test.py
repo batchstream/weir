@@ -112,6 +112,12 @@ class Contracts(unittest.TestCase):
     def setUp(self):
         temp = tempfile.TemporaryDirectory()
         self.addCleanup(temp.cleanup)
+        # These lifecycle tests mock every listener/container. Real ephemeral
+        # sockets can reuse a just-closed port and make the mock nondeterministic.
+        ports = iter(range(20000, 21000))
+        port_patch = patch.object(M, "free_port", side_effect=ports)
+        self.free_ports = port_patch.start()
+        self.addCleanup(port_patch.stop)
         self.root = Path(temp.name).resolve()
         self.opts = M.Options(server_root=ROOT, harness_root=ROOT, revision="a" * 40, cli=self.root / "weir", driver=self.root / "app.test", observer=self.root / "observer", output=self.root / "evidence")
         for path in (self.opts.cli, self.opts.driver, self.opts.observer):
@@ -358,6 +364,24 @@ class Contracts(unittest.TestCase):
         self.assertIsNone(result["primary_error"])
         self.assertTrue(result["cleanup_errors"])
         self.assertFalse(result["finite_complete"])
+
+    def test_injected_duplicate_ports_fail_before_workload_and_clean_network(self):
+        self.free_ports.side_effect = [20000, 20000, 20001]
+        with self.assertRaisesRegex(RuntimeError, "ephemeral port collision"):
+            self.execute()
+        self.assertEqual(self.free_ports.call_count, 3, "port collision must not silently retry")
+        self.assertFalse(any(a[:2] == ["container", "create"] or a[:1] == ["exec"] for a in self.calls))
+        self.assertEqual(sum(a[:2] == ["network", "create"] for a in self.calls), 1)
+        self.assertEqual(sum(a[:2] == ["network", "rm"] for a in self.calls), 1)
+        self.assertEqual(self.resources, self.empty)
+        result = json.loads((self.opts.output / "finite-result.json").read_text())
+        self.assertIn("ephemeral port collision", result["primary_error"])
+        self.assertEqual(result["cleanup_errors"], [])
+        self.assertFalse(result["finite_complete"])
+        cleanup = json.loads((self.opts.output / "cleanup.json").read_text())
+        self.assertEqual(len(cleanup["resources"]), 1)
+        self.assertEqual(cleanup["resources"][0]["kind"], "network")
+        self.assertTrue(cleanup["resources"][0]["absent"])
 
     def test_backend_staging_contract_rejects_missing_unbounded_or_unsafe_configuration(self):
         resource, spec, info = self.recorded_backend()
