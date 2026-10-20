@@ -248,7 +248,7 @@ jobs:
           persist-credentials: false
       - name: Prepare fixed native SDK, public modules and verified MongoDB member
         run: python3 scripts/ci-tools.py test --mongo
-      - name: Serialized actual three-member plain and TLS discovery and recovery
+      - name: Serialized actual replica discovery, reply loss and live read retirement
         env:
           CGO_ENABLED: '1'
           WEIR_MONGO_REPLICA_INTEGRATION: '1'
@@ -263,6 +263,9 @@ jobs:
           mkdir -p .testdata/native-mongo-replica
           started=$(date +%s)
           status=0
+          # ProxyDiscoveryRecovery nests sent_read_retirement in the existing plain/TLS lifetimes.
+          # Typed CLI reply-loss lifetimes nest cancel/recovery and actual live-read SIGTERM;
+          # Native lifetimes and all existing mutation/effect oracles remain in these selectors.
           go test -race -p=1 -parallel=1 -tags=integration -count=1 -timeout=10m \
             -run '^TestMongoReplica(DiscoveryOwnership|ProxyDiscoveryRecovery|CLIRecovery)$' -v \
             ./internal/backend/mongodb ./internal/app 2>&1 | tee .testdata/native-mongo-replica/tests.log || status=1
