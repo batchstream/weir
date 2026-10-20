@@ -27,7 +27,7 @@ var errTLSProfile = errors.New("invalid MongoDB TLS or OCSP profile")
 func connectionOptions(cfg Config, dialer *connectionOwner, profile connectionProfile) (*options.ClientOptions, error) {
 	opts := options.Client().SetHosts(profile.hosts).SetDirect(profile.direct)
 	if profile.replicaSet != "" {
-		opts.SetReplicaSet(profile.replicaSet)
+		opts.SetReplicaSet(profile.replicaSet).SetHeartbeatInterval(time.Second)
 	}
 	if cfg.Username != "" {
 		credential := options.Credential{
