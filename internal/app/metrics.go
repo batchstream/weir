@@ -85,6 +85,9 @@ func (n *Node) Collect(ch chan<- prometheus.Metric) {
 
 	reserved := store.ExecutionMemorySnapshot{}
 	if n.executionMemory != nil {
+		// Diagnostic collection is caller-owned, unlike dispatch, backend IO
+		// and runtime retirement. A slow log sink may delay this scrape only.
+		defer n.executionMemory.FlushObservations()
 		reserved = n.executionMemory.Snapshot()
 	}
 	executionKnown := 0.0
