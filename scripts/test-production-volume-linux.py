@@ -49,7 +49,7 @@ CONTAINER_FORMAT = ('{"Id":{{json .Id}},"Name":{{json .Name}},"Owner":{{json (in
                     '"PidMode":{{json .HostConfig.PidMode}},"IPC":{{json .HostConfig.IpcMode}},"Mounts":{{json .Mounts}},'
                     '"NetworkMode":{{json .HostConfig.NetworkMode}},"Ports":{{json .NetworkSettings.Ports}},'
                     '"Bindings":{{json .HostConfig.PortBindings}},"Restart":{{json .HostConfig.RestartPolicy.Name}},'
-                    '"Entrypoint":{{json .Config.Entrypoint}},"Cmd":{{json .Config.Cmd}},"Tmpfs":{{json .HostConfig.Tmpfs}}}')
+                    '"Entrypoint":{{json .Config.Entrypoint}},"Cmd":{{json .Config.Cmd}},"Tmpfs":{{json (index .HostConfig "Tmpfs")}}}')
 IMAGE_FORMAT = '{"Id":{{json .Id}},"OS":{{json .Os}},"Arch":{{json .Architecture}},"Digests":{{json .RepoDigests}},"Volumes":{{json .Config.Volumes}}}'
 MAX_OUTPUT = 64 << 10
 
@@ -371,7 +371,9 @@ class Controller:
         require(info["Cgroupns"] == "private" and info["Readonly"] is True and not info["Privileged"] and not info["PidMode"] and info["IPC"] == "none" and info["User"] == "1000:1000" and info["Workdir"] == "/", "container root/namespace/user/working-directory controls mismatch")
         security = info["Security"] or []
         require(info["Caps"] == ["ALL"] and len(security) == 1 and security[0] in ("no-new-privileges", "no-new-privileges:true"), "capability/security controls mismatch")
-        require(info["NetworkMode"] == "none" and not info["Ports"] and not info["Bindings"] and not info["Tmpfs"] and info["Restart"] == "no", "unexpected network/ports/writable tmpfs/restart")
+        tmpfs = info["Tmpfs"]  # The selected key is required even when the raw optional field is omitted.
+        require(tmpfs is None or type(tmpfs) is dict and not tmpfs, "nonempty or malformed explicit tmpfs")
+        require(info["NetworkMode"] == "none" and not info["Ports"] and not info["Bindings"] and info["Restart"] == "no", "unexpected network/ports/writable tmpfs/restart")
         require(info["Entrypoint"] == [HELPER] and info["Cmd"] == self.helper_args(spec, role), "unexpected entrypoint/command")
         mounts = info["Mounts"]
         require(len(mounts) == 2, "unexpected filesystem mounts")

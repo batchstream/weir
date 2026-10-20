@@ -17,6 +17,9 @@ M = importlib.util.module_from_spec(SPEC)
 sys.modules[SPEC.name] = M
 SPEC.loader.exec_module(M)
 ROOT = Path(__file__).resolve().parent.parent
+# Actual CI39343925588 Docker28.0.4 selected-inspect failure, not fabricated absence.
+RECORDED_TMPFS_ERROR = ('\ntemplate parsing error: template: :1:952: executing "" at '
+                        '<.HostConfig.Tmpfs>: map has no entry for key "Tmpfs"\n')
 
 
 def specs():
@@ -88,7 +91,13 @@ class Fake(M.Controller):
                 info = next((v for v in source.values() if v["Name"] == "/" + name), None)
             if info is None:
                 raise M.CommandError("Error: No such " + kind + ": " + name + "\n", 1)
-            return json.dumps(info)
+            selected = info.copy()
+            if kind == "container":
+                # Keep the raw optional key omitted as the actual daemon does.
+                # Safe Go index emits a REQUIRED selected key with null instead.
+                raw_host = selected.pop("HostConfig")
+                selected["Tmpfs"] = raw_host.get("Tmpfs")
+            return json.dumps(selected)
         if args[:2] == ["container", "create"]:
             name = args[args.index("--name") + 1]
             role = name.rsplit("-", 1)[-1]
@@ -107,7 +116,7 @@ class Fake(M.Controller):
                 State=dict(Running=False, Status="created", OOMKilled=False, ExitCode=0, Pid=101 if role == "holder" else 102, Dead=False, Paused=False, Restarting=False),
                 Memory=spec["memory"], Swap=spec["memory"], CPU=spec["cpu"], PIDs=32, Cgroupns="private", Readonly=True,
                 User="1000:1000", Workdir="/", Caps=["ALL"], Security=["no-new-privileges:true"], Privileged=False, PidMode="", IPC="none", Mounts=[helper, volume],
-                NetworkMode="none", Ports={}, Bindings={}, Tmpfs={}, Restart="no", Entrypoint=[M.HELPER], Cmd=self.helper_args(spec, role))
+                NetworkMode="none", Ports={}, Bindings={}, HostConfig={}, Restart="no", Entrypoint=[M.HELPER], Cmd=self.helper_args(spec, role))
             if self.fail_after_create == role:
                 raise RuntimeError("injected interrupted create")
             return identity + "\n"
@@ -308,6 +317,64 @@ class VolumeTests(unittest.TestCase):
                     c.guard(c.volume)
         c.volumes[c.volume.name] = original
         self.assertEqual(c.cleanup(), [])
+
+    def test_tmpfs_raw_omission_null_and_empty_map_allow_full_lifecycle(self):
+        for value in ("omitted", None, {}):
+            c = Fake(self.c.opts)
+            original = c.docker
+            def raw_value(args, timeout=15, deadline=None):
+                reply = original(args, timeout, deadline)
+                if args[:2] == ["container", "create"]:
+                    raw_host = c.containers[reply.strip()]["HostConfig"]
+                    if value == "omitted":
+                        self.assertNotIn("Tmpfs", raw_host)
+                    else:
+                        raw_host["Tmpfs"] = value
+                return reply
+            with self.subTest(value=value), patch.object(M, "host_process", side_effect=c.process), patch.object(c, "docker", side_effect=raw_value):
+                c.fixture()
+                selected = c.inspect(c.holder)
+                self.assertIn("Tmpfs", selected)
+                self.assertEqual(selected["Tmpfs"], None if value == "omitted" else value)
+                self.assertEqual(c.cleanup(), [])
+            self.assertFalse(c.volumes or c.containers)
+
+    def test_tmpfs_wrong_types_and_nonempty_map_rejected_before_target_create(self):
+        c = self.held()
+        raw_host = c.containers[c.holder.identity]["HostConfig"]
+        for value in (False, 0, "", [], ["/tmp"], {"/tmp": "rw,size=1"}, True, 1):
+            raw_host["Tmpfs"] = value
+            before = len(c.calls)
+            with self.subTest(value=value), self.assertRaises(RuntimeError):
+                c.create_container("probe")
+            self.assertFalse(any(a[:2] == ["container", "create"] for a in c.calls[before:]))
+        raw_host.pop("Tmpfs")
+        self.assertEqual(c.cleanup(), [])
+
+    def test_missing_selected_tmpfs_key_is_not_defaulted(self):
+        c = self.held()
+        selected = c.inspect(c.holder)
+        del selected["Tmpfs"]
+        with patch.object(c, "guard", return_value=selected), self.assertRaises(KeyError):
+            c.check_container(c.holder, "holder")
+        self.assertEqual(c.cleanup(), [])
+
+    def test_actual_template_failure_remains_unknown_and_preserves_resources(self):
+        c = self.held()
+        original = c.docker
+        def inspect_failure(args, timeout=15, deadline=None):
+            if args[:2] == ["container", "inspect"]:
+                raise M.CommandError(RECORDED_TMPFS_ERROR, 1)
+            return original(args, timeout, deadline)
+        before = len(c.calls)
+        with patch.object(c, "docker", side_effect=inspect_failure):
+            errors = c.cleanup()
+        self.assertEqual(len(errors), 4)
+        self.assertIn(c.holder.identity, c.containers)
+        self.assertIn(c.volume.name, c.volumes)
+        self.assertFalse(any(a[0] == "kill" or a[:2] in (["container", "rm"], ["volume", "rm"]) for a in c.calls[before:]))
+        receipt = json.loads((self.output / "cleanup.json").read_text())
+        self.assertTrue(all(not item["absent"] for item in receipt["resources"]))
 
     def test_holder_identity_mount_and_security_admission(self):
         c = self.held()
