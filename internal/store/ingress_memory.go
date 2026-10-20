@@ -22,9 +22,13 @@ type IngressMemory struct {
 }
 
 func (m *ExecutionMemory) NewIngress(ctx context.Context, fixed int) (*IngressMemory, error) {
+	defer m.flushObservations()
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if fixed < 0 || !m.ingressFitsLocked(uint64(fixed), false) {
+		if fixed >= 0 {
+			m.observeIngressLocked(memoryIngress, fixed)
+		}
 		return nil, execution.ErrExecutionMemory
 	}
 	account := &IngressMemory{memory: m, ctx: ctx, fixed: uint64(fixed), charged: uint64(fixed), wake: make(chan struct{}, 1)}
@@ -74,6 +78,7 @@ func (a *IngressMemory) resizeLocked(message, raw, decoded uint64, large bool) b
 }
 
 func (a *IngressMemory) ReserveMessage(length int) error {
+	defer a.memory.flushObservations()
 	if length < 0 {
 		return execution.ErrExecutionMemory
 	}
@@ -111,6 +116,7 @@ func (a *IngressMemory) ReserveMessage(length int) error {
 			limit -= min(limit, uint64(ingressProgressReserve))
 		}
 		if a.fixed > limit || target > limit-a.fixed {
+			m.observeIngressLocked(memoryIngressMessage, int(target))
 			m.rejections++
 			m.mu.Unlock()
 			return execution.ErrExecutionMemory
@@ -132,6 +138,7 @@ func (a *IngressMemory) ReserveMessage(length int) error {
 }
 
 func (a *IngressMemory) Buffer(capacity int) (func(), error) {
+	defer a.memory.flushObservations()
 	if capacity < 0 {
 		return nil, execution.ErrExecutionMemory
 	}
@@ -143,6 +150,9 @@ func (a *IngressMemory) Buffer(capacity int) (func(), error) {
 	m.mu.Lock()
 	fits := !a.closed && a.resizeLocked(a.message, a.raw+bytes, a.decoded, false)
 	if !fits {
+		if !a.closed {
+			m.observeIngressLocked(memoryIngressBuffer, int(bytes))
+		}
 		m.rejections++
 		m.mu.Unlock()
 		return nil, execution.ErrExecutionMemory
@@ -239,6 +249,7 @@ func (a *IngressMemory) removeLocked() {
 // the codec allocates it. The full raw message is already owned; never wait on
 // another partially uploaded message while retaining that raw storage.
 func (a *IngressMemory) ReserveDecode(bytes int) error {
+	defer a.memory.flushObservations()
 	m := a.memory
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -252,6 +263,7 @@ func (a *IngressMemory) ReserveDecode(bytes int) error {
 	fits := a.resizeLocked(a.message, a.raw, a.decoded, false)
 	if !fits {
 		a.decodeExtra = previous
+		m.observeIngressLocked(memoryIngressDecode, bytes)
 		m.rejections++
 		return execution.ErrExecutionMemory
 	}

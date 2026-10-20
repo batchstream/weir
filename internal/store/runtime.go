@@ -187,6 +187,7 @@ func (r *Runtime) PrepareCommand(ctx context.Context, id uint64, call *pb.Comman
 	return plan, failure
 }
 func (r *Runtime) Submit(ctx context.Context, plan *execution.Plan, session *Session) (*Ticket, *pb.Failure, <-chan struct{}) {
+	defer r.memory.flushObservations()
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	changed := r.changed
@@ -320,6 +321,7 @@ func (t *Ticket) Wait(ctx context.Context) (*pb.Event, error) {
 
 func (t *Ticket) SetWorking(ctx context.Context, bytes int) error {
 	r := t.runtime
+	defer r.memory.flushObservations()
 	if ctx == nil {
 		return execution.ErrExecutionMemory
 	}
@@ -343,6 +345,9 @@ func (t *Ticket) SetWorking(ctx context.Context, bytes int) error {
 		if bytes > b.workingBytes {
 			for _, live := range []context.Context{ctx, b.ctx} {
 				if err := live.Err(); err != nil {
+					if err == context.DeadlineExceeded {
+						owner.memory.observeGrowthDeadline(owner, bytes, wait)
+					}
 					r.mu.Unlock()
 					return err
 				}
@@ -367,8 +372,14 @@ func (t *Ticket) SetWorking(ctx context.Context, bytes int) error {
 		select {
 		case <-wake:
 		case <-ctx.Done():
+			if ctx.Err() == context.DeadlineExceeded {
+				owner.memory.observeGrowthDeadline(owner, bytes, wait)
+			}
 			return ctx.Err()
 		case <-b.ctx.Done():
+			if b.ctx.Err() == context.DeadlineExceeded {
+				owner.memory.observeGrowthDeadline(owner, bytes, wait)
+			}
 			return b.ctx.Err()
 		}
 	}
@@ -376,6 +387,7 @@ func (t *Ticket) SetWorking(ctx context.Context, bytes int) error {
 
 func (t *Ticket) ReserveResult(bytes int) error {
 	r := t.runtime
+	defer r.memory.flushObservations()
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if t.plan == nil {
@@ -392,6 +404,7 @@ func (t *Ticket) ReserveResult(bytes int) error {
 
 func (t *Ticket) ReserveWire(bytes int) (*WireReservation, error) {
 	r := t.runtime
+	defer r.memory.flushObservations()
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if t.executionLease == nil {
@@ -516,6 +529,9 @@ func (r *Runtime) cancelQueuedLocked() {
 	for t := r.queueHead; t != nil; {
 		next := t.queueNext
 		if t.ctx.Err() != nil || t.abandoned || r.closed {
+			if t.ctx.Err() == context.DeadlineExceeded {
+				r.memory.observeQueuedDeadline(t.executionLease, time.Since(t.queuedAt))
+			}
 			r.dequeueLocked(t)
 			r.candidates = nil
 			changed = true
@@ -587,6 +603,7 @@ func (r *Runtime) loop() {
 		}
 		finish := r.draining && len(r.queue) == 0 && len(r.batches) == 0 && r.publishers == 0
 		r.mu.Unlock()
+		r.memory.flushObservations()
 		if finish {
 			return
 		}
@@ -955,6 +972,7 @@ func (r *Runtime) emitNative(b *batch, ticket *Ticket, event *pb.Event) error {
 }
 
 func (b *batch) GrowIO(working int) error {
+	defer b.runtime.memory.flushObservations()
 	m := b.native.executionLease.memory
 	m.mu.Lock()
 	m.reserve = max(m.reserve, uint64(b.native.plan.IOReserve)+executionProgressReserve)
@@ -965,6 +983,7 @@ func (b *batch) GrowIO(working int) error {
 
 func (b *batch) EndIO(working, eventBytes int) error {
 	r := b.runtime
+	defer r.memory.flushObservations()
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if err := b.native.executionLease.settle(working, eventBytes); err != nil {
@@ -991,6 +1010,7 @@ func (b *batch) EndIO(working, eventBytes int) error {
 
 func (b *batch) BeginIO(ctx context.Context, extra int) error {
 	r := b.runtime
+	defer r.memory.flushObservations()
 	r.mu.Lock()
 	if b.io {
 		r.mu.Unlock()
@@ -1001,6 +1021,7 @@ func (b *batch) BeginIO(ctx context.Context, extra int) error {
 		return ctx.Err()
 	}
 	b.readWindow = extra
+	queuedAt := time.Now()
 	b.resumeErr = nil
 	resume := make(chan struct{})
 	b.resume = resume
@@ -1019,10 +1040,16 @@ func (b *batch) BeginIO(ctx context.Context, extra int) error {
 	select {
 	case <-resume:
 		if err := ctx.Err(); err != nil {
+			if err == context.DeadlineExceeded {
+				r.memory.observeNativeReadDeadline(b.native.executionLease, extra, time.Since(queuedAt))
+			}
 			return err
 		}
 		return b.resumeErr
 	case <-ctx.Done():
+		if ctx.Err() == context.DeadlineExceeded {
+			r.memory.observeNativeReadDeadline(b.native.executionLease, extra, time.Since(queuedAt))
+		}
 		return ctx.Err()
 	}
 }
@@ -1074,6 +1101,7 @@ func (r *Runtime) startPublisherLocked(t *Ticket) {
 }
 
 func (r *Runtime) execute(b *batch) {
+	defer r.memory.flushObservations()
 	plans := make([]*execution.Plan, len(b.items))
 	positions := make(map[*execution.Plan]*Ticket, len(b.items))
 	for i, t := range b.items {
@@ -1195,6 +1223,7 @@ func (r *Runtime) cancelTicketsLocked() {
 // Close owns one drain and one absolute retirement budget, including adapter
 // teardown and actual execution/publication joins. Concurrent callers share it.
 func (r *Runtime) Close(ctx context.Context) error {
+	defer r.memory.flushObservations()
 	r.closeOnce.Do(func() { r.closeErr = r.close(ctx) })
 	return r.closeErr
 }

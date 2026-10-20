@@ -40,14 +40,18 @@ func TestBulkCanceledWhileWaitingForConnectionWasNotApplied(t *testing.T) {
 	started := make(chan struct{})
 	var writes atomic.Int32
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if _, err := io.Copy(io.Discard, r.Body); err != nil {
+			t.Error(err)
+			return
+		}
 		if writes.Add(1) == 1 {
 			close(started)
 		}
-		_, _ = io.ReadAll(r.Body)
 		<-r.Context().Done()
 	})
 	server := httptest.NewServer(handler)
 	transport := newTransport(connectionTimeout, backend.DefaultOptions().IdleTimeout)
+	transport.MaxConnsPerHost = 1
 	client := &http.Client{Transport: transport, CheckRedirect: noRedirect}
 	config := Config{URL: server.URL}
 	adapter := &Adapter{config: config, client: client, ctx: context.Background()}
@@ -70,7 +74,11 @@ func TestBulkCanceledWhileWaitingForConnectionWasNotApplied(t *testing.T) {
 		t.Fatal("first bulk did not occupy the only connection")
 	}
 	queued := make(chan struct{})
-	trace := &httptrace.ClientTrace{GetConn: func(string) { close(queued) }}
+	var secondConnected atomic.Bool
+	trace := &httptrace.ClientTrace{
+		GetConn: func(string) { close(queued) },
+		GotConn: func(httptrace.GotConnInfo) { secondConnected.Store(true) },
+	}
 	second, stopSecond := context.WithCancel(context.Background())
 	defer stopSecond()
 	second = httptrace.WithClientTrace(second, trace)
@@ -91,8 +99,8 @@ func TestBulkCanceledWhileWaitingForConnectionWasNotApplied(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("cancelled pool wait did not terminate")
 	}
-	if err != errWriteNotSent || writes.Load() != 1 {
-		t.Fatal("unstarted bulk was uncertain or reached the server", err, writes.Load())
+	if err != errWriteNotSent || writes.Load() != 1 || secondConnected.Load() {
+		t.Fatal("unstarted bulk was uncertain, acquired a connection or reached the server", err, writes.Load(), secondConnected.Load())
 	}
 	work := unsentWritePlan()
 	works := []*execution.Plan{work}
