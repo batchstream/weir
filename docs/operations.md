@@ -252,7 +252,7 @@ immutable legacy specification for tooling to serialize:
 | `legacy-desktop-smoke-v1` | load / smoke; 30s warmup + 120s measurement | Desktop smoke only |
 | `legacy-desktop-fault-v1` | fault / legacy | Desktop fault reproduction only |
 | `linux-native-load-v1` | load / formal | Implemented only on native Ubuntu 24.04 amd64, MongoDB 8.0.32 + Elasticsearch 8.19.22, both plain; other cells fail closed |
-| `linux-native-fault-v1` | fault / formal or smoke | Declarable, **not implemented**; fail closed |
+| `linux-native-fault-v1` | fault / formal | Implemented only on native Ubuntu 24.04 amd64, MongoDB 8.0.32 + Elasticsearch 8.19.22/plain; smoke and other cells fail closed |
 | `linux-native-es-functional-v1`, `linux-native-opensearch-functional-v1` | functional / finite; at most 16 documents, 64KiB/document, 60s driver | Owned native Linux ES8.19.22/plain or OpenSearch3.3.0/plain Weir correctness only; not smoke/formal |
 
 Legacy driver/CLI targets are Darwin arm64 and Linux arm64 respectively. MongoDB
@@ -265,8 +265,8 @@ output. Desktop routes and proxy translation belong only to that named adapter.
 Formal/smoke Linux declarations use matching native Linux amd64 or arm64 driver/CLI
 targets, `owned-local` endpoint roles, MongoDB 8.0.32 plus Elasticsearch 8.19.22 or
 OpenSearch 3.3.0, and explicit plain/TLS transport. Only the formal amd64
-MongoDB+Elasticsearch/plain load cell has a load implementation. Smoke, fault,
-TLS, OpenSearch load and arm64 load remain unexecutable; the distinct finite
+MongoDB+Elasticsearch/plain load and fault cells are implemented. Smoke,
+TLS, OpenSearch load/fault and arm64 load/fault remain unexecutable; the distinct finite
 ES/plain and OpenSearch/plain capabilities are unchanged. Unsupported combinations
 do not skip, fall back, or pass.
 
@@ -360,6 +360,58 @@ and same-byte stable promotion are separate follow-on work. Pinned local
 Mongo/LinuxKit compatibility blockers are not bypassed by changing versions or
 host settings.
 
+### Formal native Linux plain fault
+
+The independent `native-linux-formal-fault` matrix job executes
+`scripts/test-production-linux.py --profile=linux-native-fault-v1` with the same
+explicit inputs, pinned dependencies and disposable Ubuntu 24.04 amd64 boundary
+as load. TLS, OpenSearch, smoke and arm64 fault fail closed. This is Weir fault
+execution against external dependencies, not database/kernel/network tuning or
+Mongo replica-set failover qualification.
+
+`TestProductionLinuxFaultPreflight` validates sources and actual native binaries
+before fixtures; `TestProductionLinuxFaultMongo` initializes and verifies the owned
+native Mongo dependency. The fault driver owns loopback Mongo wire and ES HTTP
+proxies outside the CLI quota. A fresh controller-directory handshake binds exact
+owner/driver identities and driver-owned listening socket inodes before publishing
+CLI routes. The single-member Mongo fault route explicitly uses direct connection
+and polling monitoring so hello cannot bypass the proxy; the actual upstream
+replica-set/member/version was independently verified first. This is not a
+replica-set discovery or failover cell. The controller alone creates, observes, signals, waits and removes the captured
+full-ID CLI container. Actual controls are 2 CPU, 512MiB, zero swap, 96 PIDs,
+nonroot/read-only/cap-drop/no-new-privileges; driver, proxies and databases remain
+outside that cgroup. PID/start ticks and executable/cgroup identities must remain
+unchanged through recovery and before shutdown.
+
+The native driver reuses the existing production fault cases for **both** backends:
+healthy Read/Native, lost native and typed acknowledgements, cancellation after
+ack, held IO with healthy concurrent calls, and proxy unavailability/recovery.
+Existing <=3s healthy/cancellation/credit-return, <=5s same-SDK recovery, independent
+durable mutation effects, typed UNKNOWN, native INCOMPLETE and no-replay gates
+remain. With the final acknowledged mutation still held and its caller uncancelled,
+a separate <=8s preparation handshake completes the final cgroup observation.
+Only then may the driver request real SIGTERM; it releases the proxy only after
+signal confirmation. The controller checks actual wait/exit 0 and no OOM against
+one monotonic <=8s deadline beginning at the signal operation, and sends its
+matching host-clock deadline to the driver. Driver wait and caller join use that
+same absolute deadline, never a restarted eight-second budget. Preparation is not
+charged to the signal gate, and cannot itself release the observer or caller.
+Fast handshake polling remains 20ms; owned dependency storage scans run at most
+once per two seconds, with unchanged fail-closed scan and overall deadlines.
+Default drain 5s and retirement 2s are not overridden. Proxy/socket and SDK joins,
+owned database/index drops, and independent shutdown oracle precede structured
+completion. The controller then verifies native dependency retirement, container/
+network absence and marker/inode-guarded data removal using the same bounded
+storage ownership path as load.
+
+Fault has a 360s controller deadline, 210s driver envelope, separate 60s cleanup,
+and 8-minute outer CI command envelope. Load keeps its independent 30s+600s workload
+and 18-minute command envelope; finite execution is unchanged. Each matrix cell
+retains its own bounded observations, never dependency data or generated Git
+records. `fault_complete` requires all actual gates and cleanup; records retain
+`qualification=false`. Offline tests and Linux cross-compilation do **not** claim
+that this native cell ran or passed.
+
 ### Formal native Linux plain load
 
 `scripts/test-production-linux.py --profile=linux-native-load-v1` now implements
@@ -424,7 +476,7 @@ requires all driver gates, cgroup observations, shutdown and owned cleanup to
 succeed. Results still say `qualification=false`: they are execution observations,
 not independent build-origin or stable-promotion receipts. Offline mocks, race
 tests and cross-compilation cannot establish a real formal run pass. TLS,
-OpenSearch load, fault, arm64 load, matched performance, EKS and final same-byte
+OpenSearch load/fault, arm64 load/fault, matched performance, EKS and final same-byte
 candidate promotion remain separate deliverables; no final server lock is advanced.
 
 ### Finite native Linux executor

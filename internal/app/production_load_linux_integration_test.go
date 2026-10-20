@@ -30,8 +30,12 @@ func nativeLoadInputs(t *testing.T) *testexecution.ValidatedInputs {
 	if runtime.GOOS != "linux" || runtime.GOARCH != "amd64" {
 		t.Fatal("formal load requires native Linux amd64")
 	}
-	inputs := loadProductionExecution(t, "load")
-	if !inputs.Profile().NativePlainLoad() {
+	suite := "load"
+	if os.Getenv("WEIR_NATIVE_FAULT") == "1" {
+		suite = "fault"
+	}
+	inputs := loadProductionExecution(t, suite)
+	if suite == "load" && !inputs.Profile().NativePlainLoad() || suite == "fault" && !inputs.Profile().NativePlainFault() {
 		t.Fatal("only formal MongoDB/Elasticsearch plain load is implemented")
 	}
 	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)

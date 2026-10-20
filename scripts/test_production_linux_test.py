@@ -130,6 +130,44 @@ class Contracts(unittest.TestCase):
         self.failure = ""
         self.primary = False
 
+    def test_fault_message_is_bounded_owned_and_single_publication(self):
+        self.opts.output.mkdir()
+        message = dict(owner=self.controller.owner, driver_pid=123, mongo="mongodb://127.0.0.1:1234/", search="http://127.0.0.1:1235", pid=0, start_ticks="", exit=0, deadline_ns=0)
+        self.controller.fault_publish("proxies.json", message)
+        self.assertEqual(self.controller.fault_message("proxies.json", 123), message)
+        with self.assertRaisesRegex(RuntimeError, "already published"):
+            self.controller.fault_publish("proxies.json", message)
+        for change in (dict(owner="foreign"), dict(driver_pid=124), dict(driver_pid=True), dict(extra=1)):
+            bad = dict(message, **change)
+            (self.opts.output / "proxies.json").write_text(json.dumps(bad))
+            with self.assertRaisesRegex(RuntimeError, "identity/schema"):
+                self.controller.fault_message("proxies.json", 123)
+        (self.opts.output / "proxies.json").write_text(" " * 4097)
+        with self.assertRaisesRegex(RuntimeError, "bounded"):
+            self.controller.fault_message("proxies.json", 123)
+
+    def test_fault_completion_requires_actual_selected_test_and_oracle(self):
+        path = self.root / "completion.json"
+        record = dict(schema=1, stage="fault", profile=M.FAULT_PROFILE, revision=self.opts.revision, driver_pid=123, cases=M.FAULT_CASES, samples=0, documents=1, qualification=False)
+        options = dict(path=path, stage="fault", profile=M.FAULT_PROFILE, revision=self.opts.revision, pid=123, stdout="=== RUN   TestProductionLinuxFault\n--- PASS: TestProductionLinuxFault (1.00s)\nPASS\n")
+        path.write_text(json.dumps(record))
+        self.assertEqual(M.completion(options), record)
+        for changes in (dict(cases=M.FAULT_CASES[:-1]), dict(documents=0), dict(qualification=True), dict(profile=M.LOAD_PROFILE)):
+            path.write_text(json.dumps(dict(record, **changes)))
+            with self.assertRaises(RuntimeError):
+                M.completion(options)
+        path.write_text(json.dumps(record))
+        for stdout in ("PASS\n", options["stdout"].replace("PASS:", "SKIP:"), options["stdout"].replace("Fault", "Load")):
+            with self.assertRaises(RuntimeError):
+                M.completion(dict(options, stdout=stdout))
+
+    def test_fault_dispatch_is_not_load_or_finite(self):
+        self.assertEqual(M.driver_name(M.FAULT_PROFILE, "fault"), "TestProductionLinuxFault")
+        self.assertEqual(M.driver_name(M.FAULT_PROFILE, "mongo"), "TestProductionLinuxFaultMongo")
+        self.assertEqual(M.driver_name(M.FAULT_PROFILE, "preflight"), "TestProductionLinuxFaultPreflight")
+        with self.assertRaises(KeyError):
+            M.driver_name(M.FAULT_PROFILE, "finite")
+
     def command(self, args, timeout=15, deadline=None):
         self.calls.append(args)
         if "inspect" in args:
@@ -166,7 +204,7 @@ class Contracts(unittest.TestCase):
                 network_mode = args[args.index("--network") + 1]
                 if network_mode == "host":
                     networks = {"host": dict(NetworkID="")}
-                if self.opts.profile == M.LOAD_PROFILE and name.endswith("-backend"):
+                if self.opts.profile in M.FORMAL_PROFILES and name.endswith("-backend"):
                     mounts.append(dict(Destination="/usr/share/elasticsearch/data", Source=str(self.opts.output / "es-data"), RW=True))
                 info = dict(Id=identity, Name="/" + name, Owner=self.controller.owner, Image="sha256:" + "b" * 64, State=state, Memory=int(flags["--memory"]), Swap=int(flags["--memory-swap"]), CPU=2_000_000_000, PIDs=int(flags["--pids-limit"]), Cgroupns="private", Readonly="--read-only" in args, User=flags["--user"], Caps=["ALL"], Security=["no-new-privileges:true"], Privileged=False, PidMode="", Networks=networks, Ports=ports, Mounts=mounts)
                 info["NetworkMode"] = network_mode
@@ -296,6 +334,142 @@ class Contracts(unittest.TestCase):
         self.opts.profile = M.PROFILE
         finite = M.Controller(self.opts)
         self.assertLessEqual(finite.deadline - M.time.monotonic(), 240)
+
+    def test_formal_fault_owns_proxy_routes_actual_controls_signal_and_cleanup(self):
+        self.opts.profile = M.FAULT_PROFILE
+        self.controller = M.Controller(self.opts)
+        self.controller.owner = "weir-finite-" + "1" * 32
+        stages = []
+        pid = 4242
+        message = dict(owner=self.controller.owner, driver_pid=pid, mongo="mongodb://127.0.0.1:28001/?directConnection=true&serverMonitoringMode=poll", search="http://127.0.0.1:28002", pid=0, start_ticks="", exit=0, deadline_ns=0)
+
+        def mongo():
+            self.controller.mongo_uri = "mongodb://127.0.0.1:27099/?replicaSet=" + self.controller.owner
+
+        def snapshot(target, executable=True):
+            if target == pid:
+                return dict(pid=pid, start_ticks=123, membership="0::/host", sha256=self.controller.hashes["driver"])
+            return self.host_snapshot(target, executable)
+
+        fd_directory = MagicMock()
+        fd_directory.iterdir.return_value = ["/owned-fd/1", "/owned-fd/2"]
+        table = MagicMock()
+        table.read_text.return_value = "header\n0: 0100007F:6D61 00000000:0000 0A 0 0 0 0 0 91\n1: 0100007F:6D62 00000000:0000 0A 0 0 0 0 0 92\n"
+
+        def proc_path(*parts):
+            if parts == ("/proc", str(pid), "fd"):
+                return fd_directory
+            if parts == ("/proc/net/tcp",):
+                return table
+            return Path(*parts)
+
+        def driver(stage, environment):
+            stages.append(stage)
+            if stage == "preflight":
+                self.driver(stage, environment)
+                return {}
+            self.assertEqual(stage, "fault")
+            self.assertIsNone(self.controller.cli_resource)
+            self.controller.fault_publish("proxies.json", message)
+            with patch.object(M, "Path", side_effect=proc_path), patch.object(M.os, "readlink", side_effect=["socket:[91]", "socket:[92]"]):
+                self.controller.fault_progress(pid)
+            running = self.controller.fault_message("running.json", pid)
+            self.assertGreater(running["pid"], 0)
+            self.assertEqual(running["start_ticks"], "123")
+            routes = (self.opts.output / "routes.yaml").read_text()
+            self.assertIn(message["mongo"], routes)
+            self.assertIn(message["search"], routes)
+            self.controller.fault_publish("observe.json", message)
+            self.controller.fault_progress(pid)
+            self.assertIsNotNone(self.controller.fault_message("observed.json", pid))
+            self.controller.fault_publish("shutdown.json", message)
+            self.controller.fault_progress(pid)
+            self.assertIsNotNone(self.controller.fault_message("signaled.json", pid))
+            self.assertEqual(self.controller.fault_message("stopped.json", pid)["exit"], 0)
+            return {}
+
+        with patch.object(M, "native_preflight", return_value="amd64"), patch.object(M, "process_snapshot", side_effect=snapshot), patch.object(self.controller, "docker", side_effect=self.command), patch.object(self.controller, "driver", side_effect=driver), patch.object(self.controller, "wait_http"), patch.object(self.controller, "start_mongo", side_effect=mongo), patch.object(self.controller, "mongo_guard"):
+            self.controller.execute()
+        self.assertEqual(stages, ["preflight", "fault"])
+        cli = json.loads((self.opts.output / "cli-container.json").read_text())
+        self.assertEqual((cli["Memory"], cli["Swap"], cli["CPU"], cli["PIDs"]), (512 << 20, 512 << 20, 2_000_000_000, 96))
+        self.assertEqual(cli["NetworkMode"], "host")
+        result = json.loads((self.opts.output / "fault-result.json").read_text())
+        self.assertTrue(result["fault_complete"])
+        self.assertFalse(result["qualification"])
+        self.assertEqual(self.resources, {})
+        self.assertTrue((self.opts.output / "load-storage-cleanup.json").is_file())
+
+    def test_fault_observation_is_outside_actual_signal_deadline(self):
+        for shutdown_seconds in (5, 8.1):
+            with self.subTest(shutdown_seconds=shutdown_seconds):
+                self.opts.output = self.root / ("clock-" + str(shutdown_seconds))
+                self.opts.output.mkdir()
+                controller = M.Controller(self.opts)
+                controller.deadline = 1000
+                controller.cli_resource = M.Resource("container", "owned-cli", "a" * 64)
+                controller.fault_cli_spec = {}
+                sample = dict(start_ticks=123, sha256="b" * 64, cpu=dict(usage_usec=1), memory_events=dict(oom=0))
+                controller.fault_before = sample
+                clock = dict(now=0.0)
+                message = dict(owner=controller.owner, driver_pid=123, mongo="", search="", pid=0, start_ticks="", exit=0, deadline_ns=0)
+
+                def observe(*args):
+                    clock["now"] += 4
+                    return sample
+
+                def docker(args, timeout=15, deadline=None):
+                    if args[0] == "wait":
+                        clock["now"] += shutdown_seconds
+                    return "0\n"
+
+                terminal = dict(State=dict(Running=False, ExitCode=0, OOMKilled=False))
+                with patch.object(M.time, "monotonic", side_effect=lambda: clock["now"]), patch.object(M.time, "time_ns", side_effect=lambda: int(clock["now"] * 1e9)), patch.object(controller, "observe", side_effect=observe) as observer, patch.object(controller, "guard", return_value=terminal), patch.object(controller, "docker", side_effect=docker):
+                    controller.fault_publish("observe.json", message)
+                    controller.fault_progress(123)
+                    self.assertEqual(clock["now"], 4)
+                    self.assertFalse((self.opts.output / "signaled.json").exists())
+                    controller.fault_publish("shutdown.json", message)
+                    if shutdown_seconds > 8:
+                        with self.assertRaisesRegex(RuntimeError, "SIGTERM/exit/OOM"):
+                            controller.fault_progress(123)
+                        self.assertFalse((self.opts.output / "stopped.json").exists())
+                    else:
+                        controller.fault_progress(123)
+                        self.assertEqual(clock["now"], 9)
+                        signaled = controller.fault_message("signaled.json", 123)
+                        stopped = controller.fault_message("stopped.json", 123)
+                        self.assertEqual(signaled["deadline_ns"], 12_000_000_000)
+                        self.assertEqual(stopped["deadline_ns"], signaled["deadline_ns"])
+                    self.assertEqual(observer.call_count, 1)
+
+    def test_fault_fast_handshake_uses_two_second_storage_cadence(self):
+        self.opts.output.mkdir()
+        self.opts.profile = M.FAULT_PROFILE
+        controller = M.Controller(self.opts)
+        controller.deadline = 1000
+        controller.hashes = dict(driver="a" * 64)
+        clock = dict(now=0.0)
+        child = MagicMock(pid=123, returncode=0)
+        child.poll.return_value = 0
+        waits = []
+
+        def wait(timeout):
+            waits.append(timeout)
+            clock["now"] += timeout
+            if clock["now"] < 4.1:
+                raise M.subprocess.TimeoutExpired("driver", timeout)
+            return 0
+
+        child.wait.side_effect = wait
+        samples = []
+        snapshot = dict(sha256="a" * 64, membership="outside")
+        with patch.object(M.time, "monotonic", side_effect=lambda: clock["now"]), patch.object(M.subprocess, "Popen", return_value=child), patch.object(M, "process_snapshot", return_value=snapshot), patch.object(controller, "fault_progress") as progress, patch.object(controller, "monitor_load_storage", side_effect=lambda: samples.append(clock["now"])), patch.object(M, "completion", return_value={}):
+            controller.driver("fault", {})
+        self.assertGreater(progress.call_count, 200)
+        self.assertTrue(all(wait == .02 for wait in waits))
+        self.assertEqual(len(samples), 3)
+        self.assertTrue(all(after - before >= 2 for before, after in zip(samples, samples[1:])))
 
     def test_formal_host_mode_requires_exact_capability_and_actual_mode(self):
         resource, spec, info = self.recorded_backend()
@@ -1330,8 +1504,8 @@ class CompletionTests(unittest.TestCase):
 
     def test_formal_ci_has_own_full_duration_envelope_and_no_lock_promotion(self):
         workflow = (ROOT / ".github/workflows/ci.yml").read_text()
-        job = workflow.split("  native-linux-formal-load:", 1)[1].split("  native-linux-finite:", 1)[0]
-        for required in ("ubuntu-24.04", "timeout-minutes: 25", "test --mongo", "timeout 18m", "--profile=linux-native-load-v1", '--mongod="$binary"', "if: always()"):
+        job = workflow.split("  native-linux-formal:", 1)[1].split("  native-linux-finite:", 1)[0]
+        for required in ("ubuntu-24.04", "timeout-minutes: 25", "test --mongo", "envelope: 18m", "envelope: 8m", "suite: load", "suite: fault", "--profile=linux-native-${{ matrix.suite }}-v1", '--mongod="$binary"', "if: always()"):
             self.assertIn(required, job)
         self.assertNotIn("promote", job)
         self.assertNotIn("server.lock", job)

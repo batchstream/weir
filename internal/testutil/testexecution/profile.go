@@ -175,9 +175,18 @@ func (p ExecutionProfile) CapacityMiB() int {
 	return LoadMiB
 }
 
-// NativePlainLoad names the only implemented formal Linux capability.
+// NativePlainLoad names the implemented formal Linux load capability.
 func (p ExecutionProfile) NativePlainLoad() bool {
 	return validateProfile(p) == nil && p.Executor == LinuxExecutor && p.ID == "linux-native-load-v1" && p.Suite == "load" && p.Intent == "formal" && p.Driver.OS == "linux" && p.Driver.Arch == "amd64" && p.CLI == p.Driver && len(p.Backends) == 2 && p.Backends[0].Product == "mongodb" && p.Backends[0].Transport == "plain" && p.Backends[1].Product == "elasticsearch" && p.Backends[1].Transport == "plain"
+}
+
+// NativePlainFault deliberately admits only the exact native plain fault cell.
+func (p ExecutionProfile) NativePlainFault() bool {
+	if validateProfile(p) != nil || p.ID != "linux-native-fault-v1" || p.Suite != "fault" {
+		return false
+	}
+	p.ID, p.Suite = "linux-native-load-v1", "load"
+	return p.NativePlainLoad()
 }
 
 // RequireExecutable is deliberately separate from parsing and byte validation.
@@ -187,7 +196,7 @@ func (v *ValidatedInputs) RequireExecutable() error {
 	if v == nil || !v.valid {
 		return fmt.Errorf("validated inputs required")
 	}
-	if v.profile.Executor != LegacyExecutor && v.profile.ID != LinuxFunctionalID && v.profile.ID != LinuxOpenSearchFunctionalID && !v.profile.NativePlainLoad() {
+	if v.profile.Executor != LegacyExecutor && v.profile.ID != LinuxFunctionalID && v.profile.ID != LinuxOpenSearchFunctionalID && !v.profile.NativePlainLoad() && !v.profile.NativePlainFault() {
 		return fmt.Errorf("executor %q is declared but not implemented; no fixtures may be created", v.profile.Executor)
 	}
 	return nil
