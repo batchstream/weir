@@ -214,6 +214,10 @@ func replicaProxyCoverage(t *testing.T, adapter *Adapter, proxy *testmongo.Repli
 		deployment := adapter.deployment.(*topology.Topology)
 		selected := ""
 		for _, server := range deployment.Description().Servers {
+			healthy := server.Kind == description.ServerKindRSPrimary || server.Kind == description.ServerKindRSSecondary
+			if healthy && server.HeartbeatInterval != time.Second {
+				t.Fatal("actual replica polling interval", server.HeartbeatInterval)
+			}
 			if server.Kind == description.ServerKindRSPrimary {
 				selected = server.Addr.String()
 			}

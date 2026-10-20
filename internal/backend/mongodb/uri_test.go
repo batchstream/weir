@@ -5,6 +5,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestValidateMongoConfigProfiles(t *testing.T) {
@@ -204,6 +205,12 @@ func TestMongoReplicaProfiles(t *testing.T) {
 		}
 		if tc.set != "" && (opts.ReplicaSet == nil || *opts.ReplicaSet != tc.set) {
 			t.Fatal("missing driver set name")
+		}
+		if tc.set != "" && (opts.HeartbeatInterval == nil || *opts.HeartbeatInterval != time.Second) {
+			t.Fatal("replica discovery requires bounded polling")
+		}
+		if tc.direct && opts.HeartbeatInterval != nil {
+			t.Fatal("direct profile must retain the driver heartbeat default")
 		}
 		if err := opts.Validate(); err != nil {
 			t.Fatal("driver rejected profile", err)
