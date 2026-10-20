@@ -2,6 +2,7 @@ package mongodb
 
 import (
 	"context"
+	"errors"
 	"math"
 	"strconv"
 	"unicode/utf8"
@@ -16,6 +17,10 @@ import (
 type recordMemoryKey uint8
 
 const recordMemoryContextKey recordMemoryKey = 0
+
+// Keep allocation cancellation distinct from context-shaped backend errors:
+// the latter retain their existing selection/uncertainty classification.
+var errRecordReservation = errors.New("record working reservation failed")
 
 // One execution owns one driver reply window. Retained program documents are
 // added to this window; ordinary read documents belong to their Ticket instead.
@@ -57,7 +62,10 @@ func reserveRecordWorking(ctx context.Context, plans []*execution.Plan, extra in
 	if working < 0 || extra < -working || extra > math.MaxInt-working {
 		return execution.ErrExecutionMemory
 	}
-	return owner.SetWorking(ctx, working+extra)
+	if err := owner.SetWorking(ctx, working+extra); err != nil {
+		return errors.Join(errRecordReservation, err)
+	}
+	return nil
 }
 
 func programWorking(parts ...int) (int, error) {
@@ -139,7 +147,7 @@ func (a *Adapter) validateRecord(ctx context.Context, work *execution.Plan) *pb.
 			extra = bsonDecodeWorking(raw)
 		}
 		if err := reserveRecordWorking(ctx, plans, extra); err != nil {
-			return recordMemoryFailure()
+			return execution.ReservationFailure(ctx, err)
 		}
 	}
 	if transform := mutation.GetAtomicTransform(); transform != nil {

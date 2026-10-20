@@ -30,6 +30,21 @@ func FailedEvent(command *pb.Command, outcome pb.MutationOutcome, failure *pb.Fa
 	return event
 }
 
+// ReservationFailure preserves cancellation evidence from a context-aware
+// reservation without changing the caller's separately established outcome.
+func ReservationFailure(ctx context.Context, err error) *pb.Failure {
+	if ctx.Err() != nil {
+		return protocol.ContextFailure(ctx)
+	}
+	if errors.Is(err, context.Canceled) {
+		return protocol.Fail(pb.FailureCode_CANCELLED, "allocation canceled")
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return protocol.Fail(pb.FailureCode_DEADLINE_EXCEEDED, "allocation deadline exceeded")
+	}
+	return protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, ErrExecutionMemory.Error())
+}
+
 // LuaFailure reports an evaluation failure before any backend write.
 func LuaFailure(ctx context.Context, err error) *pb.MutationResult {
 	if ctx.Err() != nil {

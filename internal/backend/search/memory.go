@@ -2,6 +2,7 @@ package search
 
 import (
 	"context"
+	"errors"
 	"math"
 
 	"github.com/batchstream/weir-protocol/api/protocol"
@@ -13,6 +14,10 @@ import (
 type recordMemoryKey uint8
 
 const recordMemoryContextKey recordMemoryKey = 0
+
+// Reservation failures carry provenance so context-shaped backend errors keep
+// their existing uncertainty classification rather than becoming allocation errors.
+var errRecordReservation = errors.New("record scratch reservation failed")
 
 func programWorking(parts ...int) (int, error) {
 	working := 0
@@ -98,7 +103,12 @@ func searchMemory(ctx context.Context) *recordMemory {
 	return memory
 }
 
-func reserveSearchScratch(ctx context.Context, bytes int) error {
+func reserveSearchScratch(ctx context.Context, bytes int) (err error) {
+	defer func() {
+		if err != nil {
+			err = errors.Join(errRecordReservation, err)
+		}
+	}()
 	headerKey := nativeHeaderKey{}
 	if header, _ := ctx.Value(headerKey).(*nativeHeaderMemory); header != nil {
 		header.mu.Lock()
@@ -168,7 +178,7 @@ func (a *Adapter) validateRecord(ctx context.Context, work *execution.Plan) *pb.
 		}
 	}
 	if err := reserveSearchScratch(ctx, jsonDecodeWorking(raw)); err != nil {
-		return recordMemoryFailure()
+		return execution.ReservationFailure(ctx, err)
 	}
 	if transform := mutation.GetAtomicTransform(); transform != nil {
 		if program := transform.GetLua(); program != nil {

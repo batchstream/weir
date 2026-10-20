@@ -341,23 +341,17 @@ func (t *Ticket) SetWorking(ctx context.Context, bytes int) error {
 		// A canceled allocation cannot acquire new ownership. Shrink still
 		// releases references that the adapter has actually cleared.
 		if bytes > b.workingBytes {
-			for _, live := range []context.Context{ctx, t.ctx, b.ctx} {
+			for _, live := range []context.Context{ctx, b.ctx} {
 				if err := live.Err(); err != nil {
 					r.mu.Unlock()
 					return err
 				}
 			}
-			if t.abandoned {
-				r.mu.Unlock()
-				return context.Canceled
-			}
 		}
-		live := func() error {
-			if err := t.ctx.Err(); err != nil {
-				return err
-			}
-			return b.ctx.Err()
-		}
+		// The first Ticket owns shared batch accounting, not every member's
+		// allocation lifetime. A live sibling may grow through this owner after
+		// its caller cancels; only allocation and batch contexts bound that work.
+		live := func() error { return b.ctx.Err() }
 		wake, err := owner.requestWorking(ctx, bytes, &wait, live)
 		if err != nil {
 			r.mu.Unlock()
@@ -374,8 +368,6 @@ func (t *Ticket) SetWorking(ctx context.Context, bytes int) error {
 		case <-wake:
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-t.ctx.Done():
-			return t.ctx.Err()
 		case <-b.ctx.Done():
 			return b.ctx.Err()
 		}

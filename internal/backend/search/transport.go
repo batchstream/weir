@@ -122,7 +122,7 @@ func (a *Adapter) request(ctx context.Context, call exchange) (status int, raw [
 	}()
 	if err := reserveSearchScratch(ctx, 64<<10); err != nil {
 		if call.mutation {
-			return 0, nil, errWriteMemoryNotSent
+			return 0, nil, errors.Join(errWriteMemoryNotSent, err)
 		}
 		return 0, nil, err
 	}

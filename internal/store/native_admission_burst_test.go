@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -351,6 +352,166 @@ converged:
 		t.Fatal("record did not progress after convergence")
 	}
 	t.Logf("admitted record growth after Native convergence: %+v", memory.Snapshot())
+}
+
+type coalescedGrowthAdapter struct {
+	lifecycleAdapter
+	entered chan []*execution.Plan
+	grow    <-chan struct{}
+	results chan error
+}
+
+func (a *coalescedGrowthAdapter) Execute(ctx context.Context, works []*execution.Plan, emit execution.Emit) {
+	a.entered <- works
+	select {
+	case <-a.grow:
+	case <-ctx.Done():
+		return
+	}
+	if len(works) != 2 {
+		a.results <- execution.ErrExecutionMemory
+		return
+	}
+	// Match real adapter accounting: the seed owns the entire batch while
+	// the sibling's allocation context bounds this particular operation.
+	err := works[0].Memory.SetWorking(works[1].Context, growthRecordInitial+64<<10)
+	a.results <- err
+	if err != nil {
+		return
+	}
+	for _, work := range works {
+		event := execution.FailedEvent(work.Command, pb.MutationOutcome_APPLIED, nil)
+		_ = emit(work, event)
+	}
+}
+
+func TestCoalescedSiblingGrowthSurvivesCanceledAccountingSeed(t *testing.T) {
+	for _, waiting := range []bool{false, true} {
+		t.Run(map[bool]string{false: "immediate", true: "Native-convergence"}[waiting], func(t *testing.T) {
+			memory := NewExecutionMemory()
+			memory.known, memory.trusted = true, true
+			publication := 2*protocol.NativeChunk + execution.ResultOverheadBytes - nativeQueuedWindow
+			memory.budget = uint64(DefaultLimits().QueueBytes + growthRecordInitial + growthNativeInitial + publication + 8192)
+			grow := make(chan struct{})
+			adapter := &coalescedGrowthAdapter{entered: make(chan []*execution.Plan, 1), grow: grow, results: make(chan error, 1)}
+			limits := DefaultLimits()
+			limits.BatchOperations, limits.BatchWait = 2, time.Hour
+			records, err := New(adapter, limits, memory)
+			if err != nil {
+				t.Fatal(err)
+			}
+			release := make(chan struct{})
+			nativeAdapter := &nativeAdmissionBurstAdapter{entered: make(chan struct{}, 1), release: release}
+			nativeRuntime, err := New(nativeAdapter, DefaultLimits(), memory)
+			if err != nil {
+				t.Fatal(err)
+			}
+			ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
+			var seed, sibling *Ticket
+			t.Cleanup(func() {
+				cancel()
+				if seed != nil {
+					seed.Abandon()
+				}
+				if sibling != nil {
+					sibling.Abandon()
+				}
+				closing, stop := context.WithTimeout(context.Background(), time.Second)
+				defer stop()
+				if err := records.Close(closing); err != nil {
+					t.Error(err)
+				}
+				if err := nativeRuntime.Close(closing); err != nil {
+					t.Error(err)
+				}
+				after := memory.Snapshot()
+				if after.Count != 0 || after.UsedBytes != 0 || after.ResidentBytes != 0 || after.InputReservedBytes != 0 || after.InputUsedBytes != 0 || after.WireBytes != 0 || after.NativeCount != 0 {
+					t.Error("coalesced execution retained real ownership", after)
+				}
+			})
+			for index := range 2 {
+				work := plan(uint64(index+1), fmt.Sprint(index), false)
+				work.WorkingBytes, work.IOReserve = 1533, 48_000_000
+				ticket, failure, _ := records.Submit(ctx, work, nil)
+				if failure != nil {
+					t.Fatal(failure)
+				}
+				if index == 0 {
+					seed = ticket
+				} else {
+					sibling = ticket
+				}
+			}
+			select {
+			case works := <-adapter.entered:
+				if len(works) != 2 || works[0].Memory != seed || works[1].Memory != sibling {
+					t.Fatal("test did not coalesce seed and live sibling")
+				}
+			case <-ctx.Done():
+				t.Fatal("coalesced batch did not begin")
+			}
+			seed.Abandon()
+			session := nativeRuntime.NewSession()
+			defer session.Close()
+			if waiting {
+				work := plan(3, "initial", false)
+				work.Command, work.WorkingBytes, work.IOReserve = nativeCall(), growthNativeInitial, defaultNativeIOReserve
+				if _, failure, _ := nativeRuntime.Submit(ctx, work, session); failure != nil {
+					t.Fatal(failure)
+				}
+				select {
+				case <-nativeAdapter.entered:
+				case <-ctx.Done():
+					t.Fatal("competing Native did not begin")
+				}
+			}
+			close(grow)
+			if waiting {
+				for {
+					memory.mu.Lock()
+					claimed := len(memory.workingWaits) == 1
+					memory.mu.Unlock()
+					if claimed {
+						break
+					}
+					select {
+					case err := <-adapter.results:
+						t.Fatal("canceled seed prevented live sibling from waiting", err)
+					case <-time.After(time.Millisecond):
+					case <-ctx.Done():
+						t.Fatal("sibling growth did not wait")
+					}
+				}
+				close(release)
+				for {
+					select {
+					case emission := <-session.Events:
+						terminal := emission.Event.GetNativeEnd()
+						emission.Release()
+						if terminal != nil {
+							goto convergedSibling
+						}
+					case <-ctx.Done():
+						t.Fatal("Native did not converge")
+					}
+				}
+			}
+		convergedSibling:
+			select {
+			case err := <-adapter.results:
+				if err != nil {
+					t.Fatal("canceled seed rejected live sibling allocation", err)
+				}
+			case <-ctx.Done():
+				t.Fatal("sibling growth did not complete")
+			}
+			event, err := sibling.Wait(ctx)
+			if err != nil || event.GetMutationResult().GetOutcome() != pb.MutationOutcome_APPLIED {
+				t.Fatal("live sibling did not complete", event, err)
+			}
+			sibling.Ack()
+		})
+	}
 }
 
 type nativeSameBytesIOAdapter struct {

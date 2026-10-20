@@ -111,6 +111,7 @@ func (m *nativeHeaderMemory) finish() {
 	m.mu.Lock()
 	m.completed = true
 	// Detached HTTP transport contexts must not retain the Runtime or input.
+	m.ctx = nil
 	m.io = nil
 	m.memory = nil
 	m.records = nil
