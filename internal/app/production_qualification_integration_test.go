@@ -667,6 +667,15 @@ func qualificationSlowConsumers(ctx context.Context, work qualificationWorkload,
 	progress := make([]atomic.Int64, 32)
 	callbacks := make([]atomic.Int64, 32)
 	lastProgress := make([]atomic.Int64, 32)
+	type streamTiming struct {
+		waitCount, gapCount         int64
+		waitSum, waitMax            time.Duration
+		gapSum, gapMax              time.Duration
+		firstCallback, lastCallback time.Duration
+		lastReturn                  time.Time
+	}
+	// Each worker owns its timing counters; inspect them only after pending.Wait.
+	timings := make([]streamTiming, 32)
 	var offered, completed, maximumGap atomic.Int64
 	var pending sync.WaitGroup
 	for index := range 32 {
@@ -677,6 +686,18 @@ func qualificationSlowConsumers(ctx context.Context, work qualificationWorkload,
 			for phase.Err() == nil {
 				offered.Add(1)
 				consume := func(ctx context.Context, _ *weirclient.NativeResponse, chunk []byte) error {
+					callbackStart := time.Now()
+					timing := &timings[index]
+					if timing.lastReturn.IsZero() {
+						timing.firstCallback = callbackStart.Sub(start)
+					} else {
+						gap := callbackStart.Sub(timing.lastReturn)
+						timing.gapCount++
+						timing.gapSum += gap
+						timing.gapMax = max(timing.gapMax, gap)
+					}
+					timing.lastCallback = callbackStart.Sub(start)
+					defer func() { timing.lastReturn = time.Now() }()
 					progress[index].Add(int64(len(chunk)))
 					callbacks[index].Add(1)
 					previous := lastProgress[index].Swap(time.Now().UnixNano())
@@ -690,12 +711,18 @@ func qualificationSlowConsumers(ctx context.Context, work qualificationWorkload,
 					}
 					timer := time.NewTimer(500 * time.Millisecond)
 					defer timer.Stop()
+					waitStart := time.Now()
+					var waitErr error
 					select {
 					case <-ctx.Done():
-						return ctx.Err()
+						waitErr = ctx.Err()
 					case <-timer.C:
-						return nil
 					}
+					wait := time.Since(waitStart)
+					timing.waitCount++
+					timing.waitSum += wait
+					timing.waitMax = max(timing.waitMax, wait)
+					return waitErr
 				}
 				opts := weirclient.NativeOptions{StoreName: dataset.store, Request: dataset.native[3], Consume: consume}
 				result, err := weirclient.Native(phase, client, opts)
@@ -745,7 +772,8 @@ func qualificationSlowConsumers(ctx context.Context, work qualificationWorkload,
 	minimumCallbacks, minimumBytes := int64(1<<62), int64(1<<62)
 	for index := range progress {
 		if callbacks[index].Load() < int64(duration/(500*time.Millisecond)-8) {
-			return "", fmt.Errorf("slow stream %d failed to demonstrate continued chunk delivery: callbacks=%d bytes=%d", index, callbacks[index].Load(), progress[index].Load())
+			timing := timings[index]
+			return "", fmt.Errorf("slow stream %d failed to demonstrate continued chunk delivery: callbacks=%d bytes=%d callback_wait_count=%d callback_wait_sum=%s callback_wait_max=%s callback_return_gap_count=%d callback_return_gap_sum=%s callback_return_gap_max=%s first_callback_offset=%s last_callback_offset=%s", index, callbacks[index].Load(), progress[index].Load(), timing.waitCount, timing.waitSum, timing.waitMax, timing.gapCount, timing.gapSum, timing.gapMax, timing.firstCallback, timing.lastCallback)
 		}
 		minimumCallbacks = min(minimumCallbacks, callbacks[index].Load())
 		minimumBytes = min(minimumBytes, progress[index].Load())
