@@ -4,6 +4,7 @@ package mongodb
 
 import (
 	"context"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -21,11 +22,13 @@ type replicaReadAdapter struct {
 	*Adapter
 	entered, returned           atomic.Int32
 	closeEntered, closeReturned atomic.Int32
+	luaMu                       sync.Mutex
+	luaPlans                    map[uint64]*replicaLuaMemory
 }
 
 func (a *replicaReadAdapter) Execute(ctx context.Context, plans []*execution.Plan, emit execution.Emit) {
 	a.entered.Add(1)
-	a.Adapter.Execute(ctx, plans, emit)
+	a.executeReplicaPlans(ctx, plans, emit)
 	a.returned.Add(1)
 }
 func (a *replicaReadAdapter) Close(ctx context.Context) error {
@@ -36,10 +39,12 @@ func (a *replicaReadAdapter) Close(ctx context.Context) error {
 }
 
 type replicaReadRuntimeOptions struct {
-	adapter *Adapter
-	fixture *testmongo.Replica
-	proxy   *testmongo.ReplicaProxy
-	primary int
+	adapter  *Adapter
+	fixture  *testmongo.Replica
+	proxy    *testmongo.ReplicaProxy
+	primary  int
+	runtime  *store.Runtime
+	delegate *replicaReadAdapter
 }
 
 func replicaReadBarrier(t *testing.T, watch *testmongo.ReadWatch, cleanup bool, deadline time.Time) {
@@ -123,24 +128,12 @@ func replicaReadRuntime(t *testing.T, opts replicaReadRuntimeOptions) []*testmon
 	if baseline != 0 {
 		t.Fatal("read runtime session baseline", baseline)
 	}
-	delegate := &replicaReadAdapter{Adapter: a}
-	limits := store.DefaultLimits()
-	runtime, err := store.New(delegate, limits, nil)
-	if err != nil {
-		t.Fatal(err)
+	runtime, delegate := opts.runtime, opts.delegate
+	executionBaseline := delegate.returned.Load()
+	if delegate.entered.Load() != executionBaseline || delegate.closeEntered.Load() != 0 {
+		t.Fatal("shared Lua/read execution baseline")
 	}
-	// On failure this cleanup may unblock, but no success proof is collected here.
-	t.Cleanup(func() {
-		if !t.Failed() {
-			return
-		}
-		opts.proxy.Close()
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		if err := runtime.Close(ctx); err != nil {
-			t.Error(err)
-		}
-	})
+	var err error
 	watches := make([]*testmongo.ReadWatch, 0, 2)
 	arm := func(id string) *testmongo.ReadWatch {
 		watch, err := opts.proxy.WatchRead(id)
@@ -183,7 +176,7 @@ func replicaReadRuntime(t *testing.T, opts replicaReadRuntimeOptions) []*testmon
 	ownedReadConns := []*mongoConn{findConn, cleanupConn}
 	// The pinned driver can background-read a deadline-timed-out socket for
 	// 400ms. Observe its actual raw Close inside the original 3s cancel gate.
-	for runtime.Snapshot().Active != 0 || delegate.returned.Load() != 1 || a.client.NumberSessionsInProgress() != baseline || !replicaReadRawClosed(a, ownedReadConns) {
+	for runtime.Snapshot().Active != 0 || delegate.returned.Load() != executionBaseline+1 || a.client.NumberSessionsInProgress() != baseline || !replicaReadRawClosed(a, ownedReadConns) {
 		if time.Now().After(cancelled.Add(3 * time.Second)) {
 			t.Fatal("ordinary execution/session/exact raw join", runtime.Snapshot(), a.client.NumberSessionsInProgress(), a.dialer.snapshot(), ordinary.Snapshot())
 		}
@@ -277,7 +270,7 @@ func replicaReadRuntime(t *testing.T, opts replicaReadRuntimeOptions) []*testmon
 	if s := active.Snapshot(); s.Closed || s.Joined != 0 {
 		t.Fatal("observer intervened before actual Runtime.Close", s)
 	}
-	if delegate.entered.Load() != 3 || delegate.returned.Load() != 3 || delegate.closeEntered.Load() != 1 || delegate.closeReturned.Load() != 1 || a.client.NumberSessionsInProgress() != baseline {
+	if delegate.entered.Load() != executionBaseline+3 || delegate.returned.Load() != executionBaseline+3 || delegate.closeEntered.Load() != 1 || delegate.closeReturned.Load() != 1 || a.client.NumberSessionsInProgress() != baseline {
 		t.Fatal("actual adapter/execute/session joins", delegate.entered.Load(), delegate.returned.Load(), delegate.closeReturned.Load(), a.client.NumberSessionsInProgress())
 	}
 	ownerZero(t, a.dialer)

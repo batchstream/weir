@@ -52,6 +52,7 @@ type Proxy struct {
 	discovery       *replicaAddressMap
 	operations      *operationRegistry
 	reads           *readRegistry
+	lua             *luaRegistry
 	memberIndex     int
 	observations    []ReplicaProxyConnection
 	replicaRequests int
@@ -87,6 +88,7 @@ type proxyOptions struct {
 	discovery            *replicaAddressMap
 	operations           *operationRegistry
 	reads                *readRegistry
+	lua                  *luaRegistry
 	memberIndex          int
 }
 
@@ -108,7 +110,7 @@ func startProxy(t *testing.T, opts proxyOptions) *Proxy {
 	if err != nil {
 		t.Fatal("invalid owned fixture URI")
 	}
-	p := &Proxy{listener: listener, backendAddress: upstream.Host, conns: make(map[net.Conn]struct{}), done: make(chan struct{}), discovery: opts.discovery, operations: opts.operations, reads: opts.reads, memberIndex: opts.memberIndex}
+	p := &Proxy{listener: listener, backendAddress: upstream.Host, conns: make(map[net.Conn]struct{}), done: make(chan struct{}), discovery: opts.discovery, operations: opts.operations, reads: opts.reads, lua: opts.lua, memberIndex: opts.memberIndex}
 	if opts.serverTLS != nil {
 		// Test-only TLS termination observes decrypted commands for fault injection.
 		// Production direct-to-mongod TLS is qualified separately.
@@ -355,6 +357,14 @@ func (p *Proxy) relay(client net.Conn) {
 				return
 			}
 		}
+		var luaMatch *luaMatch
+		if p.lua != nil {
+			opts := luaBeginOptions{message: request, member: p.memberIndex}
+			luaMatch, err = p.lua.begin(opts)
+			if err != nil {
+				return
+			}
+		}
 		fault := p.takeFault(name, request)
 		if fault != nil {
 			if fault.Started != nil {
@@ -378,6 +388,9 @@ func (p *Proxy) relay(client net.Conn) {
 		if p.reads != nil && !p.reads.forwarded(readMatch, written, len(request)) {
 			return
 		}
+		if p.lua != nil && !p.lua.forwarded(luaMatch, written, len(request)) {
+			return
+		}
 		if writeErr != nil || written != len(request) {
 			if readMatch != nil {
 				p.reads.fail()
@@ -398,6 +411,9 @@ func (p *Proxy) relay(client net.Conn) {
 		p.mu.Unlock()
 		response, err := readMessage(backend)
 		if err != nil {
+			if luaMatch != nil {
+				p.lua.fail()
+			}
 			if readMatch != nil {
 				p.reads.fail()
 			}
@@ -424,12 +440,33 @@ func (p *Proxy) relay(client net.Conn) {
 			e.Transaction = n
 		}
 		if lsid, ok := doc.Lookup("lsid").DocumentOK(); ok {
-			e.Session = fmt.Sprintf("%x", []byte(lsid))
+			if p.discovery == nil {
+				e.Session = fmt.Sprintf("%x", []byte(lsid))
+			} else {
+				digest := sha256.Sum256(lsid)
+				e.Session = fmt.Sprintf("%x", digest)
+			}
 		}
 		reply := commandDocument(response)
 		if p.discovery != nil {
 			reply, _, err = replicaWireDocument(response, true)
 			if err != nil {
+				return
+			}
+		}
+		if luaMatch != nil {
+			if !p.lua.received(luaMatch, response) {
+				return
+			}
+			released, drop := p.lua.hold(luaMatch, p.done, replicaLuaWatchdog)
+			if !released {
+				return
+			}
+			if drop {
+				p.lua.mu.Lock()
+				p.closeConnection(client)
+				p.lua.finishLocked(luaMatch, true)
+				p.lua.mu.Unlock()
 				return
 			}
 		}
@@ -495,6 +532,12 @@ func (p *Proxy) relay(client net.Conn) {
 		if name == p.AlterCommand && p.AlterRemaining.Load() > 0 {
 			p.AlterRemaining.Add(-1)
 			response = alterCommandReply(response, p.AlterMode)
+		}
+		if luaMatch != nil {
+			if !p.lua.forwardReply(luaMatch, client, response) {
+				return
+			}
+			continue
 		}
 		written, err = client.Write(response)
 		if err != nil || written != len(response) {

@@ -243,7 +243,8 @@ second SIGTERM gate. Linux CI retains all three serial command logs on failure
 and measures the combined envelope without increasing its 15-minute job limit.
 
 The reply-loss cases alone do **not** qualify cursor/Ack ownership, Lua
-ambiguous commit/rollback, cgroups, sustained load, SLOs or production. Direct TLS
+ambiguous commit or topology/cancellation-specific rollback, cgroups, sustained
+load, SLOs or production. Direct TLS
 coverage remains separate. A proxy's pre-forward barrier is already after Weir
 dispatch; `ok:1` alone is not majority/business evidence, and Native callers must
 request majority explicitly.
@@ -271,6 +272,43 @@ eight seconds, without releasing either reply. Native CLI lifetimes retain their
 original idle-exit behavior. All twelve mutation cases, four complete Native
 business-error controls and persistent old effect/no-replay checks remain through
 actual CLI exit and whole relay join.
+
+The existing backend and typed-CLI plain/TLS lifetimes also execute four stable
+Lua cases (eight executions), before read retirement and with no extra fixture or
+CLI start. A singleton snapshot reply is held only after an actual correlated
+successful read of `(n=0, external=0, candidate=0)`. An independent majority writer
+sets `(20,1,0)`, then the unchanged snapshot is delivered. The observer requires
+an attempted replacement `(1,0,1)` and the real server's complete WriteConflict
+112, preserving its actual command/item envelope and label facts. Both cases
+hold the real abort reply: successful `ok:1` without write-concern error, or real
+NoSuchTransaction 251 only after the write has completely settled.
+
+While that reply is held there is exactly one find/write/abort and no commit or
+fresh attempt, and the independent durable ledger remains `(20,1,0)`. Fully
+forwarding the actual abort reply permits one fresh transaction on the original
+session, a replacement `(21,1,1)`, one commit and `APPLIED` without failure.
+Dropping the actual abort reply permits no rebuild or commit and must produce
+`NOT_APPLIED` with `UNAVAILABLE`/rollback-unconfirmed. The latter no-effect claim
+requires both **no commit ever sent** and independent durable candidate zero;
+lost acknowledgement alone does not establish it. Namespace/ID binding precedes
+session-digest/transaction correlation across all three fixed frontends. Actual
+full writes, correlated reply receipts, full forwarding and deliberate drops are
+counted separately from release requests. Fixed registration/attempt/event caps
+and a test-only 20-second watchdog fail closed; they never synthesize replies.
+
+The backend shares one real Runtime/delegate with the original read retirement.
+An unchanged real Ticket memory delegate observes nonzero working reservations
+at both held snapshots: the retry must reuse, not accumulate, the attempt window.
+Mutable global, library and input sentinels in both attempted replacements prove
+fresh state, with the same original observation time; source construction uses a
+fresh VM/budget/input conversion, not a measured VM-pointer claim. Input/result
+credit stays owned until real Ack/session close, then returns to zero without
+forced GC or ledger changes. Each original 12-second caller contains all stable
+Lua phases; independently established majority usability starts the unchanged
+five-second same-Runtime or same-PID/SDK new-ID recovery gate. Old mutation and
+new Lua count/effect oracles persist through actual Runtime.Close/CLI.Wait and
+relay joins. These stable cases do **not** cover lost commit replies, in-flight
+Lua stepdown/member loss, or Lua-specific cancellation/shutdown uncertainty.
 
 The separate bounded read observer watches only fixture `records` IDs across the
 three frontends and captures immutable first-find session identity. Cleanup
