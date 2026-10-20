@@ -281,7 +281,14 @@ func TestSearchDNSNameSNIAddressChangeAndBounds(t *testing.T) {
 				bad.Drop = true
 			}
 			dns.Set("search.test", bad)
-			ctx, cancel := context.WithTimeout(context.Background(), 80*time.Millisecond)
+			// Keep functional DNS results separate from the cancellation probe.
+			var ctx context.Context
+			var cancel context.CancelFunc
+			if mode == "timeout" {
+				ctx, cancel = context.WithTimeout(t.Context(), 80*time.Millisecond)
+			} else {
+				ctx, cancel = context.WithCancel(t.Context())
+			}
 			defer cancel()
 			before := time.Now()
 			_, _, err := a.request(ctx, call)
@@ -289,7 +296,7 @@ func TestSearchDNSNameSNIAddressChangeAndBounds(t *testing.T) {
 			if (err == nil) != valid {
 				t.Fatal("DNS size, failure or cancellation semantics", mode, err)
 			}
-			if time.Since(before) > time.Second {
+			if mode == "timeout" && time.Since(before) > time.Second {
 				t.Fatal("DNS cancellation delayed")
 			}
 			// net/http detaches dial cancellation; Close must synchronously join it.
