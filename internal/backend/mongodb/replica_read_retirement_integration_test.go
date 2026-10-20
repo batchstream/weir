@@ -176,6 +176,10 @@ func replicaReadRuntime(t *testing.T, opts replicaReadRuntimeOptions) []*testmon
 		t.Fatal("canceled real read evidence", event, err)
 	}
 	executeJoinedElapsed := time.Since(cancelled)
+	// The driver's raw-socket tail must not mask a shortened execution cleanup.
+	if executeJoinedElapsed < 1800*time.Millisecond {
+		t.Fatal("ordinary execution cleanup lost its full independent 2s", executeJoinedElapsed)
+	}
 	ownedReadConns := []*mongoConn{findConn, cleanupConn}
 	// The pinned driver can background-read a deadline-timed-out socket for
 	// 400ms. Observe its actual raw Close inside the original 3s cancel gate.
