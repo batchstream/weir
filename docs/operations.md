@@ -239,7 +239,8 @@ immutable legacy specification for tooling to serialize:
 | `legacy-desktop-load-v1` | load / legacy; 30s warmup + 600s measurement | Desktop reproduction only |
 | `legacy-desktop-smoke-v1` | load / smoke; 30s warmup + 120s measurement | Desktop smoke only |
 | `legacy-desktop-fault-v1` | fault / legacy | Desktop fault reproduction only |
-| `linux-native-load-v1`, `linux-native-fault-v1` | load or fault / formal or smoke | Declarable, **not implemented**; fail closed |
+| `linux-native-load-v1` | load / formal | Implemented only on native Ubuntu 24.04 amd64, MongoDB 8.0.32 + Elasticsearch 8.19.22, both plain; other cells fail closed |
+| `linux-native-fault-v1` | fault / formal or smoke | Declarable, **not implemented**; fail closed |
 | `linux-native-es-functional-v1`, `linux-native-opensearch-functional-v1` | functional / finite; at most 16 documents, 64KiB/document, 60s driver | Owned native Linux ES8.19.22/plain or OpenSearch3.3.0/plain Weir correctness only; not smoke/formal |
 
 Legacy driver/CLI targets are Darwin arm64 and Linux arm64 respectively. MongoDB
@@ -251,9 +252,11 @@ full ID and owner to match; mismatch refuses stop/removal and retains failure
 output. Desktop routes and proxy translation belong only to that named adapter.
 Formal/smoke Linux declarations use matching native Linux amd64 or arm64 driver/CLI
 targets, `owned-local` endpoint roles, MongoDB 8.0.32 plus Elasticsearch 8.19.22 or
-OpenSearch 3.3.0, and explicit plain/TLS transport. Those load/fault declarations
-remain unexecutable. Only the two distinct finite ES/plain and OpenSearch/plain profiles have an executor;
-unsupported combinations do not skip, fall back, or pass.
+OpenSearch 3.3.0, and explicit plain/TLS transport. Only the formal amd64
+MongoDB+Elasticsearch/plain load cell has a load implementation. Smoke, fault,
+TLS, OpenSearch load and arm64 load remain unexecutable; the distinct finite
+ES/plain and OpenSearch/plain capabilities are unchanged. Unsupported combinations
+do not skip, fall back, or pass.
 
 Version-1 `ProvenanceInputs` uses `schemaVersion`, `profileID`, separate `server`
 and `harness` objects (each `root` and full `revision`), and separate `cli` and
@@ -277,8 +280,7 @@ The Darwin bridge reuses the already-pinned purego dependency and works with
 CGO disabled. Its public SDK record sizes/offsets are checked before native calls;
 short/failed observations, unavailable procfs/libproc, and unsupported platforms
 fail closed. Native driver validation is implemented only for Linux amd64/arm64
-and Darwin arm64. This is not implementation of the still-unsupported formal
-Linux executor. The test-only package has a Darwin dependency on the existing
+and Darwin arm64. Driver validation is separate from execution capability. The test-only package has a Darwin dependency on the existing
 purego module; Linux's implementation uses only the standard library. No module
 pin/replacement or production command dependency changes are involved.
 
@@ -345,6 +347,73 @@ nor runtime proof. Three-backend plain/TLS CI, formal measurements/pass receipts
 and same-byte stable promotion are separate follow-on work. Pinned local
 Mongo/LinuxKit compatibility blockers are not bypassed by changing versions or
 host settings.
+
+### Formal native Linux plain load
+
+`scripts/test-production-linux.py --profile=linux-native-load-v1` now implements
+one exact formal execution cell on a disposable GitHub-hosted CI runner: Ubuntu
+24.04 amd64, stock MongoDB 8.0.32 and Elasticsearch 8.19.22, both plain. The
+controller rejects self-hosted/non-CI environments before fixtures; these environment
+checks prevent accidental use, not prove workflow origin. Supply the same canonical source/binary/observer
+arguments as the finite controller plus `--mongod` naming the prepared stock
+native binary. `scripts/ci-tools.py test --mongo` prepares that dependency in the
+separate CI preparation step; execution neither downloads nor changes the host.
+The native binary's exact 222890240-byte size and SHA256
+`15c7caf565edeaca228c76fbe6c4503b1cff7ae6517f344cc555552423b3209a` are checked
+before fixtures. The controller owns a fresh stock, loopback-only Mongo process,
+directory and single-member replica set; the driver verifies actual version,
+primary/set identity and every advertised member address. This is an external
+Weir test dependency, not database productionization or failover qualification.
+
+The CLI alone uses explicit host networking **only on this disposable owned
+native Linux CI fixture**, with application and diagnostics bound to ephemeral
+IPv4 loopback ports. It reaches the actual advertised Mongo loopback member and
+the owned ES loopback publication; there is no seed-only address substitution.
+No shared/EKS network, firewall, kernel or daemon change is made. Host networking
+is not network isolation. Inspection checks actual host mode, absence of port
+publications, full owned container/image/PID identity and unchanged nonroot,
+read-only, cap-drop, no-new-privileges controls. The same observer validates actual
+2CPU/1GiB, zero swap and 96-PID cgroup controls before/after the workload. The
+native Mongo process and driver remain outside that CLI cgroup. Mongo uses stock
+settings; ES retains its existing startup/heap/resource settings, but load data
+uses a new owned disposable host directory rather than finite-only 256MiB tmpfs.
+Admission requires 8GiB free host/Docker storage. During load, the controller
+checks owned dependency data between bounded two-second driver waits, aborting above
+2GiB per dependency or below 2GiB free storage (native Mongo logs: 64MiB).
+Traversal failures, unexpected links or a changed owner/path/inode fail closed.
+These are monitored abort thresholds, **not hard filesystem quotas**; the workload
+itself remains the fixed finite arrival/document/payload schedule. Load-only
+setgid/group-writable data permissions and startup umask allow the runner to
+remove the ES dependency's files without privilege or database tuning.
+Database data and native process logs are not uploaded. After verified container/
+network absence and native process join, cleanup removes only marker-verified
+owned data directories; logs and the owner marker remain. If cleanup cannot
+remove data, it reports retained paths and last observed bytes, fails execution,
+and does not claim full cleanup. No shared directory or cache is removed.
+
+`TestProductionLinuxLoadPreflight` completes source/binary/actual-loaded-driver
+checks before fixture creation. `TestProductionLinuxLoadMongo` initializes the
+owned dependency; `TestProductionLinuxLoad` feeds verified endpoints into the
+**same** existing workload, sampler and independent oracles. The original load
+entrypoint dispatches this exact native cell only with controller opt-in.
+There are no workload tuning flags: 30s warmup + 600s measurement at 200 RPC/s,
+all default Store policy checks, 32 eight-MiB slow consumers, 256 burst, original
+latency maxima/p99s, no normal-load execution-budget rejection, final ownership
+and five-second memory recovery remain unchanged. Structured load completion is
+written only after SDK/index/database cleanup; the controller rejects missing,
+skipped, premature (<630s), wrong-policy or identity-mismatched completion.
+
+The dedicated `native-linux-formal-load` CI job has a 25-minute job budget.
+Controller execution is bounded by 960s, including preflight, startup, a load-driver
+budget of 800s (630s workload plus seed/oracle/recovery), and observation/shutdown;
+cleanup has its own 60s bound. CI's 18-minute command envelope leaves cleanup time.
+Existing finite job/controller budgets are unchanged. A `load_complete` result
+requires all driver gates, cgroup observations, shutdown and owned cleanup to
+succeed. Results still say `qualification=false`: they are execution observations,
+not independent build-origin or stable-promotion receipts. Offline mocks, race
+tests and cross-compilation cannot establish a real formal run pass. TLS,
+OpenSearch load, fault, arm64 load, matched performance, EKS and final same-byte
+candidate promotion remain separate deliverables; no final server lock is advanced.
 
 ### Finite native Linux executor
 
@@ -461,7 +530,8 @@ explicitly prepares images, and executes the real path on Ubuntu amd64. Offline
 Python and Go contracts remain a separate gate and cannot substitute for this
 live job. A passing native CI run is required before merge; Linux arm64 remains
 unexecuted until a native arm64 result exists. These test Weir against external
-search dependencies only; formal load/fault, Mongo, TLS and EKS remain disabled.
+search dependencies only; they do not enable formal load/fault, Mongo, TLS or EKS.
+The separate exact formal plain-load cell is described above.
 Generated logs/results, identities and cleanup receipts stay in ignored output
 or CI artifacts, never in tracked documentation or source.
 

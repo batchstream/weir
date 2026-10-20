@@ -159,7 +159,7 @@ func verifyLegacyMongoVersion(t *testing.T, fixture *testmongo.Fixture) {
 	if err != nil || result.Version != "8.0.32" {
 		t.Fatal("owned MongoDB version mismatch", result.Version, err)
 	}
-	t.Log("actual backend MongoDB=8.0.32 replica_set=weir_local (independently checked by fixture hello)")
+	t.Log("actual backend MongoDB=8.0.32; owned replica identity independently checked by fixture hello")
 }
 func validateProductionCLIOptions(opts memoryRecoveryOptions) error {
 	if opts.execution == nil {

@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
-"""Owned native Linux search/plain finite correctness; never qualification/promotion.
+"""Owned native Linux finite Search correctness or exact formal plain load.
+
+Execution observations are not build-origin or promotion receipts.
 
 Image preparation is an explicit, separate CI step. This executor never pulls,
 builds, installs, changes host controls, discovers credentials or uses contexts.
@@ -26,7 +28,14 @@ import uuid
 
 PROFILE = "linux-native-es-functional-v1"
 OS_PROFILE = "linux-native-opensearch-functional-v1"
-PROFILES = {PROFILE: ("elasticsearch", "8.19.22"), OS_PROFILE: ("opensearch", "3.3.0")}
+LOAD_PROFILE = "linux-native-load-v1"
+PROFILES = {PROFILE: ("elasticsearch", "8.19.22"), OS_PROFILE: ("opensearch", "3.3.0"), LOAD_PROFILE: ("elasticsearch", "8.19.22")}
+MONGO_SHA256 = "15c7caf565edeaca228c76fbe6c4503b1cff7ae6517f344cc555552423b3209a"
+MONGO_BYTES = 222890240
+LOAD_DATA_LIMIT = 2 << 30
+LOAD_DISK_ADMISSION = 8 << 30
+LOAD_DISK_FREE = 2 << 30
+LOAD_CASES = ["Resolve", "fixed-arrival", "slow-consumers", "burst", "latency", "memory", "ownership-zero", "oracle"]
 ES_REPOSITORY = "docker.elastic.co/elasticsearch/elasticsearch"
 # Verified public 8.19.22 index sha256:e98f9c3b09beb2fbb9eaf667d602df3f0e00bd3644138b8458dc17ba1a675595.
 # The old server fixture pin is its arm64 child, NOT an interchangeable index.
@@ -42,6 +51,7 @@ ES_COMMAND = ["/bin/bash", "-euc", 'export ES_PATH_CONF=/tmp/weir-es-config\n'
               'mkdir -m 0700 "$ES_PATH_CONF"\n'
               'cp -R /usr/share/elasticsearch/config/. "$ES_PATH_CONF/"\n'
               'exec /usr/local/bin/docker-entrypoint.sh eswrapper']
+ES_LOAD_COMMAND = ES_COMMAND[:2] + ["umask 0002\n" + ES_COMMAND[2]]
 ES_TMPFS = {
     "/usr/share/elasticsearch/data": "rw,noexec,nosuid,size=268435456,uid=1000,gid=0",
     "/usr/share/elasticsearch/logs": "rw,noexec,nosuid,size=33554432,uid=1000,gid=0",
@@ -67,6 +77,7 @@ CONTAINER_FORMAT = ('{"Id":{{json .Id}},"Name":{{json .Name}},"Owner":{{json (in
                     '"User":{{json .Config.User}},"Caps":{{json .HostConfig.CapDrop}},'
                     '"Security":{{json .HostConfig.SecurityOpt}},"Privileged":{{json .HostConfig.Privileged}},'
                     '"PidMode":{{json .HostConfig.PidMode}},"Mounts":{{json .Mounts}},'
+                    '"NetworkMode":{{json .HostConfig.NetworkMode}},'
                     '"Networks":{{json .NetworkSettings.Networks}},"Ports":{{json .NetworkSettings.Ports}},'
                     '"Entrypoint":{{json .Config.Entrypoint}},"Cmd":{{json .Config.Cmd}},"Tmpfs":{{json (index .HostConfig "Tmpfs")}}}')
 NETWORK_FORMAT = '{"Id":{{json .Id}},"Owner":{{json (index .Labels "weir.owner")}},"Driver":{{json .Driver}},"Internal":{{json .Internal}},"Containers":{{json .Containers}}}'
@@ -84,6 +95,7 @@ class Options:
     observer: Path
     output: Path
     profile: str = PROFILE
+    mongod: Path | None = None
 
 
 @dataclass
@@ -117,11 +129,21 @@ def sanitized(raw):
 
 
 def native_preflight(opts):
-    require(opts.profile in PROFILES, "exact finite profile required")
+    require(opts.profile in PROFILES, "exact implemented profile required")
     # No Docker command or fixture action is reachable on unsupported hosts.
     require(platform.system() == "Linux", "native Linux required; Darwin/Desktop unsupported")
     arch = {"x86_64": "amd64", "aarch64": "arm64"}.get(platform.machine())
     require(arch in ES_PINS, "unsupported native host architecture")
+    if opts.profile == LOAD_PROFILE:
+        release = platform.freedesktop_os_release()
+        require(arch == "amd64" and release.get("ID") == "ubuntu" and release.get("VERSION_ID") == "24.04", "formal load requires Ubuntu24.04 amd64")
+        require(os.environ.get("GITHUB_ACTIONS") == "true" and os.environ.get("RUNNER_ENVIRONMENT") == "github-hosted", "formal host-network CLI requires disposable GitHub-hosted CI runner")
+        require(opts.mongod is not None and opts.mongod.is_absolute() and opts.mongod.resolve() == opts.mongod and opts.mongod.is_file() and os.access(opts.mongod, os.X_OK), "explicit canonical pinned native mongod required")
+        require(opts.mongod.stat().st_size == MONGO_BYTES, "native Mongo binary size mismatch")
+        with opts.mongod.open("rb") as stream:
+            require(hashlib.file_digest(stream, "sha256").hexdigest() == MONGO_SHA256, "native Mongo binary hash mismatch")
+    else:
+        require(opts.mongod is None, "finite profiles do not accept Mongo fixtures")
     for key in ("DOCKER_CONTEXT", "DOCKER_TLS_VERIFY", "DOCKER_CERT_PATH"):
         require(not os.environ.get(key), "Docker context/TLS overrides unsupported")
     require(os.environ.get("DOCKER_HOST", "unix:///var/run/docker.sock") == "unix:///var/run/docker.sock", "remote/custom Docker unsupported")
@@ -146,7 +168,8 @@ def native_preflight(opts):
     require((os.cpu_count() or 0) >= 2, "two host CPUs required")
     memory = dict(line.split(":", 1) for line in Path("/proc/meminfo").read_text().splitlines())
     require(int(memory["MemAvailable"].split()[0]) >= 4 * 1024 * 1024, "at least4GiB actual available host memory required")
-    require(shutil.disk_usage(opts.output.parent).free >= 2 << 30, "at least2GiB free disposable storage required")
+    required_disk = LOAD_DISK_ADMISSION if opts.profile == LOAD_PROFILE else 2 << 30
+    require(shutil.disk_usage(opts.output.parent).free >= required_disk, "insufficient disposable host storage admission")
     return arch
 
 
@@ -165,17 +188,23 @@ def completion(opts):
     record = json.loads(raw, object_pairs_hook=unique_fields)
     require(isinstance(record, dict), "structured completion object required")
     expected_keys = {"schema", "stage", "profile", "revision", "driver_pid", "cases", "samples", "documents", "qualification"}
+    if opts["stage"] == "load":
+        expected_keys |= {"warmup_seconds", "measurement_seconds", "arrival_rpc"}
     require(set(record) == expected_keys, "missing/unknown completion fields")
     require(type(record["schema"]) is int and record["schema"] == 1 and record["stage"] == opts["stage"] and record["profile"] == opts.get("profile", PROFILE) and record["revision"] == opts["revision"], "completion identity mismatch")
     require(type(record["driver_pid"]) is int and record["driver_pid"] == opts["pid"] and record["qualification"] is False, "completion driver identity/qualification mismatch")
-    cases = ["source", "cli", "kernel-driver"] if opts["stage"] == "preflight" else FINITE_CASES
+    cases = {"preflight": ["source", "cli", "kernel-driver"], "mongo": ["replica-init", "version", "advertised-loopback"], "load": LOAD_CASES, "finite": FINITE_CASES}[opts["stage"]]
     require(record["cases"] == cases, "missing, duplicate or reordered finite cases")
     require(type(record["samples"]) is int and type(record["documents"]) is int, "invalid sample/document counts")
     if opts["stage"] == "finite":
         require(record["samples"] >= 2 and record["documents"] == 6, "missing samples or finite persisted effects")
+    elif opts["stage"] == "load":
+        require(opts.get("profile") == LOAD_PROFILE and record["samples"] == 0 and record["documents"] > 264, "missing formal load persisted effects")
+        require(all(type(record[key]) is int and record[key] == value for key, value in (("warmup_seconds", 30), ("measurement_seconds", 600), ("arrival_rpc", 200))), "formal workload policy changed")
+        require(opts.get("elapsed", 0) >= 630, "premature formal completion")
     else:
         require(record["samples"] == 0 and record["documents"] == 0, "preflight performed workload")
-    name = "TestProductionLinuxPreflight" if opts["stage"] == "preflight" else "TestProductionLinuxFinite"
+    name = driver_name(opts.get("profile", PROFILE), opts["stage"])
     text = opts["stdout"]
     require(text.count("=== RUN   " + name + "\n") == 1 and len(re.findall(r"^--- PASS: " + name + r" \(", text, re.M)) == 1, "selected test did not execute/pass exactly once")
     require(not re.search(r"SKIP|--- FAIL|no tests to run", text) and text.rstrip().endswith("PASS"), "skips/failures/no-test execution rejected")
@@ -204,12 +233,21 @@ def free_port():
         return listener.getsockname()[1]
 
 
+def driver_name(profile, stage):
+    if profile == LOAD_PROFILE:
+        return {"preflight": "TestProductionLinuxLoadPreflight", "mongo": "TestProductionLinuxLoadMongo", "load": "TestProductionLinuxLoad"}[stage]
+    return {"preflight": "TestProductionLinuxPreflight", "finite": "TestProductionLinuxFinite"}[stage]
+
+
 class Controller:
     def __init__(self, opts):
         self.opts = opts
         self.owner = "weir-finite-" + uuid.uuid4().hex
         self.resources = []
-        self.deadline = time.monotonic() + 240
+        self.deadline = time.monotonic() + (960 if opts.profile == LOAD_PROFILE else 240)
+        self.mongo = None
+        self.mongo_snapshot = None
+        self.mongo_stream = None
         self.cleaning = False
         self.sequence = 0
         self.arch = ""
@@ -324,19 +362,23 @@ class Controller:
         return info
 
     def driver(self, stage, environment):
-        end = time.monotonic() + min(22 if stage == "preflight" else 60, self.remaining())
+        started = time.monotonic()
+        seconds = 800 if stage == "load" else 45 if stage == "mongo" else 22 if stage == "preflight" else 60
+        end = started + min(seconds, self.remaining())
         def budget():
             value = min(end - time.monotonic(), self.remaining())
             require(value > 0, "absolute driver deadline exceeded")
             return value
-        name = "TestProductionLinuxPreflight" if stage == "preflight" else "TestProductionLinuxFinite"
+        name = driver_name(self.opts.profile, stage)
         target = self.opts.output / (stage + "-completion.json")
         env = os.environ.copy()
         env.update(environment)
         env.update(WEIR_FINITE_NATIVE="1", WEIR_FINITE_COMPLETION=str(target),
                    WEIR_EXECUTION_PROFILE=str(self.opts.output / "profile.json"),
                    WEIR_PROVENANCE_INPUTS=str(self.opts.output / "provenance.json"))
-        args = [str(self.opts.driver), "-test.run=^" + name + "$", "-test.v", "-test.count=1", "-test.timeout=" + ("20s" if stage == "preflight" else "58s")]
+        if self.opts.profile == LOAD_PROFILE:
+            env.update(WEIR_NATIVE_LOAD="1", WEIR_NATIVE_LOAD_COMPLETION=str(target))
+        args = [str(self.opts.driver), "-test.run=^" + name + "$", "-test.v", "-test.count=1", "-test.timeout=" + str(seconds - 2) + "s"]
         log = self.opts.output / (stage + "-driver.log")
         budget()
         with tempfile.TemporaryFile() as stream:
@@ -353,7 +395,16 @@ class Controller:
                     require(self.cli_resource.identity not in snapshot["membership"], "driver must remain outside CLI cgroup")
                 self.evidence(stage + "-driver-runtime.json", snapshot)
                 budget()
-                child.wait(timeout=budget())
+                if stage == "load":
+                    while True:
+                        self.monitor_load_storage()
+                        try:
+                            child.wait(timeout=min(2, budget()))
+                            break
+                        except subprocess.TimeoutExpired:
+                            budget()
+                else:
+                    child.wait(timeout=budget())
                 budget()
             except Exception as error:
                 primary = error
@@ -382,7 +433,7 @@ class Controller:
                 raise primary
         budget()
         require(child.returncode == 0 and len(raw) <= MAX_OUTPUT, "driver failed/timed out; retained sanitized driver log")
-        options = dict(path=target, stage=stage, revision=self.opts.revision, pid=child.pid, stdout=raw.decode("utf-8"), profile=self.opts.profile)
+        options = dict(path=target, stage=stage, revision=self.opts.revision, pid=child.pid, stdout=raw.decode("utf-8"), profile=self.opts.profile, elapsed=time.monotonic() - started)
         result = completion(options)
         budget()
         return result
@@ -426,10 +477,12 @@ class Controller:
                 time.sleep(min(.2, remaining()))
 
     def container(self, spec):
+        if spec.get("host_network"):
+            require(self.opts.profile == LOAD_PROFILE and spec["role"] == "cli" and not spec["ports"], "host networking only for owned formal CLI")
         resource = Resource("container", self.owner + "-" + spec["role"])
         mem, pids = spec["memory"], spec["pids"]
         args = ["container", "create", "--pull=never", "--platform=linux/" + self.arch, "--name", resource.name,
-                "--label", "weir.owner=" + self.owner, "--network", spec["network"].identity,
+                "--label", "weir.owner=" + self.owner, "--network", "host" if spec.get("host_network") else spec["network"].identity,
                 "--cgroupns=private", "--cpus=2", "--memory=" + str(mem), "--memory-swap=" + str(mem),
                 "--pids-limit=" + str(pids), "--user=" + spec["user"], "--cap-drop=ALL",
                 "--security-opt=no-new-privileges:true", "--log-driver=json-file", "--log-opt=max-size=2m", "--log-opt=max-file=1",
@@ -452,8 +505,12 @@ class Controller:
         require(info["Cgroupns"] == "private" and info["Readonly"] is spec.get("readonly", True) and not info["Privileged"] and not info["PidMode"] and info["User"] == spec["user"], "container isolation mismatch")
         require(info["Caps"] == ["ALL"] and any(x in ("no-new-privileges", "no-new-privileges:true") for x in info["Security"]), "container security controls missing")
         networks = info["Networks"]
-        require(len(networks) == 1 and next(iter(networks.values()))["NetworkID"] == spec["network"].identity, "foreign/shared network")
-        published = {name for name, bindings in info["Ports"].items() if bindings}
+        if spec.get("host_network"):
+            require(self.opts.profile == LOAD_PROFILE and spec["role"] == "cli" and not spec["ports"], "host networking only for owned formal CLI")
+            require(info.get("NetworkMode") == "host" and set(networks) == {"host"}, "actual host network mode missing")
+        else:
+            require(info.get("NetworkMode") != "host" and len(networks) == 1 and next(iter(networks.values()))["NetworkID"] == spec["network"].identity, "foreign/shared network")
+        published = {name for name, bindings in (info["Ports"] or {}).items() if bindings}
         require(published == {str(p) + "/tcp" for p in spec["ports"]}, "unexpected published ports")
         for port, host in spec["ports"].items():
             require(info["Ports"][str(port) + "/tcp"] == [dict(HostIp="127.0.0.1", HostPort=str(host))], "non-loopback/wrong port publication")
@@ -464,9 +521,14 @@ class Controller:
                 require(info.get("Entrypoint") == ["./opensearch-docker-entrypoint.sh"] and info.get("Cmd") == ["opensearch"], "backend stock entrypoint changed")
                 expected_tmpfs = OS_TMPFS
             else:
-                require(info.get("Entrypoint") == ES_ENTRYPOINT and info.get("Cmd") == ES_COMMAND, "backend stock entrypoint/config staging mismatch")
+                expected_command = ES_LOAD_COMMAND if self.opts.profile == LOAD_PROFILE else ES_COMMAND
+                require(info.get("Entrypoint") == ES_ENTRYPOINT and info.get("Cmd") == expected_command, "backend stock entrypoint/config staging mismatch")
                 expected_tmpfs = ES_TMPFS
-            require(info.get("Tmpfs") == expected_tmpfs and len(info["Mounts"]) == 1, "backend bounded tmpfs/foreign mounts mismatch")
+            if self.opts.profile == LOAD_PROFILE:
+                expected_tmpfs = {path: options for path, options in ES_TMPFS.items() if path != "/usr/share/elasticsearch/data"}
+                data_mounts = [m for m in info["Mounts"] if m["Destination"] == "/usr/share/elasticsearch/data"]
+                require(len(data_mounts) == 1 and data_mounts[0]["Source"] == str(spec["data_directory"]) and data_mounts[0]["RW"], "owned load dependency storage mismatch")
+            require(info.get("Tmpfs") == expected_tmpfs and len(info["Mounts"]) == (2 if self.opts.profile == LOAD_PROFILE else 1), "backend bounded tmpfs/foreign mounts mismatch")
         self.evidence(spec["role"] + "-container.json", info)
         return info
 
@@ -509,6 +571,130 @@ class Controller:
         self.evidence(spec["role"] + "-" + phase + "-host-process.json", host)
         self.guard(resource)
         return sample
+
+    def prepare_load_storage(self):
+        self.storage_paths = [self.opts.output / "es-data", self.opts.output / "mongo-data"]
+        self.storage_owner = dict(owner=self.owner, paths=[])
+        for path in self.storage_paths:
+            path.mkdir(mode=0o700)
+            info = path.stat()
+            identity = dict(path=str(path), device=info.st_dev, inode=info.st_ino)
+            self.storage_owner["paths"].append(identity)
+        # Inherit the runner group and group-writable descendants so the runner
+        # can remove its own plain dependency data after the container is gone.
+        self.storage_paths[0].chmod(0o2777)
+        self.evidence("load-storage-owner.json", self.storage_owner)
+
+    def guard_load_storage(self):
+        marker = self.opts.output / "load-storage-owner.json"
+        require(not marker.is_symlink() and marker.stat().st_size <= 4096 and json.loads(marker.read_text()) == self.storage_owner, "load storage owner marker changed; preserve data")
+        for path, identity in zip(self.storage_paths, self.storage_owner["paths"]):
+            require(path.parent == self.opts.output and path.resolve() == path and path.is_dir(), "load storage path escaped/changed; preserve data")
+            info = path.stat()
+            require((info.st_dev, info.st_ino) == (identity["device"], identity["inode"]), "owned load storage inode changed; preserve data")
+
+    def monitor_load_storage(self):
+        self.guard_load_storage()
+        end = time.monotonic() + min(3, self.remaining())
+        def walk_error(error):
+            raise error
+
+        sizes = {path.name: None for path in self.storage_paths}
+        self.storage_last_sample = dict(bytes=sizes, free_bytes=None, per_dependency_abort_bytes=LOAD_DATA_LIMIT)
+        for path in self.storage_paths:
+            total, entries = 0, 0
+            for root, directories, files in os.walk(path, onerror=walk_error):
+                for name in directories + files:
+                    self.remaining(end)
+                    entry = Path(root) / name
+                    require(not entry.is_symlink(), "load data contains symlink; refuse traversal")
+                    info = entry.stat()
+                    entries += 1
+                    total += max(info.st_size, info.st_blocks * 512)
+                    sizes[path.name] = total
+                    require(entries <= 100000 and total <= LOAD_DATA_LIMIT, "load dependency data exceeded2GiB monitored abort threshold")
+            sizes[path.name] = total
+        free = shutil.disk_usage(self.opts.output).free
+        require(free >= LOAD_DISK_FREE, "load storage free space fell below2GiB abort threshold")
+        log = self.opts.output / "mongo-process.log"
+        require(not log.exists() or log.stat().st_size <= 64 << 20, "native Mongo log exceeded64MiB abort threshold")
+        sample = dict(bytes=sizes, free_bytes=free, per_dependency_abort_bytes=LOAD_DATA_LIMIT)
+        self.storage_last_sample = sample
+        self.evidence("load-storage.json", sample)
+
+    def cleanup_load_storage(self):
+        if not hasattr(self, "storage_paths"):
+            return
+        self.guard_load_storage()
+        # Call only after every container is absent and the native child joined.
+        for path in self.storage_paths:
+            shutil.rmtree(path)
+            require(not path.exists(), "owned load data remains")
+        receipt = dict(owner=self.owner, removed=[str(path) for path in self.storage_paths])
+        self.evidence("load-storage-cleanup.json", receipt)
+
+    def mongo_guard(self, verify_bytes=False):
+        require(self.mongo is not None and self.mongo.poll() is None, "owned native Mongo exited")
+        snapshot = process_snapshot(self.mongo.pid, executable=False)
+        if self.mongo_snapshot is not None:
+            require(snapshot == self.mongo_snapshot, "native Mongo process identity changed")
+        actual = os.stat("/proc/" + str(self.mongo.pid) + "/exe")
+        expected = self.opts.mongod.stat()
+        require((actual.st_dev, actual.st_ino) == (expected.st_dev, expected.st_ino) and actual.st_size == MONGO_BYTES, "native Mongo executable inode changed")
+        self.mongo_snapshot = snapshot
+        if verify_bytes:
+            with open("/proc/" + str(self.mongo.pid) + "/exe", "rb") as stream:
+                require(hashlib.file_digest(stream, "sha256").hexdigest() == MONGO_SHA256, "actual native Mongo bytes differ from pin")
+            require(process_snapshot(self.mongo.pid, executable=False) == snapshot, "native Mongo identity changed during hash")
+        if self.cli_resource:
+            require(self.cli_resource.identity not in snapshot["membership"], "Mongo dependency charged to CLI")
+        return snapshot
+
+    def start_mongo(self):
+        self.guard_load_storage()
+        directory = self.storage_paths[1]
+        self.mongo_port = free_port()
+        self.mongo_uri = "mongodb://127.0.0.1:" + str(self.mongo_port) + "/?replicaSet=" + self.owner
+        with self.opts.mongod.open("rb") as stream:
+            require(hashlib.file_digest(stream, "sha256").hexdigest() == MONGO_SHA256, "native Mongo bytes changed before start")
+        args = [str(self.opts.mongod), "--dbpath", str(directory), "--bind_ip", "127.0.0.1", "--port", str(self.mongo_port), "--replSet", self.owner]
+        self.mongo_stream = (self.opts.output / "mongo-process.log").open("wb")
+        environment = dict(PATH="/usr/bin:/bin", LANG="C", HOME=str(directory), TMPDIR=str(directory))
+        self.mongo = subprocess.Popen(args, cwd=directory, env=environment, stdout=self.mongo_stream, stderr=subprocess.STDOUT, start_new_session=True)
+        snapshot = self.mongo_guard(verify_bytes=True)
+        process_evidence = dict(process=snapshot, sha256=MONGO_SHA256, argv=args, outside_cli_quota=True)
+        self.evidence("mongo-process.json", process_evidence)
+        end = time.monotonic() + min(30, self.remaining())
+        while True:
+            self.mongo_guard()
+            try:
+                with socket.create_connection(("127.0.0.1", self.mongo_port), timeout=min(1, self.remaining(end))):
+                    break
+            except (ConnectionError, TimeoutError):
+                time.sleep(min(.1, self.remaining(end)))
+        environment = dict(WEIR_NATIVE_LOAD_MONGO=self.mongo_uri, WEIR_NATIVE_LOAD_OWNER=self.owner)
+        self.driver("mongo", environment)
+
+    def cleanup_mongo(self):
+        if self.mongo is None:
+            return
+        try:
+            if self.mongo.poll() is None:
+                self.mongo_guard()
+                self.mongo.terminate()
+                try:
+                    self.mongo.wait(timeout=min(15, self.remaining()))
+                except subprocess.TimeoutExpired:
+                    self.mongo_guard()
+                    self.mongo.kill()
+                    self.mongo.wait(timeout=min(3, self.remaining()))
+                    raise RuntimeError("native Mongo required forced retirement")
+            require(self.mongo.returncode == 0 and not Path("/proc/" + str(self.mongo.pid)).exists(), "native Mongo exit/absence unverified")
+            cleanup_evidence = dict(pid=self.mongo.pid, exit_code=self.mongo.returncode, absent=True)
+            self.evidence("mongo-cleanup.json", cleanup_evidence)
+        finally:
+            if self.mongo_stream:
+                self.mongo_stream.close()
 
     def shutdown_cli(self, resource):
         started = time.monotonic()
@@ -574,6 +760,18 @@ class Controller:
             except Exception as error:
                 errors.append(resource.name + ": " + str(error))
                 all_absent = False
+        try:
+            self.cleanup_mongo()
+        except Exception as error:
+            errors.append("native Mongo: " + str(error))
+        if hasattr(self, "storage_paths"):
+            try:
+                require(all_absent and (self.mongo is None or self.mongo.poll() is not None), "load processes/resources not fully joined; preserve data")
+                self.cleanup_load_storage()
+            except Exception as error:
+                errors.append("load data cleanup: " + str(error))
+                retained = dict(owner=self.owner, paths=[str(path) for path in self.storage_paths if path.exists()], last_observed=self.storage_last_sample if hasattr(self, "storage_last_sample") else None, cleanup_complete=False)
+                self.evidence("load-storage-retained.json", retained)
         receipt = dict(resources=receipts, errors=errors)
         self.evidence("cleanup.json", receipt)
         return errors
@@ -598,8 +796,10 @@ class Controller:
             primary = str(error)
         finally:
             cleanup = self.cleanup()
-            result = dict(profile=self.opts.profile, qualification=False, revision=self.opts.revision, arch=self.arch, primary_error=primary, cleanup_errors=cleanup, finite_complete=primary is None and not cleanup)
-            self.evidence("finite-result.json", result)
+            complete = primary is None and not cleanup
+            result = dict(profile=self.opts.profile, qualification=False, revision=self.opts.revision, arch=self.arch, primary_error=primary, cleanup_errors=cleanup)
+            result["load_complete" if self.opts.profile == LOAD_PROFILE else "finite_complete"] = complete
+            self.evidence("load-result.json" if self.opts.profile == LOAD_PROFILE else "finite-result.json", result)
         require(primary is None and not cleanup, "finite execution failed: " + str(primary) + "; cleanup=" + str(cleanup))
 
     def prepare_inputs(self):
@@ -607,13 +807,18 @@ class Controller:
         info = json.loads(self.docker(["info", "--format", info_format]))
         aliases = {"x86_64": "amd64", "aarch64": "arm64", "amd64": "amd64", "arm64": "arm64"}
         require(info["OS"] == "linux" and aliases.get(info["Arch"]) == self.arch and info["Cgroup"] == "2" and info["Kernel"] == platform.release() and info["CPUs"] >= 2 and info["Memory"] >= 4 << 30, "local native Docker/cgroupv2/resources required")
-        require(shutil.disk_usage(info["Root"]).free >= 2 << 30, "insufficient Docker data free space")
+        required_disk = LOAD_DISK_ADMISSION if self.opts.profile == LOAD_PROFILE else 2 << 30
+        require(shutil.disk_usage(info["Root"]).free >= required_disk, "insufficient Docker data free space")
         self.evidence("engine.json", info)
         target = dict(os="linux", arch=self.arch)
         roles = dict(driver="owned-local", cli="owned-local")
         product, version = PROFILES[self.opts.profile]
         backend = dict(product=product, version=version, transport="plain", endpoints=roles)
-        profile = dict(schemaVersion=1, id=self.opts.profile, suite="functional", intent="finite", policy="production-v1", executor="linux-native-v1", driver=target, cli=target, backends=[backend])
+        backends = [backend]
+        if self.opts.profile == LOAD_PROFILE:
+            mongo = dict(product="mongodb", version="8.0.32", transport="plain", endpoints=roles)
+            backends.insert(0, mongo)
+        profile = dict(schemaVersion=1, id=self.opts.profile, suite="load" if self.opts.profile == LOAD_PROFILE else "functional", intent="formal" if self.opts.profile == LOAD_PROFILE else "finite", policy="production-v1", executor="linux-native-v1", driver=target, cli=target, backends=backends)
         self.evidence("profile.json", profile)
         server = dict(root=str(self.opts.server_root), revision=self.opts.revision)
         harness = dict(root=str(self.opts.harness_root), revision=self.opts.revision)
@@ -629,6 +834,8 @@ class Controller:
         self.evidence("images.json", images)
 
     def run_fixture(self):
+        if self.opts.profile == LOAD_PROFILE:
+            self.prepare_load_storage()
         network = Resource("network", self.owner)
         # Standard owned bridge permits the required loopback publications;
         # it does not provide outbound network isolation.
@@ -640,6 +847,12 @@ class Controller:
         es_extra += ["--env=cluster.name=" + self.owner, "--env=discovery.type=single-node", "--env=xpack.security.enabled=false", "--env=action.auto_create_index=false", "--env=ES_JAVA_OPTS=-Xms512m -Xmx512m"]
         es_ports = {9200: oracle_port}
         es_spec = dict(role="backend", memory=1536 << 20, pids=512, user="1000:0", network=network, ports=es_ports, extra=es_extra, image=self.es_ref, image_id=self.es_image["Id"], command=ES_COMMAND)
+        if self.opts.profile == LOAD_PROFILE:
+            self.guard_load_storage()
+            data = self.storage_paths[0]
+            es_extra = [arg for arg in es_extra if not arg.startswith("--tmpfs=/usr/share/elasticsearch/data:")]
+            es_extra += ["--mount", "type=bind,src=" + str(data) + ",dst=/usr/share/elasticsearch/data"]
+            es_spec.update(extra=es_extra, data_directory=data, command=ES_LOAD_COMMAND)
         if self.opts.profile == OS_PROFILE:
             extra = ["--tmpfs=" + path + ":" + options for path, options in OS_TMPFS.items()]
             extra += ["--env=DISABLE_SECURITY_PLUGIN=true", "--env=DISABLE_INSTALL_DEMO_CONFIG=true",
@@ -652,8 +865,13 @@ class Controller:
         self.wait_http(oracle + "/", 90, backend=backend)
         backend_before = self.observe(backend, es_spec, "before")
         self.phase_deadline = None
+        if self.opts.profile == LOAD_PROFILE:
+            self.start_mongo()
         basic = 'listeners:\n  application: "0.0.0.0:7447"\ndiagnostics:\n  address: "0.0.0.0:7449"\n  allow_intranet: true\ndiscovery:\n  advertise: ["127.0.0.1:%d"]\n' % app_port
         routing = 'stores:\n  - name: search\n    backend:\n      search:\n        url: "http://%s:9200"\n' % backend.name
+        if self.opts.profile == LOAD_PROFILE:
+            basic = 'listeners:\n  application: "127.0.0.1:%d"\ndiagnostics:\n  address: "127.0.0.1:%d"\ndiscovery:\n  advertise: ["127.0.0.1:%d"]\n' % (app_port, diag_port, app_port)
+            routing = 'stores:\n  - name: mongo\n    backend:\n      mongodb:\n        uri: "%s"\n  - name: search\n    backend:\n      search:\n        url: "%s"\n' % (self.mongo_uri, oracle)
         basic_path, routing_path = self.opts.output / "weir.yaml", self.opts.output / "routes.yaml"
         basic_path.write_text(basic)
         routing_path.write_text(routing)
@@ -666,12 +884,20 @@ class Controller:
             cli_extra += ["--mount", "type=bind,src=" + str(source) + ",dst=" + destination + ",readonly"]
         cli_ports = {7447: app_port, 7449: diag_port}
         cli_spec = dict(role="cli", memory=1 << 30, pids=96, user="65532:65532", network=network, ports=cli_ports, extra=cli_extra, image=self.base_ref, image_id=self.base_image["Id"], command=["serve", "--config=/weir.yaml", "--routes=/routes.yaml"])
+        if self.opts.profile == LOAD_PROFILE:
+            cli_spec.update(host_network=True, ports={})
         cli = self.container(cli_spec)
         self.cli_resource = cli
         self.wait_http("http://127.0.0.1:" + str(diag_port) + "/readyz", 20)
         before = self.observe(cli, cli_spec, "before")
         environment = dict(WEIR_FINITE_APP="127.0.0.1:" + str(app_port), WEIR_FINITE_DIAGNOSTICS="127.0.0.1:" + str(diag_port), WEIR_FINITE_ORACLE=oracle, WEIR_FINITE_OWNER=self.owner)
-        self.driver("finite", environment)
+        if self.opts.profile == LOAD_PROFILE:
+            self.mongo_guard()
+            environment = dict(WEIR_NATIVE_LOAD_APP="127.0.0.1:" + str(app_port), WEIR_NATIVE_LOAD_DIAGNOSTICS="127.0.0.1:" + str(diag_port), WEIR_NATIVE_LOAD_ORACLE=oracle, WEIR_NATIVE_LOAD_OWNER=self.owner, WEIR_NATIVE_LOAD_MONGO=self.mongo_uri)
+            self.driver("load", environment)
+            self.mongo_guard(verify_bytes=True)
+        else:
+            self.driver("finite", environment)
         after = self.observe(cli, cli_spec, "after")
         for group in ("cpu", "memory_events"):
             require(all(after[group][k] >= v for k, v in before[group].items()), "cgroup counters regressed/replaced")
@@ -707,8 +933,9 @@ def main():
     for name in ("server-root", "harness-root", "revision", "cli", "driver", "observer", "output"):
         parser.add_argument("--" + name, required=True)
     parser.add_argument("--profile", required=True, choices=tuple(PROFILES))
+    parser.add_argument("--mongod")
     args = parser.parse_args()
-    opts = Options(server_root=Path(args.server_root), harness_root=Path(args.harness_root), revision=args.revision, cli=Path(args.cli), driver=Path(args.driver), observer=Path(args.observer), output=Path(args.output), profile=args.profile)
+    opts = Options(server_root=Path(args.server_root), harness_root=Path(args.harness_root), revision=args.revision, cli=Path(args.cli), driver=Path(args.driver), observer=Path(args.observer), output=Path(args.output), profile=args.profile, mongod=Path(args.mongod) if args.mongod else None)
     require(opts.output.is_absolute() and opts.output.parent.resolve() == opts.output.parent and not opts.output.exists(), "new canonical task-owned evidence directory required")
     controller = Controller(opts)
     controller.execute()

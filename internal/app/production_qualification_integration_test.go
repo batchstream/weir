@@ -74,6 +74,14 @@ func TestProductionProcessQualification(t *testing.T) {
 	}
 	execution := loadProductionExecution(t, "load")
 	profile := execution.Profile()
+	if profile.NativePlainLoad() {
+		if os.Getenv("WEIR_NATIVE_LOAD") != "1" {
+			t.Fatal("formal load requires the owned native Linux controller")
+		}
+		nativeLoadInputs(t)
+		runNativeProductionLoad(t, execution)
+		return
+	}
 	duration := profile.Duration()
 	binary, digest := execution.CLIPath(), execution.CLISHA256()
 	adapter := inspectLegacyDesktop(t, execution)
@@ -104,6 +112,13 @@ func TestProductionProcessQualification(t *testing.T) {
 	}
 	t.Logf("qualification=false profile=%s intent=%s duration=%s warmup=30s fixed_arrival=200RPC/s capacity=1073741824 CPUs=2 driver=%s/%s/%s engine=%s image=%s SHA256=%s version=%s", profile.ID, profile.Intent, duration, runtime.Version(), runtime.GOOS, runtime.GOARCH, adapter.engine, adapter.image, digest, strings.TrimSpace(version))
 	t.Log("driver_inflight_limit=512; service MaxInFlight=16/store, queue=1024 entries/32MiB, Node Native invocations=1024/total leases=32768/shared observed byte budget, batching=128/4MiB/20ms, stall=30s unchanged")
+	runProductionQualification(t, process, datasets, duration)
+}
+
+// The controller owns process lifecycle; the workload needs only its verified
+// loopback endpoints and capacity through the existing sampling wrapper.
+func runProductionQualification(t *testing.T, process *memoryRecoveryCLI, datasets []*qualificationDataset, duration time.Duration) {
+	t.Helper()
 	initial := process.sample(t)
 	native := qualificationExecutionMemory(t, initial, process.capacity)
 	if testmetrics.Sum(initial, "weir_memory_go_runtime_managed") != 1 {

@@ -66,6 +66,68 @@ jobs:
           python3 -O -m unittest discover -v -s scripts -p '*_test.py'
           git diff --exit-code
 
+  native-linux-formal-load:
+    # Ephemeral native runner only; no shared/EKS network changes or promotion.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Prepare fixed SDK, public modules and pinned stock native MongoDB
+        run: python3 scripts/ci-tools.py test --mongo
+      - name: Build exact-source native CLI, driver and observer
+        env:
+          CGO_ENABLED: '0'
+        run: |
+          test "$(uname -s)/$(uname -m)" = Linux/x86_64
+          test "$(go version)" = 'go version go1.27.1 linux/amd64'
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          revision=$(git rev-parse HEAD)
+          test "$revision" = '${{ github.event.pull_request.head.sha || github.sha }}'
+          mkdir -p .testdata/native-linux-formal-load/bin
+          go build -trimpath -buildvcs=false -ldflags="-buildid= -X main.sourceRevision=$revision" -o .testdata/native-linux-formal-load/bin/weir ./cmd/weir
+          go test -c -tags=integration -trimpath -buildvcs=false -o .testdata/native-linux-formal-load/bin/app.test ./internal/app
+          go build -trimpath -buildvcs=false -o .testdata/native-linux-formal-load/bin/observer ./internal/testutil/testresource
+          sha256sum .testdata/native-linux-formal-load/bin/* > .testdata/native-linux-formal-load/build-sha256.txt
+          printf '%s\n' "$revision" > .testdata/native-linux-formal-load/source-revision.txt
+      - name: Explicit immutable public image preparation
+        run: |
+          config=$(mktemp -d "$RUNNER_TEMP/weir-formal-public-images.XXXXXX")
+          base=$(python3 -I -c 'import json; x=json.load(open("deploy/docker/base.json")); print(x["image"]+"@"+x["platforms"]["amd64"])')
+          backend=docker.elastic.co/elasticsearch/elasticsearch@sha256:f1e3d88299cb0db2131fc2ab9060faefccd88fd684d11a49256ae00d7dc3c857
+          docker --config "$config" --host=unix:///var/run/docker.sock pull --platform=linux/amd64 "$base"
+          docker --config "$config" --host=unix:///var/run/docker.sock pull --platform=linux/amd64 "$backend"
+      - name: Real formal plain load, unchanged 30s warmup plus 600s at 200 RPC per second
+        run: |
+          root=$(pwd -P)
+          binary="$WEIR_MONGO_REPLICA_BINARY"
+          while IFS= read -r name; do
+            case "$name" in WEIR_*|DOCKER_*) unset "$name";; esac
+          done < <(compgen -e)
+          timeout 18m python3 -I scripts/test-production-linux.py --profile=linux-native-load-v1 \
+            --server-root="$root" --harness-root="$root" --revision="$(git rev-parse HEAD)" \
+            --cli="$root/.testdata/native-linux-formal-load/bin/weir" \
+            --driver="$root/.testdata/native-linux-formal-load/bin/app.test" \
+            --observer="$root/.testdata/native-linux-formal-load/bin/observer" \
+            --mongod="$binary" --output="$root/.testdata/native-linux-formal-load/evidence"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+      - name: Retain bounded load observations, not database data or promotion evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: native-linux-amd64-formal-load-${{ github.event.pull_request.head.sha || github.sha }}
+          path: |
+            .testdata/native-linux-formal-load/evidence/*.json
+            .testdata/native-linux-formal-load/evidence/*.jsonl
+            .testdata/native-linux-formal-load/evidence/*driver.log
+            .testdata/native-linux-formal-load/evidence/command-*.log
+            .testdata/native-linux-formal-load/build-sha256.txt
+            .testdata/native-linux-formal-load/source-revision.txt
+          if-no-files-found: warn
+          retention-days: 7
+
   native-linux-finite:
     # Separate from offline contracts and from the unsupported formal profiles.
     runs-on: ubuntu-24.04

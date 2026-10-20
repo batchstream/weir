@@ -163,7 +163,13 @@ class Contracts(unittest.TestCase):
                 state = dict(Running=False, ExitCode=0, OOMKilled=False, Pid=100 + len(self.resources))
                 membership = dict(NetworkID=net["Id"])
                 networks = {self.controller.owner: membership}
+                network_mode = args[args.index("--network") + 1]
+                if network_mode == "host":
+                    networks = {"host": dict(NetworkID="")}
+                if self.opts.profile == M.LOAD_PROFILE and name.endswith("-backend"):
+                    mounts.append(dict(Destination="/usr/share/elasticsearch/data", Source=str(self.opts.output / "es-data"), RW=True))
                 info = dict(Id=identity, Name="/" + name, Owner=self.controller.owner, Image="sha256:" + "b" * 64, State=state, Memory=int(flags["--memory"]), Swap=int(flags["--memory-swap"]), CPU=2_000_000_000, PIDs=int(flags["--pids-limit"]), Cgroupns="private", Readonly="--read-only" in args, User=flags["--user"], Caps=["ALL"], Security=["no-new-privileges:true"], Privileged=False, PidMode="", Networks=networks, Ports=ports, Mounts=mounts)
+                info["NetworkMode"] = network_mode
                 image_index = next(i for i, arg in enumerate(args) if arg in (self.controller.es_ref, self.controller.base_ref))
                 info["Cmd"] = args[image_index + 1:]
                 info["Entrypoint"] = ["/weir"] if name.endswith("-cli") else ["/bin/tini", "--", "/usr/local/bin/docker-entrypoint.sh"]
@@ -252,6 +258,162 @@ class Contracts(unittest.TestCase):
     def execute(self):
         with patch.object(M, "native_preflight", return_value="amd64"), patch.object(M, "process_snapshot", side_effect=self.host_snapshot), patch.object(self.controller, "docker", side_effect=self.command), patch.object(self.controller, "driver", side_effect=self.driver), patch.object(self.controller, "wait_http"):
             self.controller.execute()
+
+    def test_formal_load_uses_owned_host_cli_and_preserves_finite_budget(self):
+        self.opts.profile = M.LOAD_PROFILE
+        self.controller = M.Controller(self.opts)
+        self.controller.owner = "weir-finite-" + "1" * 32
+        self.assertGreater(self.controller.deadline - M.time.monotonic(), 950)
+        stages = []
+
+        def mongo():
+            self.controller.mongo_uri = "mongodb://127.0.0.1:27099/?replicaSet=" + self.controller.owner
+
+        def driver(stage, environment):
+            stages.append(stage)
+            self.driver(stage, environment)
+            if stage == "load":
+                basic = (self.opts.output / "weir.yaml").read_text()
+                self.assertNotIn("0.0.0.0", basic)
+                self.assertIn('application: "127.0.0.1:', basic)
+                self.assertIn('address: "127.0.0.1:', basic)
+                self.assertIn(self.controller.mongo_uri, (self.opts.output / "routes.yaml").read_text())
+
+        with patch.object(M, "native_preflight", return_value="amd64"), patch.object(M, "process_snapshot", side_effect=self.host_snapshot), patch.object(self.controller, "docker", side_effect=self.command), patch.object(self.controller, "driver", side_effect=driver), patch.object(self.controller, "wait_http"), patch.object(self.controller, "start_mongo", side_effect=mongo), patch.object(self.controller, "mongo_guard"):
+            self.controller.execute()
+        self.assertEqual(stages, ["preflight", "load"])
+        profile = json.loads((self.opts.output / "profile.json").read_text())
+        self.assertEqual((profile["suite"], profile["intent"]), ("load", "formal"))
+        self.assertEqual([b["product"] for b in profile["backends"]], ["mongodb", "elasticsearch"])
+        cli = json.loads((self.opts.output / "cli-container.json").read_text())
+        self.assertEqual(cli["NetworkMode"], "host")
+        self.assertEqual(cli["Ports"], {})
+        self.assertEqual((cli["Memory"], cli["Swap"], cli["CPU"], cli["PIDs"]), (1 << 30, 1 << 30, 2_000_000_000, 96))
+        result = json.loads((self.opts.output / "load-result.json").read_text())
+        self.assertTrue(result["load_complete"])
+        self.assertFalse(result["qualification"])
+        self.assertEqual(self.resources, {})
+        self.opts.profile = M.PROFILE
+        finite = M.Controller(self.opts)
+        self.assertLessEqual(finite.deadline - M.time.monotonic(), 240)
+
+    def test_formal_host_mode_requires_exact_capability_and_actual_mode(self):
+        resource, spec, info = self.recorded_backend()
+        spec.update(role="cli", host_network=True, ports={})
+        info.update(Ports={}, Networks={"host": dict(NetworkID="")}, NetworkMode="host")
+        with patch.object(self.controller, "guard", return_value=info):
+            with self.assertRaisesRegex(RuntimeError, "host networking only"):
+                self.controller.check_container(resource, spec)
+            self.opts.profile = M.LOAD_PROFILE
+            info["NetworkMode"] = "bridge"
+            with self.assertRaisesRegex(RuntimeError, "actual host network mode"):
+                self.controller.check_container(resource, spec)
+
+    def test_native_mongo_lifecycle_is_owned_bounded_and_not_docker(self):
+        self.opts.output.mkdir()
+        self.controller.prepare_load_storage()
+        self.opts.mongod = self.root / "mongod"
+        self.opts.mongod.write_bytes(b"pinned-stock")
+        sha = M.hashlib.sha256(b"pinned-stock").hexdigest()
+        child = MagicMock(pid=4242, returncode=0)
+        child.poll.return_value = None
+        snapshot = dict(pid=4242, start_ticks=123, membership="0::/host")
+        connection = MagicMock()
+        with patch.object(M, "MONGO_SHA256", sha), patch.object(M.subprocess, "Popen", return_value=child) as launch, patch.object(self.controller, "mongo_guard", return_value=snapshot), patch.object(M.socket, "create_connection", return_value=connection), patch.object(self.controller, "driver") as driver:
+            self.controller.start_mongo()
+            args = launch.call_args.args[0]
+            self.assertEqual(args[0], str(self.opts.mongod))
+            self.assertIn("--replSet", args)
+            self.assertIn("--bind_ip", args)
+            self.assertIn("127.0.0.1", args)
+            self.assertNotIn("--fork", args)
+            self.assertTrue(launch.call_args.kwargs["start_new_session"])
+            self.assertEqual(driver.call_args.args[0], "mongo")
+            self.controller.cleaning = True
+            self.controller.cleanup_deadline = M.time.monotonic() + 60
+            with patch.object(M.Path, "exists", return_value=False):
+                self.controller.cleanup_mongo()
+            child.terminate.assert_called_once()
+            child.wait.assert_called_once()
+            child.kill.assert_not_called()
+        receipt = json.loads((self.opts.output / "mongo-cleanup.json").read_text())
+        self.assertTrue(receipt["absent"])
+        self.assertFalse(self.calls)
+
+    def test_native_mongo_identity_failure_refuses_signal(self):
+        self.opts.output.mkdir()
+        child = MagicMock(pid=4242)
+        child.poll.return_value = None
+        self.controller.mongo = child
+        self.controller.cleaning = True
+        self.controller.cleanup_deadline = M.time.monotonic() + 60
+        with patch.object(self.controller, "mongo_guard", side_effect=RuntimeError("changed process identity")):
+            with self.assertRaisesRegex(RuntimeError, "changed process"):
+                self.controller.cleanup_mongo()
+        child.terminate.assert_not_called()
+        child.kill.assert_not_called()
+
+    def test_formal_platform_rejection_precedes_docker_and_native_process(self):
+        self.opts.profile = M.LOAD_PROFILE
+        bad_release = dict(ID="ubuntu", VERSION_ID="22.04")
+        with patch.object(M.platform, "system", return_value="Linux"), patch.object(M.platform, "machine", return_value="x86_64"), patch.object(M.platform, "freedesktop_os_release", return_value=bad_release), patch.object(M.subprocess, "Popen") as launch:
+            with self.assertRaisesRegex(RuntimeError, "Ubuntu24.04"):
+                M.native_preflight(self.opts)
+            launch.assert_not_called()
+        good_release = dict(ID="ubuntu", VERSION_ID="24.04")
+        with patch.object(M.platform, "system", return_value="Linux"), patch.object(M.platform, "machine", return_value="aarch64"), patch.object(M.platform, "freedesktop_os_release", return_value=good_release):
+            with self.assertRaisesRegex(RuntimeError, "Ubuntu24.04"):
+                M.native_preflight(self.opts)
+        with patch.object(M.platform, "system", return_value="Linux"), patch.object(M.platform, "machine", return_value="x86_64"), patch.object(M.platform, "freedesktop_os_release", return_value=good_release), patch.dict(M.os.environ, GITHUB_ACTIONS="true", RUNNER_ENVIRONMENT="self-hosted"):
+            with self.assertRaisesRegex(RuntimeError, "disposable GitHub-hosted"):
+                M.native_preflight(self.opts)
+        self.assertFalse(self.calls)
+
+    def test_load_storage_bounds_marker_containment_and_verified_removal(self):
+        self.opts.output.mkdir()
+        self.controller.prepare_load_storage()
+        data = self.controller.storage_paths[0]
+        payload = data / "owned-payload"
+        payload.write_bytes(b"x" * 64)
+        self.controller.monitor_load_storage()
+        self.assertGreaterEqual(self.controller.storage_last_sample["bytes"]["es-data"], 64)
+        with patch.object(M, "LOAD_DATA_LIMIT", 32):
+            with self.assertRaisesRegex(RuntimeError, "abort threshold"):
+                self.controller.monitor_load_storage()
+        usage = MagicMock(free=0)
+        with patch.object(M.shutil, "disk_usage", return_value=usage):
+            with self.assertRaisesRegex(RuntimeError, "free space"):
+                self.controller.monitor_load_storage()
+        outside = self.root / "outside"
+        outside.write_text("preserve")
+        link = data / "escape"
+        link.symlink_to(outside)
+        with self.assertRaisesRegex(RuntimeError, "symlink"):
+            self.controller.monitor_load_storage()
+        link.unlink()
+        marker = self.opts.output / "load-storage-owner.json"
+        original = marker.read_text()
+        marker.write_text('{}')
+        with self.assertRaisesRegex(RuntimeError, "owner marker"):
+            self.controller.cleanup_load_storage()
+        self.assertTrue(payload.exists())
+        marker.write_text(original)
+        self.controller.cleanup_load_storage()
+        self.assertTrue(outside.exists())
+        self.assertTrue(marker.exists())
+        self.assertTrue(all(not path.exists() for path in self.controller.storage_paths))
+
+    def test_load_data_cleanup_failure_reports_retention_and_fails_result(self):
+        self.opts.output.mkdir()
+        self.controller.prepare_load_storage()
+        self.controller.monitor_load_storage()
+        with patch.object(M.shutil, "rmtree", side_effect=PermissionError("retained owned data")):
+            errors = self.controller.cleanup()
+        self.assertTrue(any("load data cleanup" in error for error in errors))
+        retained = json.loads((self.opts.output / "load-storage-retained.json").read_text())
+        self.assertFalse(retained["cleanup_complete"])
+        self.assertEqual(len(retained["paths"]), 2)
+        self.assertIn("bytes", retained["last_observed"])
 
     def test_success_owned_bounded_path_and_verified_cleanup(self):
         self.execute()
@@ -1034,6 +1196,40 @@ class CompletionTests(unittest.TestCase):
                 invalid = dict(opts, stdout=stdout)
                 with self.assertRaises(RuntimeError):
                     M.completion(invalid)
+
+    def test_formal_completion_rejects_shortened_missing_and_false_policy(self):
+        with tempfile.TemporaryDirectory() as raw:
+            path = Path(raw) / "completion.json"
+            text = "=== RUN   TestProductionLinuxLoad\n--- PASS: TestProductionLinuxLoad (631.00s)\nPASS\n"
+            opts = dict(path=path, stage="load", revision="a" * 40, pid=123, stdout=text, profile=M.LOAD_PROFILE, elapsed=631)
+            record = dict(schema=1, stage="load", profile=M.LOAD_PROFILE, revision="a" * 40, driver_pid=123, cases=M.LOAD_CASES, samples=0, documents=1000, qualification=False, warmup_seconds=30, measurement_seconds=600, arrival_rpc=200)
+            path.write_text(json.dumps(record))
+            self.assertEqual(M.completion(opts), record)
+            for key, value in (("warmup_seconds", 2), ("measurement_seconds", 120), ("arrival_rpc", 20), ("documents", 264), ("cases", M.LOAD_CASES[:-1]), ("qualification", True), ("profile", M.PROFILE)):
+                invalid = dict(record)
+                invalid[key] = value
+                path.write_text(json.dumps(invalid))
+                with self.subTest(key=key), self.assertRaises(RuntimeError):
+                    M.completion(opts)
+            path.write_text(json.dumps(record))
+            premature = dict(opts, elapsed=629.999)
+            with self.assertRaisesRegex(RuntimeError, "premature"):
+                M.completion(premature)
+            skipped = dict(opts, stdout=text.replace("PASS:", "SKIP:"))
+            with self.assertRaises(RuntimeError):
+                M.completion(skipped)
+
+    def test_formal_ci_has_own_full_duration_envelope_and_no_lock_promotion(self):
+        workflow = (ROOT / ".github/workflows/ci.yml").read_text()
+        job = workflow.split("  native-linux-formal-load:", 1)[1].split("  native-linux-finite:", 1)[0]
+        for required in ("ubuntu-24.04", "timeout-minutes: 25", "test --mongo", "timeout 18m", "--profile=linux-native-load-v1", '--mongod="$binary"', "if: always()"):
+            self.assertIn(required, job)
+        self.assertNotIn("promote", job)
+        self.assertNotIn("server.lock", job)
+        self.assertEqual(M.driver_name(M.LOAD_PROFILE, "preflight"), "TestProductionLinuxLoadPreflight")
+        self.assertEqual(M.driver_name(M.LOAD_PROFILE, "mongo"), "TestProductionLinuxLoadMongo")
+        with self.assertRaises(KeyError):
+            M.driver_name(M.LOAD_PROFILE, "finite")
 
     def test_completion_profiles_cannot_be_substituted(self):
         with tempfile.TemporaryDirectory() as raw:
