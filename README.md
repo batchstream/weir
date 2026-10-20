@@ -354,8 +354,8 @@ its existing transitions. Two real Tickets own the concurrently held transaction
 their nonzero working/input credit and actual execution/publisher joins are checked,
 then both Acks must alone produce zero **before either Session.Close**. The typed
 CLI shares the original PID/SDK and existing mutation transition, with actual SDK
-joins and idle-credit checks. The bounded registry holds exactly eight possible
-watches (four stable and four topology), retaining every old identity through final
+joins and idle-credit checks. The bounded registry holds exactly eleven possible
+watches (four stable, four topology and three lifecycle), retaining every old identity through final
 product close and relay joins; attempt/event/watchdog limits are unchanged. No extra
 fixture, primary-loss action or CLI start is introduced. New-ID work in the same
 Runtime or PID/SDK must complete within five seconds after independent majority
@@ -364,10 +364,41 @@ runs concurrently with reply drops and old Lua receipt/join completion. Its firs
 successful usability timestamp fixes the new-work deadline; waiting for old work
 never resets that timestamp or grants a recovery head-start. The actual observer
 is cancelled and joined on failure as well as success. Election duration remains
-external, and every original Lua caller remains twelve seconds. Lua-specific
-cancellation/shutdown uncertainty, formal
-load/performance, companions, EKS and immutable promotion remain finite follow-ons;
-overall production qualification remains false.
+external, and every original Lua caller remains twelve seconds.
+
+The same four backend/typed plain/TLS lifetimes add a finite cancellation and
+shutdown pair, without another fixture, process, topology action or shutdown.
+An owned initial snapshot remains withheld with no replacement or commit sent
+and independent durable `(0,0,0)`. A concurrent healthy Lua peer's initial
+snapshot is also held when only the original caller is canceled. Only the healthy
+peer snapshot is then forwarded; it must complete `APPLIED` with independent
+durable `(1,0,1)` inside the same three-second cancellation/join gate.
+These are separate executions/transactions, **not a real coalesced
+batch**; the existing deterministic coalesced-peer cancellation controls remain.
+Actual execution/session or SDK/idle-credit retirement has the original three-second
+budget. The backend waits on its real Ticket with an independent live context,
+retains input/result credit after execution joins, and proves Ack alone releases
+that credit before its owning Session.Close. A typed pre-write cancellation is
+`NOT_APPLIED`/`CANCELLED`; a CLI transport interruption is reported as such,
+not promoted into a delivered typed receipt.
+
+The final pair co-holds a genuine successful majority Lua commit reply after
+independent durable `(1,0,1)` alongside the existing final read and, at the
+backend, the ready unacknowledged read. The sole existing Runtime.Close or actual
+CLI SIGTERM must join product ownership and exit zero within eight seconds using
+the unchanged default five-second drain and two-second retirement. Original
+12-second callers remain uncancelled. No observer release, deliberate reply drop
+or socket close manufactures product retirement: a passive read distinguishes
+natural product-side EOF from full forwarding or deliberate drop, and held relay
+tails are explicitly joined only after product/SDK retirement. A delivered typed
+commit receipt must be `UNKNOWN` with failure; absent a typed CLI receipt, the
+actual transport interruption is classified explicitly. There is one durable
+effect and no replacement or commit replay. Backend retained owners transition
+three to two by genuine Lua Ack before its Session.Close, then preserve the old
+ready-read Ack two-to-one and read Session.Close one-to-zero checks. All old
+mutation, abort/commit/topology and read oracles persist through product and relay
+joins. There is no Native Lua axis. Formal load/performance, companions, EKS and
+immutable promotion remain follow-ons; overall production qualification remains false.
 
 The separate bounded read observer watches only fixture `records` IDs across the
 three frontends and captures immutable first-find session identity. Cleanup

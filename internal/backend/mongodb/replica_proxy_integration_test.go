@@ -142,13 +142,15 @@ func TestMongoReplicaProxyDiscoveryRecovery(t *testing.T) {
 			proxy.CheckLuaCases(t, luaCases, "backend_before_read_retirement")
 			proxy.CheckLuaCommitCases(t, commitCases, "backend_before_read_retirement")
 			var readWatches []*testmongo.ReadWatch
+			var lifecycleWatches []*testmongo.LuaWatch
 			t.Run("sent_read_retirement", func(t *testing.T) {
 				readOptions := replicaReadRuntimeOptions{adapter: adapter, fixture: fixture, proxy: proxy, primary: primary, runtime: runtime, delegate: delegate}
-				readWatches = replicaReadRuntime(t, readOptions)
+				readWatches, lifecycleWatches = replicaReadRuntime(t, readOptions)
 			})
 			if t.Failed() {
 				return
 			}
+			proxy.CheckLuaLifecycleCases(t, lifecycleWatches, "backend_actual_runtime_Close")
 			proxy.CheckLuaCases(t, luaCases, "backend_actual_runtime_Close")
 			proxy.CheckLuaCommitCases(t, commitCases, "backend_actual_runtime_Close")
 			ownerZero(t, adapter.dialer)
@@ -173,6 +175,7 @@ func TestMongoReplicaProxyDiscoveryRecovery(t *testing.T) {
 				t.Logf("member=%d frontend=%s actual=%s joined_connections=%d observer_upstream=0", i, snapshot.Frontend, snapshot.Upstream, len(snapshot.Connections))
 			}
 			replicaFinalReplyLoss(t, heldOptions, watches)
+			proxy.CheckLuaLifecycleCases(t, lifecycleWatches, "backend_actual_relay_join")
 			proxy.CheckLuaCases(t, luaCases, "backend_actual_relay_join")
 			proxy.CheckLuaCommitCases(t, commitCases, "backend_actual_relay_join")
 			fixture.Close(t)

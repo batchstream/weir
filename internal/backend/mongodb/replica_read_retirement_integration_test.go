@@ -121,8 +121,10 @@ type replicaReadSubmitOptions struct {
 	index        uint64
 }
 
-func replicaReadRuntime(t *testing.T, opts replicaReadRuntimeOptions) []*testmongo.ReadWatch {
+func replicaReadRuntime(t *testing.T, opts replicaReadRuntimeOptions) ([]*testmongo.ReadWatch, []*testmongo.LuaWatch) {
 	t.Helper()
+	luaOptions := replicaLuaRuntimeOptions{runtime: opts.runtime, delegate: opts.delegate, fixture: opts.fixture, proxy: opts.proxy, primary: opts.primary}
+	luaWatches := replicaLuaLifecycleCancel(t, luaOptions)
 	a := opts.adapter
 	baseline := a.client.NumberSessionsInProgress()
 	if baseline != 0 {
@@ -238,6 +240,15 @@ func replicaReadRuntime(t *testing.T, opts replicaReadRuntimeOptions) []*testmon
 		t.Fatal("ready owner credit", readyOwned, readyCredit)
 	}
 	// Never Release this emission until Runtime.Close has joined the publisher.
+	lua := replicaLuaLifecycleStart(t, luaOptions, testmongo.LuaRetireCommit)
+	if err := lua.watch.ValidateCommitHeld(); err != nil {
+		t.Fatal(err)
+	}
+	luaCharged := runtime.Snapshot()
+	luaCredit := runtime.ExecutionMemory().Snapshot()
+	if luaCharged.Retained != 2 || luaCharged.Active != 1 || luaCredit.Count != 2 || luaCharged.WorkingBytes <= 0 || !lua.mirror.actualTicket.Load() {
+		t.Fatal("retirement Lua real charged Ticket", luaCharged, luaCredit)
+	}
 	active := arm("runtime-retire-read")
 	activeCaller, stopActive := context.WithTimeout(t.Context(), 12*time.Second)
 	defer stopActive()
@@ -247,10 +258,10 @@ func replicaReadRuntime(t *testing.T, opts replicaReadRuntimeOptions) []*testmon
 	replicaReadBarrier(t, active, false, time.Now().Add(3*time.Second))
 	before := runtime.Snapshot()
 	memory := runtime.ExecutionMemory().Snapshot()
-	if before.Active != 1 || before.Retained != 2 || before.Ready != 1 || before.Publishers != 1 || before.ResultBytes <= 0 || memory.Count != 2 || memory.UsedBytes == 0 {
+	if before.Active != 2 || before.Retained != 3 || before.Ready != 1 || before.Publishers != 1 || before.ResultBytes <= 0 || memory.Count != 3 || memory.UsedBytes == 0 {
 		t.Fatal("real active+ready charged owners", before, memory)
 	}
-	if activeCaller.Err() != nil || readyCaller.Err() != nil {
+	if activeCaller.Err() != nil || readyCaller.Err() != nil || lua.ctx.Err() != nil {
 		t.Fatal("retirement callers expired before close")
 	}
 	t.Logf("sent_read phase=backend_before_close snapshot=%+v memory=%+v sessions=%d emission_held=true", before, memory, a.client.NumberSessionsInProgress())
@@ -262,7 +273,7 @@ func replicaReadRuntime(t *testing.T, opts replicaReadRuntimeOptions) []*testmon
 	if err != nil || elapsed < 5*time.Second || elapsed > 8*time.Second {
 		t.Fatal("full default drain/retirement actual close", elapsed, err)
 	}
-	if activeCaller.Err() != nil || readyCaller.Err() != nil {
+	if activeCaller.Err() != nil || readyCaller.Err() != nil || lua.ctx.Err() != nil {
 		t.Fatal("original 12s caller expired during Runtime.Close")
 	}
 	replicaReadBarrier(t, active, true, started.Add(8*time.Second))
@@ -270,13 +281,13 @@ func replicaReadRuntime(t *testing.T, opts replicaReadRuntimeOptions) []*testmon
 	if s := active.Snapshot(); s.Closed || s.Joined != 0 {
 		t.Fatal("observer intervened before actual Runtime.Close", s)
 	}
-	if delegate.entered.Load() != executionBaseline+3 || delegate.returned.Load() != executionBaseline+3 || delegate.closeEntered.Load() != 1 || delegate.closeReturned.Load() != 1 || a.client.NumberSessionsInProgress() != baseline {
+	if delegate.entered.Load() != executionBaseline+4 || delegate.returned.Load() != executionBaseline+4 || delegate.closeEntered.Load() != 1 || delegate.closeReturned.Load() != 1 || a.client.NumberSessionsInProgress() != baseline {
 		t.Fatal("actual adapter/execute/session joins", delegate.entered.Load(), delegate.returned.Load(), delegate.closeReturned.Load(), a.client.NumberSessionsInProgress())
 	}
 	ownerZero(t, a.dialer)
 	after := runtime.Snapshot()
 	credit := runtime.ExecutionMemory().Snapshot()
-	if !after.Closed || after.Active != 0 || after.Pending != 0 || after.WorkingBytes != 0 || after.Publishers != 0 || after.Retained != 2 || after.Ready != 2 || after.ResultBytes <= 0 || credit.Count != 2 || credit.Terminal != 2 || credit.UsedBytes == 0 || credit.InputUsedBytes <= readyCredit.InputUsedBytes || credit.InputReservedBytes == 0 {
+	if !after.Closed || after.Active != 0 || after.Pending != 0 || after.WorkingBytes != 0 || after.Publishers != 0 || after.Retained != 3 || after.Ready != 3 || after.ResultBytes <= 0 || credit.Count != 3 || credit.Terminal != 3 || credit.UsedBytes == 0 || credit.InputUsedBytes <= readyCredit.InputUsedBytes || credit.InputReservedBytes == 0 {
 		t.Fatal("real postclose retained credit", after, credit)
 	}
 	wait, stop = context.WithTimeout(t.Context(), time.Second)
@@ -286,6 +297,34 @@ func replicaReadRuntime(t *testing.T, opts replicaReadRuntimeOptions) []*testmon
 		t.Fatal("retired read evidence", event, err)
 	}
 	t.Logf("sent_read phase=backend_after_close elapsed=%s execution_adapter_publisher_join=true sessions_baseline=%d raw_owner=%+v snapshot=%+v memory=%+v", elapsed, baseline, a.dialer.snapshot(), after, credit)
+	// Retire the additional Lua owner explicitly before preserving the original
+	// ready-read Ack 2->1 and owning Session.Close 1->0 assertions.
+	wait, stop = context.WithDeadline(t.Context(), started.Add(8*time.Second))
+	luaResult := replicaLuaLifecycleReceipt(t, wait, lua, true)
+	if err := lua.watch.WaitLifecycleEOF(wait); err != nil {
+		t.Fatal("shutdown Lua EOF observation", err)
+	}
+	stop()
+	if luaResult.GetOutcome() != pb.MutationOutcome_UNKNOWN || luaResult.GetFailure() == nil {
+		t.Fatal("retired Lua commit uncertainty", luaResult)
+	}
+	if err := lua.watch.ValidateLifecycle(false); err != nil {
+		t.Fatal("actual shutdown natural Lua EOF", err, lua.watch.Snapshot())
+	}
+	lua.ticket.Ack()
+	withoutLua := runtime.Snapshot()
+	withoutLuaCredit := runtime.ExecutionMemory().Snapshot()
+	if withoutLua.Retained != 2 || withoutLua.Ready != 2 || withoutLuaCredit.Count != 2 || withoutLuaCredit.Terminal != 2 || withoutLua.ResultBytes <= 0 || withoutLua.ResultBytes >= after.ResultBytes || withoutLuaCredit.InputUsedBytes != credit.InputUsedBytes-(luaCredit.InputUsedBytes-readyCredit.InputUsedBytes) || withoutLuaCredit.InputReservedBytes != credit.InputReservedBytes {
+		t.Fatal("Lua actual Ack 3->2 before Session.Close", withoutLua, withoutLuaCredit)
+	}
+	replicaLuaLifecycleForget(luaOptions, lua)
+	joinLua, stop := context.WithDeadline(t.Context(), started.Add(8*time.Second))
+	if err := lua.watch.CloseLifecycleTail(joinLua); err != nil {
+		t.Fatal(err)
+	}
+	stop()
+	luaWatches = append(luaWatches, lua.watch)
+	after, credit = withoutLua, withoutLuaCredit
 	// The shared input reservation remains charged while the peer is live.
 	// Assert actual per-owner lease/input/result credit, not a fabricated
 	// reduction of that shared reservation on the first acknowledgment.
@@ -304,5 +343,5 @@ func replicaReadRuntime(t *testing.T, opts replicaReadRuntimeOptions) []*testmon
 	}
 	emission.Release()
 	t.Logf("sent_read case=backend_retirement real_session_Close_1_to_0=true snapshot=%+v memory=%+v", zero, zeroCredit)
-	return watches
+	return watches, luaWatches
 }

@@ -245,6 +245,11 @@ func (p *Proxy) relay(client net.Conn) {
 	tail := &readTail{client: client, done: make(chan struct{})}
 	if p.reads != nil {
 		defer p.reads.joined(tail)
+	} else {
+		defer close(tail.done)
+	}
+	if p.lua != nil {
+		defer p.lua.lifecycleJoined(tail)
 	}
 	defer p.closeConnection(client)
 	defer func() {
@@ -359,7 +364,7 @@ func (p *Proxy) relay(client net.Conn) {
 		}
 		var luaMatch *luaMatch
 		if p.lua != nil {
-			opts := luaBeginOptions{message: request, member: p.memberIndex}
+			opts := luaBeginOptions{message: request, member: p.memberIndex, peer: client.RemoteAddr().String()}
 			luaMatch, err = p.lua.begin(opts)
 			if err != nil {
 				return
@@ -456,6 +461,9 @@ func (p *Proxy) relay(client net.Conn) {
 		}
 		if luaMatch != nil {
 			if !p.lua.received(luaMatch, response) {
+				return
+			}
+			if p.lua.passiveLifecycle(luaMatch, client, tail) {
 				return
 			}
 			released, drop := p.lua.hold(luaMatch, p.done, replicaLuaWatchdog)
