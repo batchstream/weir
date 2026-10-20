@@ -125,7 +125,9 @@ func TestMongoReplicaProxyDiscoveryRecovery(t *testing.T) {
 			})
 			luaOptions := replicaLuaRuntimeOptions{runtime: runtime, delegate: delegate, fixture: fixture, proxy: proxy, primary: primary}
 			luaCases := replicaLuaRuntime(t, luaOptions)
+			commitCases := replicaLuaCommitRuntime(t, luaOptions, luaCases)
 			proxy.CheckLuaCases(t, luaCases, "backend_before_read_retirement")
+			proxy.CheckLuaCommitCases(t, commitCases, "backend_before_read_retirement")
 			var readWatches []*testmongo.ReadWatch
 			t.Run("sent_read_retirement", func(t *testing.T) {
 				readOptions := replicaReadRuntimeOptions{adapter: adapter, fixture: fixture, proxy: proxy, primary: primary, runtime: runtime, delegate: delegate}
@@ -135,6 +137,7 @@ func TestMongoReplicaProxyDiscoveryRecovery(t *testing.T) {
 				return
 			}
 			proxy.CheckLuaCases(t, luaCases, "backend_actual_runtime_Close")
+			proxy.CheckLuaCommitCases(t, commitCases, "backend_actual_runtime_Close")
 			ownerZero(t, adapter.dialer)
 			replicaFinalReplyLoss(t, heldOptions, watches)
 			for _, watch := range readWatches {
@@ -158,6 +161,7 @@ func TestMongoReplicaProxyDiscoveryRecovery(t *testing.T) {
 			}
 			replicaFinalReplyLoss(t, heldOptions, watches)
 			proxy.CheckLuaCases(t, luaCases, "backend_actual_relay_join")
+			proxy.CheckLuaCommitCases(t, commitCases, "backend_actual_relay_join")
 			fixture.Close(t)
 		})
 	}

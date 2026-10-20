@@ -110,10 +110,13 @@ func TestMongoReplicaCLIReplyLoss(t *testing.T) {
 					replicaCLIIdle(t, service, time.Now().Add(3*time.Second))
 					replyLossOracles(t, lifetime, "before_CLI_exit")
 					var luaCases []testmongo.LuaCase
+					var commitCases []testmongo.LuaCommitCase
 					if kind == "bulkWrite" {
 						luaCases = replicaCLILua(t, lifetime)
+						commitCases = replicaCLILuaCommit(t, lifetime, luaCases)
 					}
 					proxy.CheckLuaCases(t, luaCases, "CLI_before_read_retirement")
+					proxy.CheckLuaCommitCases(t, commitCases, "CLI_before_read_retirement")
 					var terminal processStopResult
 					var readWatches []*testmongo.ReadWatch
 					if kind == "bulkWrite" {
@@ -135,6 +138,7 @@ func TestMongoReplicaCLIReplyLoss(t *testing.T) {
 					}
 					replicaClosedOwner(t, service)
 					proxy.CheckLuaCases(t, luaCases, "CLI_actual_Wait_and_owner_zero")
+					proxy.CheckLuaCommitCases(t, commitCases, "CLI_actual_Wait_and_owner_zero")
 					replyLossOracles(t, lifetime, "after_actual_CLI_exit")
 					for _, watch := range readWatches {
 						replicaCLIReadFacts(t, watch, "parent_actual_Wait_and_product_owner_zero")
@@ -157,6 +161,7 @@ func TestMongoReplicaCLIReplyLoss(t *testing.T) {
 					}
 					replyLossOracles(t, lifetime, "after_relay_join")
 					proxy.CheckLuaCases(t, luaCases, "CLI_actual_relay_join")
+					proxy.CheckLuaCommitCases(t, commitCases, "CLI_actual_relay_join")
 					ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
 					err = fixture.CheckOriginalAddresses(ctx)
 					cancel()

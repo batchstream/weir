@@ -38,6 +38,7 @@ type LuaAttemptSnapshot struct {
 	WriteRequests, WriteItems, WriteReplies, WriteForwarded                int
 	AbortRequests, AbortWrites, AbortReplies, AbortForwarded, AbortDropped int
 	CommitRequests, CommitWrites, CommitReplies, CommitForwarded           int
+	CommitDropped                                                          int
 	SnapshotHeld, AbortHeld, Conflict, ConflictCommand, TransientLabel     bool
 	ConflictCode, AbortCode, LabelCount                                    int
 	CandidateN, CandidateExternal, CandidateCount                          int64
@@ -64,6 +65,7 @@ type LuaWatch struct {
 	armed     bool
 	deadline  time.Time
 	snapshot  LuaSnapshot
+	commit    *luaCommitState
 	snapshots [replicaLuaAttempts]luaGate
 	abort     luaGate
 }
@@ -254,7 +256,7 @@ func (r *luaRegistry) begin(opts luaBeginOptions) (*luaMatch, error) {
 		matched = w
 		attempt = bound
 		if name == "find" {
-			if w.snapshot.Completed || !owned || len(ids) != 1 || !w.armed || opts.member != w.member || !present || sessionErr != nil || !txnOK || w.snapshot.Attempts >= replicaLuaAttempts || bound >= 0 || w.snapshot.Attempts > 0 && session != w.snapshot.SessionDigest {
+			if w.snapshot.Completed || !owned || len(ids) != 1 || !w.armed || opts.member != w.member || !present || sessionErr != nil || !txnOK || w.snapshot.Attempts >= replicaLuaAttempts || w.commit != nil && w.snapshot.Attempts != 0 || bound >= 0 || w.snapshot.Attempts > 0 && session != w.snapshot.SessionDigest {
 				r.failure = "Lua snapshot identity or retry mismatch"
 				return nil, errReplicaProxyWire
 			}
@@ -335,13 +337,17 @@ func (r *luaRegistry) begin(opts luaBeginOptions) (*luaMatch, error) {
 		}
 	case "abortTransaction":
 		s.AbortRequests++
-		if attempt != 0 || s.AbortRequests != 1 || !s.Conflict || s.WriteItems != 1 || s.WriteReplies != 1 || s.WriteForwarded != 1 {
+		if w.commit != nil || attempt != 0 || s.AbortRequests != 1 || !s.Conflict || s.WriteItems != 1 || s.WriteReplies != 1 || s.WriteForwarded != 1 {
 			r.failure = "Lua abort before settled conflict"
 			return nil, errReplicaProxyWire
 		}
 	case "commitTransaction":
 		s.CommitRequests++
-		if attempt != 1 || s.CommitRequests != 1 || s.WriteReplies != 1 || s.WriteForwarded != 1 || s.Conflict {
+		if w.commit != nil {
+			if !w.beginCommitLocked(doc) {
+				return nil, errReplicaProxyWire
+			}
+		} else if attempt != 1 || s.CommitRequests != 1 || s.WriteReplies != 1 || s.WriteForwarded != 1 || s.Conflict {
 			r.failure = "unexpected Lua commit"
 			return nil, errReplicaProxyWire
 		}
@@ -437,7 +443,7 @@ func (r *luaRegistry) received(m *luaMatch, response []byte) bool {
 	case "abortTransaction":
 		expected = s.AbortWrites == 1 && s.AbortReplies == 0
 	case "commitTransaction":
-		expected = s.CommitWrites == 1 && s.CommitReplies == 0
+		expected = s.CommitWrites == s.CommitRequests && s.CommitReplies == s.CommitRequests-1
 	}
 	if !expected {
 		r.failure = "Lua reply without unique full upstream write"
@@ -467,7 +473,7 @@ func (r *luaRegistry) received(m *luaMatch, response []byte) bool {
 			close(w.snapshots[m.attempt].held)
 		}
 	case "bulkWrite":
-		if m.attempt == 0 {
+		if m.attempt == 0 && w.commit == nil {
 			s.Conflict, s.ConflictCommand, s.LabelCount, s.TransientLabel = luaConflict(doc)
 			valid = s.Conflict
 			if valid {
@@ -496,6 +502,9 @@ func (r *luaRegistry) received(m *luaMatch, response []byte) bool {
 		valid = operationNumber(doc.Lookup("ok"), 1)
 		if valid {
 			s.CommitReplies++
+			if w.commit != nil && s.CommitReplies == 1 {
+				close(w.commit.gate.held)
+			}
 		}
 	}
 	if !valid {
@@ -507,6 +516,9 @@ func (r *luaRegistry) received(m *luaMatch, response []byte) bool {
 // hold never treats observer timeout or cleanup interruption as a successful
 // release/drop. The original bytes are written by the relay only after release.
 func (r *luaRegistry) hold(m *luaMatch, done <-chan struct{}, timeout time.Duration) (bool, bool) {
+	if m != nil && m.watch.commit != nil && m.command == "commitTransaction" {
+		return m.watch.holdCommit(done, timeout)
+	}
 	if m == nil || m.command != "find" && m.command != "abortTransaction" {
 		return true, false
 	}
@@ -572,7 +584,11 @@ func (r *luaRegistry) finishLocked(m *luaMatch, drop bool) {
 			s.AbortForwarded++
 		}
 	case "commitTransaction":
-		s.CommitForwarded++
+		if drop {
+			s.CommitDropped++
+		} else {
+			s.CommitForwarded++
+		}
 	}
 }
 
