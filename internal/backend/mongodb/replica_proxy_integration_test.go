@@ -10,6 +10,7 @@ import (
 
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 	"github.com/batchstream/weir/internal/execution"
+	"github.com/batchstream/weir/internal/store"
 	"github.com/batchstream/weir/internal/testutil"
 	"github.com/batchstream/weir/internal/testutil/testmongo"
 	"go.mongodb.org/mongo-driver/v2/bson"
@@ -105,14 +106,35 @@ func TestMongoReplicaProxyDiscoveryRecovery(t *testing.T) {
 			if adapter.client.NumberSessionsInProgress() != 0 {
 				t.Fatal("completed work retained a checked-out session")
 			}
+			// One actual Runtime owns this adapter from Lua through read retirement.
+			delegate := &replicaReadAdapter{Adapter: adapter}
+			runtime, err := store.New(delegate, store.DefaultLimits(), nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() {
+				if !t.Failed() {
+					return
+				}
+				proxy.Close()
+				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer cancel()
+				if err := runtime.Close(ctx); err != nil {
+					t.Error(err)
+				}
+			})
+			luaOptions := replicaLuaRuntimeOptions{runtime: runtime, delegate: delegate, fixture: fixture, proxy: proxy, primary: primary}
+			luaCases := replicaLuaRuntime(t, luaOptions)
+			proxy.CheckLuaCases(t, luaCases, "backend_before_read_retirement")
 			var readWatches []*testmongo.ReadWatch
 			t.Run("sent_read_retirement", func(t *testing.T) {
-				readOptions := replicaReadRuntimeOptions{adapter: adapter, fixture: fixture, proxy: proxy, primary: primary}
+				readOptions := replicaReadRuntimeOptions{adapter: adapter, fixture: fixture, proxy: proxy, primary: primary, runtime: runtime, delegate: delegate}
 				readWatches = replicaReadRuntime(t, readOptions)
 			})
 			if t.Failed() {
 				return
 			}
+			proxy.CheckLuaCases(t, luaCases, "backend_actual_runtime_Close")
 			ownerZero(t, adapter.dialer)
 			replicaFinalReplyLoss(t, heldOptions, watches)
 			for _, watch := range readWatches {
@@ -135,6 +157,7 @@ func TestMongoReplicaProxyDiscoveryRecovery(t *testing.T) {
 				t.Logf("member=%d frontend=%s actual=%s joined_connections=%d observer_upstream=0", i, snapshot.Frontend, snapshot.Upstream, len(snapshot.Connections))
 			}
 			replicaFinalReplyLoss(t, heldOptions, watches)
+			proxy.CheckLuaCases(t, luaCases, "backend_actual_relay_join")
 			fixture.Close(t)
 		})
 	}

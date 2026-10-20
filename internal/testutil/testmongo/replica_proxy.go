@@ -12,6 +12,10 @@ import (
 
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
+	"go.mongodb.org/mongo-driver/v2/mongo/options"
+	"go.mongodb.org/mongo-driver/v2/mongo/readconcern"
+	"go.mongodb.org/mongo-driver/v2/mongo/readpref"
+	"go.mongodb.org/mongo-driver/v2/mongo/writeconcern"
 )
 
 // ReplicaProxy observes only application connections to an owned Replica. Real
@@ -22,6 +26,7 @@ type ReplicaProxy struct {
 	members    [3]*Proxy
 	operations *operationRegistry
 	reads      *readRegistry
+	lua        *luaRegistry
 }
 
 func StartReplicaProxy(t *testing.T, fixture *Replica) *ReplicaProxy {
@@ -57,9 +62,10 @@ func StartReplicaProxy(t *testing.T, fixture *Replica) *ReplicaProxy {
 	}
 	registry := &operationRegistry{}
 	reads := &readRegistry{namespace: fixture.DB + ".records"}
-	proxy := &ReplicaProxy{fixture: fixture, mapping: mapping, operations: registry, reads: reads}
+	lua := &luaRegistry{}
+	proxy := &ReplicaProxy{fixture: fixture, mapping: mapping, operations: registry, reads: reads, lua: lua}
 	for i, listener := range listeners {
-		opts := proxyOptions{uri: "mongodb://" + actual[i], listener: listener, discovery: mapping, operations: registry, reads: reads, memberIndex: i}
+		opts := proxyOptions{uri: "mongodb://" + actual[i], listener: listener, discovery: mapping, operations: registry, reads: reads, lua: lua, memberIndex: i}
 		if fixture.secure {
 			host, _, _ := net.SplitHostPort(actual[i])
 			opts.serverTLS = fixture.proxyTLS[i]
@@ -229,4 +235,77 @@ func (p *ReplicaProxy) CheckWireCoverage(primary int, command string) error {
 func (p *ReplicaProxy) WatchRead(id string) (*ReadWatch, error) { return p.reads.watch(id) }
 func (p *ReplicaProxy) ArmReadHold(member int, watch *ReadWatch) error {
 	return p.reads.arm(member, watch)
+}
+
+func (p *ReplicaProxy) WatchLua(op LuaOperation) (*LuaWatch, error) { return p.lua.watch(op) }
+func (p *ReplicaProxy) ArmLuaConflict(member int, watch *LuaWatch) error {
+	return p.lua.arm(member, watch)
+}
+
+// LuaCase keeps the independent durable and wire oracles alive through the
+// original product retirement and relay joins; it never resubmits an old ID.
+type LuaCase struct {
+	Watch      *LuaWatch
+	Confirmed  bool
+	RecoveryID string
+}
+type LuaLedger struct{ N, External, Candidate int64 }
+
+func (p *ReplicaProxy) SeedLua(t *testing.T, ctx context.Context, w *LuaWatch) {
+	t.Helper()
+	opts := options.Collection().SetWriteConcern(writeconcern.Majority())
+	seed := bson.D{{Key: "_id", Value: w.operation.ID}, {Key: "n", Value: int32(0)}, {Key: "external", Value: int32(0)}, {Key: "candidate", Value: int32(0)}}
+	_, err := p.fixture.Admin.Database(p.fixture.DB).Collection("records", opts).InsertOne(ctx, seed)
+	if err != nil {
+		t.Fatal("owned Lua seed", err)
+	}
+}
+func (p *ReplicaProxy) ExternalLuaUpdate(t *testing.T, ctx context.Context, w *LuaWatch) {
+	t.Helper()
+	opts := options.Collection().SetWriteConcern(writeconcern.Majority())
+	filter := bson.D{{Key: "_id", Value: w.operation.ID}}
+	fields := bson.D{{Key: "n", Value: int32(20)}, {Key: "external", Value: int32(1)}, {Key: "candidate", Value: int32(0)}}
+	update := bson.D{{Key: "$set", Value: fields}}
+	result, err := p.fixture.Admin.Database(p.fixture.DB).Collection("records", opts).UpdateOne(ctx, filter, update)
+	if err != nil || result == nil || result.MatchedCount != 1 || result.ModifiedCount != 1 {
+		t.Fatal("independent majority Lua update", result, err)
+	}
+	expected := LuaLedger{N: 20, External: 1, Candidate: 0}
+	p.CheckLuaLedger(t, ctx, w, expected)
+}
+func (p *ReplicaProxy) CheckLuaLedger(t *testing.T, ctx context.Context, w *LuaWatch, expected LuaLedger) {
+	t.Helper()
+	opts := options.Collection().SetReadConcern(readconcern.Majority()).SetReadPreference(readpref.Primary())
+	filter := bson.D{{Key: "_id", Value: w.operation.ID}}
+	var actual LuaLedger
+	err := p.fixture.Admin.Database(p.fixture.DB).Collection("records", opts).FindOne(ctx, filter).Decode(&actual)
+	if err != nil || actual != expected {
+		t.Fatal("independent primary majority Lua ledger", actual, expected, err)
+	}
+}
+func (p *ReplicaProxy) CheckLuaCases(t *testing.T, cases []LuaCase, phase string) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
+	defer cancel()
+	for _, c := range cases {
+		if err := c.Watch.ValidateFinished(c.Confirmed); err != nil {
+			t.Fatal("persistent Lua wire proof", phase, c.Watch.Snapshot())
+		}
+		expected := LuaLedger{N: 20, External: 1}
+		if c.Confirmed {
+			expected.N = 21
+			expected.Candidate = 1
+		}
+		p.CheckLuaLedger(t, ctx, c.Watch, expected)
+		if c.RecoveryID != "" {
+			opts := options.Collection().SetReadConcern(readconcern.Majority()).SetReadPreference(readpref.Primary())
+			filter := bson.D{{Key: "_id", Value: c.RecoveryID}}
+			var actual LuaLedger
+			err := p.fixture.Admin.Database(p.fixture.DB).Collection("records", opts).FindOne(ctx, filter).Decode(&actual)
+			if err != nil || actual.N != 1 {
+				t.Fatal("persistent Lua new-work majority effect", phase, actual, err)
+			}
+		}
+		t.Logf("lua_uncertainty phase=%s confirmed_abort=%t observation=%+v durable=%+v", phase, c.Confirmed, c.Watch.Snapshot(), expected)
+	}
 }
