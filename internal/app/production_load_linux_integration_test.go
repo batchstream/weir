@@ -177,7 +177,7 @@ func runNativeProductionLoad(t *testing.T, inputs *testexecution.ValidatedInputs
 			t.Error(err)
 		}
 	})
-	owned := testsearch.OwnedEndpoint{URL: os.Getenv("WEIR_NATIVE_LOAD_ORACLE"), Owner: os.Getenv("WEIR_NATIVE_LOAD_OWNER"), Product: "elasticsearch"}
+	owned := testsearch.OwnedEndpoint{URL: os.Getenv("WEIR_NATIVE_LOAD_ORACLE"), Owner: os.Getenv("WEIR_NATIVE_LOAD_OWNER"), Product: inputs.Profile().Backends[1].Product}
 	search := testsearch.OpenOwned(t, owned)
 	datasets := seedProductionQualificationDatasets(t, fixture, search)
 	process := &memoryRecoveryCLI{address: address, diagnostic: diagnostics, capacity: 1 << 30, automatic: true, stores: 2}

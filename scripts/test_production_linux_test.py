@@ -205,15 +205,16 @@ class Contracts(unittest.TestCase):
                 if network_mode == "host":
                     networks = {"host": dict(NetworkID="")}
                 if self.opts.profile in M.FORMAL_PROFILES and name.endswith("-backend"):
-                    mounts.append(dict(Destination="/usr/share/elasticsearch/data", Source=str(self.opts.output / "es-data"), RW=True))
+                    mounts.append(dict(Destination="/usr/share/" + M.backend_product(self.opts)[0] + "/data", Source=str(self.opts.output / "es-data"), RW=True))
                 info = dict(Id=identity, Name="/" + name, Owner=self.controller.owner, Image="sha256:" + "b" * 64, State=state, Memory=int(flags["--memory"]), Swap=int(flags["--memory-swap"]), CPU=2_000_000_000, PIDs=int(flags["--pids-limit"]), Cgroupns="private", Readonly="--read-only" in args, User=flags["--user"], Caps=["ALL"], Security=["no-new-privileges:true"], Privileged=False, PidMode="", Networks=networks, Ports=ports, Mounts=mounts)
                 info["NetworkMode"] = network_mode
                 image_index = next(i for i, arg in enumerate(args) if arg in (self.controller.es_ref, self.controller.base_ref))
                 info["Cmd"] = args[image_index + 1:]
                 info["Entrypoint"] = ["/weir"] if name.endswith("-cli") else ["/bin/tini", "--", "/usr/local/bin/docker-entrypoint.sh"]
-                if name.endswith("-backend") and self.opts.profile == M.OS_PROFILE:
+                if name.endswith("-backend") and M.backend_product(self.opts)[0] == "opensearch":
                     info["Entrypoint"] = ["./opensearch-docker-entrypoint.sh"]
-                    info["Cmd"] = ["opensearch"]
+                    if not info["Cmd"]:
+                        info["Cmd"] = ["opensearch"]
                 info["Tmpfs"] = dict(arg[len("--tmpfs="):].split(":", 1) for arg in args if arg.startswith("--tmpfs="))
             self.resources[name] = info
             if self.failure == "partial-" + args[0]:
@@ -298,6 +299,13 @@ class Contracts(unittest.TestCase):
             self.controller.execute()
 
     def test_formal_load_uses_owned_host_cli_and_preserves_finite_budget(self):
+        self.formal_load_contract("elasticsearch")
+
+    def test_opensearch_formal_load_uses_same_workload_and_controls(self):
+        self.formal_load_contract("opensearch")
+
+    def formal_load_contract(self, product):
+        self.opts.product = product
         self.opts.profile = M.LOAD_PROFILE
         self.controller = M.Controller(self.opts)
         self.controller.owner = "weir-finite-" + "1" * 32
@@ -322,7 +330,8 @@ class Contracts(unittest.TestCase):
         self.assertEqual(stages, ["preflight", "load"])
         profile = json.loads((self.opts.output / "profile.json").read_text())
         self.assertEqual((profile["suite"], profile["intent"]), ("load", "formal"))
-        self.assertEqual([b["product"] for b in profile["backends"]], ["mongodb", "elasticsearch"])
+        self.assertEqual([b["product"] for b in profile["backends"]], ["mongodb", product])
+        self.formal_backend_contract(product)
         cli = json.loads((self.opts.output / "cli-container.json").read_text())
         self.assertEqual(cli["NetworkMode"], "host")
         self.assertEqual(cli["Ports"], {})
@@ -336,6 +345,13 @@ class Contracts(unittest.TestCase):
         self.assertLessEqual(finite.deadline - M.time.monotonic(), 240)
 
     def test_formal_fault_owns_proxy_routes_actual_controls_signal_and_cleanup(self):
+        self.formal_fault_contract("elasticsearch")
+
+    def test_opensearch_formal_fault_uses_same_cases_and_controls(self):
+        self.formal_fault_contract("opensearch")
+
+    def formal_fault_contract(self, product):
+        self.opts.product = product
         self.opts.profile = M.FAULT_PROFILE
         self.controller = M.Controller(self.opts)
         self.controller.owner = "weir-finite-" + "1" * 32
@@ -391,6 +407,7 @@ class Contracts(unittest.TestCase):
         with patch.object(M, "native_preflight", return_value="amd64"), patch.object(M, "process_snapshot", side_effect=snapshot), patch.object(self.controller, "docker", side_effect=self.command), patch.object(self.controller, "driver", side_effect=driver), patch.object(self.controller, "wait_http"), patch.object(self.controller, "start_mongo", side_effect=mongo), patch.object(self.controller, "mongo_guard"):
             self.controller.execute()
         self.assertEqual(stages, ["preflight", "fault"])
+        self.formal_backend_contract(product)
         cli = json.loads((self.opts.output / "cli-container.json").read_text())
         self.assertEqual((cli["Memory"], cli["Swap"], cli["CPU"], cli["PIDs"]), (512 << 20, 512 << 20, 2_000_000_000, 96))
         self.assertEqual(cli["NetworkMode"], "host")
@@ -399,6 +416,51 @@ class Contracts(unittest.TestCase):
         self.assertFalse(result["qualification"])
         self.assertEqual(self.resources, {})
         self.assertTrue((self.opts.output / "load-storage-cleanup.json").is_file())
+
+    def formal_backend_contract(self, product):
+        backend = json.loads((self.opts.output / "backend-container.json").read_text())
+        destination = "/usr/share/" + product + "/data"
+        mounts = [m for m in backend["Mounts"] if m["Destination"] == destination]
+        self.assertEqual(len(mounts), 1)
+        self.assertEqual(mounts[0]["Source"], str(self.opts.output / "es-data"))
+        self.assertTrue(mounts[0]["RW"])
+        self.assertNotIn(destination, backend["Tmpfs"])
+        self.assertEqual(backend["Caps"], ["ALL"])
+        self.assertEqual(backend["Security"], ["no-new-privileges:true"])
+        cli = json.loads((self.opts.output / "cli-container.json").read_text())
+        self.assertTrue(cli["Readonly"])
+        if product == "opensearch":
+            self.assertFalse(backend["Readonly"])
+            self.assertEqual(backend["User"], "1000:1000")
+            self.assertEqual(backend["Entrypoint"], ["./opensearch-docker-entrypoint.sh"])
+            self.assertEqual(backend["Cmd"], M.OS_LOAD_COMMAND)
+            self.assertEqual(M.OS_LOAD_COMMAND, ["/bin/bash", "-euc", "umask 0002\nexec ./opensearch-docker-entrypoint.sh opensearch"])
+            expected = {p: v for p, v in M.OS_TMPFS.items() if p != destination}
+            self.assertEqual(backend["Tmpfs"], expected)
+            images = json.loads((self.opts.output / "images.json").read_text())
+            self.assertEqual(images["backend_reference"], M.OS_REPOSITORY + "@" + M.OS_PINS["amd64"])
+        self.assertTrue((self.opts.output / "load-storage-cleanup.json").is_file())
+        self.assertFalse((self.opts.output / "es-data").exists())
+
+    def test_product_selection_is_bounded_and_only_formal(self):
+        for product in ("", "http://127.0.0.1:9200", "opensearch-3.4.0", "other"):
+            self.opts.product = product
+            with self.assertRaisesRegex(RuntimeError, "unsupported formal backend product"):
+                M.backend_product(self.opts)
+        for profile in (M.PROFILE, M.OS_PROFILE):
+            self.opts.profile = profile
+            self.opts.product = "opensearch"
+            with self.assertRaisesRegex(RuntimeError, "only supported for formal"):
+                M.backend_product(self.opts)
+
+    def test_opensearch_formal_wrapper_execs_stock_command_with_cleanup_umask(self):
+        entrypoint = self.root / "opensearch-docker-entrypoint.sh"
+        entrypoint.write_text('#!/bin/bash\nset -eu\ntest "$1" = opensearch\nprintf "%s %s\\n" "$$" "$(umask)"\n')
+        entrypoint.chmod(0o700)
+        child = subprocess.Popen(M.OS_LOAD_COMMAND, cwd=self.root, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        stdout, stderr = child.communicate(timeout=5)
+        self.assertEqual(child.returncode, 0, stderr)
+        self.assertEqual(stdout.decode().split(), [str(child.pid), "0002"])
 
     def test_fault_observation_is_outside_actual_signal_deadline(self):
         for shutdown_seconds in (5, 8.1):
@@ -1507,6 +1569,15 @@ class CompletionTests(unittest.TestCase):
         job = workflow.split("  native-linux-formal:", 1)[1].split("  native-linux-finite:", 1)[0]
         for required in ("ubuntu-24.04", "timeout-minutes: 25", "test --mongo", "envelope: 18m", "envelope: 8m", "suite: load", "suite: fault", "--profile=linux-native-${{ matrix.suite }}-v1", '--mongod="$binary"', "if: always()"):
             self.assertIn(required, job)
+        self.assertIn("product: [elasticsearch, opensearch]", job)
+        self.assertIn("suite: [load, fault]", job)
+        self.assertIn("--product=${{ matrix.product }}", job)
+        self.assertIn(M.OS_REPOSITORY + "@" + M.OS_PINS["amd64"], job)
+        self.assertIn(M.ES_REPOSITORY + "@" + M.ES_PINS["amd64"], job)
+        self.assertIn("name: native-linux-formal-${{ matrix.product }}-${{ matrix.suite }}", job)
+        self.assertIn("name: native-linux-amd64-formal-${{ matrix.product }}-${{ matrix.suite }}-", job)
+        self.assertNotIn(".testdata/native-linux-formal-${{ matrix.suite }}", job)
+        self.assertNotIn("smoke", job)
         self.assertNotIn("promote", job)
         self.assertNotIn("server.lock", job)
         self.assertEqual(M.driver_name(M.LOAD_PROFILE, "preflight"), "TestProductionLinuxLoadPreflight")

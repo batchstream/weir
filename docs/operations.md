@@ -251,8 +251,8 @@ immutable legacy specification for tooling to serialize:
 | `legacy-desktop-load-v1` | load / legacy; 30s warmup + 600s measurement | Desktop reproduction only |
 | `legacy-desktop-smoke-v1` | load / smoke; 30s warmup + 120s measurement | Desktop smoke only |
 | `legacy-desktop-fault-v1` | fault / legacy | Desktop fault reproduction only |
-| `linux-native-load-v1` | load / formal | Implemented only on native Ubuntu 24.04 amd64, MongoDB 8.0.32 + Elasticsearch 8.19.22, both plain; other cells fail closed |
-| `linux-native-fault-v1` | fault / formal | Implemented only on native Ubuntu 24.04 amd64, MongoDB 8.0.32 + Elasticsearch 8.19.22/plain; smoke and other cells fail closed |
+| `linux-native-load-v1` | load / formal | Implemented only on native Ubuntu 24.04 amd64, MongoDB 8.0.32 + Elasticsearch 8.19.22 or OpenSearch 3.3.0, both plain; other cells fail closed |
+| `linux-native-fault-v1` | fault / formal | Implemented only on native Ubuntu 24.04 amd64, MongoDB 8.0.32 + Elasticsearch 8.19.22 or OpenSearch 3.3.0/plain; smoke and other cells fail closed |
 | `linux-native-es-functional-v1`, `linux-native-opensearch-functional-v1` | functional / finite; at most 16 documents, 64KiB/document, 60s driver | Owned native Linux ES8.19.22/plain or OpenSearch3.3.0/plain Weir correctness only; not smoke/formal |
 
 Legacy driver/CLI targets are Darwin arm64 and Linux arm64 respectively. MongoDB
@@ -265,8 +265,8 @@ output. Desktop routes and proxy translation belong only to that named adapter.
 Formal/smoke Linux declarations use matching native Linux amd64 or arm64 driver/CLI
 targets, `owned-local` endpoint roles, MongoDB 8.0.32 plus Elasticsearch 8.19.22 or
 OpenSearch 3.3.0, and explicit plain/TLS transport. Only the formal amd64
-MongoDB+Elasticsearch/plain load and fault cells are implemented. Smoke,
-TLS, OpenSearch load/fault and arm64 load/fault remain unexecutable; the distinct finite
+MongoDB+Elasticsearch/plain and MongoDB+OpenSearch/plain load and fault cells are implemented. Smoke,
+TLS and arm64 load/fault remain unexecutable; the distinct finite
 ES/plain and OpenSearch/plain capabilities are unchanged. Unsupported combinations
 do not skip, fall back, or pass.
 
@@ -362,10 +362,10 @@ host settings.
 
 ### Formal native Linux plain fault
 
-The independent `native-linux-formal-fault` matrix job executes
-`scripts/test-production-linux.py --profile=linux-native-fault-v1` with the same
-explicit inputs, pinned dependencies and disposable Ubuntu 24.04 amd64 boundary
-as load. TLS, OpenSearch, smoke and arm64 fault fail closed. This is Weir fault
+The independent `native-linux-formal-{elasticsearch,opensearch}-fault` matrix jobs execute
+`scripts/test-production-linux.py --profile=linux-native-fault-v1` with bounded
+`--product=elasticsearch|opensearch` and the same explicit inputs, pinned dependencies
+and disposable Ubuntu 24.04 amd64 boundary as load. TLS, smoke and arm64 fault fail closed. This is Weir fault
 execution against external dependencies, not database/kernel/network tuning or
 Mongo replica-set failover qualification.
 
@@ -415,9 +415,11 @@ that this native cell ran or passed.
 ### Formal native Linux plain load
 
 `scripts/test-production-linux.py --profile=linux-native-load-v1` now implements
-one exact formal execution cell on a disposable GitHub-hosted CI runner: Ubuntu
-24.04 amd64, stock MongoDB 8.0.32 and Elasticsearch 8.19.22, both plain. The
-controller rejects self-hosted/non-CI environments before fixtures; these environment
+exact formal execution cells on a disposable GitHub-hosted CI runner: Ubuntu
+24.04 amd64, stock MongoDB 8.0.32 and either Elasticsearch 8.19.22 or OpenSearch
+3.3.0, both plain. The only product option is `--product=elasticsearch|opensearch`
+(default Elasticsearch); it is formal-only, never an arbitrary URI/version/quota.
+The controller rejects self-hosted/non-CI environments before fixtures; these environment
 checks prevent accidental use, not prove workflow origin. Supply the same canonical source/binary/observer
 arguments as the finite controller plus `--mongod` naming the prepared stock
 native binary. `scripts/ci-tools.py test --mongo` prepares that dependency in the
@@ -439,8 +441,13 @@ publications, full owned container/image/PID identity and unchanged nonroot,
 read-only, cap-drop, no-new-privileges controls. The same observer validates actual
 2CPU/1GiB, zero swap and 96-PID cgroup controls before/after the workload. The
 native Mongo process and driver remain outside that CLI cgroup. Mongo uses stock
-settings; ES retains its existing startup/heap/resource settings, but load data
-uses a new owned disposable host directory rather than finite-only 256MiB tmpfs.
+settings; each search product retains its finite startup/heap/resource settings,
+but formal data uses a new owned disposable host directory rather than finite-only 256MiB tmpfs.
+OpenSearch keeps its existing nonroot writable container layer (the CLI remains
+read-only), stock image entrypoint and existing log/tmp tmpfs. Its formal-only
+CMD runs a shell setting `umask 0002`, then execs the actual stock entrypoint with
+`opensearch`; inspection requires these exact entrypoint/CMD bytes. There is no
+root helper, config volume, JNA override, database tuning or new privilege.
 Admission requires 8GiB free host/Docker storage. During load, the controller
 checks owned dependency data between bounded two-second driver waits, aborting above
 2GiB per dependency or below 2GiB free storage (native Mongo logs: 64MiB).
@@ -448,7 +455,7 @@ Traversal failures, unexpected links or a changed owner/path/inode fail closed.
 These are monitored abort thresholds, **not hard filesystem quotas**; the workload
 itself remains the fixed finite arrival/document/payload schedule. Load-only
 setgid/group-writable data permissions and startup umask allow the runner to
-remove the ES dependency's files without privilege or database tuning.
+remove either search dependency's files without privilege or database tuning.
 Database data and native process logs are not uploaded. After verified container/
 network absence and native process join, cleanup removes only marker-verified
 owned data directories; logs and the owner marker remain. If cleanup cannot
@@ -467,7 +474,7 @@ and five-second memory recovery remain unchanged. Structured load completion is
 written only after SDK/index/database cleanup; the controller rejects missing,
 skipped, premature (<630s), wrong-policy or identity-mismatched completion.
 
-The dedicated `native-linux-formal-load` CI job has a 25-minute job budget.
+The independent `native-linux-formal-{elasticsearch,opensearch}-load` CI jobs each have a 25-minute job budget.
 Controller execution is bounded by 960s, including preflight, startup, a load-driver
 budget of 800s (630s workload plus seed/oracle/recovery), and observation/shutdown;
 cleanup has its own 60s bound. CI's 18-minute command envelope leaves cleanup time.
@@ -476,7 +483,7 @@ requires all driver gates, cgroup observations, shutdown and owned cleanup to
 succeed. Results still say `qualification=false`: they are execution observations,
 not independent build-origin or stable-promotion receipts. Offline mocks, race
 tests and cross-compilation cannot establish a real formal run pass. TLS,
-OpenSearch load/fault, arm64 load/fault, matched performance, EKS and final same-byte
+arm64 load/fault, matched performance, EKS and final same-byte
 candidate promotion remain separate deliverables; no final server lock is advanced.
 
 ### Finite native Linux executor
