@@ -206,6 +206,11 @@ class Contracts(unittest.TestCase):
                     networks = {"host": dict(NetworkID="")}
                 if self.opts.profile in M.FORMAL_PROFILES and name.endswith("-backend"):
                     mounts.append(dict(Destination="/usr/share/" + M.backend_product(self.opts)[0] + "/data", Source=str(self.opts.output / "es-data"), RW=True))
+                if self.opts.transport == "tls" and name.endswith("-backend"):
+                    for i, arg in enumerate(args):
+                        if arg == "--mount" and "/config/" in args[i + 1]:
+                            fields = dict(field.split("=", 1) for field in args[i + 1].split(",") if "=" in field)
+                            mounts.append(dict(Destination=fields["dst"], Source=fields["src"], RW="readonly" not in args[i + 1].split(",")))
                 info = dict(Id=identity, Name="/" + name, Owner=self.controller.owner, Image="sha256:" + "b" * 64, State=state, Memory=int(flags["--memory"]), Swap=int(flags["--memory-swap"]), CPU=2_000_000_000, PIDs=int(flags["--pids-limit"]), Cgroupns="private", Readonly="--read-only" in args, User=flags["--user"], Caps=["ALL"], Security=["no-new-privileges:true"], Privileged=False, PidMode="", Networks=networks, Ports=ports, Mounts=mounts)
                 info["NetworkMode"] = network_mode
                 image_index = next(i for i, arg in enumerate(args) if arg in (self.controller.es_ref, self.controller.base_ref))
@@ -304,7 +309,41 @@ class Contracts(unittest.TestCase):
     def test_opensearch_formal_load_uses_same_workload_and_controls(self):
         self.formal_load_contract("opensearch")
 
-    def formal_load_contract(self, product):
+    def test_tls_elasticsearch_formal_load_keeps_workload_controls_and_cleanup(self):
+        self.formal_load_contract("elasticsearch", "tls")
+
+    def test_tls_opensearch_formal_load_keeps_stock_bootstrap_and_cleanup(self):
+        self.formal_load_contract("opensearch", "tls")
+
+    def prepare_mock_tls(self):
+        environment = dict(WEIR_NATIVE_LOAD_OWNER=self.controller.owner)
+        self.controller.driver("tls", environment)
+        self.controller.tls_state = dict(username="weir_admin", password="a" * 48, mongo_username="weir_native", mongo_password="b" * 48)
+        material = self.opts.output / "tls-material"
+        (material / "ca.pem").write_text("new mocked fixture CA")
+        (material / "server.key").write_text("new mocked private fixture")
+
+    def test_partial_tls_generation_is_removed_before_any_backend_start(self):
+        self.opts.profile, self.opts.transport = M.LOAD_PROFILE, "tls"
+        self.controller = M.Controller(self.opts)
+
+        def partial_generation():
+            self.prepare_mock_tls()
+            raise RuntimeError("injected partial TLS generation")
+
+        with patch.object(M, "native_preflight", return_value="amd64"), patch.object(self.controller, "docker", side_effect=self.command), patch.object(self.controller, "driver", side_effect=self.driver), patch.object(self.controller, "prepare_tls", side_effect=partial_generation), patch.object(self.controller, "start_mongo") as mongo:
+            with self.assertRaisesRegex(RuntimeError, "partial TLS generation"):
+                self.controller.execute()
+        mongo.assert_not_called()
+        self.assertEqual(self.resources, self.empty)
+        self.assertFalse((self.opts.output / "tls-material").exists())
+        self.assertFalse((self.opts.output / "mongo-data").exists())
+        result = json.loads((self.opts.output / "load-result.json").read_text())
+        self.assertFalse(result["load_complete"])
+        self.assertEqual(result["cleanup_errors"], [])
+
+    def formal_load_contract(self, product, transport="plain"):
+        self.opts.transport = transport
         self.opts.product = product
         self.opts.profile = M.LOAD_PROFILE
         self.controller = M.Controller(self.opts)
@@ -314,6 +353,8 @@ class Contracts(unittest.TestCase):
 
         def mongo():
             self.controller.mongo_uri = "mongodb://127.0.0.1:27099/?replicaSet=" + self.controller.owner
+            if transport == "tls":
+                self.controller.mongo_uri += "&authSource=admin&authMechanism=SCRAM-SHA-256&tls=true"
 
         def driver(stage, environment):
             stages.append(stage)
@@ -323,14 +364,31 @@ class Contracts(unittest.TestCase):
                 self.assertNotIn("0.0.0.0", basic)
                 self.assertIn('application: "127.0.0.1:', basic)
                 self.assertIn('address: "127.0.0.1:', basic)
-                self.assertIn(self.controller.mongo_uri, (self.opts.output / "routes.yaml").read_text())
+                self.assertIn(self.controller.mongo_uri, self.controller.routing_path.read_text())
+                if transport == "tls":
+                    self.assertIn('url: "https://127.0.0.1:', self.controller.routing_path.read_text())
+                    self.assertIn('ca_file: "/fixture-ca.pem"', self.controller.routing_path.read_text())
+                    self.assertNotEqual(self.controller.routing_path.parent, self.opts.output)
 
-        with patch.object(M, "native_preflight", return_value="amd64"), patch.object(M, "process_snapshot", side_effect=self.host_snapshot), patch.object(self.controller, "docker", side_effect=self.command), patch.object(self.controller, "driver", side_effect=driver), patch.object(self.controller, "wait_http"), patch.object(self.controller, "start_mongo", side_effect=mongo), patch.object(self.controller, "mongo_guard"):
+        with patch.object(self.controller, "prepare_tls", side_effect=self.prepare_mock_tls), patch.object(M, "native_preflight", return_value="amd64"), patch.object(M, "process_snapshot", side_effect=self.host_snapshot), patch.object(self.controller, "docker", side_effect=self.command), patch.object(self.controller, "driver", side_effect=driver), patch.object(self.controller, "wait_http"), patch.object(self.controller, "start_mongo", side_effect=mongo), patch.object(self.controller, "mongo_guard"):
             self.controller.execute()
-        self.assertEqual(stages, ["preflight", "load"])
+        self.assertEqual(stages, ["preflight", "tls", "load"] if transport == "tls" else ["preflight", "load"])
         profile = json.loads((self.opts.output / "profile.json").read_text())
         self.assertEqual((profile["suite"], profile["intent"]), ("load", "formal"))
         self.assertEqual([b["product"] for b in profile["backends"]], ["mongodb", product])
+        self.assertEqual([b["transport"] for b in profile["backends"]], [transport, transport])
+        if transport == "tls":
+            self.assertFalse((self.opts.output / "tls-material").exists())
+            backend = json.loads((self.opts.output / "backend-container.json").read_text())
+            tls_mounts = [m for m in backend["Mounts"] if "/config/" in m["Destination"]]
+            self.assertEqual(len(tls_mounts), 5 if product == "elasticsearch" else 2)
+            self.assertTrue(all(not m["RW"] for m in tls_mounts))
+            bootstrap = [args for args in self.calls if any("securityadmin.sh" in arg for arg in args)]
+            self.assertEqual(len(bootstrap), int(product == "opensearch"))
+            if bootstrap:
+                self.assertIn("127.0.0.1", bootstrap[0])
+                self.assertNotIn("-nhnv", bootstrap[0])
+                self.assertNotIn("-icl", bootstrap[0])
         self.formal_backend_contract(product)
         cli = json.loads((self.opts.output / "cli-container.json").read_text())
         self.assertEqual(cli["NetworkMode"], "host")
@@ -350,7 +408,14 @@ class Contracts(unittest.TestCase):
     def test_opensearch_formal_fault_uses_same_cases_and_controls(self):
         self.formal_fault_contract("opensearch")
 
-    def formal_fault_contract(self, product):
+    def test_tls_elasticsearch_formal_fault_keeps_verified_proxy_contract(self):
+        self.formal_fault_contract("elasticsearch", "tls")
+
+    def test_tls_opensearch_formal_fault_keeps_verified_proxy_contract(self):
+        self.formal_fault_contract("opensearch", "tls")
+
+    def formal_fault_contract(self, product, transport="plain"):
+        self.opts.transport = transport
         self.opts.product = product
         self.opts.profile = M.FAULT_PROFILE
         self.controller = M.Controller(self.opts)
@@ -358,9 +423,14 @@ class Contracts(unittest.TestCase):
         stages = []
         pid = 4242
         message = dict(owner=self.controller.owner, driver_pid=pid, mongo="mongodb://127.0.0.1:28001/?directConnection=true&serverMonitoringMode=poll", search="http://127.0.0.1:28002", pid=0, start_ticks="", exit=0, deadline_ns=0)
+        if transport == "tls":
+            message["mongo"] += "&authSource=admin&authMechanism=SCRAM-SHA-256&tls=true"
+            message["search"] = "https://127.0.0.1:28002"
 
         def mongo():
             self.controller.mongo_uri = "mongodb://127.0.0.1:27099/?replicaSet=" + self.controller.owner
+            if transport == "tls":
+                self.controller.mongo_uri += "&authSource=admin&authMechanism=SCRAM-SHA-256&tls=true"
 
         def snapshot(target, executable=True):
             if target == pid:
@@ -381,7 +451,7 @@ class Contracts(unittest.TestCase):
 
         def driver(stage, environment):
             stages.append(stage)
-            if stage == "preflight":
+            if stage in ("preflight", "tls"):
                 self.driver(stage, environment)
                 return {}
             self.assertEqual(stage, "fault")
@@ -392,7 +462,7 @@ class Contracts(unittest.TestCase):
             running = self.controller.fault_message("running.json", pid)
             self.assertGreater(running["pid"], 0)
             self.assertEqual(running["start_ticks"], "123")
-            routes = (self.opts.output / "routes.yaml").read_text()
+            routes = self.controller.routing_path.read_text()
             self.assertIn(message["mongo"], routes)
             self.assertIn(message["search"], routes)
             self.controller.fault_publish("observe.json", message)
@@ -404,9 +474,11 @@ class Contracts(unittest.TestCase):
             self.assertEqual(self.controller.fault_message("stopped.json", pid)["exit"], 0)
             return {}
 
-        with patch.object(M, "native_preflight", return_value="amd64"), patch.object(M, "process_snapshot", side_effect=snapshot), patch.object(self.controller, "docker", side_effect=self.command), patch.object(self.controller, "driver", side_effect=driver), patch.object(self.controller, "wait_http"), patch.object(self.controller, "start_mongo", side_effect=mongo), patch.object(self.controller, "mongo_guard"):
+        with patch.object(self.controller, "prepare_tls", side_effect=self.prepare_mock_tls), patch.object(M, "native_preflight", return_value="amd64"), patch.object(M, "process_snapshot", side_effect=snapshot), patch.object(self.controller, "docker", side_effect=self.command), patch.object(self.controller, "driver", side_effect=driver), patch.object(self.controller, "wait_http"), patch.object(self.controller, "start_mongo", side_effect=mongo), patch.object(self.controller, "mongo_guard"):
             self.controller.execute()
-        self.assertEqual(stages, ["preflight", "fault"])
+        self.assertEqual(stages, ["preflight", "tls", "fault"] if transport == "tls" else ["preflight", "fault"])
+        if transport == "tls":
+            self.assertFalse((self.opts.output / "tls-material").exists())
         self.formal_backend_contract(product)
         cli = json.loads((self.opts.output / "cli-container.json").read_text())
         self.assertEqual((cli["Memory"], cli["Swap"], cli["CPU"], cli["PIDs"]), (512 << 20, 512 << 20, 2_000_000_000, 96))
@@ -546,6 +618,14 @@ class Contracts(unittest.TestCase):
                 self.controller.check_container(resource, spec)
 
     def test_native_mongo_lifecycle_is_owned_bounded_and_not_docker(self):
+        self.native_mongo_lifecycle_contract("plain")
+
+    def test_native_tls_mongo_requires_tls_and_scram_with_owned_material(self):
+        self.native_mongo_lifecycle_contract("tls")
+
+    def native_mongo_lifecycle_contract(self, transport):
+        self.opts.transport = transport
+        self.opts.profile = M.LOAD_PROFILE
         self.opts.output.mkdir()
         self.controller.prepare_load_storage()
         self.opts.mongod = self.root / "mongod"
@@ -563,6 +643,17 @@ class Contracts(unittest.TestCase):
             self.assertIn("--bind_ip", args)
             self.assertIn("127.0.0.1", args)
             self.assertNotIn("--fork", args)
+            if transport == "tls":
+                self.assertIn("--auth", args)
+                self.assertEqual(args[args.index("--tlsMode") + 1], "requireTLS")
+                for flag, name in (("--keyFile", "mongo-cluster"), ("--tlsCertificateKeyFile", "mongo.pem"), ("--tlsCAFile", "ca.pem")):
+                    self.assertEqual(args[args.index(flag) + 1], str(self.opts.output / "tls-material" / name))
+                query = M.urllib.parse.parse_qs(M.urllib.parse.urlsplit(self.controller.mongo_uri).query)
+                expected = dict(replicaSet=[self.controller.owner], authSource=["admin"], authMechanism=["SCRAM-SHA-256"], tls=["true"])
+                self.assertEqual(query, expected)
+                self.assertNotIn("tlsAllowInvalid", " ".join(args))
+            else:
+                self.assertNotIn("--tlsMode", args)
             self.assertTrue(launch.call_args.kwargs["start_new_session"])
             self.assertEqual(driver.call_args.args[0], "mongo")
             self.controller.cleaning = True
@@ -1107,6 +1198,22 @@ class Contracts(unittest.TestCase):
         result = clock, backend, info, response
         return result
 
+    def test_tls_readiness_uses_verified_opener_without_plaintext_fallback(self):
+        clock, backend, info, response = self.readiness_deadline_fixture()
+        self.opts.profile, self.opts.transport = M.LOAD_PROFILE, "tls"
+        self.controller.tls_state = dict(username="weir_admin", password="a" * 48)
+        self.controller.secure_http = MagicMock()
+        self.controller.secure_http.open.return_value = response
+        with patch.object(M.time, "monotonic", return_value=clock["now"]), patch.object(self.controller, "guard", return_value=info), patch.object(self.controller.http, "open") as plain:
+            self.controller.wait_http("https://127.0.0.1:1/", 1, backend=backend)
+            request = self.controller.secure_http.open.call_args.args[0]
+            self.assertEqual(request.full_url, "https://127.0.0.1:1/")
+            self.assertTrue(request.get_header("Authorization").startswith("Basic "))
+            self.controller.secure_http.open.side_effect = M.ssl.SSLCertVerificationError("injected wrong identity")
+            with self.assertRaises(M.ssl.SSLCertVerificationError):
+                self.controller.wait_http("https://127.0.0.1:1/", 1, backend=backend)
+            plain.assert_not_called()
+
     def test_readiness_guard_89_to_100_cannot_start_http_after_90(self):
         clock, backend, info, response = self.readiness_deadline_fixture()
         clock["now"] = 89
@@ -1575,7 +1682,10 @@ class CompletionTests(unittest.TestCase):
         self.assertIn(M.OS_REPOSITORY + "@" + M.OS_PINS["amd64"], job)
         self.assertIn(M.ES_REPOSITORY + "@" + M.ES_PINS["amd64"], job)
         self.assertIn("name: native-linux-formal-${{ matrix.product }}-${{ matrix.suite }}", job)
-        self.assertIn("name: native-linux-amd64-formal-${{ matrix.product }}-${{ matrix.suite }}-", job)
+        self.assertIn("name: native-linux-amd64-formal-${{ matrix.product }}-${{ matrix.suite }}${{ matrix.suffix }}-", job)
+        self.assertIn("transport: [plain, tls]", job)
+        self.assertIn("--transport=${{ matrix.transport }}", job)
+        self.assertIn("suffix: '-tls'", job)
         self.assertNotIn(".testdata/native-linux-formal-${{ matrix.suite }}", job)
         self.assertNotIn("smoke", job)
         self.assertNotIn("promote", job)

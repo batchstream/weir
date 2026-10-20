@@ -4,19 +4,24 @@ package app
 
 import (
 	"context"
+	"crypto/x509"
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	weirclient "github.com/batchstream/weir-go"
 	"github.com/batchstream/weir/internal/backend/mongodb"
+	"github.com/batchstream/weir/internal/testutil"
 	"github.com/batchstream/weir/internal/testutil/testmongo"
 	"github.com/batchstream/weir/internal/testutil/testsearch"
 )
@@ -129,10 +134,128 @@ func TestExecutionProfileContractNativeFaultProxyURI(t *testing.T) {
 	}
 }
 
+func TestExecutionProfileContractNativeTLSProxy(t *testing.T) {
+	parent := filepath.Join(testutil.Root(t), ".testdata")
+	if err := os.MkdirAll(parent, 0700); err != nil {
+		t.Fatal(err)
+	}
+	directory, err := os.MkdirTemp(parent, "native-tls-unit-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := os.RemoveAll(directory); err != nil {
+			t.Error("owned unit fixture cleanup", err)
+		}
+	})
+	opts := testsearch.NativeTLSOptions{Directory: directory, Owner: "weir-finite-" + strings.Repeat("a", 32), Product: "elasticsearch"}
+	testsearch.PrepareNativeTLS(t, opts)
+	serverTLS, clientTLS, material := testsearch.NativeTLS(t, directory)
+	leaf, err := x509.ParseCertificate(serverTLS.Certificates[0].Certificate[0])
+	if err != nil || len(leaf.DNSNames) != 0 || len(leaf.IPAddresses) != 1 || leaf.VerifyHostname("127.0.0.1") != nil || leaf.VerifyHostname("localhost") == nil {
+		t.Fatal("fixture must have exactly the actual loopback identity")
+	}
+	fixture := &testmongo.Fixture{URI: "mongodb://127.0.0.1:1/?replicaSet=" + opts.Owner + "&authSource=admin&authMechanism=SCRAM-SHA-256&tls=true"}
+	fixture.SetOwnedProxyTLS(serverTLS, clientTLS)
+	mongoProxy := testmongo.StartProxy(t, fixture)
+	proxyURI := nativeFaultProxyURI(t, mongoProxy)
+	parsed, err := url.Parse(proxyURI)
+	if err != nil {
+		t.Fatal(err)
+	}
+	query := parsed.Query()
+	if len(query) != 5 || query.Get("replicaSet") != "" || query.Get("directConnection") != "true" || query.Get("serverMonitoringMode") != "poll" || query.Get("tls") != "true" || query.Get("authSource") != "admin" || query.Get("authMechanism") != "SCRAM-SHA-256" {
+		t.Fatal("TLS fault route changed its exact authentication/topology options")
+	}
+	connection := &Mongo{URI: proxyURI}
+	trust := &BackendTLS{CAFile: filepath.Join(directory, "ca.pem")}
+	authentication := &Credentials{Username: material.MongoUsername, Password: material.MongoPassword}
+	local := &Local{Backend: BackendConfig{MongoDB: connection, TLS: trust, Authentication: authentication}}
+	store := StoreConfig{Name: "mongo", Local: local}
+	cfg := DefaultConfig()
+	cfg.Routing.Stores = []StoreConfig{store}
+	cfg.Routing = cfg.Routing.resolved()
+	if err := cfg.Routing.validate(); err != nil {
+		t.Fatal("generated TLS fault route rejected by production configuration", err)
+	}
+	for _, option := range []string{"tls", "authSource", "authMechanism"} {
+		invalid := *parsed
+		values := invalid.Query()
+		values.Del(option)
+		invalid.RawQuery = values.Encode()
+		if err := mongodb.ValidateURI(invalid.String()); err == nil {
+			t.Fatal("incomplete SCRAM/TLS route accepted", option)
+		}
+	}
+	var requests atomic.Int64
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		username, password, ok := r.BasicAuth()
+		if !ok || username != material.Username || password != material.Password || r.TLS == nil {
+			t.Error("upstream did not receive authenticated TLS")
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		requests.Add(1)
+		_, _ = w.Write([]byte(`{"owned":true}`))
+	})
+	upstream := httptest.NewUnstartedServer(handler)
+	upstream.TLS = serverTLS
+	upstream.StartTLS()
+	t.Cleanup(upstream.Close)
+	for _, mode := range []string{"verified", "wrong-frontend-trust", "wrong-upstream-name", "lost-ack"} {
+		t.Run(mode, func(t *testing.T) {
+			front, back := clientTLS.Clone(), clientTLS.Clone()
+			if mode == "wrong-frontend-trust" {
+				front.RootCAs = x509.NewCertPool()
+			}
+			if mode == "wrong-upstream-name" {
+				back.ServerName = "localhost"
+			}
+			proxyOpts := processFaultProxyOptions{upstream: upstream.URL, address: "127.0.0.1:0", serverTLS: serverTLS, clientTLS: back}
+			proxy := startProcessFaultProxy(t, proxyOpts)
+			if mode == "lost-ack" {
+				fault := processFaultHTTPFault{path: "/owned", drop: true}
+				proxy.arm(fault)
+			}
+			transport := &http.Transport{Proxy: nil, TLSClientConfig: front, DisableKeepAlives: true}
+			t.Cleanup(transport.CloseIdleConnections)
+			client := &http.Client{Transport: transport, Timeout: 3 * time.Second}
+			request, err := http.NewRequest(http.MethodPost, "https://"+proxy.listener.Addr().String()+"/owned", nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			request.SetBasicAuth(material.Username, material.Password)
+			before := requests.Load()
+			response, err := client.Do(request)
+			if response != nil {
+				_ = response.Body.Close()
+			}
+			switch mode {
+			case "wrong-frontend-trust":
+				if err == nil || requests.Load() != before {
+					t.Fatal("untrusted frontend accepted")
+				}
+			case "wrong-upstream-name":
+				if err != nil || response.StatusCode != http.StatusBadGateway || requests.Load() != before {
+					t.Fatal("wrong upstream identity accepted", err)
+				}
+			case "lost-ack":
+				if err == nil || requests.Load() != before+1 {
+					t.Fatal("TLS lost-ack did not forward exactly once", err)
+				}
+			default:
+				if err != nil || response.StatusCode != http.StatusOK || requests.Load() != before+1 {
+					t.Fatal("verified TLS relay failed", err)
+				}
+			}
+		})
+	}
+}
+
 func TestProductionLinuxFaultPreflight(t *testing.T) {
 	inputs := nativeLoadInputs(t)
-	if !inputs.Profile().NativePlainFault() {
-		t.Fatal("exact native plain fault profile required")
+	if !inputs.Profile().NativePlainFault() && !inputs.Profile().NativeTLSFault() {
+		t.Fatal("exact native formal fault profile required")
 	}
 	record := nativeLoadBase(inputs, "preflight")
 	record.Cases = []string{"source", "cli", "kernel-driver"}
@@ -141,8 +264,8 @@ func TestProductionLinuxFaultPreflight(t *testing.T) {
 
 func TestProductionLinuxFaultMongo(t *testing.T) {
 	inputs := nativeLoadInputs(t)
-	if !inputs.Profile().NativePlainFault() {
-		t.Fatal("exact native plain fault profile required")
+	if !inputs.Profile().NativePlainFault() && !inputs.Profile().NativeTLSFault() {
+		t.Fatal("exact native formal fault profile required")
 	}
 	nativeLoadMongo(t, true)
 	record := nativeLoadBase(inputs, "mongo")
@@ -152,8 +275,8 @@ func TestProductionLinuxFaultMongo(t *testing.T) {
 
 func TestProductionLinuxFault(t *testing.T) {
 	inputs := nativeLoadInputs(t)
-	if !inputs.Profile().NativePlainFault() {
-		t.Fatal("exact native plain fault profile required")
+	if !inputs.Profile().NativePlainFault() && !inputs.Profile().NativeTLSFault() {
+		t.Fatal("exact native formal fault profile required")
 	}
 	record := nativeLoadBase(inputs, "fault")
 	// Completion follows proxy/socket, SDK and independent owned data cleanup.
@@ -166,12 +289,19 @@ func TestProductionLinuxFault(t *testing.T) {
 			t.Error(err)
 		}
 	})
-	owned := testsearch.OwnedEndpoint{URL: os.Getenv("WEIR_NATIVE_LOAD_ORACLE"), Owner: os.Getenv("WEIR_NATIVE_LOAD_OWNER"), Product: inputs.Profile().Backends[1].Product}
+	owned := testsearch.OwnedEndpoint{URL: os.Getenv("WEIR_NATIVE_LOAD_ORACLE"), Owner: os.Getenv("WEIR_NATIVE_LOAD_OWNER"), Product: inputs.Profile().Backends[1].Product, TLSDirectory: os.Getenv("WEIR_NATIVE_TLS")}
 	search := testsearch.OpenOwned(t, owned)
 	mongoProxy := testmongo.StartProxy(t, fixture)
-	searchProxy := startProcessFaultHTTPProxyOn(t, search.URL, "127.0.0.1:0")
+	proxyOptions := processFaultProxyOptions{upstream: search.URL, address: "127.0.0.1:0"}
+	scheme := "http://"
+	if owned.TLSDirectory != "" {
+		server, client, _ := testsearch.NativeTLS(t, owned.TLSDirectory)
+		proxyOptions.serverTLS, proxyOptions.clientTLS = server, client
+		scheme = "https://"
+	}
+	searchProxy := startProcessFaultProxy(t, proxyOptions)
 	proxyURI := nativeFaultProxyURI(t, mongoProxy)
-	message := nativeFaultMessage{Owner: owned.Owner, DriverPID: os.Getpid(), Mongo: proxyURI, Search: "http://" + searchProxy.listener.Addr().String()}
+	message := nativeFaultMessage{Owner: owned.Owner, DriverPID: os.Getpid(), Mongo: proxyURI, Search: scheme + searchProxy.listener.Addr().String()}
 	nativeFaultPublish(t, "proxies.json", message)
 	running := nativeFaultWait(t, "running.json", time.Now().Add(35*time.Second))
 	for _, address := range []string{os.Getenv("WEIR_NATIVE_LOAD_APP"), os.Getenv("WEIR_NATIVE_LOAD_DIAGNOSTICS")} {

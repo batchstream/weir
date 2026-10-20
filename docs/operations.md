@@ -251,8 +251,8 @@ immutable legacy specification for tooling to serialize:
 | `legacy-desktop-load-v1` | load / legacy; 30s warmup + 600s measurement | Desktop reproduction only |
 | `legacy-desktop-smoke-v1` | load / smoke; 30s warmup + 120s measurement | Desktop smoke only |
 | `legacy-desktop-fault-v1` | fault / legacy | Desktop fault reproduction only |
-| `linux-native-load-v1` | load / formal | Implemented only on native Ubuntu 24.04 amd64, MongoDB 8.0.32 + Elasticsearch 8.19.22 or OpenSearch 3.3.0, both plain; other cells fail closed |
-| `linux-native-fault-v1` | fault / formal | Implemented only on native Ubuntu 24.04 amd64, MongoDB 8.0.32 + Elasticsearch 8.19.22 or OpenSearch 3.3.0/plain; smoke and other cells fail closed |
+| `linux-native-load-v1` | load / formal | Implemented only on native Ubuntu 24.04 amd64, MongoDB 8.0.32 + Elasticsearch 8.19.22 or OpenSearch 3.3.0, both plain or both verified backend TLS; other cells fail closed |
+| `linux-native-fault-v1` | fault / formal | Implemented only on native Ubuntu 24.04 amd64, MongoDB 8.0.32 + Elasticsearch 8.19.22 or OpenSearch 3.3.0, both plain or both verified backend TLS; smoke and other cells fail closed |
 | `linux-native-es-functional-v1`, `linux-native-opensearch-functional-v1` | functional / finite; at most 16 documents, 64KiB/document, 60s driver | Owned native Linux ES8.19.22/plain or OpenSearch3.3.0/plain Weir correctness only; not smoke/formal |
 
 Legacy driver/CLI targets are Darwin arm64 and Linux arm64 respectively. MongoDB
@@ -265,8 +265,9 @@ output. Desktop routes and proxy translation belong only to that named adapter.
 Formal/smoke Linux declarations use matching native Linux amd64 or arm64 driver/CLI
 targets, `owned-local` endpoint roles, MongoDB 8.0.32 plus Elasticsearch 8.19.22 or
 OpenSearch 3.3.0, and explicit plain/TLS transport. Only the formal amd64
-MongoDB+Elasticsearch/plain and MongoDB+OpenSearch/plain load and fault cells are implemented. Smoke,
-TLS and arm64 load/fault remain unexecutable; the distinct finite
+MongoDB+Elasticsearch and MongoDB+OpenSearch load and fault cells with matching
+plain/plain or TLS/TLS backend transports are implemented. Smoke, mixed transports
+and arm64 load/fault remain unexecutable; the distinct finite
 ES/plain and OpenSearch/plain capabilities are unchanged. Unsupported combinations
 do not skip, fall back, or pass.
 
@@ -355,17 +356,57 @@ local bundle. That regression checks the actual complete `verifyCandidate` path,
 including all source inputs in a read-only-used local checkout of the bundle's
 declared source revision, not the potentially dirty developer worktree. It does
 not run a CLI or produce `ValidatedInputs`, and it establishes neither origin
-nor runtime proof. Three-backend plain/TLS CI, formal measurements/pass receipts
-and same-byte stable promotion are separate follow-on work. Pinned local
+nor runtime proof. Native plain/TLS CI execution is described below; actual formal
+measurements/pass receipts and same-byte stable promotion are not supplied by
+these contracts. Pinned local
 Mongo/LinuxKit compatibility blockers are not bypassed by changing versions or
 host settings.
+
+### Formal native Linux backend TLS
+
+The same controller accepts `--transport=plain|tls` (default plain), independently
+of `--product` and the exact formal load/fault profile. Four additional independent
+CI cells use the `-tls` job/artifact suffix; existing plain names, paths and finite
+execution stay unchanged. These are **backend TLS** cells: application gRPC and
+loopback diagnostics remain unchanged, not whole-path client-to-Weir TLS claims.
+
+After source/binary preflight, `TestProductionLinuxTLS` generates only fresh
+controller-owned fixture material, reusing the finite Search secure helper's CA,
+PKCS8 certificates and stock security configuration. Server and proxy certificates
+have exactly the `127.0.0.1` IP SAN, no DNS SAN or wildcard. All actual endpoints,
+including OpenSearch's existing securityadmin bootstrap, use that exact identity
+with the generated CA; hostname/chain verification is never disabled. MongoDB
+requires TLS and uses fresh SCRAM-SHA-256 bootstrap credentials and replica key
+material; Search uses the existing Basic authentication/security-plugin support.
+No pre-existing certificate, trust store, credential or environment secret is read.
+
+Load connects the unchanged CLI directly to both verified TLS backends. Fault
+reuses the Mongo wire proxy and HTTP/1 fault observer with verified TLS on **both**
+frontend and upstream legs; decrypted observations stay inside the owned driver,
+outside the CLI quota. The Mongo direct/polling route retains explicit SCRAM/TLS
+options. Independent Mongo and HTTPS Search oracles bypass the proxies and verify
+the same real backend identities and durable effects. Mock-loopback contracts check
+untrusted frontend rejection, wrong upstream identity rejection and exactly-once
+forwarding with a lost acknowledgement; they are not live database evidence.
+
+Only the newly allocated material directory is exposed read-only to the stock
+Search image, using the finite secure fixture's config files. The CLI receives only
+the CA and its dedicated routes, never server private keys. Certificates, generated
+credentials and credential-bearing routes live below the guarded `tls-material`
+directory, excluded from artifact globs and removed after owned processes/containers
+join using the existing marker/inode/no-follow cleanup. Interrupted generation or
+execution follows that same cleanup path; unresolved ownership fails closed.
+Database scheduling/heap settings, pinned images, CLI controls, workload, p99 and
+3/5/8s gates, 5s+2s drain/retirement, driver/controller deadlines and CI envelopes
+are not changed. No qualification or promotion is inferred before actual CI; even
+a successful cell retains `qualification=false`.
 
 ### Formal native Linux plain fault
 
 The independent `native-linux-formal-{elasticsearch,opensearch}-fault` matrix jobs execute
 `scripts/test-production-linux.py --profile=linux-native-fault-v1` with bounded
 `--product=elasticsearch|opensearch` and the same explicit inputs, pinned dependencies
-and disposable Ubuntu 24.04 amd64 boundary as load. TLS, smoke and arm64 fault fail closed. This is Weir fault
+and disposable Ubuntu 24.04 amd64 boundary as load. Smoke and arm64 fault fail closed; the independent backend TLS cells are described above. This is Weir fault
 execution against external dependencies, not database/kernel/network tuning or
 Mongo replica-set failover qualification.
 
@@ -482,8 +523,9 @@ Existing finite job/controller budgets are unchanged. A `load_complete` result
 requires all driver gates, cgroup observations, shutdown and owned cleanup to
 succeed. Results still say `qualification=false`: they are execution observations,
 not independent build-origin or stable-promotion receipts. Offline mocks, race
-tests and cross-compilation cannot establish a real formal run pass. TLS,
-arm64 load/fault, matched performance, EKS and final same-byte
+tests and cross-compilation cannot establish a real formal run pass. The independent
+backend TLS cells use the same envelopes described above. Arm64 load/fault,
+matched performance, EKS and final same-byte
 candidate promotion remain separate deliverables; no final server lock is advanced.
 
 ### Finite native Linux executor

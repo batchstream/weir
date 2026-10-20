@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Owned native Linux finite Search correctness or exact formal plain load/fault.
+"""Owned native Linux finite Search correctness or exact formal backend load/fault.
 
 Execution observations are not build-origin or promotion receipts.
 
@@ -18,6 +18,7 @@ import re
 import shutil
 import signal
 import socket
+import ssl
 import stat
 import struct
 import subprocess
@@ -103,6 +104,7 @@ class Options:
     profile: str = PROFILE
     mongod: Path | None = None
     product: str = "elasticsearch"
+    transport: str = "plain"
 
 
 def backend_product(opts):
@@ -146,6 +148,7 @@ def sanitized(raw):
 
 def native_preflight(opts):
     require(opts.profile in PROFILES, "exact implemented profile required")
+    require(opts.transport in ("plain", "tls") and (opts.transport == "plain" or opts.profile in FORMAL_PROFILES), "TLS requires an exact formal profile")
     backend_product(opts)
     # No Docker command or fixture action is reachable on unsupported hosts.
     require(platform.system() == "Linux", "native Linux required; Darwin/Desktop unsupported")
@@ -210,7 +213,7 @@ def completion(opts):
     require(set(record) == expected_keys, "missing/unknown completion fields")
     require(type(record["schema"]) is int and record["schema"] == 1 and record["stage"] == opts["stage"] and record["profile"] == opts.get("profile", PROFILE) and record["revision"] == opts["revision"], "completion identity mismatch")
     require(type(record["driver_pid"]) is int and record["driver_pid"] == opts["pid"] and record["qualification"] is False, "completion driver identity/qualification mismatch")
-    cases = {"preflight": ["source", "cli", "kernel-driver"], "mongo": ["replica-init", "version", "advertised-loopback"], "load": LOAD_CASES, "fault": FAULT_CASES, "finite": FINITE_CASES}[opts["stage"]]
+    cases = {"tls": ["exact-loopback-certificates", "stock-security-configuration"], "preflight": ["source", "cli", "kernel-driver"], "mongo": ["replica-init", "version", "advertised-loopback"], "load": LOAD_CASES, "fault": FAULT_CASES, "finite": FINITE_CASES}[opts["stage"]]
     require(record["cases"] == cases, "missing, duplicate or reordered finite cases")
     require(type(record["samples"]) is int and type(record["documents"]) is int, "invalid sample/document counts")
     if opts["stage"] == "finite":
@@ -253,6 +256,9 @@ def free_port():
 
 
 def driver_name(profile, stage):
+    if stage == "tls":
+        require(profile in FORMAL_PROFILES, "TLS preparation requires formal profile")
+        return "TestProductionLinuxTLS"
     if profile in FORMAL_PROFILES:
         prefix = "TestProductionLinuxLoad" if profile == LOAD_PROFILE else "TestProductionLinuxFault"
         final_stage = "load" if profile == LOAD_PROFILE else "fault"
@@ -394,6 +400,9 @@ class Controller:
         target = self.opts.output / (stage + "-completion.json")
         env = os.environ.copy()
         env.update(environment)
+        env.pop("WEIR_NATIVE_TLS", None)
+        if self.opts.transport == "tls":
+            env["WEIR_NATIVE_TLS"] = str(self.opts.output / "tls-material")
         env.update(WEIR_FINITE_NATIVE="1", WEIR_FINITE_COMPLETION=str(target),
                    WEIR_EXECUTION_PROFILE=str(self.opts.output / "profile.json"),
                    WEIR_PROVENANCE_INPUTS=str(self.opts.output / "provenance.json"))
@@ -485,7 +494,9 @@ class Controller:
                 state = info["State"]
                 require(state["Running"] and not state["OOMKilled"], "backend exited during readiness: exit=" + str(state["ExitCode"]) + " oom=" + str(state["OOMKilled"]))
             try:
-                with self.http.open(url, timeout=min(2, remaining())) as response:
+                opener = self.secure_http if url.startswith("https://") else self.http
+                request = self.backend_request(url) if backend else url
+                with opener.open(request, timeout=min(2, remaining())) as response:
                     remaining()
                     raw = response.read((64 << 10) + 1)
                     remaining()
@@ -501,6 +512,14 @@ class Controller:
                     self.evidence("backend-identity.json", body)
                 remaining()
                 return
+            except urllib.error.HTTPError as error:
+                error.close()
+                if error.code == 503 and backend and getattr(self, "tls_bootstrap_pending", False):
+                    remaining()
+                    return
+                if error.code not in (401, 503):
+                    raise
+                time.sleep(min(.2, remaining()))
             except (urllib.error.URLError, TimeoutError, ConnectionError):
                 time.sleep(min(.2, remaining()))
 
@@ -558,7 +577,11 @@ class Controller:
                 expected_tmpfs = {path: options for path, options in expected_tmpfs.items() if path != data_destination}
                 data_mounts = [m for m in info["Mounts"] if m["Destination"] == data_destination]
                 require(len(data_mounts) == 1 and data_mounts[0]["Source"] == str(spec["data_directory"]) and data_mounts[0]["RW"], "owned load dependency storage mismatch")
-            require(info.get("Tmpfs") == expected_tmpfs and len(info["Mounts"]) == (2 if self.opts.profile in FORMAL_PROFILES else 1), "backend bounded tmpfs/foreign mounts mismatch")
+            mounts = spec.get("tls_mounts", [])
+            for source, destination in mounts:
+                actual = [m for m in info["Mounts"] if m["Destination"] == destination]
+                require(len(actual) == 1 and actual[0]["Source"] == str(source) and not actual[0]["RW"], "new TLS fixture mount mismatch")
+            require(info.get("Tmpfs") == expected_tmpfs and len(info["Mounts"]) == (2 if self.opts.profile in FORMAL_PROFILES else 1) + len(mounts), "backend bounded tmpfs/foreign mounts mismatch")
         self.evidence(spec["role"] + "-container.json", info)
         return info
 
@@ -604,6 +627,8 @@ class Controller:
 
     def prepare_load_storage(self):
         self.storage_paths = [self.opts.output / "es-data", self.opts.output / "mongo-data"]
+        if self.opts.transport == "tls":
+            self.storage_paths.append(self.opts.output / "tls-material")
         self.storage_owner = dict(owner=self.owner, paths=[])
         for path in self.storage_paths:
             path.mkdir(mode=0o700)
@@ -613,6 +638,8 @@ class Controller:
         # Inherit the runner group and group-writable descendants so the runner
         # can remove its own plain dependency data after the container is gone.
         self.storage_paths[0].chmod(0o2777)
+        if self.opts.transport == "tls":
+            self.storage_paths[2].chmod(0o755)
         self.evidence("load-storage-owner.json", self.storage_owner)
 
     def guard_load_storage(self):
@@ -731,6 +758,10 @@ class Controller:
         with self.opts.mongod.open("rb") as stream:
             require(hashlib.file_digest(stream, "sha256").hexdigest() == MONGO_SHA256, "native Mongo bytes changed before start")
         args = [str(self.opts.mongod), "--dbpath", str(directory), "--bind_ip", "127.0.0.1", "--port", str(self.mongo_port), "--replSet", self.owner]
+        if self.opts.transport == "tls":
+            material = self.opts.output / "tls-material"
+            self.mongo_uri += "&authSource=admin&authMechanism=SCRAM-SHA-256&tls=true"
+            args += ["--auth", "--keyFile", str(material / "mongo-cluster"), "--tlsMode", "requireTLS", "--tlsCertificateKeyFile", str(material / "mongo.pem"), "--tlsCAFile", str(material / "ca.pem"), "--tlsAllowConnectionsWithoutCertificates"]
         self.mongo_stream = (self.opts.output / "mongo-process.log").open("wb")
         environment = dict(PATH="/usr/bin:/bin", LANG="C", HOME=str(directory), TMPDIR=str(directory))
         self.mongo = subprocess.Popen(args, cwd=directory, env=environment, stdout=self.mongo_stream, stderr=subprocess.STDOUT, start_new_session=True)
@@ -794,8 +825,12 @@ class Controller:
             mongo = urllib.parse.urlsplit(message["mongo"])
             search = urllib.parse.urlsplit(message["search"])
             for endpoint in (mongo, search):
-                require(endpoint.hostname == "127.0.0.1" and endpoint.port and not endpoint.username and not endpoint.password and not endpoint.fragment, "fault proxies must be plain owned loopback")
-            require(mongo.scheme == "mongodb" and mongo.path == "/" and urllib.parse.parse_qs(mongo.query, strict_parsing=True) == {"directConnection": ["true"], "serverMonitoringMode": ["poll"]} and search.scheme == "http" and not search.path and not search.query, "wrong proxy protocol/topology")
+                require(endpoint.hostname == "127.0.0.1" and endpoint.port and not endpoint.username and not endpoint.password and not endpoint.fragment, "fault proxies must be exact owned loopback")
+            expected_query = {"directConnection": ["true"], "serverMonitoringMode": ["poll"]}
+            if self.opts.transport == "tls":
+                expected_query.update(tls=["true"], authSource=["admin"], authMechanism=["SCRAM-SHA-256"])
+            scheme = "https" if self.opts.transport == "tls" else "http"
+            require(mongo.scheme == "mongodb" and mongo.path == "/" and urllib.parse.parse_qs(mongo.query, strict_parsing=True) == expected_query and search.scheme == scheme and not search.path and not search.query, "wrong proxy protocol/topology")
             # These listeners must belong to the measured driver process, never an
             # unrelated loopback service. Bind the selected ports to its socket FDs.
             inodes = set()
@@ -813,7 +848,9 @@ class Controller:
                     listeners.add(fields[1])
             require(all("0100007F:%04X" % endpoint.port in listeners for endpoint in (mongo, search)), "proxy listeners not owned by actual driver")
             routing = 'stores:\n  - name: mongo\n    backend:\n      mongodb:\n        uri: "%s"\n  - name: search\n    backend:\n      search:\n        url: "%s"\n' % (message["mongo"], message["search"])
-            (self.opts.output / "routes.yaml").write_text(routing)
+            if self.opts.transport == "tls":
+                routing = self.tls_routing(message["mongo"], message["search"])
+            getattr(self, "routing_path", self.opts.output / "routes.yaml").write_text(routing)
             cli = self.container(self.fault_cli_spec)
             self.cli_resource = cli
             driver = process_snapshot(pid)
@@ -986,10 +1023,10 @@ class Controller:
         target = dict(os="linux", arch=self.arch)
         roles = dict(driver="owned-local", cli="owned-local")
         product, version = backend_product(self.opts)
-        backend = dict(product=product, version=version, transport="plain", endpoints=roles)
+        backend = dict(product=product, version=version, transport=self.opts.transport, endpoints=roles)
         backends = [backend]
         if self.opts.profile in FORMAL_PROFILES:
-            mongo = dict(product="mongodb", version="8.0.32", transport="plain", endpoints=roles)
+            mongo = dict(product="mongodb", version="8.0.32", transport=self.opts.transport, endpoints=roles)
             backends.insert(0, mongo)
         profile = dict(schemaVersion=1, id=self.opts.profile, suite="fault" if self.opts.profile == FAULT_PROFILE else "load" if self.opts.profile == LOAD_PROFILE else "functional", intent="formal" if self.opts.profile in FORMAL_PROFILES else "finite", policy="production-v1", executor="linux-native-v1", driver=target, cli=target, backends=backends)
         self.evidence("profile.json", profile)
@@ -1006,9 +1043,56 @@ class Controller:
         images = dict(base=self.base_image, backend=self.es_image, backend_reference=self.es_ref, base_reference=self.base_ref)
         self.evidence("images.json", images)
 
+    def prepare_tls(self):
+        environment = dict(WEIR_NATIVE_LOAD_OWNER=self.owner)
+        self.driver("tls", environment)
+        self.guard_load_storage()
+        material = self.opts.output / "tls-material"
+        state_path = material / "state.json"
+        require(not state_path.is_symlink() and state_path.stat().st_size <= 4096, "bounded new TLS metadata required")
+        self.tls_state = json.loads(state_path.read_text(), object_pairs_hook=unique_fields)
+        require(set(self.tls_state) == {"username", "password", "mongo_username", "mongo_password"} and self.tls_state["mongo_username"] == "weir_native" and re.fullmatch("[0-9a-f]{48}", self.tls_state["mongo_password"]) and self.tls_state["username"] == "weir_admin" and re.fullmatch("[0-9a-f]{48}", self.tls_state["password"]), "invalid generated TLS fixture metadata")
+        context = ssl.create_default_context(cafile=str(material / "ca.pem"))
+        context.minimum_version = ssl.TLSVersion.TLSv1_2
+        proxy_settings = {}
+        proxy = urllib.request.ProxyHandler(proxy_settings)
+        handlers = [proxy, NoRedirect(), urllib.request.HTTPSHandler(context=context)]
+        self.secure_http = urllib.request.build_opener(*handlers)
+
+    def tls_backend_spec(self, spec):
+        product, _ = backend_product(self.opts)
+        material = self.opts.output / "tls-material"
+        base = "/usr/share/" + product + "/config"
+        extra = [arg for arg in spec["extra"] if arg not in ("--env=xpack.security.enabled=false", "--env=DISABLE_SECURITY_PLUGIN=true")]
+        mounts = [(material, base + "/weir"), (material / (product + ".yml"), base + "/" + product + ".yml")]
+        if product == "elasticsearch":
+            mounts += [(material / name, base + "/" + name) for name in ("users", "users_roles", "roles.yml")]
+        for source, destination in mounts:
+            extra += ["--mount", "type=bind,src=" + str(source) + ",dst=" + destination + ",readonly"]
+        spec.update(extra=extra, tls_mounts=mounts)
+
+    def tls_routing(self, mongo, search):
+        trust = '      tls:\n        ca_file: "/fixture-ca.pem"\n'
+        def authentication(username, password):
+            return '      authentication:\n        username: "%s"\n        password: "%s"\n' % (username, password)
+        return ('stores:\n  - name: mongo\n    backend:\n      mongodb:\n        uri: "%s"\n' % mongo + trust +
+                authentication(self.tls_state["mongo_username"], self.tls_state["mongo_password"]) +
+                '  - name: search\n    backend:\n      search:\n        url: "%s"\n' % search + trust +
+                authentication(self.tls_state["username"], self.tls_state["password"]))
+
+    def backend_request(self, url):
+        request = urllib.request.Request(url)
+        if self.opts.transport == "tls":
+            import base64
+            pair = self.tls_state["username"] + ":" + self.tls_state["password"]
+            request.add_header("Authorization", "Basic " + base64.b64encode(pair.encode()).decode())
+        return request
+
     def run_fixture(self):
         if self.opts.profile in FORMAL_PROFILES:
             self.prepare_load_storage()
+        if self.opts.transport == "tls":
+            self.prepare_tls()
         network = Resource("network", self.owner)
         # Standard owned bridge permits the required loopback publications;
         # it does not provide outbound network isolation.
@@ -1036,10 +1120,22 @@ class Controller:
                 extra = [arg for arg in extra if not arg.startswith("--tmpfs=/usr/share/opensearch/data:")]
                 extra += ["--mount", "type=bind,src=" + str(data) + ",dst=/usr/share/opensearch/data"]
                 es_spec.update(extra=extra, command=OS_LOAD_COMMAND)
+        if self.opts.transport == "tls":
+            self.tls_backend_spec(es_spec)
         self.phase_deadline = min(self.deadline, time.monotonic() + 90)
         backend = self.container(es_spec)
-        oracle = "http://127.0.0.1:" + str(oracle_port)
+        oracle = ("https" if self.opts.transport == "tls" else "http") + "://127.0.0.1:" + str(oracle_port)
+        self.tls_bootstrap_pending = self.opts.transport == "tls" and backend_product(self.opts)[0] == "opensearch"
         self.wait_http(oracle + "/", 90, backend=backend)
+        if self.tls_bootstrap_pending:
+            self.guard(backend)
+            base = "/usr/share/opensearch/config/weir/"
+            self.docker(["exec", "--user=1000:1000", backend.identity,
+                         "/usr/share/opensearch/plugins/opensearch-security/tools/securityadmin.sh",
+                         "-h", "127.0.0.1", "-p", "9200", "-cn", self.owner,
+                         "-cacert", base + "ca.pem", "-cert", base + "admin.pem", "-key", base + "admin.key", "-cd", base + "security/"], 45)
+            self.tls_bootstrap_pending = False
+            self.wait_http(oracle + "/", 20, backend=backend)
         backend_before = self.observe(backend, es_spec, "before")
         self.phase_deadline = None
         if self.opts.profile in FORMAL_PROFILES:
@@ -1050,6 +1146,10 @@ class Controller:
             basic = 'listeners:\n  application: "127.0.0.1:%d"\ndiagnostics:\n  address: "127.0.0.1:%d"\ndiscovery:\n  advertise: ["127.0.0.1:%d"]\n' % (app_port, diag_port, app_port)
             routing = 'stores:\n  - name: mongo\n    backend:\n      mongodb:\n        uri: "%s"\n  - name: search\n    backend:\n      search:\n        url: "%s"\n' % (self.mongo_uri, oracle)
         basic_path, routing_path = self.opts.output / "weir.yaml", self.opts.output / "routes.yaml"
+        if self.opts.transport == "tls":
+            routing = self.tls_routing(self.mongo_uri, oracle)
+            routing_path = self.opts.output / "tls-material" / "routes.yaml"
+        self.routing_path = routing_path
         basic_path.write_text(basic)
         routing_path.write_text(routing)
         # Only these newly-created, credential-free fixture files are exposed
@@ -1057,7 +1157,9 @@ class Controller:
         basic_path.chmod(0o644)
         routing_path.chmod(0o644)
         cli_extra = ["--tmpfs=/tmp:rw,noexec,nosuid,size=16777216,uid=65532,gid=65532", "--entrypoint=/weir"]
-        for source, destination in ((self.opts.cli, "/weir"), (self.opts.output / "weir.yaml", "/weir.yaml"), (self.opts.output / "routes.yaml", "/routes.yaml")):
+        if self.opts.transport == "tls":
+            cli_extra += ["--mount", "type=bind,src=" + str(self.opts.output / "tls-material" / "ca.pem") + ",dst=/fixture-ca.pem,readonly"]
+        for source, destination in ((self.opts.cli, "/weir"), (basic_path, "/weir.yaml"), (routing_path, "/routes.yaml")):
             cli_extra += ["--mount", "type=bind,src=" + str(source) + ",dst=" + destination + ",readonly"]
         cli_ports = {7447: app_port, 7449: diag_port}
         cli_spec = dict(role="cli", memory=1 << 30, pids=96, user="65532:65532", network=network, ports=cli_ports, extra=cli_extra, image=self.base_ref, image_id=self.base_image["Id"], command=["serve", "--config=/weir.yaml", "--routes=/routes.yaml"])
@@ -1122,8 +1224,9 @@ def main():
     parser.add_argument("--profile", required=True, choices=tuple(PROFILES))
     parser.add_argument("--mongod")
     parser.add_argument("--product", choices=("elasticsearch", "opensearch"), default="elasticsearch", help="exact formal search product; finite profiles select their own product")
+    parser.add_argument("--transport", choices=("plain", "tls"), default="plain", help="backend and fault relay transport; application listener unchanged")
     args = parser.parse_args()
-    opts = Options(server_root=Path(args.server_root), harness_root=Path(args.harness_root), revision=args.revision, cli=Path(args.cli), driver=Path(args.driver), observer=Path(args.observer), output=Path(args.output), profile=args.profile, mongod=Path(args.mongod) if args.mongod else None, product=args.product)
+    opts = Options(server_root=Path(args.server_root), harness_root=Path(args.harness_root), revision=args.revision, cli=Path(args.cli), driver=Path(args.driver), observer=Path(args.observer), output=Path(args.output), profile=args.profile, mongod=Path(args.mongod) if args.mongod else None, product=args.product, transport=args.transport)
     require(opts.output.is_absolute() and opts.output.parent.resolve() == opts.output.parent and not opts.output.exists(), "new canonical task-owned evidence directory required")
     controller = Controller(opts)
     controller.execute()

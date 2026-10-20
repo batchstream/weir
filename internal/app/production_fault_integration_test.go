@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -834,15 +835,28 @@ func startProcessFaultHTTPProxy(t *testing.T, upstream string) *processFaultHTTP
 	return startProcessFaultHTTPProxyOn(t, upstream, "0.0.0.0:0")
 }
 
+type processFaultProxyOptions struct {
+	upstream, address    string
+	serverTLS, clientTLS *tls.Config
+}
+
 func startProcessFaultHTTPProxyOn(t *testing.T, upstream, address string) *processFaultHTTPProxy {
+	opts := processFaultProxyOptions{upstream: upstream, address: address}
+	return startProcessFaultProxy(t, opts)
+}
+
+func startProcessFaultProxy(t *testing.T, opts processFaultProxyOptions) *processFaultHTTPProxy {
 	t.Helper()
-	listener, err := net.Listen("tcp", address)
+	listener, err := net.Listen("tcp", opts.address)
 	if err != nil {
 		t.Fatal(err)
 	}
-	transport := &http.Transport{Proxy: nil, DisableCompression: true, DisableKeepAlives: true, MaxConnsPerHost: 32}
+	if opts.serverTLS != nil {
+		listener = tls.NewListener(listener, opts.serverTLS)
+	}
+	transport := &http.Transport{Proxy: nil, DisableCompression: true, DisableKeepAlives: true, MaxConnsPerHost: 32, TLSClientConfig: opts.clientTLS}
 	client := &http.Client{Transport: transport, Timeout: processFaultProxyTimeout, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
-	proxy := &processFaultHTTPProxy{listener: listener, client: client, upstream: upstream, done: make(chan struct{}), conns: make(map[net.Conn]struct{})}
+	proxy := &processFaultHTTPProxy{listener: listener, client: client, upstream: opts.upstream, done: make(chan struct{}), conns: make(map[net.Conn]struct{})}
 	proxy.server = &http.Server{Handler: http.HandlerFunc(proxy.serve), ReadHeaderTimeout: time.Second, ReadTimeout: processFaultProxyTimeout, WriteTimeout: processFaultProxyTimeout, ConnState: proxy.connectionState}
 	go func() { _ = proxy.server.Serve(listener) }()
 	t.Cleanup(func() {

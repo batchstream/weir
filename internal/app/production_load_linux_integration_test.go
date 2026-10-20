@@ -35,8 +35,11 @@ func nativeLoadInputs(t *testing.T) *testexecution.ValidatedInputs {
 		suite = "fault"
 	}
 	inputs := loadProductionExecution(t, suite)
-	if suite == "load" && !inputs.Profile().NativePlainLoad() || suite == "fault" && !inputs.Profile().NativePlainFault() {
-		t.Fatal("only formal MongoDB/Elasticsearch plain load is implemented")
+	if suite == "load" && !inputs.Profile().NativePlainLoad() && !inputs.Profile().NativeTLSLoad() || suite == "fault" && !inputs.Profile().NativePlainFault() && !inputs.Profile().NativeTLSFault() {
+		t.Fatal("only exact native formal backend transport cells are implemented")
+	}
+	if (os.Getenv("WEIR_NATIVE_TLS") != "") != (inputs.Profile().Backends[0].Transport == "tls") {
+		t.Fatal("native fixture transport disagrees with validated profile")
 	}
 	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
 	defer cancel()
@@ -71,6 +74,19 @@ func nativeLoadBase(inputs *testexecution.ValidatedInputs, stage string) finiteC
 	return record
 }
 
+func TestProductionLinuxTLS(t *testing.T) {
+	inputs := nativeLoadInputs(t)
+	directory := os.Getenv("WEIR_NATIVE_TLS")
+	if directory == "" {
+		t.Fatal("new controller-owned TLS directory required")
+	}
+	opts := testsearch.NativeTLSOptions{Directory: directory, Owner: os.Getenv("WEIR_NATIVE_LOAD_OWNER"), Product: inputs.Profile().Backends[1].Product}
+	testsearch.PrepareNativeTLS(t, opts)
+	record := nativeLoadBase(inputs, "tls")
+	record.Cases = []string{"exact-loopback-certificates", "stock-security-configuration"}
+	nativeLoadRecord(t, record)
+}
+
 func TestProductionLinuxLoadPreflight(t *testing.T) {
 	inputs := nativeLoadInputs(t)
 	record := nativeLoadBase(inputs, "preflight")
@@ -84,7 +100,11 @@ func nativeLoadMongo(t *testing.T, initialize bool) *testmongo.Fixture {
 	t.Helper()
 	uri, set := os.Getenv("WEIR_NATIVE_LOAD_MONGO"), os.Getenv("WEIR_NATIVE_LOAD_OWNER")
 	parsed, err := url.Parse(uri)
-	if err != nil || parsed.Scheme != "mongodb" || parsed.User != nil || parsed.Path != "/" || parsed.RawQuery != "replicaSet="+set || !regexp.MustCompile(`^weir-finite-[0-9a-f]{32}$`).MatchString(set) {
+	expectedQuery := "replicaSet=" + set
+	if os.Getenv("WEIR_NATIVE_TLS") != "" {
+		expectedQuery += "&authSource=admin&authMechanism=SCRAM-SHA-256&tls=true"
+	}
+	if err != nil || parsed.Scheme != "mongodb" || parsed.User != nil || parsed.Path != "/" || parsed.RawQuery != expectedQuery || !regexp.MustCompile(`^weir-finite-[0-9a-f]{32}$`).MatchString(set) {
 		t.Fatal("invalid owned native Mongo endpoint")
 	}
 	if err := finiteLoopback(parsed.Host); err != nil {
@@ -95,6 +115,14 @@ func nativeLoadMongo(t *testing.T, initialize bool) *testmongo.Fixture {
 		connectionURI = "mongodb://" + parsed.Host + "/"
 	}
 	opts := options.Client().ApplyURI(connectionURI).SetDirect(initialize).SetRetryReads(false).SetRetryWrites(false).SetMaxAdaptiveRetries(0).SetMaxPoolSize(8).SetServerSelectionTimeout(time.Second)
+	if directory := os.Getenv("WEIR_NATIVE_TLS"); directory != "" {
+		_, clientTLS, material := testsearch.NativeTLS(t, directory)
+		opts.SetTLSConfig(clientTLS)
+		if !initialize {
+			credential := options.Credential{AuthMechanism: "SCRAM-SHA-256", AuthSource: "admin", Username: material.MongoUsername, Password: material.MongoPassword, PasswordSet: true}
+			opts.SetAuth(credential)
+		}
+	}
 	client, err := mongo.Connect(opts)
 	if err != nil {
 		t.Fatal(err)
@@ -133,7 +161,20 @@ func nativeLoadMongo(t *testing.T, initialize bool) *testmongo.Fixture {
 		time.Sleep(100 * time.Millisecond)
 	}
 	fixture := &testmongo.Fixture{Admin: client, DB: strings.ReplaceAll(set, "-", "_"), URI: uri}
+	if directory := os.Getenv("WEIR_NATIVE_TLS"); directory != "" {
+		server, upstream, _ := testsearch.NativeTLS(t, directory)
+		fixture.SetOwnedProxyTLS(server, upstream)
+	}
 	verifyLegacyMongoVersion(t, fixture)
+	if initialize && os.Getenv("WEIR_NATIVE_TLS") != "" {
+		_, _, material := testsearch.NativeTLS(t, os.Getenv("WEIR_NATIVE_TLS"))
+		// The stock localhost exception bootstraps exactly this fresh replica.
+		role := bson.D{{Key: "role", Value: "root"}, {Key: "db", Value: "admin"}}
+		create := bson.D{{Key: "createUser", Value: material.MongoUsername}, {Key: "pwd", Value: material.MongoPassword}, {Key: "roles", Value: bson.A{role}}, {Key: "mechanisms", Value: bson.A{"SCRAM-SHA-256"}}}
+		if err := client.Database("admin").RunCommand(ctx, create).Err(); err != nil {
+			t.Fatal("owned native SCRAM bootstrap failed")
+		}
+	}
 	return fixture
 }
 
@@ -177,7 +218,7 @@ func runNativeProductionLoad(t *testing.T, inputs *testexecution.ValidatedInputs
 			t.Error(err)
 		}
 	})
-	owned := testsearch.OwnedEndpoint{URL: os.Getenv("WEIR_NATIVE_LOAD_ORACLE"), Owner: os.Getenv("WEIR_NATIVE_LOAD_OWNER"), Product: inputs.Profile().Backends[1].Product}
+	owned := testsearch.OwnedEndpoint{URL: os.Getenv("WEIR_NATIVE_LOAD_ORACLE"), Owner: os.Getenv("WEIR_NATIVE_LOAD_OWNER"), Product: inputs.Profile().Backends[1].Product, TLSDirectory: os.Getenv("WEIR_NATIVE_TLS")}
 	search := testsearch.OpenOwned(t, owned)
 	datasets := seedProductionQualificationDatasets(t, fixture, search)
 	process := &memoryRecoveryCLI{address: address, diagnostic: diagnostics, capacity: 1 << 30, automatic: true, stores: 2}

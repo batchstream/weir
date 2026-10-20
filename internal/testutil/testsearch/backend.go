@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -76,9 +77,10 @@ func Open(t *testing.T) *Backend {
 
 type OwnedEndpoint struct {
 	URL, Owner, Product string
+	TLSDirectory        string
 }
 
-// OpenOwned is only for the finite controller's product-explicit fresh backend.
+// OpenOwned is only for the native controller's product-explicit fresh backend.
 // Open's historical fixed-address opt-ins and identities are unchanged.
 func OpenOwned(t *testing.T, opts OwnedEndpoint) *Backend {
 	t.Helper()
@@ -86,9 +88,13 @@ func OpenOwned(t *testing.T, opts OwnedEndpoint) *Backend {
 	if err != nil {
 		t.Fatal(err)
 	}
+	scheme := "http"
+	if opts.TLSDirectory != "" {
+		scheme = "https"
+	}
 	u, err := url.Parse(opts.URL)
-	if err != nil || u.Scheme != "http" || u.Hostname() != "127.0.0.1" || u.User != nil || u.Path != "" || u.RawQuery != "" || u.Fragment != "" {
-		t.Fatal("owned backend requires a plain loopback origin")
+	if err != nil || u.Scheme != scheme || u.Hostname() != "127.0.0.1" || u.User != nil || u.Path != "" || u.RawQuery != "" || u.Fragment != "" {
+		t.Fatal("owned backend requires its selected loopback transport")
 	}
 	_, port, err := net.SplitHostPort(u.Host)
 	n, parseErr := strconv.Atoi(port)
@@ -98,6 +104,12 @@ func OpenOwned(t *testing.T, opts OwnedEndpoint) *Backend {
 	transport := &http.Transport{Proxy: nil, MaxConnsPerHost: 8, MaxIdleConnsPerHost: 8, DisableCompression: true}
 	client := &http.Client{Transport: transport, Timeout: 3 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	b := &Backend{URL: opts.URL, Product: opts.Product, Profile: profile, Index: "weir_finite_" + strings.TrimPrefix(opts.Owner, "weir-finite-"), Client: client}
+	if opts.TLSDirectory != "" {
+		_, trust, material := NativeTLS(t, opts.TLSDirectory)
+		transport.TLSClientConfig = trust
+		b.Username, b.Password = material.Username, material.Password
+		b.CAFile = filepath.Join(opts.TLSDirectory, "ca.pem")
+	}
 	status, raw := b.Do(t, "GET", "/", "")
 	if status != http.StatusOK {
 		t.Fatal("owned backend identity status", status)

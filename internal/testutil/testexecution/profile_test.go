@@ -226,11 +226,22 @@ func TestExecutionProfileContractDeclaredNotExecutable(t *testing.T) {
 						callbacks++
 					}
 					want := 0
-					if arch == "amd64" && transport == "plain" {
+					if arch == "amd64" {
 						want = 1
 					}
 					if callbacks != want {
 						t.Fatal("exact native capability dispatch differs", profile, callbacks, want)
+					}
+					mixed := profile
+					mixed.Backends = append([]Backend(nil), profile.Backends...)
+					if transport == "plain" {
+						mixed.Backends[1].Transport = "tls"
+					} else {
+						mixed.Backends[1].Transport = "plain"
+					}
+					inputs.profile = mixed
+					if err := inputs.RequireExecutable(); err == nil {
+						t.Fatal("mixed backend transports became executable")
 					}
 					profile.Intent = "smoke"
 					inputs.profile = profile

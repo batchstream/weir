@@ -2,7 +2,16 @@
 
 package testmongo
 
-import "testing"
+import (
+	"crypto/tls"
+	"testing"
+)
+
+// SetOwnedProxyTLS uses the dedicated generated fixture identity and verified
+// upstream trust without changing database client behavior or wire injection.
+func (fixture *Fixture) SetOwnedProxyTLS(server, client *tls.Config) {
+	fixture.serverTLS, fixture.clientTLS = server, client
+}
 
 type ProxyOptions struct {
 	Fixture       *Fixture

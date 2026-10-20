@@ -9,7 +9,9 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"encoding/pem"
 	"fmt"
 	"io"
@@ -19,6 +21,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -42,6 +45,85 @@ type SecureFixture struct {
 	name, image, product string
 	materials            string
 	created              bool
+	native               bool
+	indexPattern         string
+}
+
+// NativeTLSOptions describes only newly allocated controller-owned material.
+type NativeTLSOptions struct {
+	Directory, Owner, Product string
+}
+
+type NativeTLSMaterial struct {
+	Username      string `json:"username"`
+	Password      string `json:"password"`
+	MongoUsername string `json:"mongo_username"`
+	MongoPassword string `json:"mongo_password"`
+}
+
+// PrepareNativeTLS reuses the finite secure fixture's cert and security config
+// generation without starting a database or changing its runtime defaults.
+func PrepareNativeTLS(t *testing.T, opts NativeTLSOptions) {
+	t.Helper()
+	if _, err := ownedProfile(opts.Product); err != nil {
+		t.Fatal(err)
+	}
+	canonical, err := filepath.EvalSymlinks(opts.Directory)
+	if err != nil || !filepath.IsAbs(opts.Directory) || canonical != opts.Directory || !regexp.MustCompile(`^weir-finite-[0-9a-f]{32}$`).MatchString(opts.Owner) {
+		t.Fatal("new canonical owned TLS directory required")
+	}
+	entries, err := os.ReadDir(opts.Directory)
+	if err != nil || len(entries) != 0 {
+		t.Fatal("TLS material directory must be newly allocated and empty")
+	}
+	fixture := &SecureFixture{materials: opts.Directory, name: opts.Owner, product: opts.Product, native: true, indexPattern: "weir_finite_*"}
+	fixture.certificates(t)
+	admin, application := randomPassword(t), randomPassword(t)
+	fixture.configuration(t, admin, application)
+	material := NativeTLSMaterial{Username: "weir_admin", Password: admin, MongoUsername: "weir_native", MongoPassword: randomPassword(t)}
+	raw, err := json.Marshal(material)
+	if err != nil {
+		t.Fatal("native TLS metadata encoding")
+	}
+	fixture.write(t, "state.json", string(raw), 0600)
+	// mongod consumes the same exact-loopback identity as a combined PEM.
+	cert, err := os.ReadFile(filepath.Join(opts.Directory, "server.pem"))
+	if err != nil {
+		t.Fatal("new fixture certificate unavailable")
+	}
+	key, err := os.ReadFile(filepath.Join(opts.Directory, "server.key"))
+	if err != nil {
+		t.Fatal("new fixture private material unavailable")
+	}
+	fixture.write(t, "mongo.pem", string(append(cert, key...)), 0600)
+	clusterKey := make([]byte, 512)
+	if _, err := rand.Read(clusterKey); err != nil {
+		t.Fatal("new native replica authentication material generation")
+	}
+	fixture.write(t, "mongo-cluster", base64.StdEncoding.EncodeToString(clusterKey), 0600)
+}
+
+// NativeTLS loads only the newly generated dedicated material passed by the
+// controller. RootCAs and the exact IP identity are used on both proxy legs.
+func NativeTLS(t *testing.T, directory string) (*tls.Config, *tls.Config, NativeTLSMaterial) {
+	t.Helper()
+	var material NativeTLSMaterial
+	raw, err := os.ReadFile(filepath.Join(directory, "state.json"))
+	if err != nil || json.Unmarshal(raw, &material) != nil || material.Username != "weir_admin" || len(material.Password) != 48 || material.MongoUsername != "weir_native" || len(material.MongoPassword) != 48 {
+		t.Fatal("new native fixture metadata unavailable")
+	}
+	ca, err := os.ReadFile(filepath.Join(directory, "ca.pem"))
+	roots := x509.NewCertPool()
+	if err != nil || !roots.AppendCertsFromPEM(ca) {
+		t.Fatal("new native fixture CA unavailable")
+	}
+	certificate, err := tls.LoadX509KeyPair(filepath.Join(directory, "server.pem"), filepath.Join(directory, "server.key"))
+	if err != nil {
+		t.Fatal("new native fixture identity unavailable")
+	}
+	server := &tls.Config{Certificates: []tls.Certificate{certificate}, MinVersion: tls.VersionTLS12}
+	client := &tls.Config{RootCAs: roots, ServerName: "127.0.0.1", MinVersion: tls.VersionTLS12}
+	return server, client, material
 }
 
 func OpenSecure(t *testing.T) *SecureFixture {
@@ -247,6 +329,9 @@ func randomPassword(t *testing.T) string {
 
 func (f *SecureFixture) write(t *testing.T, name, body string, mode os.FileMode) {
 	t.Helper()
+	if f.indexPattern != "" {
+		body = strings.ReplaceAll(body, "weir_search_secure_*", f.indexPattern)
+	}
 	if err := os.WriteFile(filepath.Join(f.materials, name), []byte(body), mode); err != nil {
 		t.Fatal("fixture file creation failed")
 	}
@@ -298,6 +383,10 @@ func (f *SecureFixture) certificates(t *testing.T) *x509.CertPool {
 			DNSNames:     []string{"localhost", "weir-node", "search.test", "host.docker.internal"},
 			IPAddresses:  []net.IP{net.ParseIP("127.0.0.1")},
 		}
+		if f.native {
+			// Every native endpoint, including securityadmin, is exactly 127.0.0.1.
+			leaf.DNSNames = nil
+		}
 		der, err := x509.CreateCertificate(rand.Reader, leaf, ca, &leafKey.PublicKey, key)
 		if err != nil {
 			t.Fatal("fixture certificate generation")
@@ -327,6 +416,10 @@ func (f *SecureFixture) configuration(t *testing.T, adminPass, appPass string) {
 		t.Fatal("fixture password hashing")
 	}
 	common := "cluster.name: " + f.name + "\nnode.name: weir-node\nnetwork.host: 0.0.0.0\ndiscovery.type: single-node\naction.auto_create_index: false\nthread_pool.write.size: 1\nthread_pool.write.queue_size: 1\n"
+	if f.native {
+		// Native formal execution retains stock database scheduling defaults.
+		common = "cluster.name: " + f.name + "\nnode.name: weir-node\nnetwork.host: 0.0.0.0\ndiscovery.type: single-node\naction.auto_create_index: false\n"
+	}
 	if f.product == "elasticsearch" {
 		f.write(t, "elasticsearch.yml", common+`xpack.security.enabled: true
 xpack.security.autoconfiguration.enabled: false
@@ -417,6 +510,11 @@ weir_reader:
   users: [weir_reader]
 `,
 		"action_groups": "", "tenants": "", "nodes_dn": "", "whitelist": "", "audit": "config:\n  enabled: false\n",
+	}
+	if f.native {
+		// The independent formal oracle uses index-scoped multi-get as well as
+		// the existing fixture bootstrap/index management operations.
+		files["roles"] = strings.Replace(files["roles"], "['cluster:*', 'indices:data/write/bulk*']", "['cluster:*', 'indices:data/read/mget', 'indices:data/write/bulk*']", 1)
 	}
 	for name, body := range files {
 		kind := strings.ReplaceAll(name, "_", "")

@@ -74,7 +74,7 @@ func TestProductionProcessQualification(t *testing.T) {
 	}
 	execution := loadProductionExecution(t, "load")
 	profile := execution.Profile()
-	if profile.NativePlainLoad() {
+	if profile.NativePlainLoad() || profile.NativeTLSLoad() {
 		if os.Getenv("WEIR_NATIVE_LOAD") != "1" {
 			t.Fatal("formal load requires the owned native Linux controller")
 		}
@@ -800,6 +800,9 @@ func verifyQualificationOracle(t *testing.T, dataset *qualificationDataset) {
 			httpRequest, err := http.NewRequest(http.MethodPost, dataset.search.URL+"/"+dataset.root+"/_mget", bytes.NewReader(raw))
 			if err != nil {
 				t.Fatal(err)
+			}
+			if dataset.search.Username != "" {
+				httpRequest.SetBasicAuth(dataset.search.Username, dataset.search.Password)
 			}
 			httpRequest.Header.Set("Content-Type", "application/json")
 			response, err := dataset.search.Client.Do(httpRequest)

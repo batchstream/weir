@@ -68,17 +68,22 @@ jobs:
 
   native-linux-formal:
     # Independent real cells; neither offline contracts nor another cell's PASS suffice.
-    name: native-linux-formal-${{ matrix.product }}-${{ matrix.suite }}
+    name: native-linux-formal-${{ matrix.product }}-${{ matrix.suite }}${{ matrix.suffix }}
     strategy:
       fail-fast: false
       matrix:
         product: [elasticsearch, opensearch]
         suite: [load, fault]
+        transport: [plain, tls]
         include:
           - suite: load
             envelope: 18m
           - suite: fault
             envelope: 8m
+          - transport: plain
+            suffix: ''
+          - transport: tls
+            suffix: '-tls'
     # Ephemeral native runner only; no shared/EKS network changes or promotion.
     runs-on: ubuntu-24.04
     timeout-minutes: 25
@@ -98,12 +103,12 @@ jobs:
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
           revision=$(git rev-parse HEAD)
           test "$revision" = '${{ github.event.pull_request.head.sha || github.sha }}'
-          mkdir -p .testdata/native-linux-formal-${{ matrix.product }}-${{ matrix.suite }}/bin
-          go build -trimpath -buildvcs=false -ldflags="-buildid= -X main.sourceRevision=$revision" -o .testdata/native-linux-formal-${{ matrix.product }}-${{ matrix.suite }}/bin/weir ./cmd/weir
-          go test -c -tags=integration -trimpath -buildvcs=false -o .testdata/native-linux-formal-${{ matrix.product }}-${{ matrix.suite }}/bin/app.test ./internal/app
-          go build -trimpath -buildvcs=false -o .testdata/native-linux-formal-${{ matrix.product }}-${{ matrix.suite }}/bin/observer ./internal/testutil/testresource
-          sha256sum .testdata/native-linux-formal-${{ matrix.product }}-${{ matrix.suite }}/bin/* > .testdata/native-linux-formal-${{ matrix.product }}-${{ matrix.suite }}/build-sha256.txt
-          printf '%s\n' "$revision" > .testdata/native-linux-formal-${{ matrix.product }}-${{ matrix.suite }}/source-revision.txt
+          mkdir -p .testdata/native-linux-formal-${{ matrix.product }}-${{ matrix.suite }}${{ matrix.suffix }}/bin
+          go build -trimpath -buildvcs=false -ldflags="-buildid= -X main.sourceRevision=$revision" -o .testdata/native-linux-formal-${{ matrix.product }}-${{ matrix.suite }}${{ matrix.suffix }}/bin/weir ./cmd/weir
+          go test -c -tags=integration -trimpath -buildvcs=false -o .testdata/native-linux-formal-${{ matrix.product }}-${{ matrix.suite }}${{ matrix.suffix }}/bin/app.test ./internal/app
+          go build -trimpath -buildvcs=false -o .testdata/native-linux-formal-${{ matrix.product }}-${{ matrix.suite }}${{ matrix.suffix }}/bin/observer ./internal/testutil/testresource
+          sha256sum .testdata/native-linux-formal-${{ matrix.product }}-${{ matrix.suite }}${{ matrix.suffix }}/bin/* > .testdata/native-linux-formal-${{ matrix.product }}-${{ matrix.suite }}${{ matrix.suffix }}/build-sha256.txt
+          printf '%s\n' "$revision" > .testdata/native-linux-formal-${{ matrix.product }}-${{ matrix.suite }}${{ matrix.suffix }}/source-revision.txt
       - name: Explicit immutable public image preparation
         run: |
           config=$(mktemp -d "$RUNNER_TEMP/weir-formal-public-images.XXXXXX")
@@ -114,32 +119,33 @@ jobs:
           fi
           docker --config "$config" --host=unix:///var/run/docker.sock pull --platform=linux/amd64 "$base"
           docker --config "$config" --host=unix:///var/run/docker.sock pull --platform=linux/amd64 "$backend"
-      - name: Real formal plain cell (load retains unchanged 30s warmup plus 600s)
+      - name: Real formal backend transport cell (load retains unchanged 30s warmup plus 600s)
         run: |
           root=$(pwd -P)
           binary="$WEIR_MONGO_REPLICA_BINARY"
           while IFS= read -r name; do
             case "$name" in WEIR_*|DOCKER_*) unset "$name";; esac
           done < <(compgen -e)
-          timeout ${{ matrix.envelope }} python3 -I scripts/test-production-linux.py --profile=linux-native-${{ matrix.suite }}-v1 --product=${{ matrix.product }} \
+          timeout ${{ matrix.envelope }} python3 -I scripts/test-production-linux.py --profile=linux-native-${{ matrix.suite }}-v1 --product=${{ matrix.product }} --transport=${{ matrix.transport }} \
             --server-root="$root" --harness-root="$root" --revision="$(git rev-parse HEAD)" \
-            --cli="$root/.testdata/native-linux-formal-${{ matrix.product }}-${{ matrix.suite }}/bin/weir" \
-            --driver="$root/.testdata/native-linux-formal-${{ matrix.product }}-${{ matrix.suite }}/bin/app.test" \
-            --observer="$root/.testdata/native-linux-formal-${{ matrix.product }}-${{ matrix.suite }}/bin/observer" \
-            --mongod="$binary" --output="$root/.testdata/native-linux-formal-${{ matrix.product }}-${{ matrix.suite }}/evidence"
+            --cli="$root/.testdata/native-linux-formal-${{ matrix.product }}-${{ matrix.suite }}${{ matrix.suffix }}/bin/weir" \
+            --driver="$root/.testdata/native-linux-formal-${{ matrix.product }}-${{ matrix.suite }}${{ matrix.suffix }}/bin/app.test" \
+            --observer="$root/.testdata/native-linux-formal-${{ matrix.product }}-${{ matrix.suite }}${{ matrix.suffix }}/bin/observer" \
+            --mongod="$binary" --output="$root/.testdata/native-linux-formal-${{ matrix.product }}-${{ matrix.suite }}${{ matrix.suffix }}/evidence"
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
       - name: Retain bounded load observations, not database data or promotion evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: native-linux-amd64-formal-${{ matrix.product }}-${{ matrix.suite }}-${{ github.event.pull_request.head.sha || github.sha }}
+          name: native-linux-amd64-formal-${{ matrix.product }}-${{ matrix.suite }}${{ matrix.suffix }}-${{ github.event.pull_request.head.sha || github.sha }}
           path: |
-            .testdata/native-linux-formal-${{ matrix.product }}-${{ matrix.suite }}/evidence/*.json
-            .testdata/native-linux-formal-${{ matrix.product }}-${{ matrix.suite }}/evidence/*.jsonl
-            .testdata/native-linux-formal-${{ matrix.product }}-${{ matrix.suite }}/evidence/*driver.log
-            .testdata/native-linux-formal-${{ matrix.product }}-${{ matrix.suite }}/evidence/command-*.log
-            .testdata/native-linux-formal-${{ matrix.product }}-${{ matrix.suite }}/build-sha256.txt
-            .testdata/native-linux-formal-${{ matrix.product }}-${{ matrix.suite }}/source-revision.txt
+            .testdata/native-linux-formal-${{ matrix.product }}-${{ matrix.suite }}${{ matrix.suffix }}/evidence/*.json
+            .testdata/native-linux-formal-${{ matrix.product }}-${{ matrix.suite }}${{ matrix.suffix }}/evidence/*.jsonl
+            .testdata/native-linux-formal-${{ matrix.product }}-${{ matrix.suite }}${{ matrix.suffix }}/evidence/*driver.log
+            .testdata/native-linux-formal-${{ matrix.product }}-${{ matrix.suite }}${{ matrix.suffix }}/evidence/command-*.log
+            .testdata/native-linux-formal-${{ matrix.product }}-${{ matrix.suite }}${{ matrix.suffix }}/build-sha256.txt
+            .testdata/native-linux-formal-${{ matrix.product }}-${{ matrix.suite }}${{ matrix.suffix }}/source-revision.txt
+            !.testdata/native-linux-formal-${{ matrix.product }}-${{ matrix.suite }}${{ matrix.suffix }}/evidence/tls-material/**
           if-no-files-found: warn
           retention-days: 7
 

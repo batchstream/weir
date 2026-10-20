@@ -189,6 +189,25 @@ func (p ExecutionProfile) NativePlainFault() bool {
 	return p.NativePlainLoad()
 }
 
+// NativeTLSLoad admits only matching verified backend TLS cells. The application
+// listener remains unchanged; this does not assert client-to-Weir TLS.
+func (p ExecutionProfile) NativeTLSLoad() bool {
+	if validateProfile(p) != nil || len(p.Backends) != 2 || p.Backends[0].Transport != "tls" || p.Backends[1].Transport != "tls" {
+		return false
+	}
+	p.Backends = append([]Backend(nil), p.Backends...)
+	p.Backends[0].Transport, p.Backends[1].Transport = "plain", "plain"
+	return p.NativePlainLoad()
+}
+
+func (p ExecutionProfile) NativeTLSFault() bool {
+	if validateProfile(p) != nil || p.ID != "linux-native-fault-v1" || p.Suite != "fault" {
+		return false
+	}
+	p.ID, p.Suite = "linux-native-load-v1", "load"
+	return p.NativeTLSLoad()
+}
+
 // RequireExecutable is deliberately separate from parsing and byte validation.
 // Unsupported declarations must not downgrade into an implemented capability.
 // Native load is restricted independently of the broader declarable profile schema.
@@ -196,7 +215,7 @@ func (v *ValidatedInputs) RequireExecutable() error {
 	if v == nil || !v.valid {
 		return fmt.Errorf("validated inputs required")
 	}
-	if v.profile.Executor != LegacyExecutor && v.profile.ID != LinuxFunctionalID && v.profile.ID != LinuxOpenSearchFunctionalID && !v.profile.NativePlainLoad() && !v.profile.NativePlainFault() {
+	if v.profile.Executor != LegacyExecutor && v.profile.ID != LinuxFunctionalID && v.profile.ID != LinuxOpenSearchFunctionalID && !v.profile.NativePlainLoad() && !v.profile.NativePlainFault() && !v.profile.NativeTLSLoad() && !v.profile.NativeTLSFault() {
 		return fmt.Errorf("executor %q is declared but not implemented; no fixtures may be created", v.profile.Executor)
 	}
 	return nil
