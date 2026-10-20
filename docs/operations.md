@@ -593,6 +593,7 @@ The OpenSearch dependency instead uses its pinned stock image/entrypoint with a
 normal disposable writable container layer, not a held config volume or helper.
 Its data/log/tmp tmpfs and resource limits have the same 256/32/128MiB and
 2CPU/1536MiB/512-PID bounds; ordinary executable `/tmp` supports stock startup.
+The fixture explicitly requests `exec` on that bounded backend mount; CLI `/tmp` remains `noexec`.
 It remains nonroot/cap-drop/no-new-privileges. This is an external test dependency,
 not a database deployment recommendation, security claim or production gate.
 Only identity/readiness, bounded fixture controls and owned cleanup are required;

@@ -70,7 +70,7 @@ OS_PINS = {
 }
 OS_LOAD_COMMAND = ["/bin/bash", "-euc", "umask 0002\nexec ./opensearch-docker-entrypoint.sh opensearch"]
 OS_TMPFS = {
-    "/tmp": "rw,nosuid,nodev,size=134217728,uid=1000,gid=1000",
+    "/tmp": "rw,exec,nosuid,nodev,size=134217728,uid=1000,gid=1000",
     "/usr/share/opensearch/data": "rw,noexec,nosuid,nodev,size=268435456,uid=1000,gid=1000",
     "/usr/share/opensearch/logs": "rw,noexec,nosuid,nodev,size=33554432,uid=1000,gid=1000",
 }

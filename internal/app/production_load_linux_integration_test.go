@@ -4,7 +4,10 @@ package app
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
+	"errors"
 	"net/url"
 	"os"
 	"os/exec"
@@ -94,6 +97,139 @@ func TestProductionLinuxLoadPreflight(t *testing.T) {
 	nativeLoadRecord(t, record)
 }
 
+type nativeMongoOracleConfig struct {
+	URI        string
+	Initialize bool
+	TLSConfig  *tls.Config
+	Credential options.Credential
+}
+
+// The original fixture/CLI/proxy URI stays credential-free and unchanged. Only
+// the independent oracle's driver input omits URI authentication options: ApplyURI
+// validates SCRAM usernames before separate SetAuth credentials can be supplied.
+func nativeMongoOracleOptions(cfg nativeMongoOracleConfig) (*options.ClientOptions, error) {
+	parsed, err := url.Parse(cfg.URI)
+	if err != nil || parsed.User != nil {
+		return nil, errors.New("invalid owned Mongo oracle URI")
+	}
+	query := parsed.Query()
+	if cfg.TLSConfig != nil {
+		if query.Get("authMechanism") != "SCRAM-SHA-256" || query.Get("authSource") != "admin" || query.Get("tls") != "true" {
+			return nil, errors.New("complete owned SCRAM/TLS oracle profile required")
+		}
+		if !cfg.Initialize && (cfg.Credential.AuthMechanism != "SCRAM-SHA-256" || cfg.Credential.AuthSource != "admin" || cfg.Credential.Username != "weir_native" || cfg.Credential.Password == "" || !cfg.Credential.PasswordSet) {
+			return nil, errors.New("explicit owned SCRAM oracle credentials required")
+		}
+		query.Del("authMechanism")
+		query.Del("authSource")
+		parsed.RawQuery = query.Encode()
+	} else if query.Has("authMechanism") || query.Has("authSource") || query.Has("tls") {
+		return nil, errors.New("verified TLS oracle configuration required")
+	}
+	connectionURI := parsed.String()
+	if cfg.Initialize {
+		connectionURI = "mongodb://" + parsed.Host + "/"
+	}
+	opts := options.Client().ApplyURI(connectionURI).SetDirect(cfg.Initialize).SetRetryReads(false).SetRetryWrites(false).SetMaxAdaptiveRetries(0).SetMaxPoolSize(8).SetServerSelectionTimeout(time.Second)
+	if cfg.TLSConfig != nil {
+		opts.SetTLSConfig(cfg.TLSConfig)
+		if !cfg.Initialize {
+			opts.SetAuth(cfg.Credential)
+		}
+	}
+	if err := opts.Validate(); err != nil {
+		return nil, err
+	}
+	return opts, nil
+}
+
+func TestExecutionProfileContractNativeMongoOracleOptions(t *testing.T) {
+	owner := "weir-finite-" + strings.Repeat("a", 32)
+	plainURI := "mongodb://127.0.0.1:27017/?replicaSet=" + owner
+	tlsURI := plainURI + "&authSource=admin&authMechanism=SCRAM-SHA-256&tls=true"
+	roots := x509.NewCertPool()
+	trust := &tls.Config{RootCAs: roots, ServerName: "127.0.0.1", MinVersion: tls.VersionTLS12}
+	credential := options.Credential{AuthMechanism: "SCRAM-SHA-256", AuthSource: "admin", Username: "weir_native", Password: strings.Repeat("a", 48), PasswordSet: true}
+	for _, secure := range []bool{false, true} {
+		for _, initialize := range []bool{false, true} {
+			cfg := nativeMongoOracleConfig{URI: plainURI, Initialize: initialize}
+			if secure {
+				cfg.URI, cfg.TLSConfig, cfg.Credential = tlsURI, trust, credential
+			}
+			original := cfg.URI
+			opts, err := nativeMongoOracleOptions(cfg)
+			if err != nil || opts.Validate() != nil {
+				t.Fatal("oracle options failed backend-free validation", secure, initialize, err)
+			}
+			parsed, err := url.Parse(opts.GetURI())
+			if err != nil || parsed.User != nil || parsed.Query().Has("authSource") || parsed.Query().Has("authMechanism") || cfg.URI != original {
+				t.Fatal("oracle URI handling leaked credentials or changed original fixture URI")
+			}
+			if len(opts.Hosts) != 1 || opts.Hosts[0] != "127.0.0.1:27017" || opts.Direct == nil || *opts.Direct != initialize {
+				t.Fatal("oracle endpoint/direct topology changed")
+			}
+			if initialize {
+				if opts.Auth != nil || opts.ReplicaSet != nil || parsed.RawQuery != "" {
+					t.Fatal("localhost-exception bootstrap attempted authentication/discovery")
+				}
+			} else if opts.ReplicaSet == nil || *opts.ReplicaSet != owner {
+				t.Fatal("oracle lost the exact replica-set identity")
+			}
+			if secure {
+				if opts.TLSConfig != trust || opts.TLSConfig.RootCAs != roots || opts.TLSConfig.ServerName != "127.0.0.1" {
+					t.Fatal("oracle lost dedicated verified TLS configuration")
+				}
+				if !initialize && (opts.Auth == nil || opts.Auth.Username != credential.Username || opts.Auth.Password != credential.Password || !opts.Auth.PasswordSet || opts.Auth.AuthSource != "admin" || opts.Auth.AuthMechanism != "SCRAM-SHA-256") {
+					t.Fatal("oracle lost separate explicit SCRAM credentials")
+				}
+			} else if opts.TLSConfig != nil || opts.Auth != nil {
+				t.Fatal("plain oracle transport changed")
+			}
+		}
+	}
+	for _, initialize := range []bool{false, true} {
+		for _, field := range []string{"authMechanism", "authSource", "tls"} {
+			for _, value := range []string{"", "wrong"} {
+				parsed, err := url.Parse(tlsURI)
+				if err != nil {
+					t.Fatal(err)
+				}
+				query := parsed.Query()
+				if value == "" {
+					query.Del(field)
+				} else {
+					query.Set(field, value)
+				}
+				parsed.RawQuery = query.Encode()
+				cfg := nativeMongoOracleConfig{URI: parsed.String(), Initialize: initialize, TLSConfig: trust, Credential: credential}
+				if _, err := nativeMongoOracleOptions(cfg); err == nil {
+					t.Fatal("wrong/missing original SCRAM/TLS field accepted", field, initialize)
+				}
+			}
+		}
+	}
+	for _, field := range []string{"username", "password", "password-set", "source", "mechanism", "trust"} {
+		cfg := nativeMongoOracleConfig{URI: tlsURI, TLSConfig: trust, Credential: credential}
+		switch field {
+		case "username":
+			cfg.Credential.Username = ""
+		case "password":
+			cfg.Credential.Password = ""
+		case "password-set":
+			cfg.Credential.PasswordSet = false
+		case "source":
+			cfg.Credential.AuthSource = "wrong"
+		case "mechanism":
+			cfg.Credential.AuthMechanism = "wrong"
+		case "trust":
+			cfg.TLSConfig = nil
+		}
+		if _, err := nativeMongoOracleOptions(cfg); err == nil {
+			t.Fatal("missing/wrong separate oracle configuration accepted", field)
+		}
+	}
+}
+
 // The controller creates and owns this stock dependency process. This driver
 // initializes its single-member replica set and independently checks its identity.
 func nativeLoadMongo(t *testing.T, initialize bool) *testmongo.Fixture {
@@ -110,18 +246,18 @@ func nativeLoadMongo(t *testing.T, initialize bool) *testmongo.Fixture {
 	if err := finiteLoopback(parsed.Host); err != nil {
 		t.Fatal(err)
 	}
-	connectionURI := uri
-	if initialize {
-		connectionURI = "mongodb://" + parsed.Host + "/"
-	}
-	opts := options.Client().ApplyURI(connectionURI).SetDirect(initialize).SetRetryReads(false).SetRetryWrites(false).SetMaxAdaptiveRetries(0).SetMaxPoolSize(8).SetServerSelectionTimeout(time.Second)
+	oracle := nativeMongoOracleConfig{URI: uri, Initialize: initialize}
 	if directory := os.Getenv("WEIR_NATIVE_TLS"); directory != "" {
 		_, clientTLS, material := testsearch.NativeTLS(t, directory)
-		opts.SetTLSConfig(clientTLS)
+		oracle.TLSConfig = clientTLS
 		if !initialize {
 			credential := options.Credential{AuthMechanism: "SCRAM-SHA-256", AuthSource: "admin", Username: material.MongoUsername, Password: material.MongoPassword, PasswordSet: true}
-			opts.SetAuth(credential)
+			oracle.Credential = credential
 		}
+	}
+	opts, err := nativeMongoOracleOptions(oracle)
+	if err != nil {
+		t.Fatal("invalid owned native Mongo oracle options", err)
 	}
 	client, err := mongo.Connect(opts)
 	if err != nil {

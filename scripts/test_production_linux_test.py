@@ -1526,7 +1526,18 @@ class Contracts(unittest.TestCase):
         self.assertFalse(any("type=volume" in a for a in backend))
         self.assertNotIn("bootstrap", " ".join(backend))
         self.assertNotIn("jna", " ".join(backend))
-        self.assertEqual(M.OS_TMPFS["/tmp"], "rw,nosuid,nodev,size=134217728,uid=1000,gid=1000")
+        self.assertEqual(M.OS_TMPFS["/tmp"], "rw,exec,nosuid,nodev,size=134217728,uid=1000,gid=1000")
+        self.assertIn("--tmpfs=/tmp:" + M.OS_TMPFS["/tmp"], backend)
+        self.assertEqual(M.ES_TMPFS["/tmp"], "rw,nosuid,size=134217728,uid=1000,gid=0")
+        for path, size in (("/usr/share/opensearch/data", 268435456), ("/usr/share/opensearch/logs", 33554432)):
+            self.assertEqual(M.OS_TMPFS[path], "rw,noexec,nosuid,nodev,size=%d,uid=1000,gid=1000" % size)
+        self.assertIn("--tmpfs=/tmp:rw,noexec,nosuid,size=16777216,uid=65532,gid=65532", cli)
+        for container in (backend, cli):
+            self.assertIn("--cap-drop=ALL", container)
+            self.assertIn("--security-opt=no-new-privileges:true", container)
+            self.assertIn("--cpus=2", container)
+        self.assertIn("--memory=1610612736", backend)
+        self.assertIn("--pids-limit=512", backend)
         self.assertEqual(set(M.OS_TMPFS), {"/tmp", "/usr/share/opensearch/data", "/usr/share/opensearch/logs"})
         self.assertFalse(any(a[:1] in (["cp"], ["volume"]) for a in self.calls))
         # Database internals are not Weir admission gates or observer prerequisites.
