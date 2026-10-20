@@ -356,9 +356,10 @@ converged:
 
 type coalescedGrowthAdapter struct {
 	lifecycleAdapter
-	entered chan []*execution.Plan
-	grow    <-chan struct{}
-	results chan error
+	entered            chan []*execution.Plan
+	grow               <-chan struct{}
+	results            chan error
+	allocationDeadline time.Time
 }
 
 func (a *coalescedGrowthAdapter) Execute(ctx context.Context, works []*execution.Plan, emit execution.Emit) {
@@ -374,7 +375,9 @@ func (a *coalescedGrowthAdapter) Execute(ctx context.Context, works []*execution
 	}
 	// Match real adapter accounting: the seed owns the entire batch while
 	// the sibling's allocation context bounds this particular operation.
-	err := works[0].Memory.SetWorking(works[1].Context, growthRecordInitial+64<<10)
+	allocation, cancel := context.WithDeadline(works[1].Context, a.allocationDeadline)
+	defer cancel()
+	err := works[0].Memory.SetWorking(allocation, growthRecordInitial+64<<10)
 	a.results <- err
 	if err != nil {
 		return
@@ -407,6 +410,7 @@ func TestCoalescedSiblingGrowthSurvivesCanceledAccountingSeed(t *testing.T) {
 				t.Fatal(err)
 			}
 			ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
+			adapter.allocationDeadline, _ = ctx.Deadline()
 			var seed, sibling *Ticket
 			t.Cleanup(func() {
 				cancel()
@@ -432,7 +436,8 @@ func TestCoalescedSiblingGrowthSurvivesCanceledAccountingSeed(t *testing.T) {
 			for index := range 2 {
 				work := plan(uint64(index+1), fmt.Sprint(index), false)
 				work.WorkingBytes, work.IOReserve = 1533, 48_000_000
-				ticket, failure, _ := records.Submit(ctx, work, nil)
+				// A record deadline would bypass BatchWait before its sibling arrives.
+				ticket, failure, _ := records.Submit(t.Context(), work, nil)
 				if failure != nil {
 					t.Fatal(failure)
 				}
