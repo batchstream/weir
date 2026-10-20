@@ -330,8 +330,43 @@ Same-Runtime or same-PID/SDK new-ID recovery retains the five-second budget afte
 independent majority usability. Exact old wire identities, request/full-write/
 reply/full-forward/socket-drop counts and independent durable ledgers persist
 through recovery, actual Runtime.Close/CLI.Wait/owner zero and relay joins. There
-is no fictitious Native Lua axis. These stable cases do **not** cover in-flight
-Lua stepdown/member loss or Lua-specific cancellation/shutdown uncertainty;
+is no fictitious Native Lua axis.
+
+The existing ordinary stepdown and single owned-primary-loss action now each
+also cross two **independent** in-flight Lua transactions in those same backend
+and typed CLI lifetimes, plain and TLS. The commit transaction holds its first
+real successful commit reply after independent durable `(1,0,1)` proof; the abort
+transaction holds its qualifying real abort reply after settled WriteConflict
+and independent `(20,1,0)` proof. Both replies are held before the existing action
+and actually dropped immediately after it, before waiting on the existing mutation
+receipt. Each topology case drops the first successful commit reply once and
+requires a genuine fully forwarded original commit confirmation and `APPLIED`.
+The stable drop-all cases separately prove `UNKNOWN` with `UNAVAILABLE`.
+This is a fixed causal pairing, not an arbitrary outcome allowance or a fault
+cross-product. Both abort cases require `NOT_APPLIED` with
+rollback-unconfirmed, no fresh find/write/transaction or commit, and independent
+candidate zero after majority usability. Commit confirmations may reach the new
+primary only after an actual original reply drop; all other transaction identity,
+majority semantics and physical retry bounds remain enforced.
+
+A narrow test-only structural change creates the backend's single Runtime before
+its existing transitions. Two real Tickets own the concurrently held transactions;
+their nonzero working/input credit and actual execution/publisher joins are checked,
+then both Acks must alone produce zero **before either Session.Close**. The typed
+CLI shares the original PID/SDK and existing mutation transition, with actual SDK
+joins and idle-credit checks. The bounded registry holds exactly eight possible
+watches (four stable and four topology), retaining every old identity through final
+product close and relay joins; attempt/event/watchdog limits are unchanged. No extra
+fixture, primary-loss action or CLI start is introduced. New-ID work in the same
+Runtime or PID/SDK must complete within five seconds after independent majority
+usability. Immediately after each topology action, a bounded independent observer
+runs concurrently with reply drops and old Lua receipt/join completion. Its first
+successful usability timestamp fixes the new-work deadline; waiting for old work
+never resets that timestamp or grants a recovery head-start. The actual observer
+is cancelled and joined on failure as well as success. Election duration remains
+external, and every original Lua caller remains twelve seconds. Lua-specific
+cancellation/shutdown uncertainty, formal
+load/performance, companions, EKS and immutable promotion remain finite follow-ons;
 overall production qualification remains false.
 
 The separate bounded read observer watches only fixture `records` IDs across the

@@ -71,42 +71,7 @@ func TestMongoReplicaProxyDiscoveryRecovery(t *testing.T) {
 			t.Logf("TLS=%t secondary_seed=%d selected_nonseed_primary=%d actual_topology=%v", secure, seed, primary, replicaProxyDiscovered(t, adapter))
 			heldOptions := replicaHeldOptions{adapter: adapter, fixture: fixture, proxy: proxy, primary: primary}
 			watches := replicaStableReplyLoss(t, heldOptions)
-			for _, transition := range []string{"stepdown", "primary_loss"} {
-				started := time.Now()
-				if transition == "stepdown" {
-					ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
-					err = fixture.StepDown(ctx, primary)
-					cancel()
-					if err != nil {
-						t.Fatal("ordinary owned stepdown", err)
-					}
-				} else {
-					fixture.LosePrimary(t, primary)
-				}
-				external, cancel := context.WithTimeout(t.Context(), 45*time.Second)
-				next, usable, err := fixture.WaitUsable(external, primary)
-				cancel()
-				if err != nil {
-					t.Fatal("external majority usability", err)
-				}
-				recovery, cancel := context.WithDeadline(t.Context(), usable.Add(5*time.Second))
-				replicaProxyRecover(t, recovery, adapter, fixture.DB)
-				work.id = transition
-				replicaProxyWork(t, recovery, work)
-				completed := time.Now()
-				cancel()
-				if completed.Sub(usable) > 5*time.Second {
-					t.Fatal("same-adapter new work exceeded 5s")
-				}
-				replicaProxyCoverage(t, adapter, proxy, next)
-				replicaProxyOriginal(t, fixture)
-				t.Logf("TLS=%t transition=%s old_primary=%d new_primary=%d external_transition=%s Weir_new_work=%s same_adapter=true", secure, transition, primary, next, usable.Sub(started), completed.Sub(usable))
-				primary = next
-			}
-			if adapter.client.NumberSessionsInProgress() != 0 {
-				t.Fatal("completed work retained a checked-out session")
-			}
-			// One actual Runtime owns this adapter from Lua through read retirement.
+			// The same Runtime owns topology Lua, stable Lua and read retirement.
 			delegate := &replicaReadAdapter{Adapter: adapter}
 			runtime, err := store.New(delegate, store.DefaultLimits(), nil)
 			if err != nil {
@@ -123,9 +88,57 @@ func TestMongoReplicaProxyDiscoveryRecovery(t *testing.T) {
 					t.Error(err)
 				}
 			})
+			var topologyAborts []testmongo.LuaCase
+			var topologyCommits []testmongo.LuaCommitCase
+			for _, transition := range []string{"stepdown", "primary_loss"} {
+				luaOptions := replicaLuaRuntimeOptions{runtime: runtime, delegate: delegate, fixture: fixture, proxy: proxy, primary: primary}
+				topology := replicaLuaTopologyBegin(t, luaOptions, transition)
+				started := time.Now()
+				if transition == "stepdown" {
+					ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+					err = fixture.StepDown(ctx, primary)
+					cancel()
+					if err != nil {
+						t.Fatal("ordinary owned stepdown", err)
+					}
+				} else {
+					fixture.LosePrimary(t, primary)
+				}
+				observeUsability := testmongo.ObserveLuaTopologyUsability(t, fixture.WaitUsable, primary)
+				abortCase, commitCase := topology.finish(t)
+				topologyAborts = append(topologyAborts, abortCase)
+				topologyCommits = append(topologyCommits, commitCase)
+				next, usable, err := observeUsability()
+				if err != nil {
+					t.Fatal("external majority usability", err)
+				}
+				recovery, cancel := context.WithDeadline(t.Context(), usable.Add(5*time.Second))
+				replicaProxyRecover(t, recovery, adapter, fixture.DB)
+				work.id = transition
+				replicaProxyWork(t, recovery, work)
+				newID := replicaLuaTopologyRecovery(t, recovery, luaOptions, transition)
+				topologyAborts[len(topologyAborts)-1].RecoveryID = newID
+				topologyCommits[len(topologyCommits)-1].RecoveryID = newID
+				completed := time.Now()
+				cancel()
+				proxy.CheckLuaCases(t, topologyAborts, "backend_topology_new_Runtime_work")
+				proxy.CheckLuaCommitCases(t, topologyCommits, "backend_topology_new_Runtime_work")
+				if completed.Sub(usable) > 5*time.Second {
+					t.Fatal("same-adapter new work exceeded 5s")
+				}
+				replicaProxyCoverage(t, adapter, proxy, next)
+				replicaProxyOriginal(t, fixture)
+				t.Logf("TLS=%t transition=%s old_primary=%d new_primary=%d external_transition=%s Weir_new_work=%s same_adapter=true", secure, transition, primary, next, usable.Sub(started), completed.Sub(usable))
+				primary = next
+			}
+			if adapter.client.NumberSessionsInProgress() != 0 {
+				t.Fatal("completed work retained a checked-out session")
+			}
 			luaOptions := replicaLuaRuntimeOptions{runtime: runtime, delegate: delegate, fixture: fixture, proxy: proxy, primary: primary}
 			luaCases := replicaLuaRuntime(t, luaOptions)
 			commitCases := replicaLuaCommitRuntime(t, luaOptions, luaCases)
+			luaCases = append(topologyAborts, luaCases...)
+			commitCases = append(topologyCommits, commitCases...)
 			proxy.CheckLuaCases(t, luaCases, "backend_before_read_retirement")
 			proxy.CheckLuaCommitCases(t, commitCases, "backend_before_read_retirement")
 			var readWatches []*testmongo.ReadWatch
