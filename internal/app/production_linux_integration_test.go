@@ -45,7 +45,7 @@ func finiteInputs(t *testing.T) *testexecution.ValidatedInputs {
 		t.Fatal("finite executor requires native Linux; no Desktop fallback")
 	}
 	inputs := loadProductionExecution(t, "functional")
-	if inputs.Profile().ID != testexecution.LinuxFunctionalID {
+	if inputs.Profile().ID != testexecution.LinuxFunctionalID && inputs.Profile().ID != testexecution.LinuxOpenSearchFunctionalID {
 		t.Fatal("finite profile required")
 	}
 	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
@@ -109,7 +109,7 @@ func TestProductionLinuxFinite(t *testing.T) {
 	record := finiteCompletion{Schema: 1, Stage: "finite", Profile: inputs.Profile().ID, Revision: inputs.HarnessSource().Revision, DriverPID: os.Getpid()}
 	// Registered first: completion is written only after fixture cleanup succeeds.
 	t.Cleanup(func() { finiteRecord(t, record) })
-	opts := testsearch.OwnedEndpoint{URL: os.Getenv("WEIR_FINITE_ORACLE"), Owner: os.Getenv("WEIR_FINITE_OWNER")}
+	opts := testsearch.OwnedEndpoint{URL: os.Getenv("WEIR_FINITE_ORACLE"), Owner: os.Getenv("WEIR_FINITE_OWNER"), Product: inputs.Profile().Backends[0].Product}
 	backend := testsearch.OpenOwned(t, opts)
 	pad := "finite-native-no-business-replay"
 	expected := map[string]qualificationRecord{"hot-0": {N: 1, Pad: pad}, "lua-000": {N: 0, Pad: pad}}
@@ -254,7 +254,7 @@ func TestExecutionProfileContractOwnedSearchEndpoint(t *testing.T) {
 			t.Error("owned constructor did not create/clean exactly one index")
 		}
 	})
-	opts := testsearch.OwnedEndpoint{URL: server.URL, Owner: owner}
+	opts := testsearch.OwnedEndpoint{URL: server.URL, Owner: owner, Product: "elasticsearch"}
 	backend := testsearch.OpenOwned(t, opts)
 	if backend.URL != server.URL || backend.Profile != "elasticsearch-8.19.22" || backend.Username != "" || backend.CAFile != "" {
 		t.Fatal("owned endpoint lost its finite identity")

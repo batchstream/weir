@@ -75,13 +75,17 @@ func Open(t *testing.T) *Backend {
 }
 
 type OwnedEndpoint struct {
-	URL, Owner string
+	URL, Owner, Product string
 }
 
-// OpenOwned is only for the finite controller's fresh, loopback-published ES.
+// OpenOwned is only for the finite controller's product-explicit fresh backend.
 // Open's historical fixed-address opt-ins and identities are unchanged.
 func OpenOwned(t *testing.T, opts OwnedEndpoint) *Backend {
 	t.Helper()
+	profile, err := ownedProfile(opts.Product)
+	if err != nil {
+		t.Fatal(err)
+	}
 	u, err := url.Parse(opts.URL)
 	if err != nil || u.Scheme != "http" || u.Hostname() != "127.0.0.1" || u.User != nil || u.Path != "" || u.RawQuery != "" || u.Fragment != "" {
 		t.Fatal("owned backend requires a plain loopback origin")
@@ -93,7 +97,7 @@ func OpenOwned(t *testing.T, opts OwnedEndpoint) *Backend {
 	}
 	transport := &http.Transport{Proxy: nil, MaxConnsPerHost: 8, MaxIdleConnsPerHost: 8, DisableCompression: true}
 	client := &http.Client{Transport: transport, Timeout: 3 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
-	b := &Backend{URL: opts.URL, Product: "elasticsearch", Profile: "elasticsearch-8.19.22", Index: "weir_finite_" + strings.TrimPrefix(opts.Owner, "weir-finite-"), Client: client}
+	b := &Backend{URL: opts.URL, Product: opts.Product, Profile: profile, Index: "weir_finite_" + strings.TrimPrefix(opts.Owner, "weir-finite-"), Client: client}
 	status, raw := b.Do(t, "GET", "/", "")
 	if status != http.StatusOK {
 		t.Fatal("owned backend identity status", status)
@@ -102,6 +106,17 @@ func OpenOwned(t *testing.T, opts OwnedEndpoint) *Backend {
 	t.Cleanup(transport.CloseIdleConnections)
 	b.Create(t, b.Index, `{"settings":{"number_of_shards":1,"number_of_replicas":0},"mappings":{"properties":{"n":{"type":"long"}}}}`)
 	return b
+}
+
+func ownedProfile(product string) (string, error) {
+	switch product {
+	case "elasticsearch":
+		return "elasticsearch-8.19.22", nil
+	case "opensearch":
+		return "opensearch-3.3.0", nil
+	default:
+		return "", fmt.Errorf("missing or unsupported owned search product")
+	}
 }
 
 func verifyVersion(t *testing.T, raw []byte, profile, cluster string) {

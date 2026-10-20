@@ -196,7 +196,7 @@ immutable legacy specification for tooling to serialize:
 | `legacy-desktop-smoke-v1` | load / smoke; 30s warmup + 120s measurement | Desktop smoke only |
 | `legacy-desktop-fault-v1` | fault / legacy | Desktop fault reproduction only |
 | `linux-native-load-v1`, `linux-native-fault-v1` | load or fault / formal or smoke | Declarable, **not implemented**; fail closed |
-| `linux-native-es-functional-v1` | functional / finite; at most 16 documents, 64KiB/document, 60s driver | Owned native Linux ES8.19.22/plain correctness only; not smoke/formal |
+| `linux-native-es-functional-v1`, `linux-native-opensearch-functional-v1` | functional / finite; at most 16 documents, 64KiB/document, 60s driver | Owned native Linux ES8.19.22/plain or OpenSearch3.3.0/plain Weir correctness only; not smoke/formal |
 
 Legacy driver/CLI targets are Darwin arm64 and Linux arm64 respectively. MongoDB
 8.0.32 and Elasticsearch 8.19.22 use the named owned plain Desktop fixtures. The
@@ -208,7 +208,7 @@ output. Desktop routes and proxy translation belong only to that named adapter.
 Formal/smoke Linux declarations use matching native Linux amd64 or arm64 driver/CLI
 targets, `owned-local` endpoint roles, MongoDB 8.0.32 plus Elasticsearch 8.19.22 or
 OpenSearch 3.3.0, and explicit plain/TLS transport. Those load/fault declarations
-remain unexecutable. Only the distinct finite ES/plain profile has an executor;
+remain unexecutable. Only the two distinct finite ES/plain and OpenSearch/plain profiles have an executor;
 unsupported combinations do not skip, fall back, or pass.
 
 Version-1 `ProvenanceInputs` uses `schemaVersion`, `profileID`, separate `server`
@@ -305,9 +305,11 @@ host settings.
 ### Finite native Linux executor
 
 `scripts/test-production-linux.py` runs the actual compiled native `app.test` on
-the host and owns a fresh standard Docker bridge, Elasticsearch and CLI. It takes
+the host and owns a fresh standard Docker bridge, selected search dependency and CLI. It takes
 explicit `--server-root`, `--harness-root`, `--revision`, `--cli`, `--driver`,
-`--observer` and a **new** `--output` directory, all canonical absolute paths.
+`--observer`, an exact `--profile=linux-native-es-functional-v1` or
+`--profile=linux-native-opensearch-functional-v1`, and a **new** `--output` directory.
+All paths are canonical and absolute.
 Keep binaries/output in ignored `.testdata/`; prepare their parent directories
 before invocation. Supply an explicitly clean-source CLI build with
 `-ldflags="-buildid= -X main.sourceRevision=$(git rev-parse HEAD)"`, not an ordinary
@@ -349,7 +351,7 @@ after verified container absence. CLI controls are 2CPU/1GiB,
 memory=swap, 96 PIDs, nonroot/read-only/cap-drop/no-new-privileges. Backend controls
 are 2CPU/1536MiB, memory=swap, 512 PIDs, 512MiB heap, normal backend settings, and
 bounded disposable tmpfs data (256MiB), logs (32MiB), temporary storage (128MiB)
-and rotated Docker logs (2MiB). The backend copies the complete immutable image
+and rotated Docker logs (2MiB). The ES dependency copies the complete immutable image
 `config/.` tree, including dotfiles, without preserving ownership into a newly
 created private `/tmp/weir-es-config` directory. This shares the existing 128MiB
 `/tmp` tmpfs; it adds no writable root or storage/memory allowance. The static
@@ -358,6 +360,16 @@ the stock `docker-entrypoint.sh eswrapper`. The pinned image's `/bin/tini` remai
 PID1, and normal startup/keystore checks run unchanged. Runtime inspection requires
 the exact staging command, stock entrypoint and original finite tmpfs settings;
 configuration is not substituted with a partial hand-written file or a host bind.
+The OpenSearch dependency instead uses its pinned stock image/entrypoint with a
+normal disposable writable container layer, not a held config volume or helper.
+Its data/log/tmp tmpfs and resource limits have the same 256/32/128MiB and
+2CPU/1536MiB/512-PID bounds; ordinary executable `/tmp` supports stock startup.
+It remains nonroot/cap-drop/no-new-privileges. This is an external test dependency,
+not a database deployment recommendation, security claim or production gate.
+Only identity/readiness, bounded fixture controls and owned cleanup are required;
+there are no PA/RCA, JDK/JVM-byte, heap/native, bootstrap or seccomp proofs.
+Database warnings do not qualify or disqualify Weir, and database TERM exit values
+are recorded rather than required to equal the Weir CLI's exit 0.
 No container environment enumeration or secret input is used. An exited owned
 backend fails readiness immediately, retaining logs and guarded cleanup instead
 of waiting for the full HTTP deadline. Driver/probes/proxies are not placed in the
@@ -365,7 +377,7 @@ CLI workload quota, except that the brief **in-container observer exec** itself 
 charged to the observed container: these are not formal workload-only accounting
 samples.
 
-The known read-only mounted observer runs through the captured full owned
+For the CLI and existing ES path, the known read-only mounted observer runs through the captured full owned
 container ID with private cgroup namespace. Bounded `--once --identity-only`
 establishes PID1 executable path/SHA/start identity inside that namespace (a
 nonroot host runner cannot read another UID's executable). A second controls-only
@@ -383,7 +395,10 @@ backend inspection, HTTP and retry waits; command and HTTP timeouts use only the
 positive remaining budget. Deadline checks after inspection, response open/read
 and before acceptance reject late success. Standard-library socket timeouts are
 per blocking operation, not hard wall-clock cancellation of an in-progress read.
-The executor does not treat a late response as timely readiness.
+The executor does not treat a late response as timely readiness. The driver also
+uses one absolute phase/overall deadline, rechecking after process snapshots,
+wait, log reads and completion parsing. Late exit-0/completion is rejected, with
+owned process-group kill/reap and independently bounded cleanup on failure.
 
 Cleanup guards are registered before creates, recover partial creates by unique
 name plus owner, and subsequently use full IDs. Every destructive action rechecks
@@ -395,13 +410,16 @@ controls, shutdown and cleanup evidence are retained under the owned output root
 They are finite correctness evidence, **not a formal/pass-promotion receipt or
 an SLO claim**.
 
-The separate `native-linux-finite` CI job checks out the exact PR head (push SHA
+The independent `native-linux-finite` and `native-linux-opensearch-finite` CI jobs
+check out the exact PR head (push SHA
 otherwise), prepares pinned Go/modules, builds those exact clean-source binaries,
 explicitly prepares images, and executes the real path on Ubuntu amd64. Offline
 Python and Go contracts remain a separate gate and cannot substitute for this
 live job. A passing native CI run is required before merge; Linux arm64 remains
-unexecuted until a native arm64 result exists. Formal load/fault, Mongo,
-OpenSearch, TLS and EKS are not enabled by this finite slice.
+unexecuted until a native arm64 result exists. These test Weir against external
+search dependencies only; formal load/fault, Mongo, TLS and EKS remain disabled.
+Generated logs/results, identities and cleanup receipts stay in ignored output
+or CI artifacts, never in tracked documentation or source.
 
 ### Held tmpfs config-copy prerequisite
 
@@ -488,11 +506,12 @@ The holder preserves `deploy/docker/base.json` pins. Public image metadata
 identifies `./opensearch-docker-entrypoint.sh`, CMD `opensearch`, USER 1000 and
 WORKDIR `/usr/share/opensearch`; this is not verification of pinned-image script
 bytes. This probe intentionally does not test that entrypoint, keystore,
-performance-analyzer, Java, Weir SDK, TLS or backend startup. A later actual
-OpenSearch profile must preserve normal startup checks and derive search
-integration selection from an already-validated profile. Its 16MiB config volume
-must be carved from the existing 128MiB temporary budget, leaving 112MiB `/tmp`,
-not added to it. Existing ES budgets remain unchanged.
+performance-analyzer, Java, Weir SDK, TLS or backend startup. The separate finite
+OpenSearch executor described above derives its product from validated inputs,
+but does not depend on this filesystem probe or its config volume. This probe
+retains its own 16MiB config/112MiB temporary split unchanged; the finite external
+dependency uses ordinary disposable writable storage instead. Existing ES
+budgets remain unchanged.
 
 A passing new-head **actual native CI run** is required before this prerequisite
 can be accepted. The job retains bounded sanitized source/build/image/engine,

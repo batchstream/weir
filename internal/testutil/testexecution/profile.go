@@ -13,17 +13,26 @@ const PolicyID = "production-v1"
 const LegacyExecutor = "legacy-desktop-v1"
 const LinuxExecutor = "linux-native-v1"
 const LinuxFunctionalID = "linux-native-es-functional-v1"
+const LinuxOpenSearchFunctionalID = "linux-native-opensearch-functional-v1"
 const FunctionalDeadline = 60 * time.Second
 const FunctionalDocuments = 16
 const FunctionalDocumentBytes = 64 << 10
 
 // LinuxFunctionalProfile is a finite correctness capability, never a load,
 // fault, smoke, TLS or formal qualification capability.
-func LinuxFunctionalProfile(arch string) (ExecutionProfile, error) {
+func LinuxFunctionalProfile(id, arch string) (ExecutionProfile, error) {
 	target := Target{OS: "linux", Arch: arch}
 	roles := EndpointRoles{Driver: "owned-local", CLI: "owned-local"}
 	backend := Backend{Product: "elasticsearch", Version: "8.19.22", Transport: "plain", Endpoints: roles}
-	p := ExecutionProfile{SchemaVersion: SchemaVersion, ID: LinuxFunctionalID, Suite: "functional", Intent: "finite", Policy: PolicyID, Executor: LinuxExecutor, Driver: target, CLI: target, Backends: []Backend{backend}}
+	switch id {
+	case LinuxFunctionalID:
+	case LinuxOpenSearchFunctionalID:
+		backend.Product, backend.Version = "opensearch", "3.3.0"
+	default:
+		empty := ExecutionProfile{}
+		return empty, fmt.Errorf("unknown finite profile %q", id)
+	}
+	p := ExecutionProfile{SchemaVersion: SchemaVersion, ID: id, Suite: "functional", Intent: "finite", Policy: PolicyID, Executor: LinuxExecutor, Driver: target, CLI: target, Backends: []Backend{backend}}
 	if arch != "amd64" && arch != "arm64" {
 		return p, fmt.Errorf("unsupported native Linux architecture")
 	}
@@ -121,8 +130,8 @@ func validateProfile(p ExecutionProfile) error {
 		}
 		return nil
 	}
-	if p.ID == LinuxFunctionalID {
-		expected, err := LinuxFunctionalProfile(p.Driver.Arch)
+	if p.ID == LinuxFunctionalID || p.ID == LinuxOpenSearchFunctionalID {
+		expected, err := LinuxFunctionalProfile(p.ID, p.Driver.Arch)
 		if err != nil || !reflect.DeepEqual(p, expected) {
 			return fmt.Errorf("finite functional profile conflicts with immutable spec")
 		}
@@ -151,7 +160,7 @@ func validateProfile(p ExecutionProfile) error {
 	return nil
 }
 func (p ExecutionProfile) Duration() time.Duration {
-	if p.ID == LinuxFunctionalID {
+	if p.ID == LinuxFunctionalID || p.ID == LinuxOpenSearchFunctionalID {
 		return FunctionalDeadline
 	}
 	if p.Intent == "smoke" {
@@ -173,7 +182,7 @@ func (v *ValidatedInputs) RequireExecutable() error {
 	if v == nil || !v.valid {
 		return fmt.Errorf("validated inputs required")
 	}
-	if v.profile.Executor != LegacyExecutor && v.profile.ID != LinuxFunctionalID {
+	if v.profile.Executor != LegacyExecutor && v.profile.ID != LinuxFunctionalID && v.profile.ID != LinuxOpenSearchFunctionalID {
 		return fmt.Errorf("executor %q is declared but not implemented; no fixtures may be created", v.profile.Executor)
 	}
 	return nil

@@ -128,3 +128,53 @@ func TestExecutionProfileContractConsumerOrder(t *testing.T) {
 		}
 	}
 }
+
+// Product selection must follow strict validation, and repeat validation must
+// accept the derived opt-ins rather than accidentally reverting to ES.
+func TestExecutionProfileContractFiniteProductPropagation(t *testing.T) {
+	for _, id := range []string{testexecution.LinuxFunctionalID, testexecution.LinuxOpenSearchFunctionalID} {
+		profile, err := testexecution.LinuxFunctionalProfile(id, "amd64")
+		if err != nil {
+			t.Fatal(err)
+		}
+		product := profile.Backends[0].Product
+		provenance := testexecution.ProvenanceInputs{ProfileID: id}
+		for _, supplied := range []map[string]string{nil, {"WEIR_SEARCH_INTEGRATION": product}} {
+			if err := testexecution.CheckLegacyEnv(profile, provenance, supplied); err != nil {
+				t.Fatal(err)
+			}
+		}
+		derived := map[string]string{"WEIR_INTEGRATION": "1", "WEIR_SEARCH_INTEGRATION": product, "WEIR_MONGO_PROFILE": ""}
+		for range 2 {
+			if err := testexecution.CheckLegacyEnv(profile, provenance, derived); err != nil {
+				t.Fatal("revalidation", err)
+			}
+		}
+		for _, wrong := range []string{"unknown", "opensearch-2.19", "elasticsearch", "opensearch"} {
+			if wrong == product {
+				continue
+			}
+			conflict := map[string]string{"WEIR_SEARCH_INTEGRATION": wrong}
+			if testexecution.CheckLegacyEnv(profile, provenance, conflict) == nil {
+				t.Fatal("conflicting product accepted", id, wrong)
+			}
+		}
+	}
+	root := testutil.Root(t)
+	raw, err := os.ReadFile(filepath.Join(root, "internal", "app", "production_execution_integration_test.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(raw)
+	load := strings.Index(text, "testexecution.Load(opts)")
+	executable := strings.Index(text, "inputs.RequireExecutable()")
+	harness := strings.Index(text, "inputs.CheckHarnessRoot(")
+	optIn := strings.Index(text, `t.Setenv("WEIR_INTEGRATION", "1")`)
+	product := strings.Index(text, `t.Setenv("WEIR_SEARCH_INTEGRATION", product)`)
+	if load < 0 || executable <= load || harness <= executable || optIn <= harness || product <= optIn {
+		t.Fatal("fixture opt-in can precede strict source/profile/provenance/root validation")
+	}
+	if !strings.Contains(text, "profile := inputs.Profile()") || !strings.Contains(text, "product := profile.Backends[len(profile.Backends)-1].Product") {
+		t.Fatal("validated product not propagated")
+	}
+}

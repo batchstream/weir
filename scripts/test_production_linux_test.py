@@ -112,6 +112,12 @@ class Contracts(unittest.TestCase):
     def setUp(self):
         temp = tempfile.TemporaryDirectory()
         self.addCleanup(temp.cleanup)
+        # These lifecycle tests mock every listener/container. Real ephemeral
+        # sockets can reuse a just-closed port and make the mock nondeterministic.
+        ports = iter(range(20000, 21000))
+        port_patch = patch.object(M, "free_port", side_effect=ports)
+        self.free_ports = port_patch.start()
+        self.addCleanup(port_patch.stop)
         self.root = Path(temp.name).resolve()
         self.opts = M.Options(server_root=ROOT, harness_root=ROOT, revision="a" * 40, cli=self.root / "weir", driver=self.root / "app.test", observer=self.root / "observer", output=self.root / "evidence")
         for path in (self.opts.cli, self.opts.driver, self.opts.observer):
@@ -135,7 +141,7 @@ class Contracts(unittest.TestCase):
             return json.dumps(info)
         if args[:2] == ["image", "inspect"]:
             ref = args[-1]
-            info = dict(Id="sha256:" + "b" * 64, OS="linux", Arch="amd64", Digests=[ref])
+            info = dict(Id="sha256:" + "b" * 64, OS="linux", Arch="amd64", Digests=[ref], Volumes=None)
             return json.dumps(info)
         if args[1] == "create":
             name = args[-1] if args[0] == "network" else args[args.index("--name") + 1]
@@ -157,10 +163,13 @@ class Contracts(unittest.TestCase):
                 state = dict(Running=False, ExitCode=0, OOMKilled=False, Pid=100 + len(self.resources))
                 membership = dict(NetworkID=net["Id"])
                 networks = {self.controller.owner: membership}
-                info = dict(Id=identity, Owner=self.controller.owner, Image="sha256:" + "b" * 64, State=state, Memory=int(flags["--memory"]), Swap=int(flags["--memory-swap"]), CPU=2_000_000_000, PIDs=int(flags["--pids-limit"]), Cgroupns="private", Readonly=True, User=flags["--user"], Caps=["ALL"], Security=["no-new-privileges:true"], Privileged=False, PidMode="", Networks=networks, Ports=ports, Mounts=mounts)
+                info = dict(Id=identity, Name="/" + name, Owner=self.controller.owner, Image="sha256:" + "b" * 64, State=state, Memory=int(flags["--memory"]), Swap=int(flags["--memory-swap"]), CPU=2_000_000_000, PIDs=int(flags["--pids-limit"]), Cgroupns="private", Readonly="--read-only" in args, User=flags["--user"], Caps=["ALL"], Security=["no-new-privileges:true"], Privileged=False, PidMode="", Networks=networks, Ports=ports, Mounts=mounts)
                 image_index = next(i for i, arg in enumerate(args) if arg in (self.controller.es_ref, self.controller.base_ref))
                 info["Cmd"] = args[image_index + 1:]
                 info["Entrypoint"] = ["/weir"] if name.endswith("-cli") else ["/bin/tini", "--", "/usr/local/bin/docker-entrypoint.sh"]
+                if name.endswith("-backend") and self.opts.profile == M.OS_PROFILE:
+                    info["Entrypoint"] = ["./opensearch-docker-entrypoint.sh"]
+                    info["Cmd"] = ["opensearch"]
                 info["Tmpfs"] = dict(arg[len("--tmpfs="):].split(":", 1) for arg in args if arg.startswith("--tmpfs="))
             self.resources[name] = info
             if self.failure == "partial-" + args[0]:
@@ -280,6 +289,7 @@ class Contracts(unittest.TestCase):
         network_id = next(iter(info["Networks"].values()))["NetworkID"]
         network = M.Resource("network", self.controller.owner, network_id)
         resource = M.Resource("container", self.controller.owner + "-backend", info["Id"])
+        info["Name"] = "/" + resource.name
         ports = {9200: 19200}
         spec = dict(role="backend", image_id=info["Image"], memory=1536 << 20, pids=512, user="1000:0", network=network, ports=ports)
         result = resource, spec, info
@@ -354,6 +364,24 @@ class Contracts(unittest.TestCase):
         self.assertIsNone(result["primary_error"])
         self.assertTrue(result["cleanup_errors"])
         self.assertFalse(result["finite_complete"])
+
+    def test_injected_duplicate_ports_fail_before_workload_and_clean_network(self):
+        self.free_ports.side_effect = [20000, 20000, 20001]
+        with self.assertRaisesRegex(RuntimeError, "ephemeral port collision"):
+            self.execute()
+        self.assertEqual(self.free_ports.call_count, 3, "port collision must not silently retry")
+        self.assertFalse(any(a[:2] == ["container", "create"] or a[:1] == ["exec"] for a in self.calls))
+        self.assertEqual(sum(a[:2] == ["network", "create"] for a in self.calls), 1)
+        self.assertEqual(sum(a[:2] == ["network", "rm"] for a in self.calls), 1)
+        self.assertEqual(self.resources, self.empty)
+        result = json.loads((self.opts.output / "finite-result.json").read_text())
+        self.assertIn("ephemeral port collision", result["primary_error"])
+        self.assertEqual(result["cleanup_errors"], [])
+        self.assertFalse(result["finite_complete"])
+        cleanup = json.loads((self.opts.output / "cleanup.json").read_text())
+        self.assertEqual(len(cleanup["resources"]), 1)
+        self.assertEqual(cleanup["resources"][0]["kind"], "network")
+        self.assertTrue(cleanup["resources"][0]["absent"])
 
     def test_backend_staging_contract_rejects_missing_unbounded_or_unsafe_configuration(self):
         resource, spec, info = self.recorded_backend()
@@ -431,7 +459,7 @@ class Contracts(unittest.TestCase):
 
     def test_readiness_detects_recorded_backend_exit_before_http(self):
         backend = M.Resource("container", self.controller.owner + "-backend", "a" * 64)
-        info = dict(Id=backend.identity, Owner=self.controller.owner, State=RECORDED_KEYSTORE_EXIT)
+        info = dict(Id=backend.identity, Name="/" + backend.name, Owner=self.controller.owner, State=RECORDED_KEYSTORE_EXIT)
         with patch.object(self.controller, "inspect", return_value=info), patch.object(self.controller.http, "open") as http, patch.object(M.time, "sleep") as sleep:
             with self.assertRaisesRegex(RuntimeError, "backend exited during readiness: exit=74 oom=False"):
                 self.controller.wait_http("http://127.0.0.1:1/", 90, backend=backend)
@@ -550,7 +578,7 @@ class Contracts(unittest.TestCase):
         self.opts.output.mkdir()
         backend = M.Resource("container", self.controller.owner + "-backend", "a" * 64)
         state = dict(Running=True, ExitCode=0, OOMKilled=False)
-        info = dict(Id=backend.identity, Owner=self.controller.owner, State=state)
+        info = dict(Id=backend.identity, Name="/" + backend.name, Owner=self.controller.owner, State=state)
         with patch.object(self.controller, "inspect", return_value=info), patch.object(self.controller.http, "open", return_value=Response()):
             with self.assertRaisesRegex(RuntimeError, "wrong backend"):
                 self.controller.wait_http("http://127.0.0.1:1/", 1, backend=backend)
@@ -562,7 +590,7 @@ class Contracts(unittest.TestCase):
         clock = dict(now=0.0)
         backend = M.Resource("container", self.controller.owner + "-backend", "a" * 64)
         state = dict(Running=True, ExitCode=0, OOMKilled=False)
-        info = dict(Id=backend.identity, Owner=self.controller.owner, State=state)
+        info = dict(Id=backend.identity, Name="/" + backend.name, Owner=self.controller.owner, State=state)
         version = dict(number="8.19.22", build_flavor="default", build_hash="fixture")
         identity = dict(cluster_name=self.controller.owner, version=version)
         response = MagicMock(status=200)
@@ -601,15 +629,15 @@ class Contracts(unittest.TestCase):
             return result
         with patch.object(M.time, "monotonic", side_effect=lambda: clock["now"]), patch.object(M.subprocess, "run", side_effect=inspect) as execute:
             self.assertEqual(self.controller.guard(backend, deadline=90), info)
-            self.assertEqual(observed, [1])
+            self.assertEqual(observed, [1, 1])
             self.controller.deadline = 89.5
             self.controller.guard(backend, deadline=90)
-            self.assertEqual(observed, [1, .5])
+            self.assertEqual(observed, [1, 1, .5, .5])
             self.controller.deadline = 240
             clock["now"] = 90
             with self.assertRaisesRegex(RuntimeError, "deadline exceeded"):
                 self.controller.guard(backend, deadline=90)
-            self.assertEqual(execute.call_count, 2)
+            self.assertEqual(execute.call_count, 4)
         # Budget must also be recomputed after command setup, not before it.
         clock["now"] = 89
         original = M.tempfile.TemporaryFile
@@ -667,7 +695,9 @@ class Contracts(unittest.TestCase):
         response.read.side_effect = read
         with patch.object(M.time, "monotonic", side_effect=now), patch.object(self.controller, "inspect", return_value=info) as inspect, patch.object(self.controller.http, "open", return_value=response) as http:
             self.controller.wait_http("http://127.0.0.1:1/", 90, backend=backend)
-            inspect.assert_called_once_with(backend, deadline=90)
+            self.assertEqual(inspect.call_count, 2)
+            expected_deadline = dict(deadline=90)
+            self.assertEqual(inspect.call_args_list[0].kwargs, expected_deadline)
             self.assertEqual(http.call_args.kwargs["timeout"], .5)
         identity = json.loads((self.opts.output / "backend-identity.json").read_text())
         self.assertEqual(identity["cluster_name"], self.controller.owner)
@@ -722,17 +752,18 @@ class Contracts(unittest.TestCase):
                     if clock["readiness"] and args[:2] == ["container", "inspect"]:
                         self.assertEqual(deadline, 90)
                         clock["now"] = 100
-                    elif not clock["readiness"]:
-                        self.assertIsNone(deadline)
+                    elif not clock["readiness"] and deadline is not None:
+                        self.assertGreater(deadline, clock["now"])
+                        self.assertLessEqual(deadline - clock["now"], 60)
                     return result
                 with patch.object(M.time, "monotonic", side_effect=lambda: clock["now"]), patch.object(M, "native_preflight", return_value="amd64"), patch.object(self.controller, "docker", side_effect=command), patch.object(self.controller, "driver", side_effect=self.driver), patch.object(self.controller, "wait_http", side_effect=readiness), patch.object(self.controller.http, "open") as http:
-                    with self.assertRaisesRegex(RuntimeError, "bounded readiness timeout"):
+                    with self.assertRaisesRegex(RuntimeError, "deadline exceeded"):
                         self.controller.execute()
                     http.assert_not_called()
                 self.assertEqual(self.resources, self.empty)
                 self.assertTrue(any(args[0] == "logs" for args in self.calls))
                 result = json.loads((self.opts.output / "finite-result.json").read_text())
-                self.assertEqual(result["primary_error"], "bounded readiness timeout")
+                self.assertEqual(result["primary_error"], "absolute controller/phase deadline exceeded")
                 self.assertEqual(bool(result["cleanup_errors"]), failure == "logs")
                 self.assertFalse(result["finite_complete"])
                 cleanup = json.loads((self.opts.output / "cleanup.json").read_text())
@@ -812,6 +843,174 @@ class Contracts(unittest.TestCase):
         self.assertEqual(self.resources, self.empty)
 
 
+    def test_opensearch_profile_fixture_and_provenance_agree(self):
+        self.opts.profile = M.OS_PROFILE
+        self.execute()
+        profile = json.loads((self.opts.output / "profile.json").read_text())
+        provenance = json.loads((self.opts.output / "provenance.json").read_text())
+        self.assertEqual(profile["id"], M.OS_PROFILE)
+        self.assertEqual(provenance["profileID"], M.OS_PROFILE)
+        self.assertEqual(profile["backends"][0]["product"], "opensearch")
+        self.assertEqual(profile["backends"][0]["version"], "3.3.0")
+        creates = [a for a in self.calls if a[:2] == ["container", "create"]]
+        self.assertEqual(len(creates), 2)
+        backend, cli = creates
+        self.assertNotIn("--read-only", backend)
+        self.assertIn("--read-only", cli)
+        self.assertIn("--pids-limit=96", cli)
+        self.assertIn("--memory=1073741824", cli)
+        self.assertEqual(backend[-1], M.OS_REPOSITORY + "@" + M.OS_PINS["amd64"])
+        self.assertNotIn("--entrypoint", " ".join(backend))
+        self.assertFalse(any("type=volume" in a for a in backend))
+        self.assertNotIn("bootstrap", " ".join(backend))
+        self.assertNotIn("jna", " ".join(backend))
+        self.assertEqual(M.OS_TMPFS["/tmp"], "rw,nosuid,nodev,size=134217728,uid=1000,gid=1000")
+        self.assertEqual(set(M.OS_TMPFS), {"/tmp", "/usr/share/opensearch/data", "/usr/share/opensearch/logs"})
+        self.assertFalse(any(a[:1] in (["cp"], ["volume"]) for a in self.calls))
+        # Database internals are not Weir admission gates or observer prerequisites.
+        backend_id = json.loads((self.opts.output / "backend-container.json").read_text())["Id"]
+        self.assertFalse(any(a[0] == "exec" and backend_id in a for a in self.calls))
+        self.assertEqual(self.resources, self.empty)
+
+    def test_opensearch_wrong_product_readiness_fails_before_workload(self):
+        self.opts.profile = M.OS_PROFILE
+        clock, backend, info, response = self.readiness_deadline_fixture()
+        self.controller.deadline = M.time.monotonic() + 240
+        with patch.object(self.controller, "guard", return_value=info), patch.object(self.controller.http, "open", return_value=response):
+            with self.assertRaisesRegex(RuntimeError, "wrong backend cluster/version/product"):
+                self.controller.wait_http("http://127.0.0.1:1/", 90, backend)
+        version = dict(number="3.3.0", distribution="opensearch", build_hash="fixture")
+        identity_record = dict(cluster_name=self.controller.owner, version=version)
+        response.read.return_value = json.dumps(identity_record).encode()
+        with patch.object(self.controller, "guard", return_value=info), patch.object(self.controller.http, "open", return_value=response):
+            self.controller.wait_http("http://127.0.0.1:1/", 90, backend)
+
+    def test_opensearch_foreign_mount_and_anonymous_volume_rejected(self):
+        self.opts.profile = M.OS_PROFILE
+        command = self.command
+        def foreign(args, timeout=15, deadline=None):
+            raw = command(args, timeout, deadline)
+            if args[:2] == ["container", "inspect"]:
+                info = json.loads(raw)
+                if info["Name"].endswith("-backend"):
+                    foreign_mount = dict(Destination="/foreign", Source="other", RW=True)
+                    info["Mounts"].append(foreign_mount)
+                return json.dumps(info)
+            return raw
+        with patch.object(M, "native_preflight", return_value="amd64"), patch.object(self.controller, "docker", side_effect=foreign), patch.object(self.controller, "driver", side_effect=self.driver):
+            with self.assertRaisesRegex(RuntimeError, "foreign mounts"):
+                self.controller.execute()
+        self.assertEqual(self.resources, self.empty)
+        self.controller.es_ref = "test@sha256:" + "a" * 64
+        self.controller.arch = "amd64"
+        image = dict(Id="sha256:" + "b" * 64, OS="linux", Arch="amd64", Digests=[self.controller.es_ref], Volumes={"/foreign": {}})
+        with patch.object(self.controller, "docker", return_value=json.dumps(image)):
+            with self.assertRaisesRegex(RuntimeError, "anonymous volumes"):
+                self.controller.image(self.controller.es_ref)
+
+    def test_backend_cleanup_preserves_actual_nonzero_exit(self):
+        self.opts.profile = M.OS_PROFILE
+        command = self.command
+        def term(args, timeout=15, deadline=None):
+            raw = command(args, timeout, deadline)
+            if args[:1] == ["kill"]:
+                for name, info in self.resources.items():
+                    if name.endswith("-backend") and info["Id"] == args[-1]:
+                        info["State"]["ExitCode"] = 143
+            return raw
+        with patch.object(M, "native_preflight", return_value="amd64"), patch.object(M, "process_snapshot", side_effect=self.host_snapshot), patch.object(self.controller, "docker", side_effect=term), patch.object(self.controller, "driver", side_effect=self.driver), patch.object(self.controller, "wait_http"):
+            self.controller.execute()
+        receipts = json.loads((self.opts.output / "cleanup.json").read_text())["resources"]
+        backend = next(r for r in receipts if r["name"].endswith("-backend"))
+        self.assertTrue(backend["absent"])
+        self.assertEqual(backend["exit_code"], 143)
+
+    def test_driver_absolute_deadline_crossings_reject_late_success(self):
+        for horizon in ("phase", "overall"):
+            for boundary in ("setup", "launch", "snapshot", "evidence", "wait", "log", "parse"):
+                with self.subTest(boundary=boundary):
+                    self.opts.output = self.root / (horizon + "-" + boundary)
+                    self.opts.output.mkdir()
+                    self.controller.hashes = {role: M.digest(getattr(self.opts, role)) for role in ("cli", "driver", "observer")}
+                    self.controller.deadline = 90 if horizon == "overall" else 240
+                    self.controller.phase_deadline = 90 if horizon == "phase" else None
+                    clock = dict(now=89)
+                    child = MagicMock(pid=31337, returncode=0)
+                    child.poll.return_value = 0
+                    original_temp = M.tempfile.TemporaryFile
+                    def setup(*args, **kwargs):
+                        if boundary == "setup": clock["now"] = 100
+                        return original_temp(*args, **kwargs)
+                    def launch(*args, **kwargs):
+                        if boundary == "launch": clock["now"] = 100
+                        return child
+                    def snapshot(pid):
+                        if boundary == "snapshot": clock["now"] = 100
+                        driver_snapshot = dict(sha256=self.controller.hashes["driver"], membership="0::/host")
+                        return driver_snapshot
+                    def evidence(*args):
+                        if boundary == "evidence": clock["now"] = 100
+                    def wait(timeout):
+                        self.assertGreater(timeout, 0)
+                        self.assertLessEqual(timeout, 1)
+                        if boundary == "wait": clock["now"] = 100
+                    def sanitize(raw):
+                        if boundary == "log": clock["now"] = 100
+                        return "retained log"
+                    def parse(opts):
+                        if boundary == "parse": clock["now"] = 100
+                        completion_record = {}
+                        return completion_record
+                    child.wait.side_effect = wait
+                    with patch.object(M.time, "monotonic", side_effect=lambda: clock["now"]), patch.object(M.tempfile, "TemporaryFile", side_effect=setup), patch.object(M.subprocess, "Popen", side_effect=launch) as popen, patch.object(M, "process_snapshot", side_effect=snapshot) as process, patch.object(self.controller, "evidence", side_effect=evidence), patch.object(M, "sanitized", side_effect=sanitize), patch.object(M, "completion", side_effect=parse) as completion:
+                        with self.assertRaisesRegex(RuntimeError, "deadline exceeded"):
+                            environment = {}
+                            self.controller.driver("finite", environment)
+                        if boundary == "setup": popen.assert_not_called()
+                        if boundary == "launch": process.assert_not_called()
+                        if boundary != "parse": completion.assert_not_called()
+                        if boundary in ("launch", "snapshot", "evidence"): child.wait.assert_not_called()
+                    if boundary != "setup":
+                        self.assertEqual((self.opts.output / "finite-driver.log").read_text(), "retained log")
+
+    def test_driver_fractional_budget_and_independent_cleanup_failure(self):
+        self.opts.output.mkdir()
+        self.controller.hashes = {role: M.digest(getattr(self.opts, role)) for role in ("cli", "driver", "observer")}
+        self.controller.deadline = 90
+        self.controller.phase_deadline = 89.75
+        clock = dict(now=89.5)
+        child = MagicMock(pid=31337, returncode=0)
+        child.poll.return_value = 0
+        snapshot = dict(sha256=self.controller.hashes["driver"], membership="0::/host")
+        completion_record = {}
+        environment = {}
+        with patch.object(M.time, "monotonic", side_effect=lambda: clock["now"]), patch.object(M.subprocess, "Popen", return_value=child), patch.object(M, "process_snapshot", return_value=snapshot), patch.object(M, "completion", return_value=completion_record):
+            self.controller.driver("finite", environment)
+        child.wait.assert_called_once_with(timeout=.25)
+        child.poll.return_value = None
+        def timeout(*args, **kwargs):
+            clock["now"] = 100
+            raise subprocess.TimeoutExpired("primary owned driver", 60)
+        child.wait.side_effect = timeout
+        clock["now"] = 89.5
+        def launch(*args, **kwargs):
+            kwargs["stdout"].write(b"\x1b[31mhttps://user:password@host/failure\x00")
+            return child
+        with patch.object(M.time, "monotonic", side_effect=lambda: clock["now"]), patch.object(M.subprocess, "Popen", side_effect=launch), patch.object(M, "process_snapshot", return_value=snapshot), patch.object(M.os, "killpg") as kill:
+            with self.assertRaisesRegex(RuntimeError, "primary owned driver.*owned driver cleanup"):
+                self.controller.driver("finite", environment)
+        kill.assert_called_once_with(31337, M.signal.SIGKILL)
+        expected_cleanup_budget = dict(timeout=3)
+        self.assertEqual(child.wait.call_args_list[-1].kwargs, expected_cleanup_budget)
+        text = (self.opts.output / "finite-driver.log").read_text()
+        self.assertIn("[redacted]@host/failure", text)
+        self.assertNotIn("password", text)
+        self.assertNotIn("\x00", text)
+        receipt = json.loads((self.opts.output / "finite-driver-cleanup-error.json").read_text())
+        self.assertIn("primary owned driver", receipt["primary_error"])
+        self.assertIn("timed out", receipt["cleanup_error"])
+
+
 class CompletionTests(unittest.TestCase):
     def test_completion_is_not_exit_zero_or_test_log_alone(self):
         with tempfile.TemporaryDirectory() as raw:
@@ -835,6 +1034,34 @@ class CompletionTests(unittest.TestCase):
                 invalid = dict(opts, stdout=stdout)
                 with self.assertRaises(RuntimeError):
                     M.completion(invalid)
+
+    def test_completion_profiles_cannot_be_substituted(self):
+        with tempfile.TemporaryDirectory() as raw:
+            path = Path(raw) / "completion.json"
+            for profile in (M.PROFILE, M.OS_PROFILE):
+                text = "=== RUN   TestProductionLinuxFinite\n--- PASS: TestProductionLinuxFinite (0.01s)\nPASS\n"
+                opts = dict(path=path, stage="finite", revision="a" * 40, pid=123, stdout=text, profile=profile)
+                record = dict(schema=1, stage="finite", profile=profile, revision="a" * 40, driver_pid=123, cases=M.FINITE_CASES, samples=2, documents=6, qualification=False)
+                path.write_text(json.dumps(record))
+                self.assertEqual(M.completion(opts), record)
+                other = M.OS_PROFILE if profile == M.PROFILE else M.PROFILE
+                substituted_record = dict(record, profile=other)
+                path.write_text(json.dumps(substituted_record))
+                with self.assertRaisesRegex(RuntimeError, "completion identity mismatch"):
+                    M.completion(opts)
+
+    def test_opensearch_ci_builds_only_three_finite_binaries(self):
+        workflow = (ROOT / ".github/workflows/ci.yml").read_text()
+        job = workflow.split("  native-linux-opensearch-finite:", 1)[1].split("  native-linux-volume-copy:", 1)[0]
+        self.assertIn("--profile=" + M.OS_PROFILE, job)
+        self.assertIn("./cmd/weir", job)
+        self.assertIn("./internal/app", job)
+        self.assertIn("./internal/testutil/testresource", job)
+        self.assertNotIn("helper", job)
+        self.assertNotIn("testvolume", job)
+        self.assertNotIn("volume-helper", job)
+        self.assertIn("github.event.pull_request.head.sha || github.sha", job)
+        self.assertIn("if: always()", job)
 
     def test_sanitized_evidence_removes_controls_and_userinfo(self):
         self.assertEqual(M.sanitized(b"\x1b[31mhttp://user:secret@example/x\x00\n"), "http://[redacted]@example/x\n")

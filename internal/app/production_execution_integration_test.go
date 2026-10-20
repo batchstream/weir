@@ -58,7 +58,9 @@ func loadProductionExecution(t *testing.T, suite string) *testexecution.Validate
 	// Existing fixtures retain their own explicit opt-in and fixed addresses.
 	// Missing old env is not a source of execution/provenance defaults.
 	t.Setenv("WEIR_INTEGRATION", "1")
-	t.Setenv("WEIR_SEARCH_INTEGRATION", "elasticsearch")
+	profile := inputs.Profile()
+	product := profile.Backends[len(profile.Backends)-1].Product
+	t.Setenv("WEIR_SEARCH_INTEGRATION", product)
 	t.Setenv("WEIR_MONGO_PROFILE", "")
 	return inputs
 }

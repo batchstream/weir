@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Owned native Linux ES/plain finite correctness; never qualification/promotion.
+"""Owned native Linux search/plain finite correctness; never qualification/promotion.
 
 Image preparation is an explicit, separate CI step. This executor never pulls,
 builds, installs, changes host controls, discovers credentials or uses contexts.
@@ -25,6 +25,8 @@ import urllib.request
 import uuid
 
 PROFILE = "linux-native-es-functional-v1"
+OS_PROFILE = "linux-native-opensearch-functional-v1"
+PROFILES = {PROFILE: ("elasticsearch", "8.19.22"), OS_PROFILE: ("opensearch", "3.3.0")}
 ES_REPOSITORY = "docker.elastic.co/elasticsearch/elasticsearch"
 # Verified public 8.19.22 index sha256:e98f9c3b09beb2fbb9eaf667d602df3f0e00bd3644138b8458dc17ba1a675595.
 # The old server fixture pin is its arm64 child, NOT an interchangeable index.
@@ -45,9 +47,19 @@ ES_TMPFS = {
     "/usr/share/elasticsearch/logs": "rw,noexec,nosuid,size=33554432,uid=1000,gid=0",
     "/tmp": "rw,nosuid,size=134217728,uid=1000,gid=0",
 }
+OS_REPOSITORY = "opensearchproject/opensearch"
+OS_PINS = {
+    "amd64": "sha256:59e9e49ac00f19c2af9094e367c8e6586f7d07e6c06465c3f4c43b40934309f2",
+    "arm64": "sha256:98db5375d94a62ee3d9073681bb40fe1087657d036f3dfa79053b0b1f83f5577",
+}
+OS_TMPFS = {
+    "/tmp": "rw,nosuid,nodev,size=134217728,uid=1000,gid=1000",
+    "/usr/share/opensearch/data": "rw,noexec,nosuid,nodev,size=268435456,uid=1000,gid=1000",
+    "/usr/share/opensearch/logs": "rw,noexec,nosuid,nodev,size=33554432,uid=1000,gid=1000",
+}
 FULL_ID = re.compile(r"[0-9a-f]{64}\Z")
 FINITE_CASES = ["Resolve", "Put", "Read", "Native", "Lua", "Batch4", "Update", "Delete", "oracle", "SDK-close", "ownership-zero"]
-CONTAINER_FORMAT = ('{"Id":{{json .Id}},"Owner":{{json (index .Config.Labels "weir.owner")}},'
+CONTAINER_FORMAT = ('{"Id":{{json .Id}},"Name":{{json .Name}},"Owner":{{json (index .Config.Labels "weir.owner")}},'
                     '"Image":{{json .Image}},"State":{{json .State}},'
                     '"Memory":{{json .HostConfig.Memory}},"Swap":{{json .HostConfig.MemorySwap}},'
                     '"CPU":{{json .HostConfig.NanoCpus}},"PIDs":{{json .HostConfig.PidsLimit}},'
@@ -56,9 +68,9 @@ CONTAINER_FORMAT = ('{"Id":{{json .Id}},"Owner":{{json (index .Config.Labels "we
                     '"Security":{{json .HostConfig.SecurityOpt}},"Privileged":{{json .HostConfig.Privileged}},'
                     '"PidMode":{{json .HostConfig.PidMode}},"Mounts":{{json .Mounts}},'
                     '"Networks":{{json .NetworkSettings.Networks}},"Ports":{{json .NetworkSettings.Ports}},'
-                    '"Entrypoint":{{json .Config.Entrypoint}},"Cmd":{{json .Config.Cmd}},"Tmpfs":{{json .HostConfig.Tmpfs}}}')
+                    '"Entrypoint":{{json .Config.Entrypoint}},"Cmd":{{json .Config.Cmd}},"Tmpfs":{{json (index .HostConfig "Tmpfs")}}}')
 NETWORK_FORMAT = '{"Id":{{json .Id}},"Owner":{{json (index .Labels "weir.owner")}},"Driver":{{json .Driver}},"Internal":{{json .Internal}},"Containers":{{json .Containers}}}'
-IMAGE_FORMAT = '{"Id":{{json .Id}},"OS":{{json .Os}},"Arch":{{json .Architecture}},"Digests":{{json .RepoDigests}}}'
+IMAGE_FORMAT = '{"Id":{{json .Id}},"OS":{{json .Os}},"Arch":{{json .Architecture}},"Digests":{{json .RepoDigests}},"Volumes":{{json (index .Config "Volumes")}}}'
 MAX_OUTPUT = 4 << 20
 
 
@@ -71,6 +83,7 @@ class Options:
     driver: Path
     observer: Path
     output: Path
+    profile: str = PROFILE
 
 
 @dataclass
@@ -104,6 +117,7 @@ def sanitized(raw):
 
 
 def native_preflight(opts):
+    require(opts.profile in PROFILES, "exact finite profile required")
     # No Docker command or fixture action is reachable on unsupported hosts.
     require(platform.system() == "Linux", "native Linux required; Darwin/Desktop unsupported")
     arch = {"x86_64": "amd64", "aarch64": "arm64"}.get(platform.machine())
@@ -152,7 +166,7 @@ def completion(opts):
     require(isinstance(record, dict), "structured completion object required")
     expected_keys = {"schema", "stage", "profile", "revision", "driver_pid", "cases", "samples", "documents", "qualification"}
     require(set(record) == expected_keys, "missing/unknown completion fields")
-    require(type(record["schema"]) is int and record["schema"] == 1 and record["stage"] == opts["stage"] and record["profile"] == PROFILE and record["revision"] == opts["revision"], "completion identity mismatch")
+    require(type(record["schema"]) is int and record["schema"] == 1 and record["stage"] == opts["stage"] and record["profile"] == opts.get("profile", PROFILE) and record["revision"] == opts["revision"], "completion identity mismatch")
     require(type(record["driver_pid"]) is int and record["driver_pid"] == opts["pid"] and record["qualification"] is False, "completion driver identity/qualification mismatch")
     cases = ["source", "cli", "kernel-driver"] if opts["stage"] == "preflight" else FINITE_CASES
     require(record["cases"] == cases, "missing, duplicate or reordered finite cases")
@@ -206,14 +220,28 @@ class Controller:
         self.http = urllib.request.build_opener(proxy_handler, redirect_handler)
         self.docker_prefix = []
         self.cli_resource = None
+        self.phase_deadline = None
+
+    def remaining(self, deadline=None):
+        active = self.cleanup_deadline if self.cleaning else self.deadline
+        for boundary in (deadline, None if self.cleaning else self.phase_deadline):
+            if boundary is not None:
+                active = min(active, boundary)
+        value = active - time.monotonic()
+        require(value > 0, "absolute controller/phase deadline exceeded")
+        return value
 
     def evidence(self, name, value):
         path = self.opts.output / name
-        path.write_text(json.dumps(value, sort_keys=True, indent=2) + "\n")
+        raw = json.dumps(value, sort_keys=True, indent=2) + "\n"
+        require(len(raw.encode()) <= MAX_OUTPUT, "evidence exceeds output cap")
+        path.write_text(raw)
 
     def run(self, args, timeout=15, deadline=None):
         self.sequence += 1
         active_deadline = self.cleanup_deadline if self.cleaning else self.deadline
+        if self.phase_deadline is not None and not self.cleaning:
+            active_deadline = min(active_deadline, self.phase_deadline)
         if deadline is not None:
             active_deadline = min(active_deadline, deadline)
         path = self.opts.output / ("command-%04d.log" % self.sequence)
@@ -230,12 +258,19 @@ class Controller:
             raw = stream.read(MAX_OUTPUT + 1)
         path.write_text(sanitized(raw[:MAX_OUTPUT]))
         require(len(raw) <= MAX_OUTPUT, "command output exceeds evidence bound")
+        require(time.monotonic() < active_deadline, "command returned beyond absolute deadline")
         text = raw.decode("utf-8")
         if result.returncode:
             raise CommandError(text, result.returncode)
         return text
 
     def docker(self, args, timeout=15, deadline=None):
+        if args[:1] in (["kill"], ["stop"]) or len(args) > 1 and args[1] in ("create", "start", "rm"):
+            self.remaining(deadline)
+            item = dict(monotonic=time.monotonic(), mutation=args, resources=[vars(r) for r in self.resources])
+            with (self.opts.output / "lifecycle.jsonl").open("a") as stream:
+                stream.write(json.dumps(item) + "\n")
+            self.remaining(deadline)
         return self.run(self.docker_prefix + args, timeout, deadline=deadline)
 
     def inspect(self, resource, deadline=None):
@@ -254,10 +289,19 @@ class Controller:
             raise
 
     def guard(self, resource, deadline=None):
+        self.remaining(deadline)
         info = self.inspect(resource, deadline=deadline)
+        self.remaining(deadline)
         require(info is not None and info["Owner"] == self.owner and FULL_ID.fullmatch(info["Id"]), "resource owner/full-ID missing or changed; refuse mutation")
         require(not resource.identity or info["Id"] == resource.identity, "captured resource ID changed; refuse mutation")
         resource.identity = info["Id"]
+        if resource.kind == "container":
+            require(info["Name"] == "/" + resource.name, "container exact name changed")
+            named = Resource("container", resource.name)
+            self.remaining(deadline)
+            same = self.inspect(named, deadline)
+            self.remaining(deadline)
+            require(same is not None and same["Id"] == resource.identity and same["Owner"] == self.owner, "container name reused")
         if resource.kind == "network":
             require(info.get("Driver") == "bridge" and info.get("Internal") is False, "owned network must be a standard bridge (non-internal)")
         return info
@@ -266,6 +310,7 @@ class Controller:
         # Guard is registered before create; partial success/timeout resolves the
         # unique name and owner once, then every action uses the full captured ID.
         self.resources.append(resource)
+        self.evidence("registered-resources.json", [vars(r) for r in self.resources])
         identity = self.docker(args, 30).strip()
         require(FULL_ID.fullmatch(identity), "create did not return full ID")
         resource.identity = identity
@@ -275,44 +320,81 @@ class Controller:
     def image(self, reference):
         info = json.loads(self.docker(["image", "inspect", "--format", IMAGE_FORMAT, reference]))
         require(info["OS"] == "linux" and info["Arch"] == self.arch and reference in (info["Digests"] or []) and re.fullmatch(r"sha256:[0-9a-f]{64}", info["Id"]), "cached immutable native image mismatch")
+        require(info["Volumes"] is None or type(info["Volumes"]) is dict and not info["Volumes"], "image-declared anonymous volumes unsupported")
         return info
 
     def driver(self, stage, environment):
+        end = time.monotonic() + min(22 if stage == "preflight" else 60, self.remaining())
+        def budget():
+            value = min(end - time.monotonic(), self.remaining())
+            require(value > 0, "absolute driver deadline exceeded")
+            return value
         name = "TestProductionLinuxPreflight" if stage == "preflight" else "TestProductionLinuxFinite"
         target = self.opts.output / (stage + "-completion.json")
         env = os.environ.copy()
         env.update(environment)
-        env["WEIR_FINITE_NATIVE"] = "1"
-        env["WEIR_FINITE_COMPLETION"] = str(target)
-        env["WEIR_EXECUTION_PROFILE"] = str(self.opts.output / "profile.json")
-        env["WEIR_PROVENANCE_INPUTS"] = str(self.opts.output / "provenance.json")
+        env.update(WEIR_FINITE_NATIVE="1", WEIR_FINITE_COMPLETION=str(target),
+                   WEIR_EXECUTION_PROFILE=str(self.opts.output / "profile.json"),
+                   WEIR_PROVENANCE_INPUTS=str(self.opts.output / "provenance.json"))
         args = [str(self.opts.driver), "-test.run=^" + name + "$", "-test.v", "-test.count=1", "-test.timeout=" + ("20s" if stage == "preflight" else "58s")]
         log = self.opts.output / (stage + "-driver.log")
+        budget()
         with tempfile.TemporaryFile() as stream:
+            budget()
             child = subprocess.Popen(args, cwd=self.opts.harness_root, env=env, stdout=stream, stderr=subprocess.STDOUT, start_new_session=True)
+            primary = None
+            cleanup_error = None
             try:
+                budget()
                 snapshot = process_snapshot(child.pid)
+                budget()
                 require(snapshot["sha256"] == self.hashes["driver"], "actual running driver SHA mismatch")
                 if self.cli_resource:
                     require(self.cli_resource.identity not in snapshot["membership"], "driver must remain outside CLI cgroup")
                 self.evidence(stage + "-driver-runtime.json", snapshot)
-                child.wait(timeout=min(22 if stage == "preflight" else 60, max(.01, self.deadline - time.monotonic())))
+                budget()
+                child.wait(timeout=budget())
+                budget()
+            except Exception as error:
+                primary = error
             finally:
-                if child.poll() is None:
-                    os.killpg(child.pid, signal.SIGKILL)
-                    child.wait(timeout=3)
-                stream.seek(0)
-                raw = stream.read(MAX_OUTPUT + 1)
-                log.write_text(sanitized(raw[:MAX_OUTPUT]))
+                try:
+                    if child.poll() is None:
+                        os.killpg(child.pid, signal.SIGKILL)
+                        if not hasattr(self, "cleanup_deadline"):
+                            self.cleanup_deadline = time.monotonic() + 60
+                        left = self.cleanup_deadline - time.monotonic()
+                        require(left > 0, "owned driver cleanup deadline expired")
+                        child.wait(timeout=min(3, left))
+                except Exception as error:
+                    cleanup_error = error
+                finally:
+                    stream.seek(0)
+                    raw = stream.read(MAX_OUTPUT + 1)
+                    log.write_text(sanitized(raw[:MAX_OUTPUT]))
+            if cleanup_error is not None:
+                details = dict(primary_error=str(primary), cleanup_error=str(cleanup_error))
+                self.evidence(stage + "-driver-cleanup-error.json", details)
+                if primary is not None:
+                    raise RuntimeError(str(primary) + "; owned driver cleanup: " + str(cleanup_error)) from primary
+                raise cleanup_error
+            if primary is not None:
+                raise primary
+        budget()
         require(child.returncode == 0 and len(raw) <= MAX_OUTPUT, "driver failed/timed out; retained sanitized driver log")
-        options = dict(path=target, stage=stage, revision=self.opts.revision, pid=child.pid, stdout=raw.decode("utf-8"))
-        return completion(options)
+        options = dict(path=target, stage=stage, revision=self.opts.revision, pid=child.pid, stdout=raw.decode("utf-8"), profile=self.opts.profile)
+        result = completion(options)
+        budget()
+        return result
 
     def wait_http(self, url, timeout, backend=None):
         deadline = min(self.deadline, time.monotonic() + timeout)
 
         def remaining():
-            budget = deadline - time.monotonic()
+            active = self.deadline
+            if self.phase_deadline is not None:
+                active = min(active, self.phase_deadline)
+            budget = min(deadline, active) - time.monotonic()
             require(budget > 0, "bounded readiness timeout")
             return budget
 
@@ -334,7 +416,9 @@ class Controller:
                     body = json.loads(raw)
                     version = body.get("version")
                     require(isinstance(version, dict), "wrong backend version identity")
-                    require(body.get("cluster_name") == self.owner and version.get("number") == "8.19.22" and version.get("build_flavor") == "default" and not version.get("distribution") and version.get("build_hash"), "wrong backend cluster/version/product")
+                    product, number = PROFILES[self.opts.profile]
+                    identity = version.get("distribution") == "opensearch" if product == "opensearch" else version.get("build_flavor") == "default" and not version.get("distribution")
+                    require(body.get("cluster_name") == self.owner and version.get("number") == number and identity and version.get("build_hash"), "wrong backend cluster/version/product")
                     self.evidence("backend-identity.json", body)
                 remaining()
                 return
@@ -347,9 +431,11 @@ class Controller:
         args = ["container", "create", "--pull=never", "--platform=linux/" + self.arch, "--name", resource.name,
                 "--label", "weir.owner=" + self.owner, "--network", spec["network"].identity,
                 "--cgroupns=private", "--cpus=2", "--memory=" + str(mem), "--memory-swap=" + str(mem),
-                "--pids-limit=" + str(pids), "--user=" + spec["user"], "--read-only", "--cap-drop=ALL",
+                "--pids-limit=" + str(pids), "--user=" + spec["user"], "--cap-drop=ALL",
                 "--security-opt=no-new-privileges:true", "--log-driver=json-file", "--log-opt=max-size=2m", "--log-opt=max-file=1",
                 "--mount", "type=bind,src=" + str(self.opts.observer) + ",dst=/observer,readonly"]
+        if spec.get("readonly", True):
+            args += ["--read-only"]
         for port, host in spec["ports"].items():
             args += ["--publish", "127.0.0.1:" + str(host) + ":" + str(port)]
         args += spec["extra"] + [spec["image"]] + spec.get("command", [])
@@ -363,7 +449,7 @@ class Controller:
         info = self.guard(resource)
         require(info["Image"] == spec["image_id"] and info["State"]["Running"] and not info["State"]["OOMKilled"], "running container/image identity mismatch")
         require(info["Memory"] == spec["memory"] and info["Swap"] == spec["memory"] and info["CPU"] == 2_000_000_000 and info["PIDs"] == spec["pids"], "Docker resource settings mismatch")
-        require(info["Cgroupns"] == "private" and info["Readonly"] and not info["Privileged"] and not info["PidMode"] and info["User"] == spec["user"], "container isolation mismatch")
+        require(info["Cgroupns"] == "private" and info["Readonly"] is spec.get("readonly", True) and not info["Privileged"] and not info["PidMode"] and info["User"] == spec["user"], "container isolation mismatch")
         require(info["Caps"] == ["ALL"] and any(x in ("no-new-privileges", "no-new-privileges:true") for x in info["Security"]), "container security controls missing")
         networks = info["Networks"]
         require(len(networks) == 1 and next(iter(networks.values()))["NetworkID"] == spec["network"].identity, "foreign/shared network")
@@ -374,13 +460,23 @@ class Controller:
         observer = [m for m in info["Mounts"] if m["Destination"] == "/observer"]
         require(len(observer) == 1 and observer[0]["Source"] == str(self.opts.observer) and not observer[0]["RW"], "unknown/writable observer mount")
         if spec["role"] == "backend":
-            require(info.get("Entrypoint") == ES_ENTRYPOINT and info.get("Cmd") == ES_COMMAND, "backend stock entrypoint/config staging mismatch")
-            require(info.get("Tmpfs") == ES_TMPFS and len(info["Mounts"]) == 1, "backend bounded staging/tmpfs mounts mismatch")
+            if self.opts.profile == OS_PROFILE:
+                require(info.get("Entrypoint") == ["./opensearch-docker-entrypoint.sh"] and info.get("Cmd") == ["opensearch"], "backend stock entrypoint changed")
+                expected_tmpfs = OS_TMPFS
+            else:
+                require(info.get("Entrypoint") == ES_ENTRYPOINT and info.get("Cmd") == ES_COMMAND, "backend stock entrypoint/config staging mismatch")
+                expected_tmpfs = ES_TMPFS
+            require(info.get("Tmpfs") == expected_tmpfs and len(info["Mounts"]) == 1, "backend bounded tmpfs/foreign mounts mismatch")
         self.evidence(spec["role"] + "-container.json", info)
         return info
 
     def observe(self, resource, spec, phase):
         info = self.check_container(resource, spec)
+        if spec["role"] == "backend" and self.opts.profile == OS_PROFILE:
+            # External dependency context, not database process/JVM qualification.
+            context = dict(pid=info["State"]["Pid"], image=info["Image"])
+            self.evidence("backend-" + phase + "-context.json", context)
+            return context
         pid = info["State"]["Pid"]
         host = process_snapshot(pid, executable=False)
         require(resource.identity in host["membership"] and host["namespace_pid"] == 1, "host PID membership/namespace does not identify owned PID1")
@@ -394,7 +490,7 @@ class Controller:
         require(identity["observer_sha256"] == self.hashes["observer"] and identity["start_ticks"] == host["start_ticks"] and re.fullmatch(r"[0-9a-f]{64}", identity["sha256"]), "PID1 baseline/observer identity mismatch")
         if spec["role"] == "cli":
             require(identity["sha256"] == self.hashes["cli"] and identity["executable"] == "/weir", "actual CLI PID1 bytes differ")
-        else:
+        elif self.opts.profile == PROFILE:
             require(identity["executable"] in ("/bin/tini", "/usr/bin/tini"), "unexpected backend PID1 executable")
         self.guard(resource)
         raw = self.docker(["exec", "--user=" + spec["user"], resource.identity, "/observer", "--once", "--pid=1", "--expected-sha256=" + identity["sha256"]], 5)
@@ -416,9 +512,11 @@ class Controller:
 
     def shutdown_cli(self, resource):
         started = time.monotonic()
-        self.guard(resource)
-        self.docker(["kill", "--signal=TERM", resource.identity], 2)
-        self.docker(["wait", resource.identity], max(.01, 8 - (time.monotonic() - started)))
+        end = started + min(8, self.remaining())
+        self.guard(resource, end)
+        self.docker(["kill", "--signal=TERM", resource.identity], 2, end)
+        self.guard(resource, end)
+        self.docker(["wait", resource.identity], self.remaining(end), end)
         info = self.guard(resource)
         elapsed = time.monotonic() - started
         require(elapsed <= 8 and not info["State"]["Running"] and info["State"]["ExitCode"] == 0 and not info["State"]["OOMKilled"], "CLI SIGTERM/exit/OOM bound failed")
@@ -427,7 +525,9 @@ class Controller:
 
     def cleanup(self):
         self.cleaning = True
-        self.cleanup_deadline = time.monotonic() + 60
+        self.phase_deadline = None
+        if not hasattr(self, "cleanup_deadline"):
+            self.cleanup_deadline = time.monotonic() + 60
         errors, receipts = [], []
         all_absent = True
         for resource in reversed(self.resources):
@@ -450,8 +550,15 @@ class Controller:
                         errors.append(resource.name + " logs: " + str(error))
                     info = self.guard(resource)
                     if info["State"]["Running"]:
-                        self.docker(["stop", "--timeout=6", resource.identity], 9)
-                    require(not self.guard(resource)["State"]["Running"], "container still running; refuse removal")
+                        end = time.monotonic() + min(8, self.remaining())
+                        self.guard(resource, end)
+                        self.docker(["kill", "--signal=TERM", resource.identity], 2, end)
+                        self.guard(resource, end)
+                        self.docker(["wait", resource.identity], self.remaining(end), end)
+                    terminal = self.guard(resource)["State"]
+                    require(not terminal["Running"], "container still running; refuse removal")
+                    receipt["exit_code"] = terminal["ExitCode"]
+                    receipt["oom"] = terminal["OOMKilled"]
                     self.guard(resource)
                     self.docker(["container", "rm", resource.identity], 5)
                 else:
@@ -491,7 +598,7 @@ class Controller:
             primary = str(error)
         finally:
             cleanup = self.cleanup()
-            result = dict(profile=PROFILE, qualification=False, revision=self.opts.revision, arch=self.arch, primary_error=primary, cleanup_errors=cleanup, finite_complete=primary is None and not cleanup)
+            result = dict(profile=self.opts.profile, qualification=False, revision=self.opts.revision, arch=self.arch, primary_error=primary, cleanup_errors=cleanup, finite_complete=primary is None and not cleanup)
             self.evidence("finite-result.json", result)
         require(primary is None and not cleanup, "finite execution failed: " + str(primary) + "; cleanup=" + str(cleanup))
 
@@ -504,18 +611,19 @@ class Controller:
         self.evidence("engine.json", info)
         target = dict(os="linux", arch=self.arch)
         roles = dict(driver="owned-local", cli="owned-local")
-        backend = dict(product="elasticsearch", version="8.19.22", transport="plain", endpoints=roles)
-        profile = dict(schemaVersion=1, id=PROFILE, suite="functional", intent="finite", policy="production-v1", executor="linux-native-v1", driver=target, cli=target, backends=[backend])
+        product, version = PROFILES[self.opts.profile]
+        backend = dict(product=product, version=version, transport="plain", endpoints=roles)
+        profile = dict(schemaVersion=1, id=self.opts.profile, suite="functional", intent="finite", policy="production-v1", executor="linux-native-v1", driver=target, cli=target, backends=[backend])
         self.evidence("profile.json", profile)
         server = dict(root=str(self.opts.server_root), revision=self.opts.revision)
         harness = dict(root=str(self.opts.harness_root), revision=self.opts.revision)
         cli = dict(role="cli", path=str(self.opts.cli), sha256=self.hashes["cli"])
         driver = dict(role="driver", path=str(self.opts.driver), sha256=self.hashes["driver"])
-        provenance = dict(schemaVersion=1, profileID=PROFILE, server=server, harness=harness, cli=cli, driver=driver)
+        provenance = dict(schemaVersion=1, profileID=self.opts.profile, server=server, harness=harness, cli=cli, driver=driver)
         self.evidence("provenance.json", provenance)
         base = json.loads((self.opts.harness_root / "deploy/docker/base.json").read_text())
         self.base_ref = base["image"] + "@" + base["platforms"][self.arch]
-        self.es_ref = ES_REPOSITORY + "@" + ES_PINS[self.arch]
+        self.es_ref = (OS_REPOSITORY + "@" + OS_PINS[self.arch]) if self.opts.profile == OS_PROFILE else ES_REPOSITORY + "@" + ES_PINS[self.arch]
         self.base_image, self.es_image = self.image(self.base_ref), self.image(self.es_ref)
         images = dict(base=self.base_image, backend=self.es_image, backend_reference=self.es_ref, base_reference=self.base_ref)
         self.evidence("images.json", images)
@@ -532,10 +640,18 @@ class Controller:
         es_extra += ["--env=cluster.name=" + self.owner, "--env=discovery.type=single-node", "--env=xpack.security.enabled=false", "--env=action.auto_create_index=false", "--env=ES_JAVA_OPTS=-Xms512m -Xmx512m"]
         es_ports = {9200: oracle_port}
         es_spec = dict(role="backend", memory=1536 << 20, pids=512, user="1000:0", network=network, ports=es_ports, extra=es_extra, image=self.es_ref, image_id=self.es_image["Id"], command=ES_COMMAND)
+        if self.opts.profile == OS_PROFILE:
+            extra = ["--tmpfs=" + path + ":" + options for path, options in OS_TMPFS.items()]
+            extra += ["--env=DISABLE_SECURITY_PLUGIN=true", "--env=DISABLE_INSTALL_DEMO_CONFIG=true",
+                      "--env=cluster.name=" + self.owner, "--env=discovery.type=single-node", "--env=action.auto_create_index=false",
+                      "--env=OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m"]
+            es_spec.update(user="1000:1000", extra=extra, command=[], readonly=False)
+        self.phase_deadline = min(self.deadline, time.monotonic() + 90)
         backend = self.container(es_spec)
         oracle = "http://127.0.0.1:" + str(oracle_port)
         self.wait_http(oracle + "/", 90, backend=backend)
         backend_before = self.observe(backend, es_spec, "before")
+        self.phase_deadline = None
         basic = 'listeners:\n  application: "0.0.0.0:7447"\ndiagnostics:\n  address: "0.0.0.0:7449"\n  allow_intranet: true\ndiscovery:\n  advertise: ["127.0.0.1:%d"]\n' % app_port
         routing = 'stores:\n  - name: search\n    backend:\n      search:\n        url: "http://%s:9200"\n' % backend.name
         basic_path, routing_path = self.opts.output / "weir.yaml", self.opts.output / "routes.yaml"
@@ -560,8 +676,9 @@ class Controller:
         for group in ("cpu", "memory_events"):
             require(all(after[group][k] >= v for k, v in before[group].items()), "cgroup counters regressed/replaced")
         backend_after = self.observe(backend, es_spec, "after")
-        for initial, final in ((before, after), (backend_before, backend_after)):
-            require(initial["start_ticks"] == final["start_ticks"] and initial["sha256"] == final["sha256"], "PID1 replaced between observations")
+        require(before["start_ticks"] == after["start_ticks"] and before["sha256"] == after["sha256"], "CLI PID1 replaced between observations")
+        if self.opts.profile == PROFILE:
+            require(backend_before["start_ticks"] == backend_after["start_ticks"] and backend_before["sha256"] == backend_after["sha256"], "backend PID1 replaced between observations")
         self.shutdown_cli(cli)
 
 
@@ -589,8 +706,9 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     for name in ("server-root", "harness-root", "revision", "cli", "driver", "observer", "output"):
         parser.add_argument("--" + name, required=True)
+    parser.add_argument("--profile", required=True, choices=tuple(PROFILES))
     args = parser.parse_args()
-    opts = Options(server_root=Path(args.server_root), harness_root=Path(args.harness_root), revision=args.revision, cli=Path(args.cli), driver=Path(args.driver), observer=Path(args.observer), output=Path(args.output))
+    opts = Options(server_root=Path(args.server_root), harness_root=Path(args.harness_root), revision=args.revision, cli=Path(args.cli), driver=Path(args.driver), observer=Path(args.observer), output=Path(args.output), profile=args.profile)
     require(opts.output.is_absolute() and opts.output.parent.resolve() == opts.output.parent and not opts.output.exists(), "new canonical task-owned evidence directory required")
     controller = Controller(opts)
     controller.execute()
