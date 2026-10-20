@@ -39,9 +39,11 @@ type processFaultBackend struct {
 }
 
 type processFaultSuite struct {
-	process *memoryRecoveryCLI
-	client  *weirclient.Client
-	pid     string
+	process        *memoryRecoveryCLI
+	client         *weirclient.Client
+	pid            string
+	nativeShutdown func(*testing.T, *processFaultGate)
+	nativePID      func(*testing.T) string
 }
 
 type processFaultGate struct {
@@ -602,7 +604,13 @@ func processFaultUnavailable(t *testing.T, suite *processFaultSuite, backend pro
 	if err != nil || time.Now().After(deadline) {
 		t.Fatal("recovered CRUD/Native exceeded fixed 5s fixture recovery gate", err)
 	}
-	if actualPID := processFaultPID(t, suite.process); actualPID != suite.pid {
+	actualPID := ""
+	if suite.nativePID != nil {
+		actualPID = suite.nativePID(t)
+	} else {
+		actualPID = processFaultPID(t, suite.process)
+	}
+	if actualPID != suite.pid {
 		t.Fatal("recovery replaced the service process", suite.pid, actualPID)
 	}
 	processFaultIdle(t, suite.process, 3*time.Second)
@@ -722,21 +730,30 @@ func processFaultShutdown(t *testing.T, suite *processFaultSuite, backend proces
 		done <- err
 	}()
 	processFaultWait(t, gate.ack, "ack lost while service receives SIGTERM")
-	start := time.Now()
-	packagedDocker(t, "kill", "--signal=TERM", suite.process.name)
-	// Release the observer after SIGTERM so the service drains a real failed IO
-	// rather than waiting for this test's own callback timeout.
-	gate.close()
-	waitContext, stopWait := context.WithDeadline(t.Context(), start.Add(8*time.Second))
-	waitRaw, waitErr := exec.CommandContext(waitContext, "docker", "wait", suite.process.name).CombinedOutput()
-	stopWait()
-	state := strings.Fields(string(waitRaw))
-	if waitErr != nil || len(state) != 1 || state[0] != "0" || time.Since(start) > 8*time.Second {
-		t.Fatal("fault shutdown exceeded 8s or failed", state, waitErr, time.Since(start))
+	select {
+	case err := <-done:
+		t.Fatal("fault caller retired before SIGTERM", err)
+	default:
 	}
-	oom := strings.TrimSpace(packagedDocker(t, "inspect", "--type", "container", "--format", "{{.State.OOMKilled}}", suite.process.name))
-	if oom != "false" {
-		t.Fatal("fault shutdown OOM", oom)
+	start := time.Now()
+	if suite.nativeShutdown != nil {
+		suite.nativeShutdown(t, gate)
+	} else {
+		packagedDocker(t, "kill", "--signal=TERM", suite.process.name)
+		// Release the observer after SIGTERM so the service drains a real failed IO
+		// rather than waiting for this test's own callback timeout.
+		gate.close()
+		waitContext, stopWait := context.WithDeadline(t.Context(), start.Add(8*time.Second))
+		waitRaw, waitErr := exec.CommandContext(waitContext, "docker", "wait", suite.process.name).CombinedOutput()
+		stopWait()
+		state := strings.Fields(string(waitRaw))
+		if waitErr != nil || len(state) != 1 || state[0] != "0" || time.Since(start) > 8*time.Second {
+			t.Fatal("fault shutdown exceeded 8s or failed", state, waitErr, time.Since(start))
+		}
+		oom := strings.TrimSpace(packagedDocker(t, "inspect", "--type", "container", "--format", "{{.State.OOMKilled}}", suite.process.name))
+		if oom != "false" {
+			t.Fatal("fault shutdown OOM", oom)
+		}
 	}
 	select {
 	case <-done:
@@ -796,7 +813,12 @@ const processFaultProxyTimeout = 20 * time.Second
 
 func startProcessFaultHTTPProxy(t *testing.T, upstream string) *processFaultHTTPProxy {
 	t.Helper()
-	listener, err := net.Listen("tcp", "0.0.0.0:0")
+	return startProcessFaultHTTPProxyOn(t, upstream, "0.0.0.0:0")
+}
+
+func startProcessFaultHTTPProxyOn(t *testing.T, upstream, address string) *processFaultHTTPProxy {
+	t.Helper()
+	listener, err := net.Listen("tcp", address)
 	if err != nil {
 		t.Fatal(err)
 	}

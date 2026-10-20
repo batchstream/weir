@@ -24,13 +24,17 @@ import subprocess
 import tempfile
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 import uuid
 
 PROFILE = "linux-native-es-functional-v1"
 OS_PROFILE = "linux-native-opensearch-functional-v1"
 LOAD_PROFILE = "linux-native-load-v1"
-PROFILES = {PROFILE: ("elasticsearch", "8.19.22"), OS_PROFILE: ("opensearch", "3.3.0"), LOAD_PROFILE: ("elasticsearch", "8.19.22")}
+FAULT_PROFILE = "linux-native-fault-v1"
+FORMAL_PROFILES = (LOAD_PROFILE, FAULT_PROFILE)
+FAULT_CASES = ["Resolve", "healthy", "lost-ack-native", "lost-ack-typed", "cancel-after-ack", "slow-IO", "unavailable-recovery", "ownership-zero", "SIGTERM", "oracle", "no-replay"]
+PROFILES = {FAULT_PROFILE: ("elasticsearch", "8.19.22"), PROFILE: ("elasticsearch", "8.19.22"), OS_PROFILE: ("opensearch", "3.3.0"), LOAD_PROFILE: ("elasticsearch", "8.19.22")}
 MONGO_SHA256 = "15c7caf565edeaca228c76fbe6c4503b1cff7ae6517f344cc555552423b3209a"
 MONGO_BYTES = 222890240
 LOAD_DATA_LIMIT = 2 << 30
@@ -135,7 +139,7 @@ def native_preflight(opts):
     require(platform.system() == "Linux", "native Linux required; Darwin/Desktop unsupported")
     arch = {"x86_64": "amd64", "aarch64": "arm64"}.get(platform.machine())
     require(arch in ES_PINS, "unsupported native host architecture")
-    if opts.profile == LOAD_PROFILE:
+    if opts.profile in FORMAL_PROFILES:
         release = platform.freedesktop_os_release()
         require(arch == "amd64" and release.get("ID") == "ubuntu" and release.get("VERSION_ID") == "24.04", "formal load requires Ubuntu24.04 amd64")
         require(os.environ.get("GITHUB_ACTIONS") == "true" and os.environ.get("RUNNER_ENVIRONMENT") == "github-hosted", "formal host-network CLI requires disposable GitHub-hosted CI runner")
@@ -169,7 +173,7 @@ def native_preflight(opts):
     require((os.cpu_count() or 0) >= 2, "two host CPUs required")
     memory = dict(line.split(":", 1) for line in Path("/proc/meminfo").read_text().splitlines())
     require(int(memory["MemAvailable"].split()[0]) >= 4 * 1024 * 1024, "at least4GiB actual available host memory required")
-    required_disk = LOAD_DISK_ADMISSION if opts.profile == LOAD_PROFILE else 2 << 30
+    required_disk = LOAD_DISK_ADMISSION if opts.profile in FORMAL_PROFILES else 2 << 30
     require(shutil.disk_usage(opts.output.parent).free >= required_disk, "insufficient disposable host storage admission")
     return arch
 
@@ -194,7 +198,7 @@ def completion(opts):
     require(set(record) == expected_keys, "missing/unknown completion fields")
     require(type(record["schema"]) is int and record["schema"] == 1 and record["stage"] == opts["stage"] and record["profile"] == opts.get("profile", PROFILE) and record["revision"] == opts["revision"], "completion identity mismatch")
     require(type(record["driver_pid"]) is int and record["driver_pid"] == opts["pid"] and record["qualification"] is False, "completion driver identity/qualification mismatch")
-    cases = {"preflight": ["source", "cli", "kernel-driver"], "mongo": ["replica-init", "version", "advertised-loopback"], "load": LOAD_CASES, "finite": FINITE_CASES}[opts["stage"]]
+    cases = {"preflight": ["source", "cli", "kernel-driver"], "mongo": ["replica-init", "version", "advertised-loopback"], "load": LOAD_CASES, "fault": FAULT_CASES, "finite": FINITE_CASES}[opts["stage"]]
     require(record["cases"] == cases, "missing, duplicate or reordered finite cases")
     require(type(record["samples"]) is int and type(record["documents"]) is int, "invalid sample/document counts")
     if opts["stage"] == "finite":
@@ -203,6 +207,8 @@ def completion(opts):
         require(opts.get("profile") == LOAD_PROFILE and record["samples"] == 0 and record["documents"] > 264, "missing formal load persisted effects")
         require(all(type(record[key]) is int and record[key] == value for key, value in (("warmup_seconds", 30), ("measurement_seconds", 600), ("arrival_rpc", 200))), "formal workload policy changed")
         require(opts.get("elapsed", 0) >= 630, "premature formal completion")
+    elif opts["stage"] == "fault":
+        require(opts.get("profile") == FAULT_PROFILE and record["samples"] == 0 and record["documents"] == 1, "missing fault oracle/completion")
     else:
         require(record["samples"] == 0 and record["documents"] == 0, "preflight performed workload")
     name = driver_name(opts.get("profile", PROFILE), opts["stage"])
@@ -235,8 +241,10 @@ def free_port():
 
 
 def driver_name(profile, stage):
-    if profile == LOAD_PROFILE:
-        return {"preflight": "TestProductionLinuxLoadPreflight", "mongo": "TestProductionLinuxLoadMongo", "load": "TestProductionLinuxLoad"}[stage]
+    if profile in FORMAL_PROFILES:
+        prefix = "TestProductionLinuxLoad" if profile == LOAD_PROFILE else "TestProductionLinuxFault"
+        final_stage = "load" if profile == LOAD_PROFILE else "fault"
+        return {"preflight": prefix + "Preflight", "mongo": prefix + "Mongo", final_stage: prefix}[stage]
     return {"preflight": "TestProductionLinuxPreflight", "finite": "TestProductionLinuxFinite"}[stage]
 
 
@@ -245,7 +253,7 @@ class Controller:
         self.opts = opts
         self.owner = "weir-finite-" + uuid.uuid4().hex
         self.resources = []
-        self.deadline = time.monotonic() + (960 if opts.profile == LOAD_PROFILE else 240)
+        self.deadline = time.monotonic() + (960 if opts.profile == LOAD_PROFILE else 360 if opts.profile == FAULT_PROFILE else 240)
         self.mongo = None
         self.mongo_snapshot = None
         self.mongo_stream = None
@@ -364,7 +372,7 @@ class Controller:
 
     def driver(self, stage, environment):
         started = time.monotonic()
-        seconds = 800 if stage == "load" else 45 if stage == "mongo" else 22 if stage == "preflight" else 60
+        seconds = 800 if stage == "load" else 210 if stage == "fault" else 45 if stage == "mongo" else 22 if stage == "preflight" else 60
         end = started + min(seconds, self.remaining())
         def budget():
             value = min(end - time.monotonic(), self.remaining())
@@ -377,8 +385,10 @@ class Controller:
         env.update(WEIR_FINITE_NATIVE="1", WEIR_FINITE_COMPLETION=str(target),
                    WEIR_EXECUTION_PROFILE=str(self.opts.output / "profile.json"),
                    WEIR_PROVENANCE_INPUTS=str(self.opts.output / "provenance.json"))
-        if self.opts.profile == LOAD_PROFILE:
+        if self.opts.profile in FORMAL_PROFILES:
             env.update(WEIR_NATIVE_LOAD="1", WEIR_NATIVE_LOAD_COMPLETION=str(target))
+        if self.opts.profile == FAULT_PROFILE:
+            env.update(WEIR_NATIVE_FAULT="1", WEIR_NATIVE_FAULT_CONTROL=str(self.opts.output))
         args = [str(self.opts.driver), "-test.run=^" + name + "$", "-test.v", "-test.count=1", "-test.timeout=" + str(seconds - 2) + "s"]
         log = self.opts.output / (stage + "-driver.log")
         budget()
@@ -396,11 +406,13 @@ class Controller:
                     require(self.cli_resource.identity not in snapshot["membership"], "driver must remain outside CLI cgroup")
                 self.evidence(stage + "-driver-runtime.json", snapshot)
                 budget()
-                if stage == "load":
+                if stage in ("load", "fault"):
                     while True:
+                        if stage == "fault":
+                            self.fault_progress(child.pid)
                         self.monitor_load_storage()
                         try:
-                            child.wait(timeout=min(2, budget()))
+                            child.wait(timeout=min(.02 if stage == "fault" else 2, budget()))
                             break
                         except subprocess.TimeoutExpired:
                             budget()
@@ -479,7 +491,7 @@ class Controller:
 
     def container(self, spec):
         if spec.get("host_network"):
-            require(self.opts.profile == LOAD_PROFILE and spec["role"] == "cli" and not spec["ports"], "host networking only for owned formal CLI")
+            require(self.opts.profile in FORMAL_PROFILES and spec["role"] == "cli" and not spec["ports"], "host networking only for owned formal CLI")
         resource = Resource("container", self.owner + "-" + spec["role"])
         mem, pids = spec["memory"], spec["pids"]
         args = ["container", "create", "--pull=never", "--platform=linux/" + self.arch, "--name", resource.name,
@@ -507,7 +519,7 @@ class Controller:
         require(info["Caps"] == ["ALL"] and any(x in ("no-new-privileges", "no-new-privileges:true") for x in info["Security"]), "container security controls missing")
         networks = info["Networks"]
         if spec.get("host_network"):
-            require(self.opts.profile == LOAD_PROFILE and spec["role"] == "cli" and not spec["ports"], "host networking only for owned formal CLI")
+            require(self.opts.profile in FORMAL_PROFILES and spec["role"] == "cli" and not spec["ports"], "host networking only for owned formal CLI")
             require(info.get("NetworkMode") == "host" and set(networks) == {"host"}, "actual host network mode missing")
         else:
             require(info.get("NetworkMode") != "host" and len(networks) == 1 and next(iter(networks.values()))["NetworkID"] == spec["network"].identity, "foreign/shared network")
@@ -522,14 +534,14 @@ class Controller:
                 require(info.get("Entrypoint") == ["./opensearch-docker-entrypoint.sh"] and info.get("Cmd") == ["opensearch"], "backend stock entrypoint changed")
                 expected_tmpfs = OS_TMPFS
             else:
-                expected_command = ES_LOAD_COMMAND if self.opts.profile == LOAD_PROFILE else ES_COMMAND
+                expected_command = ES_LOAD_COMMAND if self.opts.profile in FORMAL_PROFILES else ES_COMMAND
                 require(info.get("Entrypoint") == ES_ENTRYPOINT and info.get("Cmd") == expected_command, "backend stock entrypoint/config staging mismatch")
                 expected_tmpfs = ES_TMPFS
-            if self.opts.profile == LOAD_PROFILE:
+            if self.opts.profile in FORMAL_PROFILES:
                 expected_tmpfs = {path: options for path, options in ES_TMPFS.items() if path != "/usr/share/elasticsearch/data"}
                 data_mounts = [m for m in info["Mounts"] if m["Destination"] == "/usr/share/elasticsearch/data"]
                 require(len(data_mounts) == 1 and data_mounts[0]["Source"] == str(spec["data_directory"]) and data_mounts[0]["RW"], "owned load dependency storage mismatch")
-            require(info.get("Tmpfs") == expected_tmpfs and len(info["Mounts"]) == (2 if self.opts.profile == LOAD_PROFILE else 1), "backend bounded tmpfs/foreign mounts mismatch")
+            require(info.get("Tmpfs") == expected_tmpfs and len(info["Mounts"]) == (2 if self.opts.profile in FORMAL_PROFILES else 1), "backend bounded tmpfs/foreign mounts mismatch")
         self.evidence(spec["role"] + "-container.json", info)
         return info
 
@@ -740,11 +752,81 @@ class Controller:
             if self.mongo_stream:
                 self.mongo_stream.close()
 
-    def shutdown_cli(self, resource):
+    def fault_message(self, name, pid):
+        path = self.opts.output / name
+        if not path.exists():
+            return None
+        require(not path.is_symlink() and path.stat().st_size <= 4096, "bounded owned fault message required")
+        message = json.loads(path.read_text(), object_pairs_hook=unique_fields)
+        require(set(message) == {"owner", "driver_pid", "mongo", "search", "pid", "start_ticks", "exit"} and message["owner"] == self.owner and type(message["driver_pid"]) is int and message["driver_pid"] == pid, "fault message identity/schema mismatch")
+        return message
+
+    def fault_publish(self, name, message):
+        path = self.opts.output / name
+        require(not path.exists(), "fault message already published")
+        temporary = path.with_suffix(".tmp")
+        with temporary.open("x") as stream:
+            json.dump(message, stream)
+        temporary.replace(path)
+
+    def fault_progress(self, pid):
+        if self.cli_resource is None:
+            message = self.fault_message("proxies.json", pid)
+            if message is None:
+                return
+            mongo = urllib.parse.urlsplit(message["mongo"])
+            search = urllib.parse.urlsplit(message["search"])
+            for endpoint in (mongo, search):
+                require(endpoint.hostname == "127.0.0.1" and endpoint.port and not endpoint.username and not endpoint.password and not endpoint.fragment, "fault proxies must be plain owned loopback")
+            require(mongo.scheme == "mongodb" and mongo.path == "/" and urllib.parse.parse_qs(mongo.query, strict_parsing=True) == {"directConnection": ["true"], "serverMonitoringMode": ["poll"]} and search.scheme == "http" and not search.path and not search.query, "wrong proxy protocol/topology")
+            # These listeners must belong to the measured driver process, never an
+            # unrelated loopback service. Bind the selected ports to its socket FDs.
+            inodes = set()
+            for descriptor in Path("/proc", str(pid), "fd").iterdir():
+                try:
+                    target = os.readlink(descriptor)
+                except FileNotFoundError:
+                    continue
+                if target.startswith("socket:["):
+                    inodes.add(target[8:-1])
+            listeners = set()
+            for line in Path("/proc/net/tcp").read_text().splitlines()[1:]:
+                fields = line.split()
+                if fields[3] == "0A" and fields[9] in inodes:
+                    listeners.add(fields[1])
+            require(all("0100007F:%04X" % endpoint.port in listeners for endpoint in (mongo, search)), "proxy listeners not owned by actual driver")
+            routing = 'stores:\n  - name: mongo\n    backend:\n      mongodb:\n        uri: "%s"\n  - name: search\n    backend:\n      search:\n        url: "%s"\n' % (message["mongo"], message["search"])
+            (self.opts.output / "routes.yaml").write_text(routing)
+            cli = self.container(self.fault_cli_spec)
+            self.cli_resource = cli
+            driver = process_snapshot(pid)
+            require(driver["sha256"] == self.hashes["driver"] and cli.identity not in driver["membership"], "fault driver/proxies charged to CLI or replaced")
+            self.wait_http(self.fault_diagnostics + "/readyz", 20)
+            self.fault_before = self.observe(cli, self.fault_cli_spec, "before")
+            identity = process_snapshot(self.guard(cli)["State"]["Pid"], executable=False)
+            self.fault_identity = identity
+            reply = dict(message, pid=identity["pid"], start_ticks=str(identity["start_ticks"]))
+            self.fault_publish("running.json", reply)
+        elif not hasattr(self, "fault_stopped"):
+            message = self.fault_message("shutdown.json", pid)
+            if message is None:
+                return
+            after = self.observe(self.cli_resource, self.fault_cli_spec, "after")
+            require(after["start_ticks"] == self.fault_before["start_ticks"] and after["sha256"] == self.fault_before["sha256"], "fault CLI replaced")
+            for group in ("cpu", "memory_events"):
+                require(all(after[group][key] >= value for key, value in self.fault_before[group].items()), "fault controls regressed")
+            callback = lambda: self.fault_publish("signaled.json", message)
+            self.shutdown_cli(self.cli_resource, callback)
+            self.fault_publish("stopped.json", message)
+            self.fault_stopped = True
+
+    def shutdown_cli(self, resource, on_signal=None):
         started = time.monotonic()
         end = started + min(8, self.remaining())
         self.guard(resource, end)
         self.docker(["kill", "--signal=TERM", resource.identity], 2, end)
+        if on_signal is not None:
+            on_signal()
         self.guard(resource, end)
         self.docker(["wait", resource.identity], self.remaining(end), end)
         info = self.guard(resource)
@@ -850,8 +932,9 @@ class Controller:
                 cleanup.append("cleanup deadline exceeded before result acceptance")
             complete = primary is None and not cleanup
             result = dict(profile=self.opts.profile, qualification=False, revision=self.opts.revision, arch=self.arch, primary_error=primary, cleanup_errors=cleanup)
-            completion_key = "load_complete" if self.opts.profile == LOAD_PROFILE else "finite_complete"
-            result_path = "load-result.json" if self.opts.profile == LOAD_PROFILE else "finite-result.json"
+            stage = "fault" if self.opts.profile == FAULT_PROFILE else "load" if self.opts.profile == LOAD_PROFILE else "finite"
+            completion_key = stage + "_complete"
+            result_path = stage + "-result.json"
             result[completion_key] = complete
             self.evidence(result_path, result)
             if time.monotonic() >= self.cleanup_deadline and complete:
@@ -865,7 +948,7 @@ class Controller:
         info = json.loads(self.docker(["info", "--format", info_format]))
         aliases = {"x86_64": "amd64", "aarch64": "arm64", "amd64": "amd64", "arm64": "arm64"}
         require(info["OS"] == "linux" and aliases.get(info["Arch"]) == self.arch and info["Cgroup"] == "2" and info["Kernel"] == platform.release() and info["CPUs"] >= 2 and info["Memory"] >= 4 << 30, "local native Docker/cgroupv2/resources required")
-        required_disk = LOAD_DISK_ADMISSION if self.opts.profile == LOAD_PROFILE else 2 << 30
+        required_disk = LOAD_DISK_ADMISSION if self.opts.profile in FORMAL_PROFILES else 2 << 30
         require(shutil.disk_usage(info["Root"]).free >= required_disk, "insufficient Docker data free space")
         self.evidence("engine.json", info)
         target = dict(os="linux", arch=self.arch)
@@ -873,10 +956,10 @@ class Controller:
         product, version = PROFILES[self.opts.profile]
         backend = dict(product=product, version=version, transport="plain", endpoints=roles)
         backends = [backend]
-        if self.opts.profile == LOAD_PROFILE:
+        if self.opts.profile in FORMAL_PROFILES:
             mongo = dict(product="mongodb", version="8.0.32", transport="plain", endpoints=roles)
             backends.insert(0, mongo)
-        profile = dict(schemaVersion=1, id=self.opts.profile, suite="load" if self.opts.profile == LOAD_PROFILE else "functional", intent="formal" if self.opts.profile == LOAD_PROFILE else "finite", policy="production-v1", executor="linux-native-v1", driver=target, cli=target, backends=backends)
+        profile = dict(schemaVersion=1, id=self.opts.profile, suite="fault" if self.opts.profile == FAULT_PROFILE else "load" if self.opts.profile == LOAD_PROFILE else "functional", intent="formal" if self.opts.profile in FORMAL_PROFILES else "finite", policy="production-v1", executor="linux-native-v1", driver=target, cli=target, backends=backends)
         self.evidence("profile.json", profile)
         server = dict(root=str(self.opts.server_root), revision=self.opts.revision)
         harness = dict(root=str(self.opts.harness_root), revision=self.opts.revision)
@@ -892,7 +975,7 @@ class Controller:
         self.evidence("images.json", images)
 
     def run_fixture(self):
-        if self.opts.profile == LOAD_PROFILE:
+        if self.opts.profile in FORMAL_PROFILES:
             self.prepare_load_storage()
         network = Resource("network", self.owner)
         # Standard owned bridge permits the required loopback publications;
@@ -905,7 +988,7 @@ class Controller:
         es_extra += ["--env=cluster.name=" + self.owner, "--env=discovery.type=single-node", "--env=xpack.security.enabled=false", "--env=action.auto_create_index=false", "--env=ES_JAVA_OPTS=-Xms512m -Xmx512m"]
         es_ports = {9200: oracle_port}
         es_spec = dict(role="backend", memory=1536 << 20, pids=512, user="1000:0", network=network, ports=es_ports, extra=es_extra, image=self.es_ref, image_id=self.es_image["Id"], command=ES_COMMAND)
-        if self.opts.profile == LOAD_PROFILE:
+        if self.opts.profile in FORMAL_PROFILES:
             self.guard_load_storage()
             data = self.storage_paths[0]
             es_extra = [arg for arg in es_extra if not arg.startswith("--tmpfs=/usr/share/elasticsearch/data:")]
@@ -923,11 +1006,11 @@ class Controller:
         self.wait_http(oracle + "/", 90, backend=backend)
         backend_before = self.observe(backend, es_spec, "before")
         self.phase_deadline = None
-        if self.opts.profile == LOAD_PROFILE:
+        if self.opts.profile in FORMAL_PROFILES:
             self.start_mongo()
         basic = 'listeners:\n  application: "0.0.0.0:7447"\ndiagnostics:\n  address: "0.0.0.0:7449"\n  allow_intranet: true\ndiscovery:\n  advertise: ["127.0.0.1:%d"]\n' % app_port
         routing = 'stores:\n  - name: search\n    backend:\n      search:\n        url: "http://%s:9200"\n' % backend.name
-        if self.opts.profile == LOAD_PROFILE:
+        if self.opts.profile in FORMAL_PROFILES:
             basic = 'listeners:\n  application: "127.0.0.1:%d"\ndiagnostics:\n  address: "127.0.0.1:%d"\ndiscovery:\n  advertise: ["127.0.0.1:%d"]\n' % (app_port, diag_port, app_port)
             routing = 'stores:\n  - name: mongo\n    backend:\n      mongodb:\n        uri: "%s"\n  - name: search\n    backend:\n      search:\n        url: "%s"\n' % (self.mongo_uri, oracle)
         basic_path, routing_path = self.opts.output / "weir.yaml", self.opts.output / "routes.yaml"
@@ -942,14 +1025,24 @@ class Controller:
             cli_extra += ["--mount", "type=bind,src=" + str(source) + ",dst=" + destination + ",readonly"]
         cli_ports = {7447: app_port, 7449: diag_port}
         cli_spec = dict(role="cli", memory=1 << 30, pids=96, user="65532:65532", network=network, ports=cli_ports, extra=cli_extra, image=self.base_ref, image_id=self.base_image["Id"], command=["serve", "--config=/weir.yaml", "--routes=/routes.yaml"])
-        if self.opts.profile == LOAD_PROFILE:
+        if self.opts.profile in FORMAL_PROFILES:
             cli_spec.update(host_network=True, ports={})
+        if self.opts.profile == FAULT_PROFILE:
+            cli_spec.update(memory=512 << 20)
+            self.fault_cli_spec = cli_spec
+            self.fault_diagnostics = "http://127.0.0.1:" + str(diag_port)
+            environment = dict(WEIR_NATIVE_LOAD_APP="127.0.0.1:" + str(app_port), WEIR_NATIVE_LOAD_DIAGNOSTICS="127.0.0.1:" + str(diag_port), WEIR_NATIVE_LOAD_ORACLE=oracle, WEIR_NATIVE_LOAD_OWNER=self.owner, WEIR_NATIVE_LOAD_MONGO=self.mongo_uri)
+            self.driver("fault", environment)
+            require(getattr(self, "fault_stopped", False), "fault shutdown did not execute")
+            self.mongo_guard(verify_bytes=True)
+            self.observe(backend, es_spec, "after")
+            return
         cli = self.container(cli_spec)
         self.cli_resource = cli
         self.wait_http("http://127.0.0.1:" + str(diag_port) + "/readyz", 20)
         before = self.observe(cli, cli_spec, "before")
         environment = dict(WEIR_FINITE_APP="127.0.0.1:" + str(app_port), WEIR_FINITE_DIAGNOSTICS="127.0.0.1:" + str(diag_port), WEIR_FINITE_ORACLE=oracle, WEIR_FINITE_OWNER=self.owner)
-        if self.opts.profile == LOAD_PROFILE:
+        if self.opts.profile in FORMAL_PROFILES:
             self.mongo_guard()
             environment = dict(WEIR_NATIVE_LOAD_APP="127.0.0.1:" + str(app_port), WEIR_NATIVE_LOAD_DIAGNOSTICS="127.0.0.1:" + str(diag_port), WEIR_NATIVE_LOAD_ORACLE=oracle, WEIR_NATIVE_LOAD_OWNER=self.owner, WEIR_NATIVE_LOAD_MONGO=self.mongo_uri)
             self.driver("load", environment)

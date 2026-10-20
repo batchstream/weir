@@ -226,7 +226,7 @@ func TestExecutionProfileContractDeclaredNotExecutable(t *testing.T) {
 						callbacks++
 					}
 					want := 0
-					if arch == "amd64" && suite == "load" && transport == "plain" && product == "elasticsearch" {
+					if arch == "amd64" && transport == "plain" && product == "elasticsearch" {
 						want = 1
 					}
 					if callbacks != want {

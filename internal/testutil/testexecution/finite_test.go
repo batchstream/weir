@@ -66,7 +66,7 @@ func TestExecutionProfileContractFiniteCapability(t *testing.T) {
 				t.Fatal(err)
 			}
 			v := &ValidatedInputs{valid: true, profile: p}
-			if (v.RequireExecutable() == nil) != (suite == "load" && intent == "formal") {
+			if (v.RequireExecutable() == nil) != (intent == "formal") {
 				t.Fatal("incorrect exact formal capability dispatch", suite, intent)
 			}
 		}
