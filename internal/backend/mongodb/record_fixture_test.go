@@ -17,3 +17,8 @@ func prepareTestRecord(adapter *Adapter, operation *pb.ExecuteRequest) (*executi
 	}
 	return work, nil
 }
+
+// Mock constructors use the same immutable lifetime rail as Open.
+func initializeTestLifetime(adapter *Adapter) {
+	adapter.lifetime, adapter.cancelLifetime = context.WithCancel(context.Background())
+}

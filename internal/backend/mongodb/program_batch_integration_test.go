@@ -692,7 +692,7 @@ func TestMongoLuaCloseDuringCommitKeepsUnknownOutcome(t *testing.T) {
 	}
 	start := time.Now()
 	cancel()
-	if err := adapter.Close(); err != nil {
+	if err := adapter.Close(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	select {

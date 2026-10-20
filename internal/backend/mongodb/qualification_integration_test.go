@@ -21,7 +21,7 @@ func TestMongoOpenDoesNotQueryServerVersion(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer adapter.Close()
+	defer adapter.Close(context.Background())
 
 	hello := false
 	for _, wireEvent := range proxy.Events() {

@@ -3,6 +3,7 @@ package store
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -133,7 +134,9 @@ func New(adapter execution.Adapter, limits Limits, memory *ExecutionMemory) (*Ru
 		return nil, fmt.Errorf("missing adapter")
 	}
 	if err := limits.Validate(); err != nil {
-		_ = adapter.Close()
+		cleanup, cancel := context.WithTimeout(context.Background(), DefaultLimits().CleanupTimeout)
+		defer cancel()
+		_ = adapter.Close(cleanup)
 		return nil, err
 	}
 	runtime := newRuntime(adapter, limits, memory)
@@ -1149,45 +1152,89 @@ func (r *Runtime) cancelTicketsLocked() {
 	}
 }
 
+// Close owns one drain and one absolute retirement budget, including adapter
+// teardown and actual execution/publication joins. Concurrent callers share it.
 func (r *Runtime) Close(ctx context.Context) error {
+	r.closeOnce.Do(func() { r.closeErr = r.close(ctx) })
+	return r.closeErr
+}
+
+func (r *Runtime) close(ctx context.Context) error {
 	r.BeginDrain()
 	select {
 	case <-r.done:
 	case <-ctx.Done():
-		r.mu.Lock()
-		r.closed = true
-		for b := range r.batches {
-			b.cancel()
-		}
-		r.cancelTicketsLocked()
-		r.notifyLocked()
-		r.mu.Unlock()
 	}
-	select {
-	case <-r.done:
-	case <-time.After(r.limits.CleanupTimeout):
-		r.closeOnce.Do(func() { r.closeErr = r.adapter.Close() })
-		return fmt.Errorf("backend executions failed to stop")
-	}
+	// Establish the retirement end before cancellation can start detached cleanup.
+	started := time.Now()
+	end := started.Add(r.limits.CleanupTimeout)
+	grace := started.Add(3 * r.limits.CleanupTimeout / 4)
+	closeEnd := started.Add(7 * r.limits.CleanupTimeout / 8)
 	r.mu.Lock()
 	r.closed = true
+	for b := range r.batches {
+		b.cancel()
+	}
 	r.cancelTicketsLocked()
 	r.notifyLocked()
 	r.mu.Unlock()
-	r.closeOnce.Do(func() { r.closeErr = r.adapter.Close() })
+
+	timer := time.NewTimer(time.Until(grace))
+	select {
+	case <-r.done:
+	case <-timer.C:
+	}
+	timer.Stop()
+	cleanup, cancel := context.WithDeadline(context.Background(), closeEnd)
+	defer cancel()
+	// A broken adapter must not turn the caller's deadline into an unbounded
+	// synchronous Close. A buffered result also lets a late worker actually exit.
+	closed := make(chan error, 1)
+	go func() { closed <- r.adapter.Close(cleanup) }()
+	retirement := time.NewTimer(time.Until(end))
+	defer retirement.Stop()
+	executions := r.done
+	var closeErr error
 	for {
 		r.mu.Lock()
 		publishers := r.publishers
 		changed := r.changed
 		r.mu.Unlock()
-		if publishers == 0 {
-			break
+		if executions == nil && closed == nil && publishers == 0 {
+			return closeErr
 		}
 		select {
+		case <-executions:
+			executions = nil
+		case err := <-closed:
+			closeErr = err
+			closed = nil
 		case <-changed:
-		case <-ctx.Done():
-			return ctx.Err()
+		case <-retirement.C:
+			// Do not infer success from counters: every owned worker must be joined.
+			if executions != nil {
+				select {
+				case <-executions:
+					executions = nil
+				default:
+				}
+			}
+			if closed != nil {
+				select {
+				case err := <-closed:
+					closeErr = err
+					closed = nil
+				default:
+				}
+			}
+			r.mu.Lock()
+			publishers = r.publishers
+			r.mu.Unlock()
+			if executions != nil || closed != nil || publishers != 0 {
+				joinErr := fmt.Errorf("backend retirement deadline exceeded (executions_joined=%t adapter_joined=%t publishers=%d)", executions == nil, closed == nil, publishers)
+				return errors.Join(closeErr, joinErr)
+			}
+			return closeErr
 		}
 	}
-	return r.closeErr
 }

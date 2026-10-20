@@ -43,7 +43,7 @@ func TestNativeCoalescedRecordsKeepLargeResultsAndRetainedOwners(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() {
-		if err := adapter.Close(); err != nil {
+		if err := adapter.Close(context.Background()); err != nil {
 			t.Error(err)
 		}
 	}()

@@ -529,7 +529,7 @@ type writeBatch struct {
 }
 
 func (a *Adapter) closeRecordCursor(ctx context.Context, state *recordCursor) {
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), a.options().CleanupTimeout)
+	ctx, cancel := a.cleanupContext(ctx)
 	defer cancel()
 	_ = a.closeRecordCursorState(ctx, state)
 }

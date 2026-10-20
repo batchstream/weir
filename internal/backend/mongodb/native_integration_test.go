@@ -33,7 +33,7 @@ func TestMongoNativeRealErrorsBoundsAndReplyLoss(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			defer a.Close()
+			defer a.Close(context.Background())
 			padding := 150 << 10
 			if mode == "large_reply" {
 				padding = 5 << 20
@@ -167,7 +167,7 @@ func TestMongoNativeQueriesIndexesPipelinesAndCursors(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer adapter.Close()
+	defer adapter.Close(context.Background())
 	database := backend.DB
 	collection := "native_records"
 	indexKey := bson.D{{Key: "n", Value: 1}}
@@ -242,7 +242,7 @@ func TestMongoNativeExplicitSessionCursorsAndTransactions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer adapter.Close()
+	defer adapter.Close(context.Background())
 	idBytes := make([]byte, 16)
 	if _, err := rand.Read(idBytes); err != nil {
 		t.Fatal(err)
@@ -326,7 +326,7 @@ func TestMongoNativeCallerDeadlineCancelsBackendWithoutReplay(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer adapter.Close()
+	defer adapter.Close(context.Background())
 	data := bson.D{{Key: "failCommands", Value: bson.A{"count"}}, {Key: "appName", Value: "weir:mongo"}, {Key: "blockConnection", Value: true}, {Key: "blockTimeMS", Value: 500}}
 	testmongo.FailCommand(t, backend.Admin, data, 1)
 	command := bson.D{{Key: "count", Value: "records"}}

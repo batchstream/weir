@@ -159,6 +159,7 @@ func TestMongoPreparationBorrowsLargeLuaInputWithoutDecoding(t *testing.T) {
 	}
 	config := Config{Store: "mongo"}
 	adapter := &Adapter{config: config}
+	initializeTestLifetime(adapter)
 	opts := batchOperationOptions{resource: "db/records/s:item", action: "program", program: "return function(current, incoming) return incoming end"}
 	operation := batchOperation(t, opts)
 	input := &pb.Document{ContentType: "application/bson", Data: expressionBSON(t, fields)}
@@ -193,6 +194,7 @@ func TestMongoMaximumPlainPutValidatesWithoutDisposableValueTree(t *testing.T) {
 	operation := batchOperation(t, opts)
 	config := Config{Store: "mongo"}
 	adapter := &Adapter{config: config}
+	initializeTestLifetime(adapter)
 	record, err := execution.NewRecord("mongo", 1, operation.Command)
 	if err != nil {
 		t.Fatal(err)
@@ -251,6 +253,7 @@ func TestMongoPlainPutRawValidationMatchesOriginalDecodeContract(t *testing.T) {
 	}
 	config := Config{Store: "mongo"}
 	adapter := &Adapter{config: config}
+	initializeTestLifetime(adapter)
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			raw := expressionBSON(t, tc.document)

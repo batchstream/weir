@@ -48,7 +48,7 @@ func TestMongoOwnerRemoteTail(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer a.Close()
+	defer a.Close(context.Background())
 	old := ownerMutation(t, a, f.DB, "remote-tail")
 	next := ownerMutation(t, a, f.DB, "independent")
 	callCtx, stop := context.WithCancel(ctx)
@@ -116,7 +116,7 @@ func TestMongoOwnerRemoteTail(t *testing.T) {
 		}
 	}
 	t.Logf("%s real DB ACK/readback after cancellation; observer tail retired in %s after gate release; bulkWrite commands=2, each distinct ID once", time.Now().UTC().Format(time.RFC3339Nano), time.Since(tailStart))
-	if err := a.Close(); err != nil {
+	if err := a.Close(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	ownerZero(t, a.dialer)

@@ -15,6 +15,7 @@ import (
 func TestMongoResourceTargetsPrepareWithoutIO(t *testing.T) {
 	config := Config{Store: "mongo"}
 	adapter := &Adapter{config: config}
+	initializeTestLifetime(adapter)
 	for _, database := range []string{"first", "second"} {
 		for _, collection := range []string{"records", "other"} {
 			resource := database + "/" + collection
@@ -43,6 +44,7 @@ func TestMongoResourceTargetsPrepareWithoutIO(t *testing.T) {
 func TestMongoInvalidResourceTargetsDoNotAccessClient(t *testing.T) {
 	config := Config{Store: "mongo"}
 	adapter := &Adapter{config: config}
+	initializeTestLifetime(adapter)
 	for _, target := range []string{"db", "db/records/extra", "bad.db/records", strings.Repeat("d", 64) + "/records", "db/" + strings.Repeat("c", 253), "db/system.users", "db/%24cmd"} {
 		t.Run(target, func(t *testing.T) {
 			resource := target
@@ -197,6 +199,7 @@ func TestMongoCallerCanceledDuringQualificationIsNotDispatched(t *testing.T) {
 func TestMongoCanceledTargetsDoNotContactBackend(t *testing.T) {
 	config := Config{Store: "mongo"}
 	adapter := &Adapter{config: config}
+	initializeTestLifetime(adapter)
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	for _, action := range []string{"read", "put", "program"} {

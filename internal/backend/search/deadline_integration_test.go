@@ -86,7 +86,7 @@ func TestRealSearchCallerDeadlineAcknowledgements(t *testing.T) {
 
 			runtime, err := store.New(adapter, limits, nil)
 			if err != nil {
-				_ = adapter.Close()
+				_ = adapter.Close(context.Background())
 				t.Fatal(err)
 			}
 			t.Cleanup(func() {

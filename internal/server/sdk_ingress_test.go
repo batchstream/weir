@@ -49,7 +49,7 @@ func (a *sdkIngressReadAdapter) Execute(_ context.Context, plans []*execution.Pl
 	return
 }
 
-func (a *sdkIngressReadAdapter) Close() error { return nil }
+func (a *sdkIngressReadAdapter) Close(context.Context) error { return nil }
 
 func TestOpenAndRefreshAtApplicationConnectionLimit(t *testing.T) {
 	for _, count := range []int{1, 16} {

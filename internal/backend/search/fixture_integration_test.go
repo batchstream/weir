@@ -25,14 +25,14 @@ func setupSearch(t *testing.T) (*Adapter, *testsearch.Backend) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = adapter.Close(); _ = adapter.Close() })
+	t.Cleanup(func() { _ = adapter.Close(context.Background()); _ = adapter.Close(context.Background()) })
 	return adapter, backend
 }
 
 func reopenSearch(t *testing.T, adapter *Adapter) *Adapter {
 	t.Helper()
 	config := adapter.config
-	if err := adapter.Close(); err != nil {
+	if err := adapter.Close(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -41,7 +41,7 @@ func reopenSearch(t *testing.T, adapter *Adapter) *Adapter {
 	if err != nil {
 		t.Fatal("reopen Store after changing target structure", err)
 	}
-	t.Cleanup(func() { _ = reopened.Close() })
+	t.Cleanup(func() { _ = reopened.Close(context.Background()) })
 	return reopened
 }
 

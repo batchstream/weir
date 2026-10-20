@@ -46,7 +46,7 @@ func TestSearchCrossIndexPureReadsUseOneNativeExchange(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer adapter.Close()
+	defer adapter.Close(context.Background())
 	works := make([]*execution.Plan, 128)
 	for i := range works {
 		index := backend.Index

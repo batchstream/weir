@@ -114,7 +114,7 @@ func TestSearchLuaBatchUsesNativeOCCWithoutBusinessMetadataOrReplay(t *testing.T
 			if err != nil {
 				t.Fatal(err)
 			}
-			defer adapter.Close()
+			defer adapter.Close(context.Background())
 			works := make([]*execution.Plan, 0, 2)
 			for _, id := range []string{"changed", "peer"} {
 				work := batchTestPlan(t, adapter, "program", searchResource(backend.Index, id))

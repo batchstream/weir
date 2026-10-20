@@ -87,6 +87,7 @@ func TestMongoProgramCommitRetries(t *testing.T) {
 			}
 			defer client.Disconnect(context.Background())
 			a := &Adapter{client: client}
+			initializeTestLifetime(a)
 			a.config.Store = "mongo"
 			operationOpts := batchOperationOptions{resource: "db/records/s:item", action: "program", program: `return function(current, incoming) current.n = current.n + 1; return current end`}
 			work, failure := prepareTestRecord(a, batchOperation(t, operationOpts))
@@ -189,6 +190,7 @@ func TestMongoLuaBatchCallerCancellationDoesNotCancelPeers(t *testing.T) {
 func TestMongoLuaEvaluationCancellationWithCallerDeadlineKeepsPeer(t *testing.T) {
 	config := Config{Store: "mongo"}
 	adapter := &Adapter{config: config}
+	initializeTestLifetime(adapter)
 	// Exercise caller cancellation independently of the standalone allocation
 	// limit: this loop deliberately creates strings until cancellation arrives.
 	memory := &recordMemoryProbe{limit: 1 << 30}
@@ -518,6 +520,7 @@ func TestMongoLuaReadCursorRequiresTerminalEvidenceAfterExactPage(t *testing.T) 
 			}
 			defer client.Disconnect(context.Background())
 			adapter := &Adapter{client: client}
+			initializeTestLifetime(adapter)
 			native := &plan{target: namespace{database: "db", collection: "records"}, id: "item"}
 			work := &execution.Plan{Backend: native}
 			plans := []*execution.Plan{work}

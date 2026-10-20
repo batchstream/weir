@@ -36,6 +36,7 @@ func TestMongoAdmittedPreparationCancellationKeepsCallerFailure(t *testing.T) {
 	raw := expressionBSON(t, document)
 	config := Config{Store: "mongo"}
 	adapter := &Adapter{config: config}
+	initializeTestLifetime(adapter)
 	for _, action := range []string{"put", "lua", "expression"} {
 		t.Run(action, func(t *testing.T) {
 			body := &pb.Document{ContentType: "application/bson", Data: raw}
@@ -99,6 +100,7 @@ func TestMongoStoredProgramDecodeCancellationNeverWrites(t *testing.T) {
 	defer cancel()
 	ctx := &cancelDuringConversion{Context: base, cancel: cancel}
 	adapter := &Adapter{}
+	initializeTestLifetime(adapter)
 	positions := []int{0}
 	documents := []bson.Raw{raw}
 	writes, indexes := adapter.transformPrograms(ctx, batch, positions, documents)
@@ -127,6 +129,7 @@ func TestMongoStoredProgramCallerDeadlineDoesNotCancelBatch(t *testing.T) {
 	positions := []int{0, 1}
 	documents := []bson.Raw{raw, nil}
 	adapter := &Adapter{}
+	initializeTestLifetime(adapter)
 	if caller.Err() != nil {
 		t.Fatal("caller expired before conversion started")
 	}

@@ -67,7 +67,7 @@ func TestSingleIndexAliasPinsLuaCASAndVisibility(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer adapter.Close()
+	defer adapter.Close(context.Background())
 	options := visibilityPlanOptions{action: "program", resource: "catalog/s:item", wait: true, program: `return function(current, incoming) current.n = current.n + 1; return current end`}
 	work := visibilityPlan(t, adapter, options)
 	works := []*execution.Plan{work}

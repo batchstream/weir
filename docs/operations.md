@@ -189,7 +189,20 @@ commit acknowledgement remains UNKNOWN. Confirmed abort/conflict retries retain
 the original caller lifetime.
 
 Align termination grace with preStop, `lifecycle.shutdown_timeout` and cleanup.
-Shutdown can require two cleanup phases after the graceful drain deadline. During
+Each Store preserves the full admitted drain (default `5s`), then owns one
+absolute retirement budget (default `2s`), shared by concurrent Close callers.
+Detached MongoDB cleanup keeps its ordinary caller-independent `2s` bound, but
+forced adapter teardown cancels that cleanup and all operation/metadata waiters.
+Remote cleanup gets at most the first three quarters of retirement; adapter close
+gets the remaining context through seven eighths, reserving the final eighth for
+actual execution, publication and close-worker joins. MongoDB stops admission and
+closes/joins its owned raw transports before disconnecting the client. An expired
+best-effort session cleanup is not confirmed remote cleanup or replay permission;
+actual disconnect/raw-close errors and missed joins remain shutdown failures.
+A noncooperative adapter returns a bounded failure, never a false successful stop.
+Consumer-owned record evidence remains charged until genuine Ack/session closure.
+These offline lifecycle bounds are not deployment or production qualification.
+During
 rolling updates, terminating Pods can retain connections while new Pods start;
 `maxSurge: 0` does not cap that overlap. Scaling replicas increases aggregate
 backend demand and does not add database capacity.

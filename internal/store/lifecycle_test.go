@@ -21,7 +21,7 @@ func (a *lifecycleAdapter) PrepareCommand(context.Context, uint64, *pb.Command) 
 func (a *lifecycleAdapter) Execute(context.Context, []*execution.Plan, execution.Emit) {
 	return
 }
-func (a *lifecycleAdapter) Close() error { a.closes.Add(1); return nil }
+func (a *lifecycleAdapter) Close(context.Context) error { a.closes.Add(1); return nil }
 func TestRuntimeOwnsAdapterExactlyOnce(t *testing.T) {
 	for _, valid := range []bool{false, true} {
 		a := &lifecycleAdapter{}
@@ -79,9 +79,9 @@ func (a *blockedCleanupAdapter) Execute(context.Context, []*execution.Plan, exec
 	return
 }
 
-func (a *blockedCleanupAdapter) Close() error {
+func (a *blockedCleanupAdapter) Close(context.Context) error {
 	close(a.release)
-	return a.lifecycleAdapter.Close()
+	return a.lifecycleAdapter.Close(context.Background())
 }
 
 func TestForcedCloseUsesConfiguredCleanupBudget(t *testing.T) {
@@ -107,7 +107,7 @@ func TestForcedCloseUsesConfiguredCleanupBudget(t *testing.T) {
 	cancel()
 	started := time.Now()
 	err = runtime.Close(ctx)
-	if err == nil || time.Since(started) > 500*time.Millisecond || adapter.closes.Load() != 1 {
+	if err != nil || time.Since(started) > 500*time.Millisecond || adapter.closes.Load() != 1 {
 		t.Fatal("forced cleanup ignored its configured deadline", err, time.Since(started))
 	}
 	select {
@@ -253,5 +253,122 @@ func TestForcedClosePreservesRecordEvidenceUntilAckOrSessionClose(t *testing.T) 
 				}
 			})
 		}
+	}
+}
+
+type noncooperativeCloseAdapter struct {
+	lifecycleAdapter
+	entered chan context.Context
+	release chan struct{}
+	joined  chan struct{}
+	failure error
+}
+
+func (a *noncooperativeCloseAdapter) Close(ctx context.Context) error {
+	a.closes.Add(1)
+	a.entered <- ctx
+	<-a.release
+	close(a.joined)
+	return a.failure
+}
+
+func TestRuntimeConcurrentCloseSharesDefaultRetirementAndFailure(t *testing.T) {
+	adapter := &noncooperativeCloseAdapter{entered: make(chan context.Context, 1), release: make(chan struct{}), joined: make(chan struct{})}
+	limits := DefaultLimits()
+	runtime, err := New(adapter, limits, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	results := make(chan error, 8)
+	started := time.Now()
+	go func() { results <- runtime.Close(t.Context()) }()
+	closeContext := <-adapter.entered
+	deadline, ok := closeContext.Deadline()
+	if !ok || deadline.Sub(started) < 1700*time.Millisecond || deadline.Sub(started) > 1900*time.Millisecond {
+		t.Fatal("close did not receive the single default 7C/8 deadline", deadline.Sub(started))
+	}
+	for range 7 {
+		go func() { results <- runtime.Close(context.Background()) }()
+	}
+	first := <-results
+	elapsed := time.Since(started)
+	if first == nil || elapsed < 1900*time.Millisecond || elapsed > 2500*time.Millisecond {
+		t.Fatal("uncooperative Close did not fail within one retirement budget", first, elapsed)
+	}
+	for range 7 {
+		if result := <-results; result != first {
+			t.Fatal("Close callers did not share the exact result", result, first)
+		}
+	}
+	if adapter.closes.Load() != 1 || closeContext.Err() == nil {
+		t.Fatal("adapter close budget restarted")
+	}
+	close(adapter.release)
+	<-adapter.joined
+	// The buffered result lets the worker finish after the bounded failure. It
+	// cannot rewrite the published result or turn that failure into success.
+	if runtime.Close(t.Context()) != first {
+		t.Fatal("late close rewrote retirement failure")
+	}
+}
+
+func TestRuntimePreservesActualAdapterCloseError(t *testing.T) {
+	expected := fmt.Errorf("injected adapter close error")
+	adapter := &noncooperativeCloseAdapter{entered: make(chan context.Context, 1), release: make(chan struct{}), joined: make(chan struct{}), failure: expected}
+	close(adapter.release)
+	limits := DefaultLimits()
+	runtime, err := New(adapter, limits, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result := runtime.Close(t.Context()); result != expected {
+		t.Fatal("actual close error lost", result)
+	}
+	select {
+	case <-adapter.joined:
+	default:
+		t.Fatal("successful close did not join close worker")
+	}
+	select {
+	case <-runtime.done:
+	default:
+		t.Fatal("runtime loop not joined")
+	}
+}
+
+func TestRuntimeCloseActuallyJoinsNativePublisher(t *testing.T) {
+	adapter := &singleExecutionAdapter{}
+	limits := DefaultLimits()
+	runtime, err := New(adapter, limits, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	session := runtime.NewSession()
+	defer session.Close()
+	work := plan(1, "native", false)
+	work.Command = nativeCall()
+	_, failure, _ := runtime.Submit(t.Context(), work, session)
+	if failure != nil {
+		t.Fatal(failure)
+	}
+	var emission *Emission
+	select {
+	case emission = <-session.Events:
+	case <-time.After(time.Second):
+		t.Fatal("missing actual Native publisher")
+	}
+	defer emission.Release()
+	shutdown, cancel := context.WithCancel(t.Context())
+	cancel()
+	if err := runtime.Close(shutdown); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-runtime.done:
+	default:
+		t.Fatal("runtime loop did not join")
+	}
+	if snapshot := runtime.Snapshot(); snapshot.Publishers != 0 || snapshot.Active != 0 || snapshot.Retained != 0 || snapshot.WorkingBytes != 0 {
+		t.Fatal("successful close left Native owners", snapshot)
 	}
 }

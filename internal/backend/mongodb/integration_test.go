@@ -29,7 +29,7 @@ func TestPartialInitializationAndClose(t *testing.T) {
 		if err != nil {
 			t.Fatal("server qualification must not require a target collection", err)
 		}
-		if err = attempt.Close(); err != nil {
+		if err = attempt.Close(context.Background()); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -37,10 +37,10 @@ func TestPartialInitializationAndClose(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = a.Close(); err != nil {
+	if err = a.Close(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if err = a.Close(); err != nil {
+	if err = a.Close(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	if err = a.client.Ping(ctx, nil); err != mongo.ErrClientDisconnected {

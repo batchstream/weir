@@ -39,7 +39,7 @@ func testAdapter(t *testing.T, o adapterTestOptions) *Adapter {
 	}
 
 	t.Cleanup(func() {
-		if err := a.Close(); err != nil {
+		if err := a.Close(context.Background()); err != nil {
 			t.Error(err)
 		}
 	})

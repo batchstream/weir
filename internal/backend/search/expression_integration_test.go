@@ -148,7 +148,7 @@ func TestSearchExpressionRealReplyFaultsAndNativeCompetition(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			defer through.Close()
+			defer through.Close(context.Background())
 			p := searchExpression(t, through, b.Index, `{"doc":{"added":true}}`)
 			result := runSearch(t, through, p)
 			switch mode {

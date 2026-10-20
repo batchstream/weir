@@ -271,7 +271,7 @@ func TestMongoLargeBatchSplitsAtNativeBoundaryWithConfiguredConnectionWorkers(t 
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		if err := adapter.Close(); err != nil {
+		if err := adapter.Close(context.Background()); err != nil {
 			t.Error(err)
 		}
 	})

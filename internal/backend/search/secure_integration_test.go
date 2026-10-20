@@ -34,7 +34,7 @@ func secureAdapter(t *testing.T, b *testsearch.Backend) *Adapter {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = a.Close(); _ = a.Close() })
+	t.Cleanup(func() { _ = a.Close(context.Background()); _ = a.Close(context.Background()) })
 	return a
 }
 func TestSecureSearchProductionOpen(t *testing.T) {
@@ -63,7 +63,7 @@ func TestSecureSearchQualification(t *testing.T) {
 		if err != nil {
 			t.Fatal("native DB DNS/SAN connection", err)
 		}
-		defer a.Close()
+		defer a.Close(context.Background())
 		call := exchange{path: "/"}
 		if status, _, err := a.request(context.Background(), call); err != nil || status != 200 {
 			t.Fatal("native DNS read")
@@ -236,7 +236,7 @@ func secureReplyFault(t *testing.T, fixture *testsearch.SecureFixture, operation
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer a.Close()
+	defer a.Close(context.Background())
 	if fault == "stale" {
 		proxy.CloseClientConnections()
 	}

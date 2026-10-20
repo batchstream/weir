@@ -135,13 +135,13 @@ func Open(ctx context.Context, cfg Config) (*Adapter, error) {
 		cancel:          cancel,
 	}
 	if err := a.qualify(ctx); err != nil {
-		_ = a.Close()
+		_ = a.Close(ctx)
 		return nil, err
 	}
 	return a, nil
 }
 
-func (a *Adapter) Close() error {
+func (a *Adapter) Close(context.Context) error {
 	a.once.Do(func() {
 		a.cancel()
 		if a.dialer != nil {

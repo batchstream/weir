@@ -371,6 +371,7 @@ func TestMongoProgramAttemptCancellationClearsReplacementSlots(t *testing.T) {
 				defer scope.close()
 				config := Config{Store: "mongo"}
 				adapter := &Adapter{config: config}
+				initializeTestLifetime(adapter)
 				caller, cancel := context.WithCancel(t.Context())
 				defer cancel()
 				var plans []*execution.Plan

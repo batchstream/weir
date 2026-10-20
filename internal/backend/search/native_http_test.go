@@ -243,7 +243,7 @@ func TestNativeHTTPConfiguredTransportAcceptsFullMetadataBudget(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer adapter.Close()
+	defer adapter.Close(context.Background())
 	request := nativeRequest(t, "records", "GET", "/_search")
 	end, capture := runNative(t, adapter, request, nil)
 	if end.Completion != pb.NativeCompletion_RESPONSE_COMPLETE || end.Failure != nil || capture.head == nil || len(capture.head.Metadata.GetData()) <= 32<<10 || capture.body.String() != `{"native":"response"}` {

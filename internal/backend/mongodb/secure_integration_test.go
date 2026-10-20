@@ -30,7 +30,7 @@ func TestMongoSCRAMTLSProductionOpen(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer adapter.Close()
+	defer adapter.Close(context.Background())
 	doc := bson.D{{Key: "_id", Value: "secure"}, {Key: "n", Value: int64(42)}}
 	raw, _ := bson.Marshal(doc)
 	document := &pb.Document{ContentType: "application/bson", Data: raw}
@@ -69,13 +69,13 @@ func TestMongoSCRAMTLSProductionOpen(t *testing.T) {
 				if replies[0].GetReadResult().GetFailure() == nil || replies[0].GetReadResult().GetDocument() != nil {
 					t.Fatal("request bypassed target privilege check", replies)
 				}
-				if err = bad.Close(); err != nil {
+				if err = bad.Close(context.Background()); err != nil {
 					t.Fatal(err)
 				}
 				return
 			}
 			if bad != nil {
-				bad.Close()
+				bad.Close(context.Background())
 			}
 			parsed, _ := url.Parse(uri)
 			secret, _ := parsed.User.Password()
@@ -105,7 +105,7 @@ func TestMongoSCRAMTLSRepeatedFailureAndClose(t *testing.T) {
 		adapter, err := Open(ctx, cfg)
 		cancel()
 		if adapter != nil {
-			adapter.Close()
+			adapter.Close(context.Background())
 		}
 		if err == nil || time.Since(start) > time.Second {
 			t.Fatal("failure/close exceeded finite deadline")
@@ -120,7 +120,7 @@ func TestMongoSCRAMTLSRepeatedFailureAndClose(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := adapter.Close(); err != nil {
+		if err := adapter.Close(context.Background()); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -152,7 +152,7 @@ func TestMongoSCRAMTLS391NoReplay(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			defer adapter.Close()
+			defer adapter.Close(context.Background())
 			document := bson.D{{Key: "_id", Value: "counter"}, {Key: "n", Value: int32(1)}}
 			_, err = native.Database(db).Collection("records").InsertOne(ctx, document)
 			if err != nil {

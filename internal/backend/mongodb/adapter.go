@@ -48,6 +48,8 @@ type Adapter struct {
 	config           Config
 	once             sync.Once
 	closeErr         error
+	lifetime         context.Context
+	cancelLifetime   context.CancelFunc
 	targets          targetCache
 }
 
@@ -132,7 +134,10 @@ func Open(ctx context.Context, cfg Config) (*Adapter, error) {
 	if err != nil {
 		return nil, fmt.Errorf("MongoDB client configuration rejected")
 	}
+	lifetime, cancelLifetime := context.WithCancel(context.Background())
 	a := &Adapter{
+		lifetime:       lifetime,
+		cancelLifetime: cancelLifetime,
 		dialer:         dialer,
 		client:         client,
 		deployment:     deployment,
@@ -142,7 +147,9 @@ func Open(ctx context.Context, cfg Config) (*Adapter, error) {
 	a.targets.entries = make(map[namespace]*targetCheck)
 	a.targets.capacity = settings.MetadataCacheEntries
 	if err = a.qualify(ctx, profile.replicaSet); err != nil {
-		_ = a.Close()
+		cleanup, cancel := context.WithTimeout(context.Background(), settings.CleanupTimeout)
+		_ = a.Close(cleanup)
+		cancel()
 		return nil, err
 	}
 	complete = true
@@ -150,6 +157,8 @@ func Open(ctx context.Context, cfg Config) (*Adapter, error) {
 }
 
 func (a *Adapter) qualify(ctx context.Context, replicaSet string) error {
+	ctx, release := a.bindLifetime(ctx)
+	defer release()
 	cmd := bson.D{{Key: "hello", Value: 1}}
 	var hello struct {
 		SetName     string `bson:"setName"`
@@ -189,17 +198,22 @@ func mongoQualificationFailure(message string, err error) error {
 	return fmt.Errorf("%s (%T)", message, err)
 }
 
-func (a *Adapter) Close() error {
+func (a *Adapter) Close(ctx context.Context) error {
 	a.once.Do(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), a.options().CleanupTimeout)
+		// Direct callers may have no deadline. Cap their context without
+		// extending the absolute retirement deadline supplied by Runtime.
+		ctx, cancel := context.WithTimeout(ctx, a.options().CleanupTimeout)
 		defer cancel()
+		a.cancelLifetime()
 		if a.dialer != nil {
-			a.dialer.stop()
-		}
-		a.closeErr = a.client.Disconnect(ctx)
-		if a.dialer != nil {
+			// Stop admission, wake blocked reads, and join raw transport retirement
+			// before Disconnect tries its best-effort session cleanup.
 			a.dialer.close()
+			a.closeErr = a.dialer.closeError()
 			a.logConnections()
+		}
+		if a.client != nil {
+			a.closeErr = errors.Join(a.closeErr, a.client.Disconnect(ctx))
 		}
 	})
 	return a.closeErr

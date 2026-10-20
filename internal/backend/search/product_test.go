@@ -82,7 +82,7 @@ func TestSearchProductDetection(t *testing.T) {
 			a, err := Open(context.Background(), cfg)
 			if tc.product == "" {
 				if a != nil {
-					_ = a.Close()
+					_ = a.Close(context.Background())
 					t.Fatal("unidentified product accepted")
 				}
 				if err == nil || err.Error() != tc.failure || requests.Load() != 1 {
@@ -93,7 +93,7 @@ func TestSearchProductDetection(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			defer a.Close()
+			defer a.Close(context.Background())
 			if a.dialect != tc.product || requests.Load() != 1 {
 				t.Fatal("incorrect automatic product detection", a.dialect, requests.Load())
 			}

@@ -41,7 +41,7 @@ func TestMongoReplicaDiscoveryOwnership(t *testing.T) {
 			if err != nil {
 				t.Fatal("production secondary seed discovery", err)
 			}
-			t.Cleanup(func() { _ = adapter.Close() })
+			t.Cleanup(func() { _ = adapter.Close(context.Background()) })
 			ownerMutation(t, adapter, fixture.DB, "prepared")
 			snapshot := adapter.dialer.snapshot()
 			if snapshot.Owned < 2 {
@@ -82,7 +82,7 @@ func TestMongoReplicaDiscoveryOwnership(t *testing.T) {
 			var closers sync.WaitGroup
 			for range 3 {
 				closers.Go(func() {
-					if err := adapter.Close(); err != nil {
+					if err := adapter.Close(context.Background()); err != nil {
 						t.Error(err)
 					}
 				})
@@ -105,7 +105,7 @@ func replicaRejected(t *testing.T, cfg Config) {
 		adapter, err := Open(ctx, cfg)
 		cancel()
 		if adapter != nil {
-			_ = adapter.Close()
+			_ = adapter.Close(context.Background())
 			t.Fatal("invalid external profile accepted")
 		}
 		if err == nil || time.Since(start) > 3*time.Second || strings.Contains(err.Error(), cfg.URI) || cfg.Password != "" && strings.Contains(err.Error(), cfg.Password) {

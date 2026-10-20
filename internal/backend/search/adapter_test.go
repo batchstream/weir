@@ -88,7 +88,7 @@ func TestResponseAndRequestLimits(t *testing.T) {
 			client := &http.Client{Transport: transport, CheckRedirect: noRedirect}
 			cfg := Config{URL: server.URL}
 			a := &Adapter{dialect: ElasticsearchProduct, config: cfg, transport: transport, client: client, ctx: ctx, cancel: cancel}
-			defer a.Close()
+			defer a.Close(context.Background())
 			call := exchange{path: "/"}
 			_, _, err := a.request(ctx, call)
 			valid := mode == "large_body" || mode == "large_header"

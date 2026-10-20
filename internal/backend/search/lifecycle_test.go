@@ -59,13 +59,13 @@ func TestSearchTLSOrdinaryNativeSocketCloseBound(t *testing.T) {
 				t.Fatal("expected ordinary 2 + native 1 sockets")
 			}
 			start := time.Now()
-			_ = a.Close()
+			_ = a.Close(context.Background())
 			calls.Wait()
 			elapsed := time.Since(start)
 			if elapsed > time.Second || searchOwned(a.dialer) != 0 {
 				t.Fatal("Close left sockets/work", elapsed)
 			}
-			_ = a.Close()
+			_ = a.Close(context.Background())
 			t.Logf("normal=2 Native=1 total=3; %s stall Close and call join=%s, retained sockets=0", mode, elapsed)
 		})
 	}
@@ -104,7 +104,7 @@ func TestSearchTLSNativeSlowConsumerCloseJoins(t *testing.T) {
 		t.Fatal("consumer not reached")
 	}
 	start := time.Now()
-	_ = a.Close()
+	_ = a.Close(context.Background())
 	select {
 	case end := <-done:
 		if end.Completion == pb.NativeCompletion_RESPONSE_COMPLETE {
@@ -165,7 +165,7 @@ func TestSearchTLSResponseUsesCallerDeadline(t *testing.T) {
 		if err == nil || elapsed > time.Second || elapsed < 60*time.Millisecond {
 			t.Fatal("caller response deadline", elapsed, err)
 		}
-		_ = a.Close()
+		_ = a.Close(context.Background())
 		t.Logf("TLS body=%v caller deadline: call terminated in %s", body, elapsed)
 	}
 }
@@ -182,7 +182,7 @@ func TestSearchDNSRequestCancellationEndsDetachedDial(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer a.Close()
+	defer a.Close(context.Background())
 	a.transport.CloseIdleConnections()
 	drop := testdns.Answer{Drop: true}
 	dns.Set("search.test", drop)
@@ -230,7 +230,7 @@ func TestSearchDNSPinsActiveNativeStream(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer a.Close()
+	defer a.Close(context.Background())
 	open := nativeRequest(t, "records", "GET", "/_doc/x")
 	plan, failure := a.prepareNative(open)
 	if failure != nil {

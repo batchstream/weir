@@ -63,7 +63,7 @@ func TestSearchEveryRecordActionSharesNativeBatch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer a.Close()
+	defer a.Close(context.Background())
 	inspections.Store(0)
 	program := &pb.LuaTransform{Source: []byte(`return function(current, incoming) return {n = current.n + 1} end`)}
 	form := &pb.Transform_Lua{Lua: program}
@@ -174,7 +174,7 @@ func TestSearchMixedLuaConflictRereadsOnlyConditionalItem(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer a.Close()
+	defer a.Close(context.Background())
 	program := &pb.LuaTransform{Source: []byte(`return function(current, incoming) return {n = current.n + 1} end`)}
 	form := &pb.Transform_Lua{Lua: program}
 	transform := &pb.Transform{Form: form}
