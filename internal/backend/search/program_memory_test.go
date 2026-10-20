@@ -74,14 +74,26 @@ func (transport *evaluationContextTransport) RoundTrip(request *http.Request) (*
 	return response, nil
 }
 
+// Delaying the source context's timer publication makes the independent merged
+// deadline observable first, without relying on the scheduler to choose an order.
+type delayedEvaluationDeadline struct {
+	context.Context
+	deadline time.Time
+}
+
+func (ctx delayedEvaluationDeadline) Deadline() (time.Time, bool) {
+	return ctx.deadline, true
+}
+
 func TestSearchMergedEvaluationContextPreservesDeadlineAndExplicitCancel(t *testing.T) {
 	for _, explicit := range []bool{false, true} {
 		t.Run(map[bool]string{false: "deadline", true: "explicit-cancel"}[explicit], func(t *testing.T) {
 			batch, stopBatch := context.WithTimeout(t.Context(), 2*time.Second)
 			defer stopBatch()
-			record, cancel := context.WithTimeout(batch, 250*time.Millisecond)
+			parent, cancel := context.WithCancel(batch)
 			defer cancel()
-			deadline, _ := record.Deadline()
+			deadline := time.Now().Add(250 * time.Millisecond)
+			record := delayedEvaluationDeadline{Context: parent, deadline: deadline}
 			owner := &initialAllocationDeadlineMemory{deadline: deadline, entered: make(chan context.Context, 1)}
 			transport := &evaluationContextTransport{}
 			client := &http.Client{Transport: transport}
@@ -124,10 +136,14 @@ func TestSearchMergedEvaluationContextPreservesDeadlineAndExplicitCancel(t *test
 			select {
 			case result := <-results:
 				code := pb.FailureCode_DEADLINE_EXCEEDED
+				expectedErr := context.DeadlineExceeded
 				if explicit {
 					code = pb.FailureCode_CANCELLED
+					expectedErr = context.Canceled
 				}
-				if actualContext.Err() != record.Err() || result.GetOutcome() != pb.MutationOutcome_NOT_APPLIED || result.GetFailure().GetCode() != code || batch.Err() != nil || transport.writes != 0 || owner.waits != 1 {
+				// The merged and record contexts have independent deadline timers;
+				// one may publish its deadline before the other's Err becomes visible.
+				if actualContext.Err() != expectedErr || result.GetOutcome() != pb.MutationOutcome_NOT_APPLIED || result.GetFailure().GetCode() != code || batch.Err() != nil || transport.writes != 0 || owner.waits != 1 {
 					t.Fatal("merged context changed failure evidence or sent a write", result, batch.Err(), transport.writes, owner.waits)
 				}
 			case <-batch.Done():
