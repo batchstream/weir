@@ -187,6 +187,7 @@ func (r *Runtime) PrepareCommand(ctx context.Context, id uint64, call *pb.Comman
 	return plan, failure
 }
 func (r *Runtime) Submit(ctx context.Context, plan *execution.Plan, session *Session) (*Ticket, *pb.Failure, <-chan struct{}) {
+	defer r.memory.flushObservations()
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	changed := r.changed
@@ -343,6 +344,9 @@ func (t *Ticket) SetWorking(ctx context.Context, bytes int) error {
 		if bytes > b.workingBytes {
 			for _, live := range []context.Context{ctx, b.ctx} {
 				if err := live.Err(); err != nil {
+					if err == context.DeadlineExceeded {
+						owner.memory.observeGrowthDeadline(owner, bytes, wait)
+					}
 					r.mu.Unlock()
 					return err
 				}
@@ -367,8 +371,14 @@ func (t *Ticket) SetWorking(ctx context.Context, bytes int) error {
 		select {
 		case <-wake:
 		case <-ctx.Done():
+			if ctx.Err() == context.DeadlineExceeded {
+				owner.memory.observeGrowthDeadline(owner, bytes, wait)
+			}
 			return ctx.Err()
 		case <-b.ctx.Done():
+			if b.ctx.Err() == context.DeadlineExceeded {
+				owner.memory.observeGrowthDeadline(owner, bytes, wait)
+			}
 			return b.ctx.Err()
 		}
 	}
@@ -516,6 +526,9 @@ func (r *Runtime) cancelQueuedLocked() {
 	for t := r.queueHead; t != nil; {
 		next := t.queueNext
 		if t.ctx.Err() != nil || t.abandoned || r.closed {
+			if t.ctx.Err() == context.DeadlineExceeded {
+				r.memory.observeQueuedDeadline(t.executionLease, time.Since(t.queuedAt))
+			}
 			r.dequeueLocked(t)
 			r.candidates = nil
 			changed = true
@@ -1001,6 +1014,7 @@ func (b *batch) BeginIO(ctx context.Context, extra int) error {
 		return ctx.Err()
 	}
 	b.readWindow = extra
+	queuedAt := time.Now()
 	b.resumeErr = nil
 	resume := make(chan struct{})
 	b.resume = resume
@@ -1019,10 +1033,16 @@ func (b *batch) BeginIO(ctx context.Context, extra int) error {
 	select {
 	case <-resume:
 		if err := ctx.Err(); err != nil {
+			if err == context.DeadlineExceeded {
+				r.memory.observeNativeReadDeadline(b.native.executionLease, extra, time.Since(queuedAt))
+			}
 			return err
 		}
 		return b.resumeErr
 	case <-ctx.Done():
+		if ctx.Err() == context.DeadlineExceeded {
+			r.memory.observeNativeReadDeadline(b.native.executionLease, extra, time.Since(queuedAt))
+		}
 		return ctx.Err()
 	}
 }

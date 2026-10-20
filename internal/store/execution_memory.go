@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"sync"
+	"time"
 
 	"github.com/batchstream/weir-protocol/api/protocol"
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
@@ -63,6 +64,7 @@ type ExecutionMemory struct {
 	wakes                                           map[chan struct{}]struct{}
 	ingressHandoffs                                 map[*execution.Plan]*IngressInput
 	workingWaits                                    []*workingWait
+	observations                                    executionMemoryObservations
 }
 
 // A wait is a scheduling claim, never ledger credit. Its donor identities are
@@ -70,6 +72,7 @@ type ExecutionMemory struct {
 type workingWait struct {
 	donors map[*executionLease]struct{}
 	wake   chan struct{}
+	since  time.Time
 }
 
 type ExecutionMemorySnapshot struct {
@@ -238,6 +241,7 @@ func (m *ExecutionMemory) admit(plan *execution.Plan) (*executionLease, *pb.Fail
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if !m.trusted {
+		m.observeAdmissionLocked(plan)
 		m.rejections++
 		return nil, protocol.Fail(pb.FailureCode_UNAVAILABLE, "execution memory capacity is unknown"), false
 	}
@@ -273,6 +277,7 @@ func (m *ExecutionMemory) admit(plan *execution.Plan) (*executionLease, *pb.Fail
 		// must still fail promptly instead of creating an external input queue.
 		wait := credit != 0 && len(m.leases) != 0 && bytes <= m.residentLimitLocked() && bytes <= m.budget && peak <= m.budget-bytes
 		if !wait {
+			m.observeAdmissionLocked(plan)
 			m.rejections++
 		}
 		return nil, protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, errExecutionMemory.Error()), wait
@@ -328,6 +333,7 @@ func (l *executionLease) start(working, reserve int) (bool, bool) {
 	if m.convergingLocked() {
 		return false, true
 	}
+	m.observeRejectionLocked(memoryStart, l, working)
 	m.rejections++
 	return false, false
 }
@@ -341,6 +347,7 @@ func (l *executionLease) grow(working int) error {
 	}
 	delta := uint64(working - l.working)
 	if m.used > m.budget || delta > m.budget-m.used {
+		m.observeRejectionLocked(memoryNativeGrowth, l, working)
 		m.rejections++
 		return errExecutionMemory
 	}
@@ -359,6 +366,7 @@ func (l *executionLease) setWorking(working int) error {
 	if working > l.working {
 		delta := uint64(working - l.working)
 		if m.used > m.budget || delta > m.budget-m.used {
+			m.observeRejectionLocked(memoryRecordGrowth, l, working)
 			m.rejections++
 			return execution.ErrExecutionMemory
 		}
@@ -389,9 +397,15 @@ func (l *executionLease) requestWorking(ctx context.Context, working int, wait *
 		return nil, nil
 	}
 	if err := ctx.Err(); err != nil {
+		if err == context.DeadlineExceeded {
+			m.observeGrowthLocked(memoryGrowthDeadline, l, working, *wait)
+		}
 		return nil, err
 	}
 	if err := live(); err != nil {
+		if err == context.DeadlineExceeded {
+			m.observeGrowthLocked(memoryGrowthDeadline, l, working, *wait)
+		}
 		return nil, err
 	}
 	delta := uint64(working - l.working)
@@ -409,6 +423,7 @@ func (l *executionLease) requestWorking(ctx context.Context, working int, wait *
 		return (*wait).wake, nil
 	}
 	if _, bounded := ctx.Deadline(); !bounded || l.native {
+		m.observeGrowthLocked(memoryRecordGrowth, l, working, *wait)
 		m.rejections++
 		return nil, errExecutionMemory
 	}
@@ -420,7 +435,7 @@ func (l *executionLease) requestWorking(ctx context.Context, working int, wait *
 				donors[donor] = struct{}{}
 			}
 		}
-		pending := &workingWait{donors: donors, wake: make(chan struct{}, 1)}
+		pending := &workingWait{donors: donors, wake: make(chan struct{}, 1), since: time.Now()}
 		*wait = pending
 	}
 	// Only actual current speculative working bytes form an optimistic
@@ -435,6 +450,7 @@ func (l *executionLease) requestWorking(ctx context.Context, working int, wait *
 	}
 	remaining := m.used - reclaimable
 	if reclaimable == 0 || remaining > m.budget || delta > m.budget-remaining {
+		m.observeGrowthLocked(memoryRecordGrowth, l, working, *wait)
 		m.rejections++
 		return nil, errExecutionMemory
 	}
@@ -517,6 +533,7 @@ func (l *executionLease) resizeResultLocked(result, window int) error {
 	borrow := next > resident
 	if next > previous && (m.used > m.budget || next-previous > m.budget-m.used) ||
 		borrow && (next-resident > executionBorrowWindow || m.borrowed >= executionBorrowLimit && l.state != nativeBorrowed) {
+		m.observeRejectionLocked(memoryResult, l, l.working)
 		m.rejections++
 		return execution.ErrExecutionMemory
 	}
@@ -573,6 +590,7 @@ func (l *executionLease) reserveWire(bytes int) (*WireReservation, error) {
 	delta := uint64(window - l.window)
 	limit := m.residentLimitLocked()
 	if delta != 0 && (m.used > m.budget || delta > m.budget-m.used || m.resident > limit || delta > limit-m.resident) {
+		m.observeRejectionLocked(memoryWire, l, l.working)
 		m.rejections++
 		return nil, execution.ErrExecutionMemory
 	}
@@ -643,6 +661,7 @@ func (l *executionLease) beginRead(extra int) (bool, bool) {
 		// Waiting outputs cannot release their response working sets by first
 		// reading more body bytes. Fail this attempted exchange instead of
 		// cyclically waiting for memory that no current IO can relinquish.
+		m.observeRejectionLocked(memoryBeginRead, l, l.working+extra)
 		m.rejections++
 		return false, false
 	}
@@ -681,6 +700,7 @@ func (l *executionLease) settle(working, eventBytes int) error {
 	borrow := total > resident
 	if next > previous && (m.used > m.budget || next-previous > m.budget-m.used) ||
 		borrow && (total-resident > executionBorrowWindow || m.borrowed >= executionBorrowLimit && l.state != nativeBorrowed) {
+		m.observeRejectionLocked(memorySettle, l, working)
 		m.rejections++
 		return errExecutionMemory
 	}
@@ -724,6 +744,7 @@ func (l *executionLease) terminal(eventBytes int) error {
 	borrow := total > resident
 	if uint64(window) > previous && (m.used > m.budget || uint64(window)-previous > m.budget-m.used) ||
 		borrow && (total-resident > executionBorrowWindow || m.borrowed >= executionBorrowLimit && l.state != nativeBorrowed) {
+		m.observeRejectionLocked(memoryTerminal, l, 0)
 		m.rejections++
 		return errExecutionMemory
 	}

@@ -19,6 +19,7 @@ const IngressConnectionBytes = 512 << 10
 func (m *ExecutionMemory) ReserveIngressConnection() (func(), error) {
 	m.mu.Lock()
 	if !m.ingressFitsLocked(IngressConnectionBytes, false) {
+		m.observeIngressLocked(memoryIngressConnection, IngressConnectionBytes)
 		m.rejections++
 		m.mu.Unlock()
 		return nil, execution.ErrExecutionMemory
