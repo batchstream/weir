@@ -175,14 +175,7 @@ func runNativeProductionLoad(t *testing.T, inputs *testexecution.ValidatedInputs
 	})
 	owned := testsearch.OwnedEndpoint{URL: os.Getenv("WEIR_NATIVE_LOAD_ORACLE"), Owner: os.Getenv("WEIR_NATIVE_LOAD_OWNER"), Product: "elasticsearch"}
 	search := testsearch.OpenOwned(t, owned)
-	pads := []string{strings.Repeat("x", 1<<10), strings.Repeat("x", 256<<10), strings.Repeat("x", 2<<20), strings.Repeat("x", 8<<20)}
-	datasets := []*qualificationDataset{
-		{store: "mongo", root: fixture.DB + "/records", media: "application/bson", mongo: fixture, pads: pads, expected: make(map[string]qualificationRecord)},
-		{store: "search", root: search.Index, media: "application/json", search: search, pads: pads, expected: make(map[string]qualificationRecord)},
-	}
-	for _, dataset := range datasets {
-		seedQualificationDataset(t, dataset)
-	}
+	datasets := seedProductionQualificationDatasets(t, fixture, search)
 	process := &memoryRecoveryCLI{address: address, diagnostic: diagnostics, capacity: 1 << 30, automatic: true, stores: 2}
 	runProductionQualification(t, process, datasets, inputs.Profile().Duration())
 	for _, dataset := range datasets {

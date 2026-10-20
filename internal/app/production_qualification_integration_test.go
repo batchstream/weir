@@ -89,14 +89,7 @@ func TestProductionProcessQualification(t *testing.T) {
 	verifyLegacyMongoVersion(t, mongo)
 	search := testsearch.Open(t)
 	t.Logf("Search service_transport=%s host_oracle=%s container=%s image=%s", adapter.searchURL(), search.URL, adapter.searchID, legacySearchImage)
-	pads := []string{strings.Repeat("x", 1<<10), strings.Repeat("x", 256<<10), strings.Repeat("x", 2<<20), strings.Repeat("x", 8<<20)}
-	datasets := []*qualificationDataset{
-		{store: "mongo", root: mongo.DB + "/records", media: "application/bson", mongo: mongo, pads: pads, expected: make(map[string]qualificationRecord)},
-		{store: "search", root: search.Index, media: "application/json", search: search, pads: pads, expected: make(map[string]qualificationRecord)},
-	}
-	for _, dataset := range datasets {
-		seedQualificationDataset(t, dataset)
-	}
+	datasets := seedProductionQualificationDatasets(t, mongo, search)
 	mongoBackend := &Mongo{URI: adapter.mongoURL()}
 	searchBackend := &Search{URL: adapter.searchURL()}
 	mongoLocal := &Local{Backend: BackendConfig{MongoDB: mongoBackend}}
@@ -146,6 +139,21 @@ func runProductionQualification(t *testing.T, process *memoryRecoveryCLI, datase
 	for _, dataset := range datasets {
 		verifyQualificationOracle(t, dataset)
 	}
+}
+
+// Both execution adapters supply already-verified fixtures to the same dataset
+// construction and seeding policy, including backend order and payload sizes.
+func seedProductionQualificationDatasets(t *testing.T, mongo *testmongo.Fixture, search *testsearch.Backend) []*qualificationDataset {
+	t.Helper()
+	pads := []string{strings.Repeat("x", 1<<10), strings.Repeat("x", 256<<10), strings.Repeat("x", 2<<20), strings.Repeat("x", 8<<20)}
+	datasets := []*qualificationDataset{
+		{store: "mongo", root: mongo.DB + "/records", media: "application/bson", mongo: mongo, pads: pads, expected: make(map[string]qualificationRecord)},
+		{store: "search", root: search.Index, media: "application/json", search: search, pads: pads, expected: make(map[string]qualificationRecord)},
+	}
+	for _, dataset := range datasets {
+		seedQualificationDataset(t, dataset)
+	}
+	return datasets
 }
 
 func seedQualificationDataset(t *testing.T, dataset *qualificationDataset) {

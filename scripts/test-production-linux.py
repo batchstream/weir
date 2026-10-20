@@ -18,6 +18,7 @@ import re
 import shutil
 import signal
 import socket
+import stat
 import struct
 import subprocess
 import tempfile
@@ -597,6 +598,9 @@ class Controller:
         self.guard_load_storage()
         end = time.monotonic() + min(3, self.remaining())
         def walk_error(error):
+            missing = Path(error.filename) if error.filename else None
+            if isinstance(error, FileNotFoundError) and missing is not None and any(missing != root and missing.is_relative_to(root) for root in self.storage_paths):
+                return
             raise error
 
         sizes = {path.name: None for path in self.storage_paths}
@@ -607,8 +611,12 @@ class Controller:
                 for name in directories + files:
                     self.remaining(end)
                     entry = Path(root) / name
-                    require(not entry.is_symlink(), "load data contains symlink; refuse traversal")
-                    info = entry.stat()
+                    try:
+                        info = entry.lstat()
+                    except FileNotFoundError:
+                        # Compaction/retirement may remove an enumerated entry.
+                        continue
+                    require(not stat.S_ISLNK(info.st_mode), "load data contains symlink; refuse traversal")
                     entries += 1
                     total += max(info.st_size, info.st_blocks * 512)
                     sizes[path.name] = total
@@ -625,13 +633,49 @@ class Controller:
     def cleanup_load_storage(self):
         if not hasattr(self, "storage_paths"):
             return
+        self.remaining()
         self.guard_load_storage()
-        # Call only after every container is absent and the native child joined.
-        for path in self.storage_paths:
-            shutil.rmtree(path)
-            require(not path.exists(), "owned load data remains")
+
+        def remove_directory(parent, name, identity=None):
+            self.remaining()
+            flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+            descriptor = os.open(name, flags, dir_fd=parent)
+            try:
+                self.remaining()
+                if identity is not None:
+                    actual = os.fstat(descriptor)
+                    require((actual.st_dev, actual.st_ino) == (identity["device"], identity["inode"]), "owned load storage inode changed before removal")
+                with os.scandir(descriptor) as entries:
+                    for entry in entries:
+                        self.remaining()
+                        info = entry.stat(follow_symlinks=False)
+                        self.remaining()
+                        require(not stat.S_ISLNK(info.st_mode), "owned load data contains symlink; preserve data")
+                        if stat.S_ISDIR(info.st_mode):
+                            remove_directory(descriptor, entry.name)
+                        else:
+                            os.unlink(entry.name, dir_fd=descriptor)
+                        self.remaining()
+            finally:
+                os.close(descriptor)
+            self.remaining()
+            os.rmdir(name, dir_fd=parent)
+            self.remaining()
+
+        # FD-relative, no-follow removal is checked against the same independent
+        # cleanup deadline before/after each entry. A late syscall is not success.
+        self.remaining()
+        parent = os.open(self.opts.output, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        try:
+            for path, identity in zip(self.storage_paths, self.storage_owner["paths"]):
+                remove_directory(parent, path.name, identity)
+                require(not path.exists(), "owned load data remains")
+                self.remaining()
+        finally:
+            os.close(parent)
         receipt = dict(owner=self.owner, removed=[str(path) for path in self.storage_paths])
         self.evidence("load-storage-cleanup.json", receipt)
+        self.remaining()
 
     def mongo_guard(self, verify_bytes=False):
         require(self.mongo is not None and self.mongo.poll() is None, "owned native Mongo exited")
@@ -715,6 +759,12 @@ class Controller:
         if not hasattr(self, "cleanup_deadline"):
             self.cleanup_deadline = time.monotonic() + 60
         errors, receipts = [], []
+        # Retire/reap the owned native child before slow Docker calls can consume
+        # the shared 60s cleanup budget. Never extend that independent deadline.
+        try:
+            self.cleanup_mongo()
+        except Exception as error:
+            errors.append("native Mongo: " + str(error))
         all_absent = True
         for resource in reversed(self.resources):
             receipt = dict(kind=resource.kind, name=resource.name, id=resource.identity, absent=False)
@@ -760,10 +810,6 @@ class Controller:
             except Exception as error:
                 errors.append(resource.name + ": " + str(error))
                 all_absent = False
-        try:
-            self.cleanup_mongo()
-        except Exception as error:
-            errors.append("native Mongo: " + str(error))
         if hasattr(self, "storage_paths"):
             try:
                 require(all_absent and (self.mongo is None or self.mongo.poll() is not None), "load processes/resources not fully joined; preserve data")
@@ -774,6 +820,10 @@ class Controller:
                 self.evidence("load-storage-retained.json", retained)
         receipt = dict(resources=receipts, errors=errors)
         self.evidence("cleanup.json", receipt)
+        try:
+            self.remaining()
+        except Exception as error:
+            errors.append("cleanup deadline: " + str(error))
         return errors
 
     def execute(self):
@@ -796,10 +846,18 @@ class Controller:
             primary = str(error)
         finally:
             cleanup = self.cleanup()
+            if time.monotonic() >= self.cleanup_deadline:
+                cleanup.append("cleanup deadline exceeded before result acceptance")
             complete = primary is None and not cleanup
             result = dict(profile=self.opts.profile, qualification=False, revision=self.opts.revision, arch=self.arch, primary_error=primary, cleanup_errors=cleanup)
-            result["load_complete" if self.opts.profile == LOAD_PROFILE else "finite_complete"] = complete
-            self.evidence("load-result.json" if self.opts.profile == LOAD_PROFILE else "finite-result.json", result)
+            completion_key = "load_complete" if self.opts.profile == LOAD_PROFILE else "finite_complete"
+            result_path = "load-result.json" if self.opts.profile == LOAD_PROFILE else "finite-result.json"
+            result[completion_key] = complete
+            self.evidence(result_path, result)
+            if time.monotonic() >= self.cleanup_deadline and complete:
+                cleanup.append("cleanup deadline exceeded during result acceptance")
+                result[completion_key] = False
+                self.evidence(result_path, result)
         require(primary is None and not cleanup, "finite execution failed: " + str(primary) + "; cleanup=" + str(cleanup))
 
     def prepare_inputs(self):

@@ -403,11 +403,120 @@ class Contracts(unittest.TestCase):
         self.assertTrue(marker.exists())
         self.assertTrue(all(not path.exists() for path in self.controller.storage_paths))
 
+    def test_live_storage_retirement_only_ignores_missing_descendants(self):
+        self.opts.output.mkdir()
+        self.controller.prepare_load_storage()
+        data = self.controller.storage_paths[0]
+        (data / "known").write_bytes(b"known")
+
+        def retiring_walk(path, onerror):
+            if path == data:
+                missing = FileNotFoundError(2, "retired", str(data / "retired-directory"))
+                onerror(missing)
+                yield str(data), ["retired-directory"], ["retired-file", "known"]
+            else:
+                yield str(path), [], []
+
+        with patch.object(M.os, "walk", side_effect=retiring_walk):
+            self.controller.monitor_load_storage()
+        self.assertGreaterEqual(self.controller.storage_last_sample["bytes"]["es-data"], 5)
+        for error in (PermissionError(13, "denied", str(data / "private")), FileNotFoundError(2, "root disappeared", str(data))):
+            def failed_walk(path, onerror):
+                onerror(error)
+                return iter(())
+            with patch.object(M.os, "walk", side_effect=failed_walk), self.assertRaises(type(error)):
+                self.controller.monitor_load_storage()
+
+    def test_owned_removal_rejects_slow_syscall_and_stops_further_mutation(self):
+        self.opts.output.mkdir()
+        self.controller.prepare_load_storage()
+        data = self.controller.storage_paths[0]
+        (data / "slow-file").write_text("owned")
+        clock = dict(now=0)
+        self.controller.cleaning = True
+        self.controller.cleanup_deadline = 60
+        unlink = M.os.unlink
+
+        def slow_unlink(name, dir_fd=None):
+            unlink(name, dir_fd=dir_fd)
+            clock["now"] = 61
+
+        with patch.object(M.time, "monotonic", side_effect=lambda: clock["now"]), patch.object(M.os, "unlink", side_effect=slow_unlink) as remove, patch.object(M.os, "rmdir") as rmdir:
+            with self.assertRaisesRegex(RuntimeError, "deadline exceeded"):
+                self.controller.cleanup_load_storage()
+        remove.assert_called_once()
+        rmdir.assert_not_called()
+        self.assertTrue(data.exists())
+        self.assertFalse((self.opts.output / "load-storage-cleanup.json").exists())
+
+    def test_cleanup_reaps_native_before_slow_docker_and_rejects_late_receipt(self):
+        self.opts.output.mkdir()
+        clock = dict(now=0)
+        order = []
+        resource = M.Resource("container", "owned")
+        self.controller.resources = [resource]
+
+        def reap():
+            order.append("native-reaped")
+            self.assertEqual(self.controller.cleanup_deadline, 60)
+            clock["now"] = 2
+
+        def slow_inspect(resource):
+            self.assertEqual(order, ["native-reaped"])
+            clock["now"] = 61
+            return None
+
+        with patch.object(M.time, "monotonic", side_effect=lambda: clock["now"]), patch.object(self.controller, "cleanup_mongo", side_effect=reap), patch.object(self.controller, "inspect", side_effect=slow_inspect):
+            errors = self.controller.cleanup()
+        self.assertTrue(any("cleanup deadline" in error for error in errors))
+        self.assertEqual(self.controller.cleanup_deadline, 60)
+
+    def test_late_cleanup_cannot_publish_load_complete(self):
+        self.opts.profile = M.LOAD_PROFILE
+        clock = dict(offset=0)
+        monotonic = M.time.monotonic
+        cleanup = self.controller.cleanup
+
+        def late_cleanup():
+            result = cleanup()
+            clock["offset"] = 61
+            return result
+
+        def mongo():
+            self.controller.mongo_uri = "mongodb://127.0.0.1:27099/?replicaSet=" + self.controller.owner
+
+        with patch.object(M.time, "monotonic", side_effect=lambda: monotonic() + clock["offset"]), patch.object(self.controller, "cleanup", side_effect=late_cleanup), patch.object(self.controller, "start_mongo", side_effect=mongo), patch.object(self.controller, "mongo_guard"):
+            with self.assertRaisesRegex(RuntimeError, "cleanup deadline"):
+                self.execute()
+        result = json.loads((self.opts.output / "load-result.json").read_text())
+        self.assertFalse(result["load_complete"])
+        self.assertTrue(any("cleanup deadline" in error for error in result["cleanup_errors"]))
+
+    def test_slow_result_write_cannot_leave_load_complete_true(self):
+        self.opts.profile = M.LOAD_PROFILE
+        clock = dict(offset=0)
+        monotonic = M.time.monotonic
+        evidence = self.controller.evidence
+
+        def slow_result(name, value):
+            evidence(name, value)
+            if name == "load-result.json":
+                clock["offset"] = 61
+
+        def mongo():
+            self.controller.mongo_uri = "mongodb://127.0.0.1:27099/?replicaSet=" + self.controller.owner
+
+        with patch.object(M.time, "monotonic", side_effect=lambda: monotonic() + clock["offset"]), patch.object(self.controller, "evidence", side_effect=slow_result), patch.object(self.controller, "start_mongo", side_effect=mongo), patch.object(self.controller, "mongo_guard"):
+            with self.assertRaisesRegex(RuntimeError, "cleanup deadline"):
+                self.execute()
+        result = json.loads((self.opts.output / "load-result.json").read_text())
+        self.assertFalse(result["load_complete"])
+
     def test_load_data_cleanup_failure_reports_retention_and_fails_result(self):
         self.opts.output.mkdir()
         self.controller.prepare_load_storage()
         self.controller.monitor_load_storage()
-        with patch.object(M.shutil, "rmtree", side_effect=PermissionError("retained owned data")):
+        with patch.object(M.os, "rmdir", side_effect=PermissionError("retained owned data")):
             errors = self.controller.cleanup()
         self.assertTrue(any("load data cleanup" in error for error in errors))
         retained = json.loads((self.opts.output / "load-storage-retained.json").read_text())
