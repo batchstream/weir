@@ -56,6 +56,7 @@ type Replica struct {
 	clients                               []*mongo.Client
 	root                                  string
 	roots                                 *x509.CertPool
+	proxyTLS                              [3]*tls.Config
 	adminPassword                         string
 	secure                                bool
 	once                                  sync.Once
@@ -506,6 +507,8 @@ func (f *Replica) writeMaterial(t *testing.T) {
 		certBlock := &pem.Block{Type: "CERTIFICATE", Bytes: leafDER}
 		keyBlock := &pem.Block{Type: "EC PRIVATE KEY", Bytes: privateDER}
 		material := append(pem.EncodeToMemory(certBlock), pem.EncodeToMemory(keyBlock)...)
+		certificate := tls.Certificate{Certificate: [][]byte{leafDER}, PrivateKey: leafKey}
+		f.proxyTLS[i] = &tls.Config{Certificates: []tls.Certificate{certificate}, MinVersion: tls.VersionTLS12}
 		if err := os.WriteFile(filepath.Join(f.root, fmt.Sprintf("member-%d.pem", i)), material, 0600); err != nil {
 			t.Fatal(err)
 		}

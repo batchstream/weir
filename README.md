@@ -173,7 +173,7 @@ opt-ins or Docker environment; the test verifies its identity before starting:
 ```sh
 WEIR_MONGO_REPLICA_INTEGRATION=1 WEIR_MONGO_REPLICA_BINARY=/absolute/path/to/mongod \
   go test -p=1 -parallel=1 -tags=integration -count=1 -timeout=10m \
-  -run '^TestMongoReplica(DiscoveryOwnership|CLIRecovery)$' \
+  -run '^TestMongoReplica(DiscoveryOwnership|ProxyDiscoveryRecovery|CLIRecovery)$' \
   ./internal/backend/mongodb ./internal/app
 ```
 
@@ -183,6 +183,32 @@ matrix. The dedicated Linux CI job prepares its verified native binary explicitl
 with `scripts/ci-tools.py test --mongo`; tests never download or fall back to
 another backend. Generated logs remain ignored and temporary data/secrets are
 removed only after all owned children have been reaped.
+
+`TestMongoReplicaProxyDiscoveryRecovery` additionally checks a test-only observer:
+exactly three owned frontends rewrite only hello/isMaster member address fields;
+the production adapter's complete discovered/selected address set and per-member
+monitor/data observations must agree. Real member configuration and inter-member
+traffic remain unchanged. Both TLS legs verify freshly generated member identities.
+The observer supports pinned polling/uncompressed OP_QUERY/OP_REPLY and OP_MSG
+(including client bulkWrite ops/nsInfo sequences); checksums, exhaust, compression,
+unknown wire forms/flags and unmapped addresses fail closed. It preserves unknown
+hello fields and ordinary business replies, with bounded metadata-only observations.
+This TLS-terminated fixture does not replace direct-member TLS coverage.
+
+Offline wire, bypass-oracle and actual loopback TLS rejection controls need no
+MongoDB, CLI or fixture opt-in and are explicitly selected in normal/race CI:
+
+```sh
+CGO_ENABLED=0 go test -p=1 -parallel=1 -count=1 -run '^TestReplicaProxy' ./internal/testutil/testmongo
+CGO_ENABLED=1 go test -race -p=1 -parallel=1 -count=1 -run '^TestReplicaProxy' ./internal/testutil/testmongo
+```
+
+The observer prerequisite covers ordinary typed/Native/Lua success and independent
+majority-read effect checks across primary transitions through the same adapter.
+It does **not** qualify post-effect reply loss, UNKNOWN/no-replay or Lua ambiguous
+commit/rollback matrices, CLI shutdown, cgroups, sustained load, SLOs or production.
+A proxy's pre-forward barrier is already after Weir dispatch; `ok:1` alone is not
+majority/business evidence, and Native callers must request majority explicitly.
 
 The [weir-tests](https://github.com/batchstream/weir-tests) repository contains
 matched direct/Weir workloads and blackbox integration. Keep generated logs,
