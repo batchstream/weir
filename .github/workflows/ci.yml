@@ -261,15 +261,29 @@ jobs:
           done < <(compgen -e)
           export WEIR_MONGO_REPLICA_BINARY="$binary" WEIR_MONGO_REPLICA_INTEGRATION=1
           mkdir -p .testdata/native-mongo-replica
+          started=$(date +%s)
+          status=0
           go test -race -p=1 -parallel=1 -tags=integration -count=1 -timeout=10m \
             -run '^TestMongoReplica(DiscoveryOwnership|ProxyDiscoveryRecovery|CLIRecovery)$' -v \
-            ./internal/backend/mongodb ./internal/app 2>&1 | tee .testdata/native-mongo-replica/tests.log
-          git diff --exit-code
+            ./internal/backend/mongodb ./internal/app 2>&1 | tee .testdata/native-mongo-replica/tests.log || status=1
+          go test -race -p=1 -parallel=1 -tags=integration -count=1 -timeout=10m \
+            -run '^TestMongoReplicaCLIReplyLoss$/^plain$' -v \
+            ./internal/app 2>&1 | tee .testdata/native-mongo-replica/reply-loss-plain.log || status=1
+          go test -race -p=1 -parallel=1 -tags=integration -count=1 -timeout=10m \
+            -run '^TestMongoReplicaCLIReplyLoss$/^tls$' -v \
+            ./internal/app 2>&1 | tee .testdata/native-mongo-replica/reply-loss-tls.log || status=1
+          printf 'three_command_elapsed_seconds=%s\n' "$(( $(date +%s) - started ))" | tee .testdata/native-mongo-replica/envelope.log
+          git diff --exit-code || status=1
+          exit "$status"
       - name: Preserve focused output without credentials, certificate material or routing files
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # pinned existing version
         with:
           name: native-mongo-replica
-          path: .testdata/native-mongo-replica/tests.log
+          path: |
+            .testdata/native-mongo-replica/tests.log
+            .testdata/native-mongo-replica/reply-loss-plain.log
+            .testdata/native-mongo-replica/reply-loss-tls.log
+            .testdata/native-mongo-replica/envelope.log
           if-no-files-found: ignore
           retention-days: 7
