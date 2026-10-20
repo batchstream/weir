@@ -44,6 +44,10 @@ jobs:
         run: CGO_ENABLED=0 timeout 3m go test -tags=integration -count=1 -timeout=120s -run '^TestExecutionProfileContract' ./internal/testutil/testexecution ./internal/app ./internal/testutil/testsearch
       - name: Native CGO1 race tests
         run: CGO_ENABLED=1 timeout 12m go test -race -count=1 -timeout=180s ./...
+      - name: Offline normal and race process terminal measurements (self-subprocesses only)
+        run: |
+          CGO_ENABLED=1 timeout 2m go test -p=1 -parallel=1 -tags=integration -count=1 -timeout=90s -run '^TestProcessStop(TerminalMeasurements|OnceConcurrent)$' -v ./internal/app
+          CGO_ENABLED=1 timeout 2m go test -race -p=1 -parallel=1 -tags=integration -count=1 -timeout=90s -run '^TestProcessStop(TerminalMeasurements|OnceConcurrent)$' -v ./internal/app
       - name: Native receive ownership patch race tests
         working-directory: third_party/grpc
         run: CGO_ENABLED=1 timeout 3m go test -race -count=1 -timeout=120s -run '^TestReceive' ./ ./mem ./internal/transport
@@ -227,4 +231,41 @@ jobs:
             .testdata/native-linux-volume-copy/source-revision.txt
             .testdata/native-linux-volume-copy/helper-dependencies.txt
           if-no-files-found: warn
+          retention-days: 7
+
+  native-mongo-replica:
+    # Focused owned integration only; no formal load/resource qualification.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Prepare fixed native SDK, public modules and verified MongoDB member
+        run: python3 scripts/ci-tools.py test --mongo
+      - name: Serialized actual three-member plain and TLS discovery and recovery
+        env:
+          CGO_ENABLED: '1'
+          WEIR_MONGO_REPLICA_INTEGRATION: '1'
+        run: |
+          test "$(uname -s)/$(uname -m)" = Linux/x86_64
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          binary="$WEIR_MONGO_REPLICA_BINARY"
+          while IFS= read -r name; do
+            case "$name" in WEIR_*|DOCKER_*) unset "$name";; esac
+          done < <(compgen -e)
+          export WEIR_MONGO_REPLICA_BINARY="$binary" WEIR_MONGO_REPLICA_INTEGRATION=1
+          mkdir -p .testdata/native-mongo-replica
+          go test -race -p=1 -parallel=1 -tags=integration -count=1 -timeout=10m \
+            -run '^TestMongoReplica(DiscoveryOwnership|CLIRecovery)$' -v \
+            ./internal/backend/mongodb ./internal/app 2>&1 | tee .testdata/native-mongo-replica/tests.log
+          git diff --exit-code
+      - name: Preserve focused output without credentials, certificate material or routing files
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # pinned existing version
+        with:
+          name: native-mongo-replica
+          path: .testdata/native-mongo-replica/tests.log
+          if-no-files-found: ignore
           retention-days: 7

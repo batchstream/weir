@@ -10,9 +10,10 @@ import (
 
 func TestMongoServerQualificationUsesTopologyOnly(t *testing.T) {
 	tests := []struct {
-		name     string
-		response bson.D
-		wantErr  string
+		name        string
+		response    bson.D
+		wantErr     string
+		expectedSet string
 	}{
 		{
 			name: "replica set without version metadata",
@@ -21,6 +22,17 @@ func TestMongoServerQualificationUsesTopologyOnly(t *testing.T) {
 				{Key: "setName", Value: "weir_test"},
 				{Key: "maxMessageSizeBytes", Value: 48 << 20},
 			},
+		},
+		{
+			name:        "requested replica set matches",
+			expectedSet: "weir_test",
+			response:    bson.D{{Key: "ok", Value: 1}, {Key: "setName", Value: "weir_test"}},
+		},
+		{
+			name:        "requested replica set mismatch",
+			expectedSet: "other_set",
+			response:    bson.D{{Key: "ok", Value: 1}, {Key: "setName", Value: "weir_test"}},
+			wantErr:     "MongoDB requires a replica set and no mongos",
 		},
 		{
 			name: "standalone",
@@ -66,7 +78,7 @@ func TestMongoServerQualificationUsesTopologyOnly(t *testing.T) {
 			}}
 			responses := []bson.D{test.response}
 			adapter := batchMockAdapter(t, responses, monitor)
-			err := adapter.qualify(context.Background())
+			err := adapter.qualify(context.Background(), test.expectedSet)
 			if test.wantErr == "" {
 				if err != nil {
 					t.Fatal("topology qualification requires no server version query", err)

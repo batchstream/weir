@@ -18,20 +18,27 @@ stores:
       max_exchange_bytes: 32MiB
 
       mongodb:
-        # Standard mongodb://, one explicit IP/DNS host:port.
-        # No credentials, database path, SRV/multi-host or topology options.
-        # Accepted URI options: directConnection=true, serverMonitoringMode=poll,
-        # authSource, authMechanism=SCRAM-SHA-256 and tls=true.
-        # Auth requires credentials in backend.authentication plus explicit
-        # authSource, SCRAM-SHA-256 and tls=true. TLS options require credentials.
-        # Authenticated example:
-        # mongodb://mongo.example:27017/?authSource=admin&authMechanism=SCRAM-SHA-256&tls=true
+        # Standard mongodb://, at most 4096 bytes; every IP/DNS seed has a port.
+        # Discovery: 1..7 seeds + replicaSet; directConnection absent or false.
+        # Set name: 1..64 ASCII letters/digits/_/-, a Weir profile constraint,
+        # not MongoDB's maximum name or replica-set membership size.
+        # Direct: 1 endpoint, no replicaSet; directConnection absent or true.
+        # Direct mode intentionally isolates one member and provides no failover.
+        # No userinfo, database path, fragments, SRV, mongos or load balancing.
+        # Accepted URI options: replicaSet, directConnection,
+        # serverMonitoringMode=poll, authSource, authMechanism=SCRAM-SHA-256,
+        # tls=true. Duplicate/unknown options and canonical duplicate seeds fail.
+        # Auth requires separate credentials plus explicit authSource, SCRAM and
+        # TLS. Member certificates verify each actual discovered hostname/IP.
+        # Authenticated discovery example:
+        # mongodb://mongo-a:27017,mongo-b:27017/?replicaSet=orders&authSource=admin&authMechanism=SCRAM-SHA-256&tls=true
         # CA files belong in backend.tls.ca_file; URI tlsCAFile is rejected.
         uri: mongodb://127.0.0.1:27017/?directConnection=true
         # Completed target qualification entries. Default: 64; integer >= 0.
         # 0 disables caching; pending checks do not occupy this capacity.
         metadata_cache_entries: 64
-        # Connection creation workers. Default: 2; 0 selects 2.
+        # Connection creation workers PER MEMBER POOL. Default: 2; 0 selects 2.
+        # Neither this nor the seed bound caps total topology/data sockets.
         # This does not cap active connections or backend operations.
         max_connecting: 2
         # Total confirmed-conflict transaction attempts, including the first.

@@ -27,6 +27,37 @@ through any peer, and clients can resolve Stores through any application endpoin
 Kubernetes manifests and scaling guidance live under
 [deploy/kubernetes](../deploy/kubernetes/scaling.md). Every Pod runs one Weir process.
 
+## MongoDB discovery and failover
+
+For automatic primary discovery, use the strict
+[replica-set connection profile](configuration.md#store-settings): an explicit set
+name with one to seven seeds and `directConnection` omitted or `false`. The driver
+uses ordinary replica-set topology discovery; Weir does not implement elections,
+secondary routing, SRV, mongos or load balancing. Direct mode intentionally stays
+on one member and cannot provide automatic failover.
+
+Seeds are bootstrap addresses, not a routing allowlist or global connection cap.
+Every advertised member address must be reachable from Weir. With TLS, each
+member's certificate must verify its actual hostname/IP; a seed's identity is not
+reused for other members. `max_connecting` limits creation per member pool, while
+monitors and pools can exist for multiple discovered members. Monitor aggregate
+backend demand, connection ownership and cancellation together.
+
+Keep database transition time separate from Weir's reaction: observe when the
+external replica set can serve the required primary/majority operation, then
+measure recovery of new operations through the same Weir process/client. A live
+or ready diagnostics response alone does not prove backend service usability.
+Caller deadlines still bound unavailable selection; do not increase them or
+resubmit a possibly applied mutation to conceal a failed recovery.
+
+Weir retains primary reads and majority-acknowledged typed writes, disables
+automatic read/write replay, and does not promise transparent migration of Native
+cursors, sessions or transactions. Preserve actual APPLIED/UNKNOWN/failure or
+Native completion evidence. An ambiguous Lua commit may only confirm that same
+commit; fresh Lua evaluation requires confirmed abort/conflict evidence. Native
+remains opaque: the caller supplies command-level concerns and manages any
+backend-specific cursor/session semantics.
+
 ## Metrics
 
 Observe completed work and actual backend demand together with queue and memory

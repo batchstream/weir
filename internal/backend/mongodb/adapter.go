@@ -68,7 +68,8 @@ func (a *Adapter) options() backend.Options {
 }
 
 func Open(ctx context.Context, cfg Config) (*Adapter, error) {
-	if err := ValidateConfig(cfg); err != nil {
+	profile, err := parseConfig(cfg)
+	if err != nil {
 		return nil, err
 	}
 	settings := backend.DefaultOptions()
@@ -91,12 +92,11 @@ func Open(ctx context.Context, cfg Config) (*Adapter, error) {
 			dialer.close()
 		}
 	}()
-	opts, err := connectionOptions(cfg, dialer)
+	opts, err := connectionOptions(cfg, dialer, profile)
 	if err != nil {
 		return nil, err
 	}
-	opts.SetDirect(true).
-		SetAppName("weir:" + cfg.Store).
+	opts.SetAppName("weir:" + cfg.Store).
 		SetMaxPoolSize(0).
 		SetMaxConnecting(cfg.MaxConnecting).
 		SetMinPoolSize(0).
@@ -141,7 +141,7 @@ func Open(ctx context.Context, cfg Config) (*Adapter, error) {
 	}
 	a.targets.entries = make(map[namespace]*targetCheck)
 	a.targets.capacity = settings.MetadataCacheEntries
-	if err = a.qualify(ctx); err != nil {
+	if err = a.qualify(ctx, profile.replicaSet); err != nil {
 		_ = a.Close()
 		return nil, err
 	}
@@ -149,7 +149,7 @@ func Open(ctx context.Context, cfg Config) (*Adapter, error) {
 	return a, nil
 }
 
-func (a *Adapter) qualify(ctx context.Context) error {
+func (a *Adapter) qualify(ctx context.Context, replicaSet string) error {
 	cmd := bson.D{{Key: "hello", Value: 1}}
 	var hello struct {
 		SetName     string `bson:"setName"`
@@ -160,7 +160,7 @@ func (a *Adapter) qualify(ctx context.Context) error {
 	if err := a.client.Database("admin").RunCommand(ctx, cmd).Decode(&hello); err != nil {
 		return mongoQualificationFailure("MongoDB replica-set qualification failed", err)
 	}
-	if hello.SetName == "" || hello.Msg == "isdbgrid" {
+	if hello.SetName == "" || hello.Msg == "isdbgrid" || replicaSet != "" && hello.SetName != replicaSet {
 		return fmt.Errorf("MongoDB requires a replica set and no mongos")
 	}
 	a.maxDocumentBytes = hello.MaxDocument
