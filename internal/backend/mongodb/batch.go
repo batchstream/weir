@@ -11,6 +11,7 @@ import (
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/x/bsonx/bsoncore"
+	"go.mongodb.org/mongo-driver/v2/x/mongo/driver/topology"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -224,6 +225,11 @@ func (a *Adapter) executeReads(ctx context.Context, plans []*execution.Plan) []*
 			}
 			err = readErr
 			if err != nil {
+				// Only a direct initial selection error proves this fresh session
+				// sent no command. Wrapped errors and later pages may hide a cursor.
+				if _, unsent := readErr.(topology.ServerSelectionError); page == 0 && unsent {
+					state.cursorKnown = true
+				}
 				valid = false
 				break
 			}
