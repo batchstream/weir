@@ -233,11 +233,18 @@ func replicaLuaRuntime(t *testing.T, opts replicaLuaRuntimeOptions) []testmongo.
 			t.Fatal("original ObservedAt witness", observed, watch.Snapshot())
 		}
 		ticket.Ack()
+		// Ack alone must release the genuine retained owner before Session.Close
+		// has any opportunity to reclaim missing input/result credit.
+		replicaLuaZero(t, opts)
+		t.Logf("Lua actual Ack before owning Session.Close snapshot=%+v memory=%+v", opts.runtime.Snapshot(), opts.runtime.ExecutionMemory().Snapshot())
 		session.Close()
 		opts.delegate.luaMu.Lock()
 		delete(opts.delegate.luaPlans, work.ID)
 		opts.delegate.luaMu.Unlock()
 		replicaLuaZero(t, opts)
+		if err := watch.Complete(confirmed); err != nil {
+			t.Fatal("Lua terminal receipt/join completion", watch.Snapshot())
+		}
 		c := testmongo.LuaCase{Watch: watch, Confirmed: confirmed}
 		cases = append(cases, c)
 		opts.proxy.CheckLuaCases(t, cases, "backend_receipt_and_real_Ack")

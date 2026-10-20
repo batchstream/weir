@@ -140,6 +140,54 @@ func luaTestAbort(t *testing.T, r *luaRegistry, w *LuaWatch, code int) (*luaMatc
 	}
 	return m, response
 }
+func luaTestFinished(t *testing.T, confirmed bool) (*luaRegistry, *LuaWatch) {
+	t.Helper()
+	r, w := luaTestRegistry(t)
+	m, response := luaTestAbort(t, r, w, 251)
+	if confirmed {
+		if err := w.ForwardAbortReply(); err != nil {
+			t.Fatal(err)
+		}
+		if s := w.Snapshot(); s.Attempt[0].AbortForwarded != 0 {
+			t.Fatal("intent became forwarding proof")
+		}
+		ok, drop := r.hold(m, make(chan struct{}), time.Second)
+		if !ok || drop {
+			t.Fatal("forward gate")
+		}
+		luaTestForward(t, r, m, response)
+		luaTestSnapshot(t, r, w, true)
+		command := luaTestWrite(11, true)
+		m = luaTestBegin(t, r, command)
+		reply := ownedReply()
+		response = luaTestReceive(t, r, m, reply)
+		luaTestForward(t, r, m, response)
+		command = luaTestControl("commitTransaction", 11)
+		m = luaTestBegin(t, r, command)
+		reply = bson.D{{Key: "ok", Value: 1}}
+		response = luaTestReceive(t, r, m, reply)
+		luaTestForward(t, r, m, response)
+	} else {
+		if err := w.DropAbortReply(); err != nil {
+			t.Fatal(err)
+		}
+		if s := w.Snapshot(); s.Attempt[0].AbortDropped != 0 {
+			t.Fatal("intent became drop proof")
+		}
+		ok, drop := r.hold(m, make(chan struct{}), time.Second)
+		if !ok || !drop {
+			t.Fatal("drop gate")
+		}
+		r.finish(m, true)
+	}
+	if err := w.ValidateFinished(confirmed); err != nil {
+		t.Fatal(w.Snapshot())
+	}
+	if w.Snapshot().Completed {
+		t.Fatal("wire completion became terminal receipt/join proof")
+	}
+	return r, w
+}
 func TestReplicaProxyLuaConfirmedAndLostAbort(t *testing.T) {
 	for _, confirmed := range []bool{true, false} {
 		name := "lost"
@@ -147,46 +195,12 @@ func TestReplicaProxyLuaConfirmedAndLostAbort(t *testing.T) {
 			name = "confirmed"
 		}
 		t.Run(name, func(t *testing.T) {
-			r, w := luaTestRegistry(t)
-			m, response := luaTestAbort(t, r, w, 251)
-			if confirmed {
-				if err := w.ForwardAbortReply(); err != nil {
-					t.Fatal(err)
-				}
-				if s := w.Snapshot(); s.Attempt[0].AbortForwarded != 0 {
-					t.Fatal("intent became forwarding proof")
-				}
-				ok, drop := r.hold(m, make(chan struct{}), time.Second)
-				if !ok || drop {
-					t.Fatal("forward gate")
-				}
-				luaTestForward(t, r, m, response)
-				luaTestSnapshot(t, r, w, true)
-				command := luaTestWrite(11, true)
-				m = luaTestBegin(t, r, command)
-				reply := ownedReply()
-				response = luaTestReceive(t, r, m, reply)
-				luaTestForward(t, r, m, response)
-				command = luaTestControl("commitTransaction", 11)
-				m = luaTestBegin(t, r, command)
-				reply = bson.D{{Key: "ok", Value: 1}}
-				response = luaTestReceive(t, r, m, reply)
-				luaTestForward(t, r, m, response)
-			} else {
-				if err := w.DropAbortReply(); err != nil {
-					t.Fatal(err)
-				}
-				if s := w.Snapshot(); s.Attempt[0].AbortDropped != 0 {
-					t.Fatal("intent became drop proof")
-				}
-				ok, drop := r.hold(m, make(chan struct{}), time.Second)
-				if !ok || !drop {
-					t.Fatal("drop gate")
-				}
-				r.finish(m, true)
+			_, w := luaTestFinished(t, confirmed)
+			if err := w.Complete(confirmed); err != nil || !w.Snapshot().Completed {
+				t.Fatal("explicit terminal observation completion", err, w.Snapshot())
 			}
-			if err := w.ValidateFinished(confirmed); err != nil {
-				t.Fatal(w.Snapshot())
+			if err := w.Complete(confirmed); err == nil {
+				t.Fatal("duplicate terminal completion")
 			}
 		})
 	}
@@ -340,7 +354,7 @@ func TestReplicaProxyLuaIdentityAndBounds(t *testing.T) {
 		t.Fatal("phase outlived original caller")
 	}
 }
-func TestReplicaProxyLuaSequencesAndPooledSession(t *testing.T) {
+func TestReplicaProxyLuaSequencesAndActiveSession(t *testing.T) {
 	r, w := luaTestRegistry(t)
 	luaTestSnapshot(t, r, w, false)
 	command := luaTestWrite(10, false)
@@ -349,13 +363,10 @@ func TestReplicaProxyLuaSequencesAndPooledSession(t *testing.T) {
 	if err != nil || m == nil {
 		t.Fatal("kind1 replacement", err)
 	}
-	// An unrelated pooled session using another transaction cannot contaminate
-	// this operation, including after the watch has completed.
 	command = luaTestControl("commitTransaction", 99)
 	opts.message = ownedMessage(t, command)
-	m, err = r.begin(opts)
-	if err != nil || m != nil {
-		t.Fatal("unrelated pooled txn matched", err)
+	if _, err := r.begin(opts); err == nil {
+		t.Fatal("active session new control txn was ignored")
 	}
 }
 func TestReplicaProxyLuaGenuineConflictShapes(t *testing.T) {
@@ -372,5 +383,217 @@ func TestReplicaProxyLuaGenuineConflictShapes(t *testing.T) {
 	conflict, _, _, _ = luaConflict(raw)
 	if conflict {
 		t.Fatal("nonconflict converted to112")
+	}
+}
+
+func TestReplicaProxyLuaActiveControlTransactions(t *testing.T) {
+	for _, phase := range []string{"active", "abort_held", "release_intent", "lost_reply", "confirmed_wire"} {
+		t.Run(phase, func(t *testing.T) {
+			for _, control := range []string{"commitTransaction", "abortTransaction"} {
+				t.Run(control, func(t *testing.T) {
+					for _, txn := range []string{"new", "missing", "malformed"} {
+						t.Run(txn, func(t *testing.T) {
+							r, w := luaTestRegistry(t)
+							switch phase {
+							case "active":
+								luaTestSnapshot(t, r, w, false)
+							case "abort_held":
+								luaTestAbort(t, r, w, 251)
+							case "release_intent":
+								luaTestAbort(t, r, w, 251)
+								if err := w.DropAbortReply(); err != nil {
+									t.Fatal(err)
+								}
+							case "lost_reply":
+								r, w = luaTestFinished(t, false)
+							case "confirmed_wire":
+								r, w = luaTestFinished(t, true)
+							}
+							command := luaTestControl(control, 99)
+							if txn == "missing" {
+								command = append(command[:3], command[4:]...)
+							}
+							if txn == "malformed" {
+								command[3].Value = "99"
+							}
+							opts := luaBeginOptions{message: ownedMessage(t, command), member: 2}
+							if _, err := r.begin(opts); err == nil || w.Snapshot().Error == "" {
+								t.Fatal("active owned session control escaped", w.Snapshot())
+							}
+							if err := w.Complete(phase == "confirmed_wire"); err == nil || w.Snapshot().Completed {
+								t.Fatal("failed watch became completed")
+							}
+						})
+					}
+				})
+			}
+		})
+	}
+}
+func TestReplicaProxyLuaTerminalPooledSessionAndPersistentIdentity(t *testing.T) {
+	for _, confirmed := range []bool{true, false} {
+		name := "lost"
+		if confirmed {
+			name = "confirmed"
+		}
+		t.Run(name, func(t *testing.T) {
+			for _, replay := range []string{"find", "write", "old_commit", "old_abort"} {
+				t.Run(replay, func(t *testing.T) {
+					r, w := luaTestFinished(t, confirmed)
+					if err := w.Complete(confirmed); err != nil {
+						t.Fatal(err)
+					}
+					before := w.Snapshot()
+					for _, control := range []string{"commitTransaction", "abortTransaction"} {
+						command := luaTestControl(control, 99)
+						opts := luaBeginOptions{message: ownedMessage(t, command), member: 2}
+						m, err := r.begin(opts)
+						if err != nil || m != nil || w.Snapshot() != before {
+							t.Fatal("completed watch contaminated by new pooled transaction", err, w.Snapshot())
+						}
+					}
+					var command bson.D
+					switch replay {
+					case "find":
+						command = luaTestFind(99)
+					case "write":
+						command = luaTestWrite(10, false)
+					case "old_commit":
+						command = luaTestControl("commitTransaction", 10)
+					case "old_abort":
+						command = luaTestControl("abortTransaction", 10)
+					}
+					opts := luaBeginOptions{message: ownedMessage(t, command), member: 1}
+					if _, err := r.begin(opts); err == nil {
+						t.Fatal("old identity replay escaped after terminal completion")
+					}
+					if err := w.ValidateFinished(confirmed); err == nil {
+						t.Fatal("persistent exact count validation ignored replay")
+					}
+				})
+			}
+		})
+	}
+}
+func TestReplicaProxyLuaCompletionValidation(t *testing.T) {
+	r, w := luaTestRegistry(t)
+	luaTestSnapshot(t, r, w, false)
+	if err := w.Complete(false); err == nil || w.Snapshot().Completed {
+		t.Fatal("incomplete operation completed")
+	}
+	r, w = luaTestFinished(t, false)
+	w.snapshot.Attempt[0].WriteItems++
+	if err := w.Complete(false); err == nil || w.Snapshot().Completed {
+		t.Fatal("invalid counts bypassed completion validation")
+	}
+	_, w = luaTestFinished(t, true)
+	start := make(chan struct{})
+	results := make(chan error, 2)
+	for i := 0; i < 2; i++ {
+		go func() { <-start; results <- w.Complete(true) }()
+	}
+	close(start)
+	first, second := <-results, <-results
+	if (first == nil) == (second == nil) || !w.Snapshot().Completed {
+		t.Fatal("terminal completion was not atomic", first, second)
+	}
+}
+func TestReplicaProxyLuaWatchedNamespaceSelectors(t *testing.T) {
+	for _, name := range []string{"eq", "missing", "null", "scalar", "empty", "duplicate", "malformed_in", "other_id", "other_ids", "other_namespace"} {
+		t.Run(name, func(t *testing.T) {
+			r, w := luaTestRegistry(t)
+			luaTestSnapshot(t, r, w, false)
+			before := w.Snapshot()
+			command := luaTestFind(99)
+			switch name {
+			case "eq", "other_namespace":
+				selector := bson.D{{Key: "$eq", Value: "lua"}}
+				filter := bson.D{{Key: "_id", Value: selector}}
+				command[1].Value = filter
+				if name == "other_namespace" {
+					command[len(command)-1].Value = "unwatched"
+				}
+			case "missing":
+				command = append(command[:1], command[2:]...)
+			case "null":
+				command[1].Value = nil
+			case "scalar":
+				command[1].Value = "lua"
+			case "empty":
+				command[1].Value = bson.D{}
+			case "duplicate":
+				filter := bson.D{{Key: "_id", Value: "lua"}, {Key: "_id", Value: "other"}}
+				command[1].Value = filter
+			case "malformed_in":
+				selector := bson.D{{Key: "$in", Value: "lua"}}
+				filter := bson.D{{Key: "_id", Value: selector}}
+				command[1].Value = filter
+			case "other_id":
+				filter := bson.D{{Key: "_id", Value: "other"}}
+				command[1].Value = filter
+			case "other_ids":
+				selector := bson.D{{Key: "$in", Value: bson.A{"other", "another"}}}
+				filter := bson.D{{Key: "_id", Value: selector}}
+				command[1].Value = filter
+			}
+			opts := luaBeginOptions{message: ownedMessage(t, command), member: 1}
+			m, err := r.begin(opts)
+			allowed := name == "other_id" || name == "other_ids" || name == "other_namespace"
+			if allowed {
+				if err != nil || m != nil || w.Snapshot() != before {
+					t.Fatal("unrelated selector contaminated watch", err, w.Snapshot())
+				}
+			} else if err == nil || w.Snapshot().Error == "" {
+				t.Fatal("unsupported watched namespace selector escaped", name)
+			}
+		})
+	}
+}
+func TestReplicaProxyLuaStrictRawLedger(t *testing.T) {
+	expected := LuaLedger{N: 20, External: 1, Candidate: 0}
+	document := bson.D{{Key: "n", Value: int32(20)}, {Key: "external", Value: int32(1)}, {Key: "candidate", Value: int32(0)}}
+	for i, field := range document {
+		t.Run(field.Key, func(t *testing.T) {
+			wanted := []int64{20, 1, 0}[i]
+			for _, v := range []any{int32(wanted), wanted, float64(wanted)} {
+				doc := append(bson.D(nil), document...)
+				doc[i].Value = v
+				raw := ownedRaw(t, doc)
+				if err := validateLuaLedger(raw, expected); err != nil {
+					t.Fatal("exact numeric ledger rejected", err)
+				}
+			}
+			wrongs := []any{nil, "0", false, bson.D{}, bson.A{}, wanted + 1, float64(wanted) + 0.5}
+			for _, v := range wrongs {
+				doc := append(bson.D(nil), document...)
+				doc[i].Value = v
+				raw := ownedRaw(t, doc)
+				if err := validateLuaLedger(raw, expected); err == nil {
+					t.Fatal("missing/null/wrong numeric or type accepted", field.Key)
+				}
+			}
+			doc := append(bson.D(nil), document[:i]...)
+			doc = append(doc, document[i+1:]...)
+			raw := ownedRaw(t, doc)
+			if err := validateLuaLedger(raw, expected); err == nil {
+				t.Fatal("missing numeric ledger field accepted", field.Key)
+			}
+			doc = append(bson.D(nil), document...)
+			doc = append(doc, field)
+			raw = ownedRaw(t, doc)
+			if err := validateLuaLedger(raw, expected); err == nil {
+				t.Fatal("duplicate ledger field accepted", field.Key)
+			}
+		})
+	}
+	valid := ownedRaw(t, document)
+	truncated := append(bson.Raw(nil), valid[:len(valid)-1]...)
+	trailing := append(append(bson.Raw(nil), valid...), 0)
+	badLength := append(bson.Raw(nil), valid...)
+	binary.LittleEndian.PutUint32(badLength, 4)
+	for _, raw := range []bson.Raw{nil, {}, truncated, trailing, badLength} {
+		if err := validateLuaLedger(raw, expected); err == nil {
+			t.Fatal("malformed raw ledger accepted")
+		}
 	}
 }

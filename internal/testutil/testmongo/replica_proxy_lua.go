@@ -31,6 +31,7 @@ const ReplicaLuaSource = `return function(current, incoming)
 end`
 
 type LuaOperation struct{ Namespace, ID string }
+type LuaLedger struct{ N, External, Candidate int64 }
 type LuaAttemptSnapshot struct {
 	Transaction                                                            int64
 	FindRequests, FindWrites, FindReplies, FindForwarded                   int
@@ -45,11 +46,11 @@ type LuaAttemptSnapshot struct {
 	FindDigest, WriteDigest, AbortDigest                                   [32]byte
 }
 type LuaSnapshot struct {
-	Attempts, Events int
-	SessionDigest    [32]byte
-	Attempt          [replicaLuaAttempts]LuaAttemptSnapshot
-	Expired          bool
-	Error            string
+	Attempts, Events   int
+	SessionDigest      [32]byte
+	Attempt            [replicaLuaAttempts]LuaAttemptSnapshot
+	Expired, Completed bool
+	Error              string
 }
 type luaGate struct {
 	held, release chan struct{}
@@ -204,8 +205,15 @@ func (r *luaRegistry) begin(opts luaBeginOptions) (*luaMatch, error) {
 		coll, _ := doc.Lookup("find").StringValueOK()
 		identity.Namespace = db + "." + coll
 		filter, ok := doc.Lookup("filter").DocumentOK()
+		selectorErr := errReplicaProxyWire
 		if ok {
-			ids, _, _ = readFindIDs(filter)
+			ids, _, selectorErr = readFindIDs(filter)
+		}
+		for _, w := range r.watches {
+			if identity.Namespace == w.operation.Namespace && selectorErr != nil {
+				r.failure = "unsupported Lua watched-namespace selector"
+				return nil, errReplicaProxyWire
+			}
 		}
 	}
 	if name == "bulkWrite" {
@@ -231,6 +239,11 @@ func (r *luaRegistry) begin(opts luaBeginOptions) (*luaMatch, error) {
 				}
 			}
 		}
+		control := name == "commitTransaction" || name == "abortTransaction"
+		if control && present && sessionErr == nil && w.snapshot.Attempts > 0 && session == w.snapshot.SessionDigest && !w.snapshot.Completed && bound < 0 {
+			r.failure = "active Lua control used unexpected transaction"
+			return nil, errReplicaProxyWire
+		}
 		if !owned && bound < 0 {
 			continue
 		}
@@ -241,7 +254,7 @@ func (r *luaRegistry) begin(opts luaBeginOptions) (*luaMatch, error) {
 		matched = w
 		attempt = bound
 		if name == "find" {
-			if !owned || len(ids) != 1 || !w.armed || opts.member != w.member || !present || sessionErr != nil || !txnOK || w.snapshot.Attempts >= replicaLuaAttempts || bound >= 0 || w.snapshot.Attempts > 0 && session != w.snapshot.SessionDigest {
+			if w.snapshot.Completed || !owned || len(ids) != 1 || !w.armed || opts.member != w.member || !present || sessionErr != nil || !txnOK || w.snapshot.Attempts >= replicaLuaAttempts || bound >= 0 || w.snapshot.Attempts > 0 && session != w.snapshot.SessionDigest {
 				r.failure = "Lua snapshot identity or retry mismatch"
 				return nil, errReplicaProxyWire
 			}
@@ -583,7 +596,31 @@ func (w *LuaWatch) ValidateAbortHeld() error {
 	return nil
 }
 func (w *LuaWatch) ValidateFinished(confirmed bool) error {
-	s := w.Snapshot()
+	w.registry.mu.Lock()
+	defer w.registry.mu.Unlock()
+	return w.validateFinishedLocked(confirmed)
+}
+
+// Complete is called only after the integration caller has observed the actual
+// terminal receipt and execution/publisher join. Wire success or release intent
+// alone never completes observation. Old identities/counts remain watched.
+func (w *LuaWatch) Complete(confirmed bool) error {
+	w.registry.mu.Lock()
+	defer w.registry.mu.Unlock()
+	if w.snapshot.Completed {
+		return errReplicaProxyWire
+	}
+	if err := w.validateFinishedLocked(confirmed); err != nil {
+		return err
+	}
+	w.snapshot.Completed = true
+	return nil
+}
+func (w *LuaWatch) validateFinishedLocked(confirmed bool) error {
+	s := w.snapshot
+	if w.registry.failure != "" {
+		s.Error = w.registry.failure
+	}
 	a := s.Attempt[0]
 	if s.Error != "" || s.Expired || a.FindRequests != 1 || a.FindWrites != 1 || a.FindReplies != 1 || a.FindForwarded != 1 || a.WriteRequests != 1 || a.WriteItems != 1 || a.WriteReplies != 1 || a.WriteForwarded != 1 || !a.Conflict || a.ConflictCode != 112 || a.AbortRequests != 1 || a.AbortWrites != 1 || a.AbortReplies != 1 || a.CommitRequests != 0 {
 		return errReplicaProxyWire
@@ -623,4 +660,16 @@ func luaNumber(v bson.RawValue) int64 {
 		return int64(v.Double())
 	}
 	return -1
+}
+
+// All three ledger fields must actually exist as exact numeric BSON values.
+// Struct decoding would silently turn missing/null candidate into zero.
+func validateLuaLedger(raw bson.Raw, expected LuaLedger) error {
+	if len(raw) < 5 || int(binary.LittleEndian.Uint32(raw[:4])) != len(raw) || raw.Validate() != nil || uniqueOperationDocument(raw) != nil {
+		return errReplicaProxyWire
+	}
+	if !operationNumber(raw.Lookup("n"), expected.N) || !operationNumber(raw.Lookup("external"), expected.External) || !operationNumber(raw.Lookup("candidate"), expected.Candidate) {
+		return errReplicaProxyWire
+	}
+	return nil
 }

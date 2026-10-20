@@ -119,8 +119,16 @@ func replicaCLILua(t *testing.T, lifetime *replyLossLifetime) []testmongo.LuaCas
 				t.Fatal("CLI lost abort no-rebuild", result)
 			}
 		}
+		// The returned receipt, actual SDK call join and product idle-credit
+		// observation, not wire success, end this watch's active ownership.
+		if err := testmongo.WaitLuaPhase(ctx, joined); err != nil {
+			t.Fatal("CLI Lua actual SDK call join", err)
+		}
 		cancel()
 		replicaCLIIdle(t, lifetime.service, time.Now().Add(3*time.Second))
+		if err := watch.Complete(confirmed); err != nil {
+			t.Fatal("CLI Lua terminal receipt/join completion", watch.Snapshot())
+		}
 		c := testmongo.LuaCase{Watch: watch, Confirmed: confirmed}
 		cases = append(cases, c)
 		lifetime.proxy.CheckLuaCases(t, cases, "CLI_actual_receipt")

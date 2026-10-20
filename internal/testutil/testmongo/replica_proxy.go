@@ -249,7 +249,6 @@ type LuaCase struct {
 	Confirmed  bool
 	RecoveryID string
 }
-type LuaLedger struct{ N, External, Candidate int64 }
 
 func (p *ReplicaProxy) SeedLua(t *testing.T, ctx context.Context, w *LuaWatch) {
 	t.Helper()
@@ -277,10 +276,12 @@ func (p *ReplicaProxy) CheckLuaLedger(t *testing.T, ctx context.Context, w *LuaW
 	t.Helper()
 	opts := options.Collection().SetReadConcern(readconcern.Majority()).SetReadPreference(readpref.Primary())
 	filter := bson.D{{Key: "_id", Value: w.operation.ID}}
-	var actual LuaLedger
-	err := p.fixture.Admin.Database(p.fixture.DB).Collection("records", opts).FindOne(ctx, filter).Decode(&actual)
-	if err != nil || actual != expected {
-		t.Fatal("independent primary majority Lua ledger", actual, expected, err)
+	raw, err := p.fixture.Admin.Database(p.fixture.DB).Collection("records", opts).FindOne(ctx, filter).Raw()
+	if err != nil {
+		t.Fatal("independent primary majority Lua ledger read", err)
+	}
+	if err := validateLuaLedger(raw, expected); err != nil {
+		t.Fatal("independent primary majority Lua ledger invalid", expected, err)
 	}
 }
 func (p *ReplicaProxy) CheckLuaCases(t *testing.T, cases []LuaCase, phase string) {
