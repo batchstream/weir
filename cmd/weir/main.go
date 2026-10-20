@@ -166,12 +166,16 @@ func run(args []string, output io.Writer) error {
 	return root.ExecuteContext(context.Background())
 }
 
-func serve(ctx context.Context, cfg app.Config, output io.Writer) (resultErr error) {
+func serve(ctx context.Context, cfg app.Config, output io.Writer) error {
 	// The CLI owns signals from before assembly until all owned resources close.
 	signals, cancelSignal := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
 	defer cancelSignal()
 
-	startup, stop := context.WithTimeout(signals, time.Duration(cfg.Basic.Lifecycle.StartupTimeout))
+	return serveContext(signals, cfg, output)
+}
+
+func serveContext(ctx context.Context, cfg app.Config, output io.Writer) (resultErr error) {
+	startup, stop := context.WithTimeout(ctx, time.Duration(cfg.Basic.Lifecycle.StartupTimeout))
 	defer stop()
 
 	node, err := app.Open(startup, cfg)
@@ -218,7 +222,7 @@ func serve(ctx context.Context, cfg app.Config, output io.Writer) (resultErr err
 	}
 
 	select {
-	case <-signals.Done():
+	case <-ctx.Done():
 		return nil
 	case err := <-node.Errors:
 		return err
