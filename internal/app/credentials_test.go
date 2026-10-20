@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/batchstream/weir/internal/backend/mongodb"
 	"go.yaml.in/yaml/v3"
 )
 
@@ -510,5 +511,77 @@ func TestCredentialPathsUseRoutingSymlinkDirectory(t *testing.T) {
 	}
 	if loaded.Routing.Stores[0].Local.credentials().Username != "public-user" {
 		t.Fatal("wrong credential file selected through routing symlink")
+	}
+}
+
+func TestLoadMongoReplicaCredentialFiles(t *testing.T) {
+	for _, endpoint := range []string{
+		"[::1]:27017/?directConnection=true",
+		"mongo-a.invalid:27017/?replicaSet=rs",
+		"[::1]:27017,[::2]:27018/?replicaSet=rs",
+		"mongo-a.invalid:27017,[::1]:27018/?replicaSet=rs",
+	} {
+		cfg := credentialTestConfig(t, "mongodb")
+		local := cfg.Routing.Stores[0].Local
+		local.Backend.MongoDB.URI = "mongodb://" + endpoint + "&authSource=admin&authMechanism=SCRAM-SHA-256&tls=true"
+		fields := local.credentials()
+		username, password := fields.Username, fields.Password
+		fields.Username, fields.Password = "", ""
+		fields.UsernameFile, fields.PasswordFile = "new-user.txt", "new-password.txt"
+		basic, routing := writeCredentialTestDocuments(t, cfg)
+		for name, value := range map[string]string{fields.UsernameFile: username, fields.PasswordFile: password} {
+			filename := filepath.Join(filepath.Dir(routing), name)
+			if err := os.WriteFile(filename, []byte(value), 0600); err != nil {
+				t.Fatal("cannot write new fixture credential material")
+			}
+		}
+		loaded, err := Load(basic, routing)
+		if err != nil {
+			t.Fatal("Load rejected a supported URI before resolving new credential files", err)
+		}
+		resolved := loaded.Routing.Stores[0].Local.credentials()
+		if resolved.Username != username || resolved.Password != password || resolved.UsernameFile != "" || resolved.PasswordFile != "" {
+			t.Fatal("Load changed resolved credential values or retained source paths")
+		}
+		if err := loaded.Validate(); err != nil {
+			t.Fatal("resolved replica profile failed full validation", err)
+		}
+	}
+}
+
+func TestLoadRejectsLaterMongoURIBeforeEarlierCredentialIO(t *testing.T) {
+	for _, uri := range []string{
+		"mongodb://user:private-sentinel@[::1]:27017/?replicaSet=rs",
+		"mongodb://user%40private-sentinel:27017/?replicaSet=rs",
+		"mongodb://[::1]:27017,mongo.invalid:27018/?replicaSet=rs&unknown=private-sentinel",
+		"mongodb://[::1]:27017/?replicaSet=rs&ReplicaSet=rs",
+		"mongodb://[::1]:27017/?replicaSet=rs&%72eplicaSet=rs",
+		"mongodb://[::1]:27017/?replicaSet=rs&tls=",
+		"mongodb://[::1]:27017/?replicaSet=rs&authSource=",
+		"mongodb://[::1]:27017/?replicaSet=rs&authMechanism=",
+		"mongodb://[::1:27017/?replicaSet=rs",
+		"mongodb://[fe80::1%25lo0]:27017/?replicaSet=rs",
+		"mongodb://[::1]:27017/?replicaSet=rs#private-sentinel",
+		"mongodb://[::1]:27017/path?replicaSet=rs",
+		"mongodb://[::1]:27017/?replicaSet=rs&private-sentinel=" + strings.Repeat("x", 4096),
+	} {
+		cfg := credentialTestConfig(t, "search")
+		first := cfg.Routing.Stores[0].Local.credentials()
+		first.Username, first.UsernameFile = "", "not-created-private-sentinel.txt"
+		later := credentialTestConfig(t, "mongodb")
+		later.Routing.Stores[0].Local.Backend.MongoDB.URI = uri
+		cfg.Routing.Stores = append(cfg.Routing.Stores, later.Routing.Stores[0])
+		want := mongodb.ValidateURI(uri)
+		if want == nil {
+			t.Fatal("negative URI test is not invalid")
+		}
+		basic, routing := writeCredentialTestDocuments(t, cfg)
+		_, err := Load(basic, routing)
+		if err == nil || err.Error() != want.Error() || strings.Contains(err.Error(), "sentinel") {
+			t.Fatal("later invalid URI must fail before earlier credential file IO without details", err)
+		}
+		if err := cfg.Validate(); err == nil || err.Error() != want.Error() {
+			t.Fatal("full validation must reject the same URI before unresolved file sources", err)
+		}
 	}
 }

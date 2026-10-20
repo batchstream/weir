@@ -17,12 +17,13 @@ const maxMongoURIBytes = 4096
 const maxMongoSeeds = 7
 
 type connectionProfile struct {
-	hosts         []string
-	replicaSet    string
-	direct        bool
-	tls           bool
-	authSource    string
-	authMechanism string
+	hosts          []string
+	replicaSet     string
+	direct         bool
+	tls            bool
+	authSource     string
+	authMechanism  string
+	authentication bool
 }
 
 // ValidateConfig is pure: credentials and trust files remain separate from the URI.
@@ -43,7 +44,33 @@ func parseConfig(cfg Config) (connectionProfile, error) {
 		!validCredential(cfg.Username) || !validCredential(cfg.Password) {
 		return profile, errors.New("invalid MongoDB credential pair")
 	}
-	raw := cfg.URI
+	profile, err := parseURI(cfg.URI)
+	if err != nil {
+		return profile, err
+	}
+	if cfg.Username == "" {
+		if profile.authentication || cfg.CAFile != "" {
+			return profile, errors.New("MongoDB authentication and TLS options require SCRAM credentials")
+		}
+	} else if !profile.authentication {
+		return profile, errors.New("authenticated MongoDB connections require explicit SCRAM-SHA-256, authSource, and TLS")
+	}
+	if !validCredential(cfg.CAFile) || cfg.CAFile != "" && !profile.tls {
+		return profile, errors.New("MongoDB CA file requires TLS and a valid path")
+	}
+	return profile, nil
+}
+
+// ValidateURI checks only the pure URI profile, including its authentication
+// options, before credential-file resolution. It does not validate a Store,
+// connection settings, actual credentials or a CA path; use ValidateConfig too.
+func ValidateURI(raw string) error {
+	_, err := parseURI(raw)
+	return err
+}
+
+func parseURI(raw string) (connectionProfile, error) {
+	var profile connectionProfile
 	if len(raw) == 0 || len(raw) > maxMongoURIBytes || strings.TrimSpace(raw) != raw || !strings.HasPrefix(raw, "mongodb://") {
 		return profile, errors.New("invalid MongoDB URI or scheme")
 	}
@@ -57,8 +84,11 @@ func parseConfig(cfg Config) (connectionProfile, error) {
 	if hasPath && path != "" || hasQuery && !hasPath {
 		return profile, errors.New("MongoDB URI path is unsupported; the resource supplies the database")
 	}
-	if strings.ContainsAny(authority, "@%\\") {
-		return profile, errors.New("MongoDB URI requires literal hosts without userinfo or escapes")
+	if strings.Contains(authority, "@") {
+		return profile, errors.New("MongoDB URI must not contain credentials")
+	}
+	if strings.ContainsAny(authority, "%\\") {
+		return profile, errors.New("MongoDB URI requires literal hosts without escapes")
 	}
 	seeds := strings.Split(authority, ",")
 	if len(seeds) > maxMongoSeeds {
@@ -117,25 +147,20 @@ func parseConfig(cfg Config) (connectionProfile, error) {
 	if mode, ok := options["servermonitoringmode"]; ok && mode != "poll" {
 		return profile, errors.New("MongoDB URI cannot override bounded server monitoring")
 	}
-	if cfg.Username == "" {
-		_, hasAuthSource := options["authsource"]
-		_, hasAuthMechanism := options["authmechanism"]
-		_, hasTLS := options["tls"]
-		if hasAuthSource || hasAuthMechanism || hasTLS || cfg.CAFile != "" {
-			return profile, errors.New("MongoDB authentication and TLS options require SCRAM credentials")
+	_, hasAuthSource := options["authsource"]
+	_, hasAuthMechanism := options["authmechanism"]
+	_, hasTLS := options["tls"]
+	if hasAuthSource || hasAuthMechanism || hasTLS {
+		// Presence matters: an empty option is not equivalent to omission. There
+		// is no valid authenticated profile without the complete SCRAM/TLS set.
+		if options["authmechanism"] != "SCRAM-SHA-256" || !validDatabaseName(options["authsource"]) || options["tls"] != "true" {
+			return profile, errors.New("MongoDB URI authentication requires explicit SCRAM-SHA-256, authSource, and TLS")
 		}
-	} else if options["authmechanism"] != "SCRAM-SHA-256" || !validDatabaseName(options["authsource"]) || options["tls"] != "true" {
-		return profile, errors.New("authenticated MongoDB connections require explicit SCRAM-SHA-256, authSource, and TLS")
+		profile.authentication = true
+		profile.tls = true
+		profile.authSource = options["authsource"]
+		profile.authMechanism = options["authmechanism"]
 	}
-	if value, ok := options["tls"]; ok && value != "true" {
-		return profile, errors.New("MongoDB TLS option must be true")
-	}
-	if !validCredential(cfg.CAFile) || cfg.CAFile != "" && options["tls"] != "true" {
-		return profile, errors.New("MongoDB CA file requires TLS and a valid path")
-	}
-	profile.tls = options["tls"] == "true"
-	profile.authSource = options["authsource"]
-	profile.authMechanism = options["authmechanism"]
 	return profile, nil
 }
 

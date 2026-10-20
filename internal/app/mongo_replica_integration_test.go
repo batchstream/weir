@@ -4,10 +4,16 @@ package app
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
+	"io"
 	"os"
+	"os/exec"
 	"regexp"
+	"runtime"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -25,6 +31,19 @@ func TestMongoReplicaCLIRecovery(t *testing.T) {
 		t.Skip("explicit owned replica integration opt-in")
 	}
 	binary := buildEndpointProcess(t)
+	testBinary, err := os.Executable()
+	if err != nil {
+		t.Fatal("cannot identify native test driver")
+	}
+	cliDigest := replicaExecutableDigest(t, binary)
+	driverDigest := replicaExecutableDigest(t, testBinary)
+	versionContext, stopVersion := context.WithTimeout(t.Context(), 3*time.Second)
+	version, err := exec.CommandContext(versionContext, binary, "version").Output()
+	stopVersion()
+	if err != nil {
+		t.Fatal("cannot identify native CLI version", err)
+	}
+	t.Logf("native_driver=%s driver_SHA256=%s CLI_binary=%s CLI_SHA256=%s Go=%s target=%s/%s CLI_version=%s", testBinary, driverDigest, binary, cliDigest, runtime.Version(), runtime.GOOS, runtime.GOARCH, strings.TrimSpace(string(version)))
 	for _, secure := range []bool{false, true} {
 		name := "plain"
 		if secure {
@@ -63,7 +82,8 @@ func TestMongoReplicaCLIRecovery(t *testing.T) {
 			}
 			t.Cleanup(func() { _ = client.Close() })
 			initial, cancel := context.WithTimeout(t.Context(), 3*time.Second)
-			replicaCLIWork(t, initial, client, fixture, "initial")
+			work := replicaCLIWorkOptions{Client: client, Fixture: fixture, ID: "initial"}
+			replicaCLIWork(t, initial, work)
 			cancel()
 			// Seed an immutable health record independently. Read-only recovery probes
 			// may repeat; a business mutation from a failed attempt never does.
@@ -109,7 +129,8 @@ func TestMongoReplicaCLIRecovery(t *testing.T) {
 					}
 				}
 				firstSuccess := time.Now()
-				replicaCLIWork(t, recovered, client, fixture, fault)
+				work.ID = fault
+				replicaCLIWork(t, recovered, work)
 				cancel()
 				if time.Since(usable) > 5*time.Second || service.command.Process.Pid != pid {
 					t.Fatal("recovery gate or process identity changed")
@@ -122,7 +143,7 @@ func TestMongoReplicaCLIRecovery(t *testing.T) {
 			unavailable, cancel := context.WithCancel(t.Context())
 			done := make(chan error, 1)
 			go func() { done <- replicaCLIHealth(unavailable, client, fixture.DB) }()
-			time.Sleep(50 * time.Millisecond)
+			replicaCLIActive(t, service, done)
 			cancelled := time.Now()
 			cancel()
 			select {
@@ -141,14 +162,28 @@ func TestMongoReplicaCLIRecovery(t *testing.T) {
 			defer cancel()
 			done = make(chan error, 1)
 			go func() { done <- replicaCLIHealth(pending, client, fixture.DB) }()
-			time.Sleep(50 * time.Millisecond)
+			replicaCLIActive(t, service, done)
+			select {
+			case err := <-done:
+				t.Fatal("pending caller returned before SIGTERM", err)
+			default:
+			}
+			if pending.Err() != nil {
+				t.Fatal("pending caller not live before SIGTERM", pending.Err())
+			}
+			deadline, _ := pending.Deadline()
+			t.Logf("TLS=%t same_PID=%d active_execution_barrier=true pending_caller_uncancelled=true remaining_deadline=%s", secure, pid, time.Until(deadline))
 			terminal := service.stop(t)
 			t.Logf("TLS=%t same_PID=%d SIGTERM_elapsed=%s exit_valid=%t exit_code=%d timed_out=%t wait_error=%v", secure, pid, terminal.Elapsed, terminal.ExitCodeValid, terminal.ExitCode, terminal.TimedOut, terminal.WaitErr)
+			if pending.Err() != nil {
+				t.Error("pending context expired or cancelled during CLI shutdown", pending.Err())
+			}
 			if !terminal.successful() {
 				return
 			}
 			select {
-			case <-done:
+			case err := <-done:
+				t.Logf("TLS=%t pending_completion_after_CLI_observed=true caller_error=%t caller_context_uncancelled=%t", secure, err != nil, pending.Err() == nil)
 			case <-time.After(time.Second):
 				t.Fatal("pending caller survived shutdown")
 			}
@@ -159,6 +194,21 @@ func TestMongoReplicaCLIRecovery(t *testing.T) {
 			t.Logf("TLS=%t same_PID=%d focused lifecycle gates passed; no cgroup or formal qualification claimed", secure, pid)
 		})
 	}
+}
+
+func replicaExecutableDigest(t *testing.T, filename string) string {
+	t.Helper()
+	file, err := os.Open(filename)
+	if err != nil {
+		t.Fatal("cannot open owned executable")
+	}
+	hash := sha256.New()
+	_, copyErr := io.Copy(hash, file)
+	closeErr := file.Close()
+	if copyErr != nil || closeErr != nil {
+		t.Fatal("cannot hash owned executable")
+	}
+	return hex.EncodeToString(hash.Sum(nil))
 }
 
 func replicaCLIHealth(ctx context.Context, client *weirclient.Client, database string) error {
@@ -180,8 +230,15 @@ func replicaCLIHealth(ctx context.Context, client *weirclient.Client, database s
 	return nil
 }
 
-func replicaCLIWork(t *testing.T, ctx context.Context, client *weirclient.Client, fixture *testmongo.Replica, id string) {
+type replicaCLIWorkOptions struct {
+	Client  *weirclient.Client
+	Fixture *testmongo.Replica
+	ID      string
+}
+
+func replicaCLIWork(t *testing.T, ctx context.Context, opts replicaCLIWorkOptions) {
 	t.Helper()
+	client, fixture, id := opts.Client, opts.Fixture, opts.ID
 	resource := fixture.DB + "/records/s:" + id
 	value := bson.D{{Key: "_id", Value: id}, {Key: "n", Value: int32(0)}}
 	raw, err := bson.Marshal(value)
@@ -253,6 +310,41 @@ func replicaCLIWork(t *testing.T, ctx context.Context, client *weirclient.Client
 	err = fixture.Admin.Database(fixture.DB).Collection("records").FindOne(ctx, filter).Decode(&persisted)
 	if err != nil || persisted.N != 2 {
 		t.Fatal("independent persisted typed/Native/Lua oracle", persisted.N, err)
+	}
+}
+
+// Require an actual backend execution and an uncompleted caller before testing
+// cancellation or SIGTERM. A slow scrape cannot move the absolute 3s boundary.
+func replicaCLIActive(t *testing.T, service *process, done <-chan error) {
+	t.Helper()
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		select {
+		case err := <-done:
+			t.Fatal("caller returned before active execution barrier", err)
+		default:
+		}
+		metrics := testmetrics.Scrape(t, service.diagnostic)
+		if time.Now().After(deadline) {
+			t.Fatal("active execution barrier exceeded 3s")
+		}
+		if metrics["weir_store_active_executions"] == nil {
+			t.Fatal("missing active execution gauge")
+		}
+		active := testmetrics.Sum(metrics, "weir_store_active_executions")
+		if active >= 1 {
+			select {
+			case err := <-done:
+				t.Fatal("caller returned at active execution barrier", err)
+			default:
+			}
+			if time.Now().After(deadline) {
+				t.Fatal("active execution barrier exceeded 3s")
+			}
+			t.Logf("observed_active_executions=%g", active)
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }
 

@@ -65,3 +65,43 @@ func TestRoutingConfigurationFile(t *testing.T) {
 		}
 	}
 }
+
+func TestRoutingMongoReplicaProfiles(t *testing.T) {
+	for _, uri := range []string{
+		"mongodb://mongo-a.invalid:27017/?replicaSet=orders",
+		"mongodb://mongo-a.invalid:27017,mongo-b.invalid:27018/?replicaSet=orders",
+		"mongodb://[::1]:27017/?replicaSet=orders",
+		"mongodb://[::1]:27017,[::2]:27018/?replicaSet=orders",
+		"mongodb://mongo-a.invalid:27017,[::1]:27018/?replicaSet=orders",
+		"mongodb://[::1]:27017,mongo-a.invalid:27018,[::2]:27019/?replicaSet=orders",
+		"mongodb://[::1]:27017/?directConnection=true",
+		"mongodb://mongo-a.invalid:27017/",
+		"mongodb://[::1]:27017,mongo-b.invalid:27018/?replicaSet=orders&directConnection=false",
+	} {
+		input := "stores:\n  - name: mongo\n    backend:\n      mongodb:\n        uri: " + uri + "\n"
+		cfg, err := DecodeRouting(strings.NewReader(input))
+		if err != nil || len(cfg.Stores) != 1 || cfg.Stores[0].Backend.MongoDB.URI != uri {
+			t.Fatal("documented discovery profile must decode without DNS or backend IO", err)
+		}
+		full := emptyConfig(t)
+		full.Routing = cfg
+		if err := full.Validate(); err != nil {
+			t.Fatal("full connection profile validation must remain pure", err)
+		}
+		basic, routing := writeCredentialTestDocuments(t, full)
+		loaded, err := Load(basic, routing)
+		if err != nil || loaded.Routing.Stores[0].Backend.MongoDB.URI != uri {
+			t.Fatal("Load must use the same URI grammar without backend IO", err)
+		}
+	}
+	for _, uri := range []string{
+		"mongodb://mongo-a.invalid:27017,mongo-b.invalid:27018/",
+		"mongodb://mongo-a.invalid:27017/?replicaSet=orders&directConnection=true",
+		"mongodb://mongo-a.invalid:27017/?replicaSet=orders&readPreference=secondary",
+	} {
+		input := "stores:\n  - name: mongo\n    backend:\n      mongodb:\n        uri: " + uri + "\n"
+		if _, err := DecodeRouting(strings.NewReader(input)); err == nil {
+			t.Fatal("ambiguous or unsupported discovery profile accepted")
+		}
+	}
+}

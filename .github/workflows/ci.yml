@@ -44,6 +44,10 @@ jobs:
         run: CGO_ENABLED=0 timeout 3m go test -tags=integration -count=1 -timeout=120s -run '^TestExecutionProfileContract' ./internal/testutil/testexecution ./internal/app ./internal/testutil/testsearch
       - name: Native CGO1 race tests
         run: CGO_ENABLED=1 timeout 12m go test -race -count=1 -timeout=180s ./...
+      - name: Offline normal and race process terminal measurements (self-subprocesses only)
+        run: |
+          CGO_ENABLED=1 timeout 2m go test -p=1 -parallel=1 -tags=integration -count=1 -timeout=90s -run '^TestProcessStop(TerminalMeasurements|OnceConcurrent)$' -v ./internal/app
+          CGO_ENABLED=1 timeout 2m go test -race -p=1 -parallel=1 -tags=integration -count=1 -timeout=90s -run '^TestProcessStop(TerminalMeasurements|OnceConcurrent)$' -v ./internal/app
       - name: Native receive ownership patch race tests
         working-directory: third_party/grpc
         run: CGO_ENABLED=1 timeout 3m go test -race -count=1 -timeout=120s -run '^TestReceive' ./ ./mem ./internal/transport
@@ -247,7 +251,11 @@ jobs:
         run: |
           test "$(uname -s)/$(uname -m)" = Linux/x86_64
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
-          unset WEIR_INTEGRATION WEIR_MONGO_PROFILE WEIR_MONGO_SECURE_INTEGRATION
+          binary="$WEIR_MONGO_REPLICA_BINARY"
+          while IFS= read -r name; do
+            case "$name" in WEIR_*|DOCKER_*) unset "$name";; esac
+          done < <(compgen -e)
+          export WEIR_MONGO_REPLICA_BINARY="$binary" WEIR_MONGO_REPLICA_INTEGRATION=1
           mkdir -p .testdata/native-mongo-replica
           go test -race -p=1 -parallel=1 -tags=integration -count=1 -timeout=10m \
             -run '^TestMongoReplica(DiscoveryOwnership|CLIRecovery)$' -v \

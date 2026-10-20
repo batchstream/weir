@@ -3,12 +3,13 @@ package app
 import (
 	"errors"
 	"io"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
 	"unicode"
 	"unicode/utf8"
+
+	"github.com/batchstream/weir/internal/backend/mongodb"
 )
 
 func (l *Local) credentials() *Credentials {
@@ -18,9 +19,8 @@ func (l *Local) credentials() *Credentials {
 func (cfg RoutingConfig) validateCredentialSources() error {
 	for _, service := range cfg.Stores {
 		if m := service.Local.Backend.MongoDB; m != nil {
-			parsed, err := url.Parse(m.URI)
-			if err != nil || parsed.User != nil {
-				return errors.New("MongoDB URI must not contain credentials")
+			if err := mongodb.ValidateURI(m.URI); err != nil {
+				return err
 			}
 		}
 		if credentials := service.Local.credentials(); credentials != nil {

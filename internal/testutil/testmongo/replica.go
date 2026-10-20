@@ -80,15 +80,19 @@ func OpenReplica(t *testing.T, opts ReplicaOptions) *Replica {
 	if err := os.WriteFile(filepath.Join(root, ".weir-owner"), []byte(f.SetName), 0600); err != nil {
 		t.Fatal(err)
 	}
+	reservations := make([]net.Listener, 0, len(f.members))
+	defer func() {
+		for _, listener := range reservations {
+			_ = listener.Close()
+		}
+	}()
 	for i := range f.members {
 		listener, err := net.Listen("tcp4", "127.0.0.1:0")
 		if err != nil {
 			t.Fatal(err)
 		}
+		reservations = append(reservations, listener)
 		port := listener.Addr().(*net.TCPAddr).Port
-		if err := listener.Close(); err != nil {
-			t.Fatal(err)
-		}
 		host := "127.0.0.1"
 		if f.secure && i == 0 {
 			host = "localhost"
@@ -101,6 +105,10 @@ func OpenReplica(t *testing.T, opts ReplicaOptions) *Replica {
 	startup, cancel := context.WithTimeout(t.Context(), 75*time.Second)
 	defer cancel()
 	for i := range f.members {
+		// Keep every other port reserved until its own process is started.
+		if err := reservations[i].Close(); err != nil {
+			t.Fatal(err)
+		}
 		f.start(t, binary, i)
 	}
 	first := f.connect(t, 0, false)
@@ -183,10 +191,12 @@ func replicaBinary(t *testing.T) string {
 	}
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
-	output, err := exec.CommandContext(ctx, name, "--version").Output()
+	version := exec.CommandContext(ctx, name, "--version")
+	output, err := version.Output()
 	if err != nil || !strings.HasPrefix(string(output), "db version v8.0.32\n") {
 		t.Fatal("native MongoDB 8.0.32 preflight failed")
 	}
+	t.Logf("native Mongo preflight binary=%s SHA256=%s PID=%d wait_complete=true exit_code=%d", name, expected, version.Process.Pid, version.ProcessState.ExitCode())
 	return name
 }
 
@@ -241,6 +251,7 @@ func (f *Replica) start(t *testing.T, binary string, i int) {
 	}
 	member.done = make(chan error, 1)
 	go func() { member.done <- member.process.Wait() }()
+	t.Logf("owned replica member=%d PID=%d address=%s root=%s", i, member.process.Process.Pid, member.address, f.root)
 }
 
 func (f *Replica) directOptions(i int, authenticated bool) *options.ClientOptions {
@@ -404,6 +415,9 @@ func (f *Replica) Close(t *testing.T) {
 						t.Error("owned member did not reap after kill")
 					}
 				}
+			}
+			if member.stopped {
+				t.Logf("owned replica member=%d PID=%d wait_complete=true terminal_state=%v", i, member.process.Process.Pid, member.process.ProcessState)
 			}
 			if member.log != nil {
 				_ = member.log.Close()

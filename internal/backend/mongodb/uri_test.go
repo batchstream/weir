@@ -2,7 +2,6 @@ package mongodb
 
 import (
 	"context"
-	"net/url"
 	"reflect"
 	"strings"
 	"testing"
@@ -151,17 +150,10 @@ func TestMongoDriverAuthenticationOptions(t *testing.T) {
 		opts.Auth.AuthMechanism != "SCRAM-SHA-256" || opts.Auth.AuthSource != "admin" || !opts.Auth.PasswordSet {
 		t.Fatal("driver authentication must preserve separate credential values and profile")
 	}
-	parsed, err := url.Parse(opts.GetURI())
-	if err != nil || parsed.User != nil ||
-		strings.Contains(opts.GetURI(), cfg.Username) || strings.Contains(opts.GetURI(), cfg.Password) {
-		t.Fatal("driver URI must not contain credentials")
+	if opts.GetURI() != "" {
+		t.Fatal("explicit driver options must not retain or reparse the raw URI")
 	}
-	for key := range parsed.Query() {
-		if strings.EqualFold(key, "authSource") || strings.EqualFold(key, "authMechanism") {
-			t.Fatal("driver URI must not request authentication before SetAuth")
-		}
-	}
-	if opts.TLSConfig != nil || dialer.tlsConfig == nil || dialer.tlsConfig.InsecureSkipVerify {
+	if opts.TLSConfig != nil || dialer.tlsConfig == nil || dialer.tlsConfig.InsecureSkipVerify || dialer.tlsConfig.ServerName != "" {
 		t.Fatal("bounded dialer must retain verified TLS ownership")
 	}
 }
@@ -217,9 +209,8 @@ func TestMongoReplicaProfiles(t *testing.T) {
 			t.Fatal("driver rejected profile", err)
 		}
 	}
-	cfg := Config{Store: "mongo", URI: "mongodb://" + strings.Repeat("a:27017,", 6) + "b:27017/?replicaSet=rs"}
 	// Distinct seed names, not a seven-member or socket-count promise.
-	cfg.URI = "mongodb://a:1,b:2,c:3,d:4,e:5,f:6,g:7/?replicaSet=" + strings.Repeat("r", 64)
+	cfg := Config{Store: "mongo", URI: "mongodb://a:1,b:2,c:3,d:4,e:5,f:6,g:7/?replicaSet=" + strings.Repeat("r", 64)}
 	if err := ValidateConfig(cfg); err != nil {
 		t.Fatal(err)
 	}
@@ -257,6 +248,31 @@ func TestMongoReplicaProfileRejectsAmbiguity(t *testing.T) {
 		cfg.CAFile = ""
 		if err := ValidateConfig(cfg); err == nil {
 			t.Fatal("invalid topology accepted")
+		}
+	}
+}
+
+func TestMongoURIValidationDoesNotReplaceConfigPolicy(t *testing.T) {
+	uri := "mongodb://[::1]:27017,mongo.invalid:27018/?replicaSet=rs&authSource=admin&authMechanism=SCRAM-SHA-256&tls=true"
+	if err := ValidateURI(uri); err != nil {
+		t.Fatal("URI validation must not need credentials, trust files or DNS", err)
+	}
+	cfg := Config{Store: "mongo", URI: uri}
+	if err := ValidateConfig(cfg); err == nil {
+		t.Fatal("URI-only validation cannot authorize missing actual credentials")
+	}
+	cfg.Username, cfg.Password = "new-test-user", "new-test-password"
+	cfg.CAFile = "/missing/new-test-ca.pem"
+	if err := ValidateConfig(cfg); err != nil {
+		t.Fatal("complete configuration must validate without opening the CA", err)
+	}
+	cfg.Store = "INVALID"
+	if err := ValidateConfig(cfg); err == nil {
+		t.Fatal("URI validation cannot replace Store validation")
+	}
+	for _, query := range []string{"authSource=", "authMechanism=", "tls=", "authSource=admin", "authMechanism=SCRAM-SHA-256&authSource=admin", "tls=true", "authMechanism=SCRAM-SHA-256&authSource=&tls=true"} {
+		if err := ValidateURI("mongodb://mongo.invalid:27017/?" + query); err == nil {
+			t.Fatal("present empty or incomplete authentication options accepted")
 		}
 	}
 }

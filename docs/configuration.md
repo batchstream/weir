@@ -80,11 +80,46 @@ Hosting a Store requires an application listener.
 | `queue` | Waiting input count and bytes; dispatch returns capacity |
 | `batching` | Aggregation count, bytes, write collection wait and active execution limit |
 
-MongoDB uses direct primary access, majority acknowledgement and no automatic
-read/write replay. It requires one explicit replica-set member. Completed target
-metadata checks default to 64 cached collections; zero disables retention while
-concurrent callers still share pending checks. `max_connecting` defaults to 2
-and controls connection creation, not active connection count.
+MongoDB uses primary reads, majority-acknowledged typed writes and no automatic
+read/write replay. Configure an ordinary nonsharded replica set in either mode:
+
+- **Discovery:** an explicit `replicaSet` name and one to seven IP/DNS seeds, each
+  with an explicit port. `directConnection` must be omitted or `false`. The MongoDB
+  driver discovers the members and selects the current primary. For example:
+  `mongodb://mongo-a:27017,mongo-b:27017,mongo-c:27017/?replicaSet=orders`.
+- **Direct:** exactly one explicit endpoint without `replicaSet`;
+  `directConnection` must be omitted or `true`. This intentionally isolated mode
+  still requires a replica-set member, but does not discover another primary or
+  provide failover. For example: `mongodb://127.0.0.1:27028/?directConnection=true`.
+
+The URI is limited to 4096 bytes. Set names contain 1–64 ASCII letters, digits,
+underscores or hyphens; this is Weir's accepted configuration grammar, not a
+MongoDB naming or membership limit. Seed order is retained; DNS case, IP literals
+(including mapped IPv4) and decimal ports are canonicalized before duplicate
+checks, without DNS access. IPv6 seeds use brackets, such as
+`mongodb://[::1]:27017,127.0.0.1:27018/?replicaSet=orders`.
+
+URI userinfo, database paths, fragments, SRV, mongos/sharding, load balancing,
+secondary routing, unknown options and duplicate option names (case-insensitive)
+are unsupported. A query requires the `/` separator before `?`. Accepted options
+are `replicaSet`, `directConnection`, `serverMonitoringMode=poll`, `authSource`,
+`authMechanism=SCRAM-SHA-256` and `tls=true`. Authentication requires separately
+configured username/password, explicit SCRAM-SHA-256, `authSource` and TLS;
+TLS options require credentials. Custom CAs belong in `backend.tls.ca_file`, not
+in the URI. Verification uses each actual member's hostname/IP, not the seed's
+name. All discovered addresses must be reachable and covered by their member
+certificates when TLS is enabled.
+
+Completed target metadata checks default to 64 cached collections; zero disables
+retention while concurrent callers still share pending checks. `max_connecting`
+defaults to 2 and controls connection creation **per member pool**, not active
+connection count. The seed-list bound is not a global topology or socket cap:
+discovered members have their own monitor/data connections.
+
+Primary discovery restores selection for new operations; it does not transparently
+migrate Native cursors, sessions or transactions. Caller contexts still bound
+selection and execution. Never infer that an interrupted operation was not applied
+or resubmit an uncertain mutation merely because a new primary is available.
 
 Search uses one HTTP(S) origin with an explicit port. Its idle timeout defaults
 to `30s`; `0s` disables expiry. Each adapter invocation qualifies its distinct

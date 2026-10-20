@@ -11,9 +11,9 @@ node runs one process, including Lua evaluation.
 ## Build and run
 
 Requires Go **1.27.1**. Server builds support Linux and macOS on amd64 and arm64.
-Typed operations require existing collections or indices. MongoDB requires direct
-replica-set access and the native client `bulkWrite` command; Lua transforms also
-require transactions. Native commands can provision backend resources.
+Typed operations require existing collections or indices. MongoDB requires an
+ordinary replica set and the native client `bulkWrite` command; Lua transforms
+also require transactions. Native commands can provision backend resources.
 
 ```sh
 go build -o bin/weir ./cmd/weir
@@ -56,6 +56,15 @@ stores:
 The [process reference](config/weir.reference.yaml) and
 [Store reference](config/routes.reference.yaml) describe every supported field.
 [Configuration](docs/configuration.md) explains file loading, addresses and policy.
+
+The example intentionally uses isolated MongoDB **direct mode**, without failover.
+For automatic primary discovery in an ordinary replica set, configure one to seven
+explicit seeds and its set name instead, for example
+`mongodb://mongo-a:27017,mongo-b:27017,mongo-c:27017/?replicaSet=orders`.
+Discovery restores new primary operations; it does not replay uncertain writes
+or transparently migrate Native cursors, sessions or transactions. See the
+[MongoDB connection profiles](docs/configuration.md#store-settings) for strict URI,
+authentication and per-member TLS requirements.
 
 ## Go client
 
@@ -155,6 +164,25 @@ a server-global failpoint. Use a separate Search `overload` fixture profile for
 congestion tests; stop the owned fixture before changing profiles. Process and
 memory qualification helpers retain their own explicit environment opt-ins.
 Tagged compilation does not establish backend or process coverage.
+
+Focused replica-set discovery/recovery tests instead own three new foreground
+MongoDB processes, without the fixed-address helpers above. Supply an explicit
+checksum-pinned native MongoDB 8.0.32 binary, with no inherited legacy fixture
+opt-ins or Docker environment; the test verifies its identity before starting:
+
+```sh
+WEIR_MONGO_REPLICA_INTEGRATION=1 WEIR_MONGO_REPLICA_BINARY=/absolute/path/to/mongod \
+  go test -p=1 -parallel=1 -tags=integration -count=1 -timeout=10m \
+  -run '^TestMongoReplica(DiscoveryOwnership|CLIRecovery)$' \
+  ./internal/backend/mongodb ./internal/app
+```
+
+These serialized plain/TLS cases check discovery, new-operation recovery and
+lifecycle ownership, not sustained load or the complete lost-acknowledgement
+matrix. The dedicated Linux CI job prepares its verified native binary explicitly
+with `scripts/ci-tools.py test --mongo`; tests never download or fall back to
+another backend. Generated logs remain ignored and temporary data/secrets are
+removed only after all owned children have been reaped.
 
 The [weir-tests](https://github.com/batchstream/weir-tests) repository contains
 matched direct/Weir workloads and blackbox integration. Keep generated logs,
