@@ -53,14 +53,31 @@ func (n namespace) String() string {
 // Collection structure is a deployment prerequisite and stays stable while the
 // Store is open. Actual read/write commands still enforce backend permissions.
 func (a *Adapter) qualifyTarget(ctx context.Context, target namespace) *pb.Failure {
+	ctx, release := a.bindLifetime(ctx)
+	defer release()
+	if ctx.Err() != nil {
+		return protocol.ContextFailure(ctx)
+	}
 	pending, err := a.targets.acquire(ctx, target)
 	if err != nil {
+		return protocol.ContextFailure(ctx)
+	}
+	// A failed owner can wake a shared waiter before its AfterFunc has run.
+	// Recheck the rail synchronously before that waiter may start metadata I/O.
+	if a.lifetime.Err() != nil {
+		release()
+	}
+	if ctx.Err() != nil {
+		a.targets.complete(target, pending, false)
 		return protocol.ContextFailure(ctx)
 	}
 	if pending == nil {
 		return nil
 	}
 	failure := a.inspectTarget(ctx, target)
+	if a.lifetime.Err() != nil {
+		release()
+	}
 	a.targets.complete(target, pending, failure == nil && ctx.Err() == nil)
 	if ctx.Err() != nil {
 		return protocol.ContextFailure(ctx)

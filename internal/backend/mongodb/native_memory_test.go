@@ -48,6 +48,7 @@ func TestMongoNativeNegotiatedWireReservationPrecedesAttempt(t *testing.T) {
 			// selected connection's real 48,000,000 bound must be reserved before
 			// the driver encodes or writes the opaque business command.
 			adapter := &Adapter{deployment: deployment, commandMonitor: monitor, maxMessageBytes: 1 << 20}
+			initializeTestLifetime(adapter)
 			command := bson.D{{Key: "count", Value: "records"}}
 			raw, err := bson.Marshal(command)
 			if err != nil {

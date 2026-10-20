@@ -62,7 +62,7 @@ func TestMongoNativeADSnapshotDatesAndConcurrentCreation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer adapter.Close()
+	defer adapter.Close(context.Background())
 	ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
 	defer cancel()
 	before := time.Now().Add(-time.Second).UnixMilli()
@@ -140,7 +140,7 @@ func TestMongoNativeJobUniquenessValidationAndSignaturePatch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer adapter.Close()
+	defer adapter.Close(context.Background())
 	ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
 	defer cancel()
 	properties := bson.D{{Key: "signature", Value: bson.D{{Key: "bsonType", Value: "string"}}}}
@@ -235,7 +235,7 @@ func TestMongoNativeLargeDocumentsPaginateAndReleaseCursor(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer adapter.Close()
+	defer adapter.Close(context.Background())
 	padding := strings.Repeat("x", 10<<20)
 	documents := bson.A{bson.D{{Key: "_id", Value: 1}, {Key: "pad", Value: padding}}}
 	insert := bson.D{{Key: "insert", Value: "records"}, {Key: "documents", Value: documents}}
@@ -301,7 +301,7 @@ func TestMongoLargeTypedRecordsBeyondByteWindow(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer adapter.Close()
+	defer adapter.Close(context.Background())
 	document := bson.D{{Key: "_id", Value: "a"}, {Key: "pad", Value: strings.Repeat("x", 5<<20)}}
 	options := batchOperationOptions{resource: fixture.DB + "/records/s:a", action: "put", document: document}
 	operation := batchOperation(t, options)

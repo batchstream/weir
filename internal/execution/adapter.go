@@ -56,5 +56,7 @@ type Adapter interface {
 	// Record batches contain either reads or mutations with the same BatchKey.
 	// Native commands execute individually and stream through Emit.
 	Execute(context.Context, []*Plan, Emit)
-	Close() error
+	// Close retires owned I/O and joins adapter workers within the remaining
+	// shutdown context. It must preserve genuine close failures.
+	Close(context.Context) error
 }

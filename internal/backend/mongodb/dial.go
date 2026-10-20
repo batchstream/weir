@@ -24,6 +24,7 @@ type connectionOwner struct {
 	cancel    context.CancelFunc
 	mu        sync.Mutex
 	closed    bool
+	closeErr  error
 	owned     int
 	peak      int
 	dialing   int
@@ -106,7 +107,7 @@ func (d *connectionOwner) dialConnection(ctx context.Context, network, address s
 	d.mu.Lock()
 	if d.closed || ctx.Err() != nil {
 		d.mu.Unlock()
-		_ = raw.Close()
+		d.recordCloseError(raw.Close())
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
@@ -187,10 +188,29 @@ func (c *mongoConn) Close() error {
 		// Do not wait for TLS close_notify, or release at a pool removal event.
 		c.err = c.raw.Close()
 		c.owner.mu.Lock()
+		if c.owner.closed && c.err != nil && !errors.Is(c.err, net.ErrClosed) && c.owner.closeErr == nil {
+			c.owner.closeErr = c.err
+		}
 		delete(c.owner.conns, c)
 		c.owner.closing--
 		c.owner.releaseLocked()
 		c.owner.mu.Unlock()
 	})
 	return c.err
+}
+
+// Only failures observed during this owner's teardown belong to shutdown.
+// Keep one genuine error rather than retaining a historical error per socket.
+func (d *connectionOwner) recordCloseError(err error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.closed && err != nil && !errors.Is(err, net.ErrClosed) && d.closeErr == nil {
+		d.closeErr = err
+	}
+}
+
+func (d *connectionOwner) closeError() error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.closeErr
 }

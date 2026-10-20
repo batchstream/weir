@@ -63,7 +63,15 @@ The diagnostics listener defaults to disabled. A non-loopback bind requires
 of Store pressure or backend health.
 
 Business work inherits caller cancellation and deadlines. Connection setup,
-transport progress and cleanup have independent deadlines. Lua's default
+transport progress and ordinary detached cleanup have independent deadlines.
+`lifecycle.shutdown_timeout` (default `5s`) is the full admitted drain. After it,
+`lifecycle.cleanup_timeout` (default `2s`) is one Store retirement budget, not a
+fresh timeout for each cleanup and disconnect phase. Forced MongoDB adapter
+teardown cancels its immutable lifetime, including already-running and later
+cleanup; ordinary caller cancellation alone does not shorten detached cleanup.
+Concurrent Store closes share the first close plan and result. Successful close
+requires actual execution, publisher and adapter-close joins, while a missed join
+or a genuine close error remains a failure. Lua's default
 instruction count is unlimited; zero call-depth and stack-slot settings select
 the VM defaults. See [Lua](lua.md) for allocation ownership and supported functions.
 

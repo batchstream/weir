@@ -74,7 +74,7 @@ func TestSearchNativeRequestTargets(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			defer a.Close()
+			defer a.Close(context.Background())
 			for _, index := range []string{"left", "right"} {
 				get := nativeRequest(t, index, "GET", "/_doc/same")
 				end, capture := runNative(t, a, get, nil)

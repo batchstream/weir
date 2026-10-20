@@ -79,7 +79,7 @@ func (a *Adapter) runPrograms(ctx context.Context, batch *programBatch) {
 	}
 	ambiguous := false
 	defer func() {
-		cleanup, cancel := context.WithTimeout(context.Background(), a.options().CleanupTimeout)
+		cleanup, cancel := a.cleanupContext(ctx)
 		defer cancel()
 		if ambiguous {
 			cancel()
@@ -777,7 +777,7 @@ func programHasLabel(err error, label string) bool {
 }
 
 func (a *Adapter) abortProgramTransaction(session *mongo.Session, settled bool) bool {
-	cleanup, cancel := context.WithTimeout(context.Background(), a.options().CleanupTimeout)
+	cleanup, cancel := a.cleanupContext(context.Background())
 	defer cancel()
 	bounded, release := nativeAttemptContext(cleanup)
 	defer release()

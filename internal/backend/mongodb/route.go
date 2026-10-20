@@ -11,6 +11,8 @@ import (
 )
 
 func (a *Adapter) PrepareCommand(ctx context.Context, id uint64, input *pb.Command) (*execution.Plan, *pb.Failure) {
+	ctx, release := a.bindLifetime(ctx)
+	defer release()
 	if ctx.Err() != nil {
 		return nil, protocol.ContextFailure(ctx)
 	}
@@ -38,6 +40,8 @@ func (a *Adapter) PrepareCommand(ctx context.Context, id uint64, input *pb.Comma
 }
 
 func (a *Adapter) PrepareRecord(ctx context.Context, record *execution.Record) (*execution.Plan, *pb.Failure) {
+	ctx, release := a.bindLifetime(ctx)
+	defer release()
 	if ctx.Err() != nil {
 		return nil, protocol.ContextFailure(ctx)
 	}
@@ -67,6 +71,8 @@ func (a *Adapter) PrepareRecord(ctx context.Context, record *execution.Record) (
 }
 
 func (a *Adapter) Execute(ctx context.Context, works []*execution.Plan, emit execution.Emit) {
+	ctx, release := a.bindLifetime(ctx)
+	defer release()
 	if len(works) == 0 {
 		return
 	}

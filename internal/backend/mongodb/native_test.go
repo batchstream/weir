@@ -105,6 +105,7 @@ func TestMongoNativeExplicitCongestion(t *testing.T) {
 			defer client.Disconnect(context.Background())
 			cfg := Config{Store: "mongo"}
 			a := &Adapter{client: client, deployment: deployment, commandMonitor: monitor, config: cfg}
+			initializeTestLifetime(a)
 			nativeBody := &pb.Document{ContentType: "application/bson", Data: []byte{5, 0, 0, 0, 0}}
 			open := &pb.NativeRequest{Resource: "db", Request: nativeBody}
 			plan, failure := a.prepareNative(open)
@@ -143,6 +144,7 @@ func TestMongoNativeExplicitCongestion(t *testing.T) {
 }
 func TestMongoNativeCommandAndOptionsAreOpaque(t *testing.T) {
 	adapter := &Adapter{}
+	initializeTestLifetime(adapter)
 	for _, name := range []string{"find", "aggregate", "getMore", "killCursors", "drop", "insert", "eval", "startSession", "createIndexes", "futureCommand"} {
 		command := bson.D{{Key: name, Value: "other"}}
 		raw, err := bson.Marshal(command)
@@ -220,6 +222,7 @@ func TestMongoNativeResourceSelectsDatabaseWithoutCollectionQualification(t *tes
 
 func TestMongoNativeCommandsBeyondFormerCapacityAreOpaque(t *testing.T) {
 	adapter := &Adapter{}
+	initializeTestLifetime(adapter)
 	for _, size := range []int{(4 << 20) + 1, (8 << 20) + 1} {
 		query := bson.D{{Key: "pad", Value: strings.Repeat("x", size)}}
 		command := bson.D{{Key: "count", Value: "records"}, {Key: "query", Value: query}}
@@ -235,6 +238,7 @@ func TestMongoNativeCommandsBeyondFormerCapacityAreOpaque(t *testing.T) {
 
 func TestMongoNativeAdapterOwnsRequestFormat(t *testing.T) {
 	adapter := &Adapter{}
+	initializeTestLifetime(adapter)
 	for _, contentType := range []string{"application/http", "application/vnd.future.store"} {
 		document := &pb.Document{ContentType: contentType, Data: []byte("GET /_doc/x HTTP/1.1\r\n\r\n")}
 		request := &pb.NativeRequest{Resource: "db", Request: document}
@@ -366,6 +370,7 @@ func TestMongoNativeDatabaseRoutingRejectsAmbiguousEnvelopes(t *testing.T) {
 		{{Key: "ping", Value: 1}, {Key: "$db", Value: "db"}, {Key: "$db", Value: "db"}},
 	}
 	adapter := &Adapter{}
+	initializeTestLifetime(adapter)
 	for _, command := range commands {
 		raw, err := bson.Marshal(command)
 		if err != nil {
@@ -423,6 +428,7 @@ func TestMongoNativeLargeTopLevelDataArraysRemainOpaque(t *testing.T) {
 
 func TestMongoNativeRejectsCollectionResourceShapes(t *testing.T) {
 	adapter := &Adapter{}
+	initializeTestLifetime(adapter)
 	command := bson.D{{Key: "ping", Value: 1}, {Key: "$db", Value: "db"}}
 	raw, err := bson.Marshal(command)
 	if err != nil {

@@ -16,6 +16,7 @@ func TestOrdinaryBSONUsesNativeBounds(t *testing.T) {
 	settings := backend.DefaultOptions()
 	config := Config{Store: "mongo", Options: &settings}
 	adapter := &Adapter{config: config}
+	initializeTestLifetime(adapter)
 	array := make(bson.A, 5000)
 	for i := range array {
 		array[i] = int32(i)

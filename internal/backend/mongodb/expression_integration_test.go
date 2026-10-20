@@ -45,7 +45,7 @@ func TestMongoExpressionAtomicAndNumeric(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer a.Close()
+	defer a.Close(context.Background())
 	c := client.Database(db).Collection("records")
 	inc := bson.D{{Key: "$inc", Value: bson.D{{Key: "n", Value: int64(1)}}}}
 	p := mongoExpression(t, a, db, inc)

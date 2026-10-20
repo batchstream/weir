@@ -40,7 +40,7 @@ func (*fragmentedAdapter) PrepareRecord(context.Context, *execution.Record) (*ex
 	return nil, nil
 }
 
-func (*fragmentedAdapter) Close() error { return nil }
+func (*fragmentedAdapter) Close(context.Context) error { return nil }
 
 func (adapter *fragmentedAdapter) Execute(ctx context.Context, plans []*execution.Plan, emit execution.Emit) {
 	adapter.mu.Lock()

@@ -68,7 +68,7 @@ func TestSearchNativeRealMixedAndReplyLoss(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			defer a.Close()
+			defer a.Close(context.Background())
 			body := "{\"create\":{\"_id\":\"x\"}}\n{\"n\":1}\n"
 			if mode == "mixed" {
 				body += body + "{\"index\":{\"_id\":\"bad\"}}\n{\"n\":{\"bad\":1}}\n"
@@ -125,7 +125,7 @@ func TestSearchNativeCreatesIndexesSearchesUpdatesAndUsesRootPaths(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer adapter.Close()
+	defer adapter.Close(context.Background())
 	index := backend.Index + "_native"
 	t.Cleanup(func() {
 		status, raw := backend.Do(t, http.MethodDelete, "/"+index, "")

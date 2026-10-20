@@ -143,7 +143,7 @@ func TestTypedTrailersStayBudgetedThroughEOFAndConnectionReuse(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			defer adapter.Close()
+			defer adapter.Close(context.Background())
 			transport := adapter.client.Transport
 			owner := &recordMemoryProbe{}
 			observer := &trailerMemoryTransport{transport: transport, owner: owner, before: make(chan trailerMemoryStage, 1), eof: make(chan trailerMemoryStage, 1)}
@@ -355,7 +355,7 @@ func TestTrailerCapacityAfterMutationSendRemainsUnknownWithoutReplay(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer adapter.Close()
+	defer adapter.Close(context.Background())
 	work := batchTestPlan(t, adapter, "put", "records/s:item")
 	reply := work.IOReserve + bulkAckWorking(work.Backend.(*plan).id)
 	base := 2*work.Bytes + execution.EntryOverheadBytes

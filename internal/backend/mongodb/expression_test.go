@@ -37,6 +37,7 @@ func expressionBSON(t testing.TB, doc bson.D) []byte {
 func TestMongoExpressionValidation(t *testing.T) {
 	cfg := Config{Store: "mongo"}
 	a := &Adapter{config: cfg}
+	initializeTestLifetime(a)
 	decimal, _ := bson.ParseDecimal128("1.25")
 	nonfinite, _ := bson.ParseDecimal128("Infinity")
 	cases := []struct {
@@ -156,6 +157,7 @@ func FuzzMongoExpression(f *testing.F) {
 	f.Add([]byte{5, 0, 0, 0, 0})
 	f.Fuzz(func(t *testing.T, raw []byte) {
 		a := &Adapter{}
+		initializeTestLifetime(a)
 		d := &pb.Document{ContentType: ExpressionContentType, Data: raw}
 		_ = a.prepareExpression(context.Background(), d)
 		fields, err := bsonFields(raw)

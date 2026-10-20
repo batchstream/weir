@@ -111,7 +111,7 @@ func (a *peerAdapter) Execute(ctx context.Context, plans []*execution.Plan, emit
 	return
 }
 
-func (a *peerAdapter) Close() error { a.closed.Add(1); return nil }
+func (a *peerAdapter) Close(context.Context) error { a.closed.Add(1); return nil }
 
 func peerLocal(t *testing.T, name string) (*peerAdapter, *store.Runtime) {
 	t.Helper()

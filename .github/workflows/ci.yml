@@ -44,10 +44,10 @@ jobs:
         run: CGO_ENABLED=0 timeout 3m go test -tags=integration -count=1 -timeout=120s -run '^TestExecutionProfileContract' ./internal/testutil/testexecution ./internal/app ./internal/testutil/testsearch
       - name: Native CGO1 race tests
         run: CGO_ENABLED=1 timeout 12m go test -race -count=1 -timeout=180s ./...
-      - name: Offline normal and race process terminal measurements (self-subprocesses only)
+      - name: Offline normal and race Node retirement and process terminal measurements
         run: |
-          CGO_ENABLED=1 timeout 2m go test -p=1 -parallel=1 -tags=integration -count=1 -timeout=90s -run '^TestProcessStop(TerminalMeasurements|OnceConcurrent)$' -v ./internal/app
-          CGO_ENABLED=1 timeout 2m go test -race -p=1 -parallel=1 -tags=integration -count=1 -timeout=90s -run '^TestProcessStop(TerminalMeasurements|OnceConcurrent)$' -v ./internal/app
+          CGO_ENABLED=1 timeout 2m go test -p=1 -parallel=1 -tags=integration -count=1 -timeout=90s -run '^(TestProcessStop(TerminalMeasurements|OnceConcurrent)|TestOfflineRetirement(NodeJoinsDefaultOwners|SIGTERMActualNode))$' -v ./internal/app
+          CGO_ENABLED=1 timeout 2m go test -race -p=1 -parallel=1 -tags=integration -count=1 -timeout=90s -run '^(TestProcessStop(TerminalMeasurements|OnceConcurrent)|TestOfflineRetirement(NodeJoinsDefaultOwners|SIGTERMActualNode))$' -v ./internal/app
       - name: Native receive ownership patch race tests
         working-directory: third_party/grpc
         run: CGO_ENABLED=1 timeout 3m go test -race -count=1 -timeout=120s -run '^TestReceive' ./ ./mem ./internal/transport

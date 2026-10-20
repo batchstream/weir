@@ -139,7 +139,7 @@ func openTestTLS(t *testing.T, endpoint string, connection *Connection) *Adapter
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = a.Close() })
+	t.Cleanup(func() { _ = a.Close(context.Background()) })
 	return a
 }
 func TestSearchTLSBothPathsAndTransportPolicy(t *testing.T) {
@@ -237,7 +237,7 @@ func TestSearchDNSNameSNIAddressChangeAndBounds(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer a.Close()
+	defer a.Close(context.Background())
 	if names.Load() != 1 {
 		t.Fatal("qualification SNI")
 	}
@@ -301,7 +301,7 @@ func TestSearchDNSNameSNIAddressChangeAndBounds(t *testing.T) {
 			}
 			// net/http detaches dial cancellation; Close must synchronously join it.
 			before = time.Now()
-			_ = a.Close()
+			_ = a.Close(context.Background())
 			if time.Since(before) > time.Second || searchOwned(a.dialer) != 0 {
 				t.Fatal("DNS Close leaked lookup")
 			}
@@ -313,7 +313,7 @@ func TestSearchDNSNameSNIAddressChangeAndBounds(t *testing.T) {
 			a.transport.CloseIdleConnections()
 		})
 	}
-	_ = a.Close()
+	_ = a.Close(context.Background())
 	t.Logf("DNS ordinary A/AAAA=%d/%d TCP=%d; hostname/SNI retained; new calls re-resolve; Close joins I/O", dns.A.Load(), dns.AAAA.Load(), dns.TCP.Load())
 }
 
@@ -432,7 +432,7 @@ func TestSearchTLSWithoutCredentialsAndCertificateCount(t *testing.T) {
 	c.Username = ""
 	c.Password = ""
 	a := openTestTLS(t, endpoint.URL, c)
-	_ = a.Close()
+	_ = a.Close(context.Background())
 	// Trust follows Go's TLS/x509 verification without a separate certificate count.
 	pair := endpoint.TLS.Certificates[0]
 	for len(pair.Certificate) < 9 {
@@ -448,7 +448,7 @@ func TestSearchTLSWithoutCredentialsAndCertificateCount(t *testing.T) {
 	if accepted == nil || err != nil {
 		t.Fatal("valid TLS chain rejected by certificate count", err)
 	}
-	defer accepted.Close()
+	defer accepted.Close(context.Background())
 }
 
 func TestSearchLargeTrustStoreAndCredentials(t *testing.T) {
@@ -471,7 +471,7 @@ func TestSearchLargeTrustStoreAndCredentials(t *testing.T) {
 	}
 	connection.CAFile, connection.Username, connection.Password = caFile, username, password
 	adapter := openTestTLS(t, endpoint.URL, connection)
-	defer adapter.Close()
+	defer adapter.Close(context.Background())
 }
 
 func searchOwned(dialer *connectionDialer) int {

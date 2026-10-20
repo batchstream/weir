@@ -76,8 +76,9 @@ func batchMockAdapter(t *testing.T, responses []bson.D, monitor *event.CommandMo
 	}
 	config := Config{Store: "mongo"}
 	a := &Adapter{client: client, deployment: deployment, commandMonitor: monitor, config: config}
+	initializeTestLifetime(a)
 	t.Cleanup(func() {
-		if err := a.Close(); err != nil {
+		if err := a.Close(context.Background()); err != nil {
 			t.Error(err)
 		}
 	})
@@ -325,6 +326,7 @@ func TestMongoCanceledProgramBatchDoesNotStartWrites(t *testing.T) {
 	op := &pb.ExecuteRequest{Index: 1, Command: opCommand}
 	p := &execution.Plan{ID: op.Index, Command: op.Command, Backend: native, Context: caller}
 	a := &Adapter{}
+	initializeTestLifetime(a)
 	replies := a.executeRecords(context.Background(), []*execution.Plan{p})
 	if replies[0].GetMutationResult().Outcome != pb.MutationOutcome_NOT_STARTED {
 		t.Fatal("canceled program started writing", replies)

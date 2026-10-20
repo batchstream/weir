@@ -3,6 +3,7 @@
 package search
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -48,7 +49,7 @@ func TestSearchSourceFieldsUseBackendMappingAcrossMutations(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer through.Close()
+	defer through.Close(context.Background())
 	resource := searchResource(backend.Index, "counter")
 	prepare := func(action, source string) *pb.ExecuteRequest {
 		work := batchTestPlan(t, through, action, resource)

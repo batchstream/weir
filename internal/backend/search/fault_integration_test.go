@@ -102,7 +102,7 @@ func TestSearchCommittedReplyLossAndIncompleteBulk(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			defer a.Close()
+			defer a.Close(context.Background())
 			// Startup establishes a reusable connection before the ambiguous POST.
 			first := searchPlan(t, a, "put", searchResource(b.Index, "first"))
 			second := searchPlan(t, a, "put", searchResource(b.Index, "second"))
@@ -190,7 +190,7 @@ func TestSearchReplaceNativeCompetition(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			defer a.Close()
+			defer a.Close(context.Background())
 			result := runSearch(t, a, searchPlan(t, a, "replace", searchResource(b.Index, "race")))
 			assertOutcome(t, result, pb.MutationOutcome_NOT_APPLIED, pb.FailureCode_CONFLICT)
 			status, raw := b.Do(t, "GET", "/"+b.Index+"/_doc/race", "")

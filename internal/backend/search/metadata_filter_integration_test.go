@@ -3,6 +3,7 @@
 package search
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -108,7 +109,7 @@ func TestSearchMetadataFilterPreservesQualificationEvidence(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			defer through.Close()
+			defer through.Close(context.Background())
 			caps, failure := through.inspect(t.Context(), target, false)
 			if test.unsupported {
 				if failure.GetCode() != pb.FailureCode_UNSUPPORTED {
