@@ -50,6 +50,8 @@ type Proxy struct {
 	uri             string
 	clientTLS       *tls.Config
 	discovery       *replicaAddressMap
+	operations      *operationRegistry
+	memberIndex     int
 	observations    []ReplicaProxyConnection
 	replicaRequests int
 	rejections      int
@@ -82,6 +84,8 @@ type proxyOptions struct {
 	serverTLS, clientTLS *tls.Config
 	listener             net.Listener
 	discovery            *replicaAddressMap
+	operations           *operationRegistry
+	memberIndex          int
 }
 
 func startProxy(t *testing.T, opts proxyOptions) *Proxy {
@@ -102,7 +106,7 @@ func startProxy(t *testing.T, opts proxyOptions) *Proxy {
 	if err != nil {
 		t.Fatal("invalid owned fixture URI")
 	}
-	p := &Proxy{listener: listener, backendAddress: upstream.Host, conns: make(map[net.Conn]struct{}), done: make(chan struct{}), discovery: opts.discovery}
+	p := &Proxy{listener: listener, backendAddress: upstream.Host, conns: make(map[net.Conn]struct{}), done: make(chan struct{}), discovery: opts.discovery, operations: opts.operations, memberIndex: opts.memberIndex}
 	if opts.serverTLS != nil {
 		// Test-only TLS termination observes decrypted commands for fault injection.
 		// Production direct-to-mongod TLS is qualified separately.
@@ -328,6 +332,14 @@ func (p *Proxy) relay(client net.Conn) {
 		if p.discovery != nil && !p.reserveReplicaRequest(name) {
 			return
 		}
+		var matches []operationMatch
+		if p.operations != nil {
+			observationOptions := operationBeginOptions{message: request, member: p.memberIndex, connection: observation}
+			matches, err = p.operations.begin(observationOptions)
+			if err != nil {
+				return
+			}
+		}
 		fault := p.takeFault(name, request)
 		if fault != nil {
 			if fault.Started != nil {
@@ -349,7 +361,13 @@ func (p *Proxy) relay(client net.Conn) {
 		}
 		written, writeErr := backend.Write(request)
 		if writeErr != nil || written != len(request) {
+			if p.operations != nil && len(matches) != 0 {
+				p.operations.fail()
+			}
 			return
+		}
+		if p.operations != nil {
+			p.operations.forwarded(matches)
 		}
 		if p.discovery != nil {
 			p.recordReplicaCommand(observation, name)
@@ -382,6 +400,24 @@ func (p *Proxy) relay(client net.Conn) {
 			e.Session = fmt.Sprintf("%x", []byte(lsid))
 		}
 		reply := commandDocument(response)
+		if p.discovery != nil {
+			reply, _, err = replicaWireDocument(response, true)
+			if err != nil {
+				return
+			}
+		}
+		if p.operations != nil {
+			held := p.operations.received(matches, reply)
+			if held != nil {
+				if !p.waitGate(held.release) {
+					held.gateFailed()
+					return
+				}
+				p.closeConnection(client)
+				p.operations.finish(matches, true)
+				return
+			}
+		}
 		if p.Monitor != nil && p.Monitor.Succeeded != nil {
 			finished := event.CommandFinishedEvent{CommandName: name}
 			observed := &event.CommandSucceededEvent{CommandFinishedEvent: finished, Reply: reply}
@@ -426,8 +462,12 @@ func (p *Proxy) relay(client net.Conn) {
 			p.AlterRemaining.Add(-1)
 			response = alterCommandReply(response, p.AlterMode)
 		}
-		if _, err = client.Write(response); err != nil {
+		written, err = client.Write(response)
+		if err != nil || written != len(response) {
 			return
+		}
+		if p.operations != nil {
+			p.operations.finish(matches, false)
 		}
 	}
 }

@@ -178,8 +178,7 @@ WEIR_MONGO_REPLICA_INTEGRATION=1 WEIR_MONGO_REPLICA_BINARY=/absolute/path/to/mon
 ```
 
 These serialized plain/TLS cases check discovery, new-operation recovery and
-lifecycle ownership, not sustained load or the complete lost-acknowledgement
-matrix. The dedicated Linux CI job prepares its verified native binary explicitly
+lifecycle ownership, not sustained load or formal qualification. The dedicated Linux CI job prepares its verified native binary explicitly
 with `scripts/ci-tools.py test --mongo`; tests never download or fall back to
 another backend. Generated logs remain ignored and temporary data/secrets are
 removed only after all owned children have been reaped.
@@ -203,12 +202,49 @@ CGO_ENABLED=0 go test -p=1 -parallel=1 -count=1 -run '^TestReplicaProxy' ./inter
 CGO_ENABLED=1 go test -race -p=1 -parallel=1 -count=1 -run '^TestReplicaProxy' ./internal/testutil/testmongo
 ```
 
-The observer prerequisite covers ordinary typed/Native/Lua success and independent
-majority-read effect checks across primary transitions through the same adapter.
-It does **not** qualify post-effect reply loss, UNKNOWN/no-replay or Lua ambiguous
-commit/rollback matrices, CLI shutdown, cgroups, sustained load, SLOs or production.
-A proxy's pre-forward barrier is already after Weir dispatch; `ok:1` alone is not
-majority/business evidence, and Native callers must request majority explicitly.
+The backend observer cases retain ordinary typed/Native/Lua success across primary
+transitions and add stable held-reply checks using the real driver's discovered
+and selected frontend plus checked-out session ownership before adapter close.
+Native does not acquire an implicit session. Separate ordinary-CLI cases cover
+all 12 typed/Native × stable/stepdown/one-primary-loss × plain/TLS combinations:
+
+```sh
+WEIR_MONGO_REPLICA_INTEGRATION=1 WEIR_MONGO_REPLICA_BINARY=/absolute/path/to/mongod \
+  go test -race -p=1 -parallel=1 -tags=integration -count=1 -timeout=10m \
+  -run '^TestMongoReplicaCLIReplyLoss$/^plain$' -v ./internal/app
+WEIR_MONGO_REPLICA_INTEGRATION=1 WEIR_MONGO_REPLICA_BINARY=/absolute/path/to/mongod \
+  go test -race -p=1 -parallel=1 -tags=integration -count=1 -timeout=10m \
+  -run '^TestMongoReplicaCLIReplyLoss$/^tls$' -v ./internal/app
+```
+
+Four serial fixture/CLI/SDK lifetimes each retain the same PID and client across
+all three cases. A real successful, explicit-majority increment reply is held;
+an independent primary-majority read proves the effect before deliberate loss.
+The drop is performed promptly after the action, before waiting for external
+majority usability. Actual uncancelled callers receive typed `UNKNOWN` or Native
+`RESPONSE_INCOMPLETE`; only immutable health reads are retried, and new-ID work
+must complete within five seconds of independently observed majority usability.
+Up to eight persistent namespace/record watches cover every frontend through
+later work and actual CLI exit, counting both matched requests and completely
+forwarded mutation items. Old effects and both counts must remain exactly one.
+Inline and document-sequence encodings are parsed with namespace-index resolution;
+ambiguous/malformed requests and partial forwarding fail closed. Observations
+retain bounded facts, presence flags and digests, not raw command/auth bodies.
+
+Native complete command and item errors remain `RESPONSE_COMPLETE` without a
+forwarding failure; consumer bytes must hash to the actual observed BSON reply,
+and independent state must stay unchanged. CLI evidence is observable wire
+closure/forwarding, TLS legs, effects, receipts, gauges, same PID and actual Wait,
+not private driver topology or session counts. Real relay/client joins and
+marker-checked fixture cleanup follow exit code zero within the existing eight
+second SIGTERM gate. Linux CI retains all three serial command logs on failure
+and measures the combined envelope without increasing its 15-minute job limit.
+
+These focused functional cases do **not** qualify cursor/Ack ownership, Lua
+ambiguous commit/rollback, cgroups, sustained load, SLOs or production. Direct TLS
+coverage remains separate. A proxy's pre-forward barrier is already after Weir
+dispatch; `ok:1` alone is not majority/business evidence, and Native callers must
+request majority explicitly.
 
 The [weir-tests](https://github.com/batchstream/weir-tests) repository contains
 matched direct/Weir workloads and blackbox integration. Keep generated logs,

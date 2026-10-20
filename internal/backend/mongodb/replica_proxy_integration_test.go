@@ -20,8 +20,8 @@ import (
 	"go.mongodb.org/mongo-driver/v2/x/mongo/driver/topology"
 )
 
-// This is the discovery-aware fault-fixture prerequisite, not reply-loss,
-// transaction-uncertainty, CLI lifecycle or formal resource qualification.
+// Focused discovery and stable held-reply driver ownership, not transaction
+// uncertainty, CLI lifecycle or formal resource qualification.
 func TestMongoReplicaProxyDiscoveryRecovery(t *testing.T) {
 	if os.Getenv("WEIR_MONGO_REPLICA_INTEGRATION") != "1" {
 		t.Skip("explicit owned replica integration opt-in")
@@ -59,6 +59,8 @@ func TestMongoReplicaProxyDiscoveryRecovery(t *testing.T) {
 					t.Error(err)
 				}
 			})
+			// Failure cleanup must unblock held relays before adapter retirement.
+			t.Cleanup(proxy.Close)
 			work := replicaProxyWorkOptions{adapter: adapter, fixture: fixture, id: "initial"}
 			ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
 			replicaProxyWork(t, ctx, work)
@@ -66,6 +68,8 @@ func TestMongoReplicaProxyDiscoveryRecovery(t *testing.T) {
 			replicaProxyCoverage(t, adapter, proxy, primary)
 			replicaProxyOriginal(t, fixture)
 			t.Logf("TLS=%t secondary_seed=%d selected_nonseed_primary=%d actual_topology=%v", secure, seed, primary, replicaProxyDiscovered(t, adapter))
+			heldOptions := replicaHeldOptions{adapter: adapter, fixture: fixture, proxy: proxy, primary: primary}
+			watches := replicaStableReplyLoss(t, heldOptions)
 			for _, transition := range []string{"stepdown", "primary_loss"} {
 				started := time.Now()
 				if transition == "stepdown" {
@@ -116,6 +120,7 @@ func TestMongoReplicaProxyDiscoveryRecovery(t *testing.T) {
 				}
 				t.Logf("member=%d frontend=%s actual=%s joined_connections=%d observer_upstream=0", i, snapshot.Frontend, snapshot.Upstream, len(snapshot.Connections))
 			}
+			replicaFinalReplyLoss(t, heldOptions, watches)
 			fixture.Close(t)
 		})
 	}

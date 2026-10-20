@@ -17,9 +17,10 @@ import (
 // ReplicaProxy observes only application connections to an owned Replica. Real
 // member configuration and inter-member connections never traverse these relays.
 type ReplicaProxy struct {
-	fixture *Replica
-	mapping *replicaAddressMap
-	members [3]*Proxy
+	fixture    *Replica
+	mapping    *replicaAddressMap
+	members    [3]*Proxy
+	operations *operationRegistry
 }
 
 func StartReplicaProxy(t *testing.T, fixture *Replica) *ReplicaProxy {
@@ -53,9 +54,10 @@ func StartReplicaProxy(t *testing.T, fixture *Replica) *ReplicaProxy {
 	if err != nil {
 		t.Fatal("invalid owned replica frontend mapping")
 	}
-	proxy := &ReplicaProxy{fixture: fixture, mapping: mapping}
+	registry := &operationRegistry{}
+	proxy := &ReplicaProxy{fixture: fixture, mapping: mapping, operations: registry}
 	for i, listener := range listeners {
-		opts := proxyOptions{uri: "mongodb://" + actual[i], listener: listener, discovery: mapping}
+		opts := proxyOptions{uri: "mongodb://" + actual[i], listener: listener, discovery: mapping, operations: registry, memberIndex: i}
 		if fixture.secure {
 			host, _, _ := net.SplitHostPort(actual[i])
 			opts.serverTLS = fixture.proxyTLS[i]
@@ -178,4 +180,45 @@ func (f *Replica) originalAddresses(addresses []string) bool {
 		seen[address] = true
 	}
 	return true
+}
+
+// WatchOperation persists across all three frontends until the relays are joined.
+func (p *ReplicaProxy) WatchOperation(operation OwnedOperation) (*OperationWatch, error) {
+	return p.operations.watch(operation)
+}
+func (p *ReplicaProxy) ArmReplyLoss(member int, watch *OperationWatch) error {
+	return p.operations.arm(member, watch)
+}
+
+// CheckWireCoverage proves observable frontend closure and forwarding, not the
+// external CLI driver's private topology or session pool. CheckCoverage retains
+// the stricter healthy typed/Native/Lua command list for backend-package tests.
+func (p *ReplicaProxy) CheckWireCoverage(primary int, command string) error {
+	if primary < 0 || primary >= 3 {
+		return errReplicaProxyWire
+	}
+	for i, snapshot := range p.Snapshots() {
+		if snapshot.Rejections != 0 || snapshot.Frontend != p.mapping.frontend[i] || snapshot.Upstream != p.mapping.actual[i] {
+			return errReplicaProxyWire
+		}
+		monitor, data := false, false
+		for _, connection := range snapshot.Connections {
+			if len(connection.Commands) == 0 {
+				continue
+			}
+			if connection.FrontendTLS != p.fixture.secure || connection.UpstreamTLS != p.fixture.secure {
+				return errReplicaProxyWire
+			}
+			onlyHello := true
+			for name := range connection.Commands {
+				onlyHello = onlyHello && replicaHello(name)
+			}
+			monitor = monitor || onlyHello && connection.DiscoveryReplies >= 2
+			data = data || connection.Commands[command] > 0 && connection.Commands["find"] > 0
+		}
+		if !monitor || i == primary && !data {
+			return errReplicaProxyWire
+		}
+	}
+	return nil
 }
