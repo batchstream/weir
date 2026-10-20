@@ -310,3 +310,35 @@ func (p *ReplicaProxy) CheckLuaCases(t *testing.T, cases []LuaCase, phase string
 		t.Logf("lua_uncertainty phase=%s confirmed_abort=%t observation=%+v durable=%+v", phase, c.Confirmed, c.Watch.Snapshot(), expected)
 	}
 }
+
+// Commit cases retain their original wire identity and independent effect ledger
+// through old/new recovery, actual product retirement and final relay joins.
+type LuaCommitCase struct {
+	Watch      *LuaWatch
+	RecoveryID string
+}
+
+func (p *ReplicaProxy) WatchLuaCommit(op LuaOperation, all bool, attempts int) (*LuaWatch, error) {
+	return p.lua.watchCommit(op, all, attempts)
+}
+func (p *ReplicaProxy) CheckLuaCommitCases(t *testing.T, cases []LuaCommitCase, phase string) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
+	defer cancel()
+	for _, c := range cases {
+		if err := c.Watch.ValidateCommitFinished(); err != nil {
+			t.Fatal("persistent original commit proof", phase, c.Watch.Snapshot())
+		}
+		expected := LuaLedger{N: 1, Candidate: 1}
+		p.CheckLuaLedger(t, ctx, c.Watch, expected)
+		if c.RecoveryID != "" {
+			opts := options.Collection().SetReadConcern(readconcern.Majority()).SetReadPreference(readpref.Primary())
+			filter := bson.D{{Key: "_id", Value: c.RecoveryID}}
+			raw, err := p.fixture.Admin.Database(p.fixture.DB).Collection("records", opts).FindOne(ctx, filter).Raw()
+			if err != nil || !operationNumber(raw.Lookup("n"), 1) {
+				t.Fatal("persistent commit recovery effect", phase, err)
+			}
+		}
+		t.Logf("lua_commit phase=%s drop_all=%t observation=%+v durable=%+v", phase, c.Watch.commit.all, c.Watch.Snapshot(), expected)
+	}
+}

@@ -307,8 +307,32 @@ forced GC or ledger changes. Each original 12-second caller contains all stable
 Lua phases; independently established majority usability starts the unchanged
 five-second same-Runtime or same-PID/SDK new-ID recovery gate. Old mutation and
 new Lua count/effect oracles persist through actual Runtime.Close/CLI.Wait and
-relay joins. These stable cases do **not** cover lost commit replies, in-flight
-Lua stepdown/member loss, or Lua-specific cancellation/shutdown uncertainty.
+relay joins. The same four lifetimes additionally execute four stable original-commit cases
+(eight executions), with no new fixture or CLI start. One real snapshot/find and
+singleton replacement `(1,0,1)` receive a complete successful bulkWrite reply.
+The first complete successful majority commit reply is held while an independent
+Primary+majority read strictly proves durable `(1,0,1)`, **before** the actual
+reply socket drop. Losing that reply once permits only original-session/transaction
+commit confirmation: the genuine successful confirmation must be fully forwarded
+before `APPLIED`/no failure. Losing every successful confirmation produces
+`UNKNOWN`/`UNAVAILABLE` while the original 12-second caller is still live, with
+exactly one durable effect. Neither case permits Lua rebuild, replacement replay,
+a new transaction or abort. Physical commits are bounded from two through twice
+the default adapter retry count (currently five); driver-internal commit retry and
+stronger retry writeConcern are not mistaken for replacement replay.
+
+The commit cases use the same actual Runtime/Ticket mirror, observe nonzero
+working/input ownership at the held commit, join execution/publisher/session,
+and retain positive result/input credit until real Ack. Zero is asserted after
+Ack **before** Session.Close, then again afterward. Ordinary typed CLI/SDK cases
+join the actual call and observe idle ownership before explicit watch completion.
+Same-Runtime or same-PID/SDK new-ID recovery retains the five-second budget after
+independent majority usability. Exact old wire identities, request/full-write/
+reply/full-forward/socket-drop counts and independent durable ledgers persist
+through recovery, actual Runtime.Close/CLI.Wait/owner zero and relay joins. There
+is no fictitious Native Lua axis. These stable cases do **not** cover in-flight
+Lua stepdown/member loss or Lua-specific cancellation/shutdown uncertainty;
+overall production qualification remains false.
 
 The separate bounded read observer watches only fixture `records` IDs across the
 three frontends and captures immutable first-find session identity. Cleanup
