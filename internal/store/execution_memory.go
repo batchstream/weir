@@ -198,8 +198,9 @@ func (m *ExecutionMemory) resizeInputLocked() {
 		m.resident -= delta
 	} else if len(m.workingWaits) == 0 && target > m.inputReserved && m.used < m.budget && m.resident < m.residentLimitLocked() {
 		// New automatic credit leaves short-RPC entry space. Existing input
-		// promises remain intact while other resident owners grow; only the
-		// trusted-capacity shrink above may revoke their unused portion.
+		// promises remain intact while execution owners grow. Only trusted
+		// capacity shrink or the bounded ingress exchange may revoke unused
+		// automatic capacity; admitted inputs always retain their full promise.
 		available := m.residentLimitLocked() - m.resident
 		progress := min(uint64(ingressProgressReserve), m.residentLimitLocked()/2)
 		available -= min(available, progress)
