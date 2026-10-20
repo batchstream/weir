@@ -497,10 +497,11 @@ func TestCLISignalBeforeStart(t *testing.T) {
 	b.idle(t)
 }
 
-// TestCLIProcessChild reexecutes the real run function by default. The separate
-// before-start mode exercises the app API at its exact caller-owned boundary;
-// no production hook or substituted function is involved. Artifact runs use
-// WEIR_CLI_BINARY for all ordinary CLI cases, including handshake and serving.
+// TestCLIProcessChild reexecutes the real run/Cobra path by default. The
+// before-start mode exercises the app API at its caller-owned boundary. The
+// writer-error mode gives the shared production serving executor one explicit
+// signal context so its blocked writer can acknowledge actual cancellation.
+// Artifact runs use WEIR_CLI_BINARY for ordinary handshake and serving cases.
 func TestCLIProcessChild(t *testing.T) {
 	mode := os.Getenv("WEIR_PROCESS_CHILD")
 	if mode == "" {
@@ -517,8 +518,7 @@ func TestCLIProcessChild(t *testing.T) {
 	if mode == "before-start" {
 		err = beforeStartChild(config, routes)
 	} else if mode == "writer-error" {
-		writer := &failedOutput{}
-		err = run(args, writer)
+		err = writerErrorChild(config, routes)
 	} else {
 		err = run(args, os.Stdout)
 	}
@@ -568,24 +568,150 @@ func TestCLIStartupFailure(t *testing.T) {
 	b.idle(t)
 }
 
-type failedOutput struct{}
+const writerSignalAcknowledged = "serving signal cancellation observed"
 
-func (*failedOutput) Write(p []byte) (int, error) {
-	if _, err := os.Stdout.Write(p); err != nil {
+func writerErrorChild(config, routes string) error {
+	cfg, err := app.Load(config, routes)
+	if err != nil {
+		return err
+	}
+	signals, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+	writer := &failedOutput{ctx: signals, output: os.Stdout, release: os.Stdin}
+	return serveContext(signals, cfg, writer)
+}
+
+type failedOutput struct {
+	ctx     context.Context
+	output  io.Writer
+	release io.Reader
+}
+
+func (w *failedOutput) Write(p []byte) (int, error) {
+	if _, err := w.output.Write(p); err != nil {
+		return 0, err
+	}
+	select {
+	case <-w.ctx.Done():
+	case <-time.After(3 * time.Second):
+		return 0, errors.New("signal cancellation acknowledgment timed out")
+	}
+	if _, err := fmt.Fprintln(w.output, writerSignalAcknowledged); err != nil {
 		return 0, err
 	}
 	var release [1]byte
-	if _, err := io.ReadFull(os.Stdin, release[:]); err != nil {
+	if _, err := io.ReadFull(w.release, release[:]); err != nil {
 		return 0, err
 	}
 	return 0, errors.New("writer-error-sentinel")
+}
+
+type failedOutputContext struct {
+	context.Context
+	waiting chan struct{}
+}
+
+func (c *failedOutputContext) Done() <-chan struct{} {
+	close(c.waiting)
+	return c.Context.Done()
+}
+
+type failedOutputRelease struct {
+	entered chan struct{}
+	release chan struct{}
+}
+
+func (r *failedOutputRelease) Read(p []byte) (int, error) {
+	close(r.entered)
+	<-r.release
+	return copy(p, "x"), nil
+}
+
+func TestFailedOutputRequiresCancellationAndIndependentRelease(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	signalContext := &failedOutputContext{Context: ctx, waiting: make(chan struct{})}
+	output := &processOutput{lines: make(chan string, 2)}
+	input := &failedOutputRelease{entered: make(chan struct{}), release: make(chan struct{})}
+	writer := &failedOutput{ctx: signalContext, output: output, release: input}
+	release := sync.OnceFunc(func() { close(input.release) })
+	done := make(chan struct{})
+	var writeErr error
+	go func() {
+		_, writeErr = writer.Write([]byte("listener announcement\n"))
+		close(done)
+	}()
+	t.Cleanup(func() {
+		cancel()
+		release()
+		select {
+		case <-done:
+		case <-time.After(3 * time.Second):
+			t.Error("failed writer control did not join")
+		}
+	})
+	select {
+	case line := <-output.lines:
+		if line != "listener announcement" {
+			t.Fatal("unexpected readiness cue", line)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("listener announcement missing")
+	}
+	select {
+	case <-signalContext.waiting:
+	case <-time.After(3 * time.Second):
+		t.Fatal("writer did not wait on the actual cancellation context")
+	}
+	// Readiness, or a caller returning from Signal without this context having
+	// observed it, must not acknowledge handling or read the error release.
+	select {
+	case line := <-output.lines:
+		t.Fatal("acknowledged before cancellation", line)
+	case <-input.entered:
+		t.Fatal("read error release before cancellation")
+	case <-done:
+		t.Fatal("writer returned before cancellation", writeErr)
+	default:
+	}
+	cancel()
+	select {
+	case line := <-output.lines:
+		if line != writerSignalAcknowledged {
+			t.Fatal("actual cancellation acknowledgment missing", line)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("cancellation was not acknowledged")
+	}
+	event(t, input.entered)
+	select {
+	case <-done:
+		t.Fatal("cancellation swallowed independent writer failure", writeErr)
+	default:
+	}
+	release()
+	event(t, done)
+	if writeErr == nil || writeErr.Error() != "writer-error-sentinel" {
+		t.Fatal("independent output error was lost after cancellation", writeErr)
+	}
 }
 
 func TestCLISignalWithOutputFailure(t *testing.T) {
 	b := newStartupBackend(t, "")
 	p := startCLI(t, b.config(), "writer-error")
 	line := p.line(t)
-	p.terminate(t, "existing run writer blocked in first Write; independent writer failure released")
+	p.terminate(t, "shared serving writer blocked in first Write; awaiting actual SIGTERM cancellation")
+	// Signal returning does not prove child handling. Keep the independent
+	// writer failure blocked until this exact serving context acknowledges it.
+	select {
+	case acknowledgment := <-p.stdout.lines:
+		if acknowledgment != writerSignalAcknowledged {
+			t.Fatal("unexpected signal acknowledgment", acknowledgment)
+		}
+	case <-p.done:
+		t.Fatal("child exited before signal acknowledgment", p.waitErr)
+	case <-time.After(3 * time.Second):
+		t.Fatal("actual signal cancellation was not acknowledged")
+	}
 	if _, err := io.WriteString(p.input, "x"); err != nil {
 		t.Fatal(err)
 	}
