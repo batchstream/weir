@@ -27,6 +27,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/stats"
+	"google.golang.org/grpc/status"
 )
 
 type qualificationRecord struct {
@@ -752,6 +753,39 @@ func (s *qualificationReceiveStats) summary(index int) string {
 	return fmt.Sprintf("completed_receive_counts_head_chunk_native_end_other=%v attributed_callback_gaps=%d max_attributed_gap=%s return_to_completed_receive=%s completed_receive_to_callback=%s boundary_recent=%+v boundary_note=completed_receive_decode_not_raw_HTTP2_arrival", counts, attributed, gap, pre, post, ordered)
 }
 
+type qualificationStreamFailure struct {
+	index int
+	err   error
+}
+
+// Only the first failure is needed; all 32 workers and the monitor must be
+// able to finish before the coordinator reads the bounded channel.
+func publishQualificationStreamFailure(failures chan<- qualificationStreamFailure, failure qualificationStreamFailure) {
+	select {
+	case failures <- failure:
+	default:
+	}
+}
+
+func qualificationNativeFailure(index int, result *weirclient.NativeResult, err error) qualificationStreamFailure {
+	completion := weirclient.NativeCompletionUnconfirmed
+	failureCode := pb.FailureCode_FAILURE_CODE_UNSPECIFIED
+	failurePresent := result != nil && result.Failure != nil
+	if result != nil {
+		completion = result.Completion
+		if failurePresent {
+			failureCode = result.Failure.Code
+		}
+	}
+	// Print only status/enum values and presence flags, not error messages,
+	// response metadata, bodies, or backend failure messages.
+	failure := qualificationStreamFailure{
+		index: index,
+		err:   fmt.Errorf("slow stream %d failed: grpc_code=%s result_present=%t native_completion=%d failure_present=%t failure_code=%d", index, status.Code(err), result != nil, completion, failurePresent, failureCode),
+	}
+	return failure
+}
+
 func qualificationSlowConsumers(ctx context.Context, work qualificationWorkload, measurement time.Time) (string, error) {
 	start := measurement.Add(work.duration / 4)
 	if remaining := time.Until(start); remaining > 0 {
@@ -773,11 +807,7 @@ func qualificationSlowConsumers(ctx context.Context, work qualificationWorkload,
 	}
 	defer connection.Close()
 	client := pb.NewStoreServiceClient(connection)
-	type streamFailure struct {
-		index int
-		err   error
-	}
-	errors := make(chan streamFailure, 32)
+	failures := make(chan qualificationStreamFailure, 1)
 	progress := make([]atomic.Int64, 32)
 	callbacks := make([]atomic.Int64, 32)
 	lastProgress := make([]atomic.Int64, 32)
@@ -849,8 +879,8 @@ func qualificationSlowConsumers(ctx context.Context, work qualificationWorkload,
 					return
 				}
 				if err != nil || result == nil || result.Failure != nil || result.Completion != weirclient.NativeResponseComplete {
-					failure := streamFailure{index: index, err: fmt.Errorf("slow stream %d failed", index)}
-					errors <- failure
+					failure := qualificationNativeFailure(index, result, err)
+					publishQualificationStreamFailure(failures, failure)
 					cancel()
 					return
 				}
@@ -872,8 +902,8 @@ func qualificationSlowConsumers(ctx context.Context, work qualificationWorkload,
 			for index := range lastProgress {
 				previous := lastProgress[index].Load()
 				if previous == 0 || time.Since(time.Unix(0, previous)) > 2*time.Second {
-					failure := streamFailure{index: index, err: fmt.Errorf("slow stream %d lost continuous progress for over 2s", index)}
-					errors <- failure
+					failure := qualificationStreamFailure{index: index, err: fmt.Errorf("slow stream %d lost continuous progress for over 2s", index)}
+					publishQualificationStreamFailure(failures, failure)
 					cancel()
 					observing = false
 					break
@@ -883,7 +913,7 @@ func qualificationSlowConsumers(ctx context.Context, work qualificationWorkload,
 	}
 	pending.Wait()
 	select {
-	case failure := <-errors:
+	case failure := <-failures:
 		return "", fmt.Errorf("%w: %s", failure.err, receiveStats.summary(failure.index))
 	default:
 	}
