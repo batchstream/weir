@@ -10,26 +10,33 @@ case "$capacity" in
  overload) set -- -e thread_pool.write.size=1 -e thread_pool.write.queue_size=1 ;;
  *) echo 'capacity must be normal or overload' >&2; exit 1;;
 esac
+case "$(uname -m)" in
+ arm64|aarch64) platform=linux/arm64;;
+ x86_64|amd64) platform=linux/amd64;;
+ *) echo 'unsupported host architecture' >&2; exit 1;;
+esac
 case "$product" in
  elasticsearch)
   name=weir-local-elasticsearch
   port=19200
   version=8.19.22
-  image=docker.elastic.co/elasticsearch/elasticsearch@sha256:c2a3ed5f968be6d59c960aa0c60cfdaee667b6bc8211142021a41d0e85b43237
+  if [ "$platform" = linux/arm64 ]; then
+   image=docker.elastic.co/elasticsearch/elasticsearch@sha256:c2a3ed5f968be6d59c960aa0c60cfdaee667b6bc8211142021a41d0e85b43237
+  else
+   image=docker.elastic.co/elasticsearch/elasticsearch@sha256:f1e3d88299cb0db2131fc2ab9060faefccd88fd684d11a49256ae00d7dc3c857
+  fi
   ;;
  opensearch)
   name=weir-local-opensearch-3.3
   port=19202
   version=3.3.0
-  image=opensearchproject/opensearch@sha256:d96afaf6cbd2a6a3695aeb2f1d48c9a16ad5c8918eb849e5cbf43475f0f8e146
+  if [ "$platform" = linux/arm64 ]; then
+   image=opensearchproject/opensearch@sha256:d96afaf6cbd2a6a3695aeb2f1d48c9a16ad5c8918eb849e5cbf43475f0f8e146
+  else
+   image=opensearchproject/opensearch@sha256:59e9e49ac00f19c2af9094e367c8e6586f7d07e6c06465c3f4c43b40934309f2
+  fi
   ;;
- opensearch-2.19)
-  name=weir-local-opensearch
-  port=19201
-  version=2.19.6
-  image=opensearchproject/opensearch@sha256:89a402aa9132286200b8d12aa37fd5b14daa65851193d009355900c0d1d9d59c
-  ;;
- *) echo 'product must be elasticsearch, opensearch or opensearch-2.19' >&2; exit 1;;
+ *) echo 'product must be elasticsearch or opensearch' >&2; exit 1;;
 esac
 if docker container inspect "$name" >/dev/null 2>&1; then
  test "$(docker inspect -f '{{index .Config.Labels "weir.owner"}}' "$name")" = weir-search-local
@@ -44,13 +51,13 @@ case "$action" in
    echo 'fixture already exists; stop it before starting a fresh empty fixture' >&2
    exit 1
   elif [ "$product" = elasticsearch ]; then
-   docker run --pull=never --platform=linux/arm64 -d --name "$name" --label weir.owner=weir-search-local --memory=1536m --cpus=2 \
+   docker run --pull=missing --platform="$platform" -d --name "$name" --label weir.owner=weir-search-local --memory=1536m --cpus=2 \
     -p "127.0.0.1:$port:9200" -e "cluster.name=$name" -e discovery.type=single-node \
     -e xpack.security.enabled=false -e action.auto_create_index=false \
     "$@" \
     -e 'ES_JAVA_OPTS=-Xms512m -Xmx512m' "$image"
   else
-   docker run --pull=never --platform=linux/arm64 -d --name "$name" --label weir.owner=weir-search-local --memory=1536m --cpus=2 \
+   docker run --pull=missing --platform="$platform" -d --name "$name" --label weir.owner=weir-search-local --memory=1536m --cpus=2 \
     -p "127.0.0.1:$port:9200" -e "cluster.name=$name" -e discovery.type=single-node \
     -e DISABLE_SECURITY_PLUGIN=true -e DISABLE_INSTALL_DEMO_CONFIG=true -e action.auto_create_index=false \
     "$@" \

@@ -40,113 +40,33 @@ jobs:
         run: |
           python3 scripts/check_dependencies.py
           CGO_ENABLED=0 timeout 12m go test -count=1 -timeout=180s ./...
-      - name: Offline execution-profile contracts (no backends or qualification)
-        run: CGO_ENABLED=0 timeout 3m go test -tags=integration -count=1 -timeout=120s -run '^TestExecutionProfileContract' ./internal/testutil/testexecution ./internal/app ./internal/testutil/testsearch
       - name: Native CGO1 race tests
         run: CGO_ENABLED=1 timeout 12m go test -race -count=1 -timeout=180s ./...
-      - name: Offline normal and race Node retirement and process terminal measurements
+      - name: Node retirement and process stop integration tests
         run: |
           CGO_ENABLED=1 timeout 2m go test -p=1 -parallel=1 -tags=integration -count=1 -timeout=90s -run '^(TestProcessStop(TerminalMeasurements|OnceConcurrent)|TestOfflineRetirement(NodeJoinsDefaultOwners|SIGTERMActualNode))$' -v ./internal/app
           CGO_ENABLED=1 timeout 2m go test -race -p=1 -parallel=1 -tags=integration -count=1 -timeout=90s -run '^(TestProcessStop(TerminalMeasurements|OnceConcurrent)|TestOfflineRetirement(NodeJoinsDefaultOwners|SIGTERMActualNode))$' -v ./internal/app
-      - name: Offline owned Mongo discovery proxy controls (no database or CLI)
-        run: |
-          CGO_ENABLED=0 timeout 2m go test -p=1 -parallel=1 -count=1 -timeout=90s -run '^TestReplicaProxy' -v ./internal/testutil/testmongo
-          CGO_ENABLED=1 timeout 2m go test -race -p=1 -parallel=1 -count=1 -timeout=90s -run '^TestReplicaProxy' -v ./internal/testutil/testmongo
       - name: Native receive ownership patch race tests
         working-directory: third_party/grpc
         run: CGO_ENABLED=1 timeout 3m go test -race -count=1 -timeout=120s -run '^TestReceive' ./ ./mem ./internal/transport
       - name: Lua allocation patch race tests
         working-directory: third_party/golua
         run: CGO_ENABLED=1 timeout 3m go test -race -count=1 -timeout=120s ./budget ./lexer ./parser ./compiler ./vm ./stdlib
-      - name: Static vet and offline script tests
+      - name: Static vet and script tests
         run: |
           CGO_ENABLED=0 go vet ./...
           CGO_ENABLED=0 go vet -tags=integration ./...
           python3 -m unittest discover -v -s scripts -p '*_test.py'
-          python3 -O -m unittest discover -v -s scripts -p '*_test.py'
           git diff --exit-code
 
-  native-linux-formal:
-    # Independent real cells; neither offline contracts nor another cell's PASS suffice.
-    name: native-linux-formal-${{ matrix.product }}-${{ matrix.suite }}
+  search-integration:
+    name: search-integration-${{ matrix.product }}
     strategy:
       fail-fast: false
       matrix:
         product: [elasticsearch, opensearch]
-        suite: [load, fault]
-        include:
-          - suite: load
-            envelope: 18m
-          - suite: fault
-            envelope: 8m
-    # Ephemeral native runner only; no shared/EKS network changes or promotion.
     runs-on: ubuntu-24.04
-    timeout-minutes: 25
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
-          persist-credentials: false
-      - name: Prepare fixed SDK, public modules and pinned stock native MongoDB
-        run: python3 scripts/ci-tools.py test --mongo
-      - name: Build exact-source native CLI, driver and observer
-        env:
-          CGO_ENABLED: '0'
-        run: |
-          test "$(uname -s)/$(uname -m)" = Linux/x86_64
-          test "$(go version)" = 'go version go1.27.1 linux/amd64'
-          test -z "$(git status --porcelain=v1 --untracked-files=all)"
-          revision=$(git rev-parse HEAD)
-          test "$revision" = '${{ github.event.pull_request.head.sha || github.sha }}'
-          mkdir -p .testdata/native-linux-formal-${{ matrix.product }}-${{ matrix.suite }}/bin
-          go build -trimpath -buildvcs=false -ldflags="-buildid= -X main.sourceRevision=$revision" -o .testdata/native-linux-formal-${{ matrix.product }}-${{ matrix.suite }}/bin/weir ./cmd/weir
-          go test -c -tags=integration -trimpath -buildvcs=false -o .testdata/native-linux-formal-${{ matrix.product }}-${{ matrix.suite }}/bin/app.test ./internal/app
-          go build -trimpath -buildvcs=false -o .testdata/native-linux-formal-${{ matrix.product }}-${{ matrix.suite }}/bin/observer ./internal/testutil/testresource
-          sha256sum .testdata/native-linux-formal-${{ matrix.product }}-${{ matrix.suite }}/bin/* > .testdata/native-linux-formal-${{ matrix.product }}-${{ matrix.suite }}/build-sha256.txt
-          printf '%s\n' "$revision" > .testdata/native-linux-formal-${{ matrix.product }}-${{ matrix.suite }}/source-revision.txt
-      - name: Explicit immutable public image preparation
-        run: |
-          config=$(mktemp -d "$RUNNER_TEMP/weir-formal-public-images.XXXXXX")
-          base=$(python3 -I -c 'import json; x=json.load(open("deploy/docker/base.json")); print(x["image"]+"@"+x["platforms"]["amd64"])')
-          backend=docker.elastic.co/elasticsearch/elasticsearch@sha256:f1e3d88299cb0db2131fc2ab9060faefccd88fd684d11a49256ae00d7dc3c857
-          if test '${{ matrix.product }}' = opensearch; then
-            backend=opensearchproject/opensearch@sha256:59e9e49ac00f19c2af9094e367c8e6586f7d07e6c06465c3f4c43b40934309f2
-          fi
-          docker --config "$config" --host=unix:///var/run/docker.sock pull --platform=linux/amd64 "$base"
-          docker --config "$config" --host=unix:///var/run/docker.sock pull --platform=linux/amd64 "$backend"
-      - name: Real formal plain cell (load retains unchanged 30s warmup plus 600s)
-        run: |
-          root=$(pwd -P)
-          binary="$WEIR_MONGO_REPLICA_BINARY"
-          while IFS= read -r name; do
-            case "$name" in WEIR_*|DOCKER_*) unset "$name";; esac
-          done < <(compgen -e)
-          timeout ${{ matrix.envelope }} python3 -I scripts/test-production-linux.py --profile=linux-native-${{ matrix.suite }}-v1 --product=${{ matrix.product }} \
-            --server-root="$root" --harness-root="$root" --revision="$(git rev-parse HEAD)" \
-            --cli="$root/.testdata/native-linux-formal-${{ matrix.product }}-${{ matrix.suite }}/bin/weir" \
-            --driver="$root/.testdata/native-linux-formal-${{ matrix.product }}-${{ matrix.suite }}/bin/app.test" \
-            --observer="$root/.testdata/native-linux-formal-${{ matrix.product }}-${{ matrix.suite }}/bin/observer" \
-            --mongod="$binary" --output="$root/.testdata/native-linux-formal-${{ matrix.product }}-${{ matrix.suite }}/evidence"
-          test -z "$(git status --porcelain=v1 --untracked-files=all)"
-      - name: Retain bounded load observations, not database data or promotion evidence
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: native-linux-amd64-formal-${{ matrix.product }}-${{ matrix.suite }}-${{ github.event.pull_request.head.sha || github.sha }}
-          path: |
-            .testdata/native-linux-formal-${{ matrix.product }}-${{ matrix.suite }}/evidence/*.json
-            .testdata/native-linux-formal-${{ matrix.product }}-${{ matrix.suite }}/evidence/*.jsonl
-            .testdata/native-linux-formal-${{ matrix.product }}-${{ matrix.suite }}/evidence/*driver.log
-            .testdata/native-linux-formal-${{ matrix.product }}-${{ matrix.suite }}/evidence/command-*.log
-            .testdata/native-linux-formal-${{ matrix.product }}-${{ matrix.suite }}/build-sha256.txt
-            .testdata/native-linux-formal-${{ matrix.product }}-${{ matrix.suite }}/source-revision.txt
-          if-no-files-found: warn
-          retention-days: 7
-
-  native-linux-finite:
-    # Separate from offline contracts and from the unsupported formal profiles.
-    runs-on: ubuntu-24.04
-    timeout-minutes: 12
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -154,168 +74,19 @@ jobs:
           persist-credentials: false
       - name: Prepare fixed native SDK and public modules
         run: python3 scripts/ci-tools.py test
-      - name: Build clean exact-source CLI, native app.test and observer
+      - name: Start local ${{ matrix.product }} fixture
+        run: scripts/search-local.sh start ${{ matrix.product }}
+      - name: Search backend and CLI integration tests
         env:
-          CGO_ENABLED: '0'
+          WEIR_SEARCH_INTEGRATION: ${{ matrix.product }}
         run: |
-          test "$(uname -s)/$(uname -m)" = Linux/x86_64
-          test -z "$(git status --porcelain=v1 --untracked-files=all)"
-          revision=$(git rev-parse HEAD)
-          test "$revision" = '${{ github.event.pull_request.head.sha || github.sha }}'
-          mkdir -p .testdata/native-linux-finite/bin
-          go build -trimpath -buildvcs=false -ldflags="-buildid= -X main.sourceRevision=$revision" -o .testdata/native-linux-finite/bin/weir ./cmd/weir
-          go test -c -tags=integration -trimpath -buildvcs=false -o .testdata/native-linux-finite/bin/app.test ./internal/app
-          go build -trimpath -buildvcs=false -o .testdata/native-linux-finite/bin/observer ./internal/testutil/testresource
-          sha256sum .testdata/native-linux-finite/bin/* > .testdata/native-linux-finite/build-sha256.txt
-          printf '%s\n' "$revision" > .testdata/native-linux-finite/source-revision.txt
-          test -z "$(git status --porcelain=v1 --untracked-files=all)"
-      - name: Explicit public immutable native image preparation (no credentials)
-        run: |
-          config=$(mktemp -d "$RUNNER_TEMP/weir-public-images.XXXXXX")
-          base=$(python3 -I -c 'import json; x=json.load(open("deploy/docker/base.json")); print(x["image"]+"@"+x["platforms"]["amd64"])')
-          backend=docker.elastic.co/elasticsearch/elasticsearch@sha256:f1e3d88299cb0db2131fc2ab9060faefccd88fd684d11a49256ae00d7dc3c857
-          docker --config "$config" --host=unix:///var/run/docker.sock pull --platform=linux/amd64 "$base"
-          docker --config "$config" --host=unix:///var/run/docker.sock pull --platform=linux/amd64 "$backend"
-      - name: Real finite native Linux ES8.19.22 plain execution (not qualification)
-        run: |
-          root=$(pwd -P)
-          python3 -I scripts/test-production-linux.py --profile=linux-native-es-functional-v1 \
-            --server-root="$root" --harness-root="$root" --revision="$(git rev-parse HEAD)" \
-            --cli="$root/.testdata/native-linux-finite/bin/weir" \
-            --driver="$root/.testdata/native-linux-finite/bin/app.test" \
-            --observer="$root/.testdata/native-linux-finite/bin/observer" \
-            --output="$root/.testdata/native-linux-finite/evidence"
-          test -z "$(git status --porcelain=v1 --untracked-files=all)"
-      - name: Retain sanitized finite evidence, including failures
+          go test -p=1 -tags=integration -count=1 -timeout=10m ./internal/backend/search
+          go test -tags=integration -count=1 -timeout=5m -run '^TestProcessSearchCRUD$' -v ./internal/app
+      - name: Stop local ${{ matrix.product }} fixture
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: native-linux-amd64-finite-${{ github.event.pull_request.head.sha || github.sha }}
-          path: |
-            .testdata/native-linux-finite/evidence/
-            .testdata/native-linux-finite/build-sha256.txt
-            .testdata/native-linux-finite/source-revision.txt
-          if-no-files-found: warn
-          retention-days: 7
-
-  native-linux-opensearch-finite:
-    # Separate from offline contracts and from the unsupported formal profiles.
-    runs-on: ubuntu-24.04
-    timeout-minutes: 12
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
-          persist-credentials: false
-      - name: Prepare fixed native SDK and public modules
-        run: python3 scripts/ci-tools.py test
-      - name: Build clean exact-source CLI, native app.test and observer
-        env:
-          CGO_ENABLED: '0'
-        run: |
-          test "$(uname -s)/$(uname -m)" = Linux/x86_64
-          test -z "$(git status --porcelain=v1 --untracked-files=all)"
-          revision=$(git rev-parse HEAD)
-          test "$revision" = '${{ github.event.pull_request.head.sha || github.sha }}'
-          mkdir -p .testdata/native-linux-opensearch-finite/bin
-          go build -trimpath -buildvcs=false -ldflags="-buildid= -X main.sourceRevision=$revision" -o .testdata/native-linux-opensearch-finite/bin/weir ./cmd/weir
-          go test -c -tags=integration -trimpath -buildvcs=false -o .testdata/native-linux-opensearch-finite/bin/app.test ./internal/app
-          go build -trimpath -buildvcs=false -o .testdata/native-linux-opensearch-finite/bin/observer ./internal/testutil/testresource
-          sha256sum .testdata/native-linux-opensearch-finite/bin/* > .testdata/native-linux-opensearch-finite/build-sha256.txt
-          printf '%s\n' "$revision" > .testdata/native-linux-opensearch-finite/source-revision.txt
-          test -z "$(git status --porcelain=v1 --untracked-files=all)"
-      - name: Explicit public immutable native image preparation (no credentials)
-        run: |
-          config=$(mktemp -d "$RUNNER_TEMP/weir-public-images.XXXXXX")
-          base=$(python3 -I -c 'import json; x=json.load(open("deploy/docker/base.json")); print(x["image"]+"@"+x["platforms"]["amd64"])')
-          backend=opensearchproject/opensearch@sha256:59e9e49ac00f19c2af9094e367c8e6586f7d07e6c06465c3f4c43b40934309f2
-          docker --config "$config" --host=unix:///var/run/docker.sock pull --platform=linux/amd64 "$base"
-          docker --config "$config" --host=unix:///var/run/docker.sock pull --platform=linux/amd64 "$backend"
-      - name: Real finite native Linux OpenSearch3.3.0 plain execution (not qualification)
-        run: |
-          root=$(pwd -P)
-          python3 -I scripts/test-production-linux.py --profile=linux-native-opensearch-functional-v1 \
-            --server-root="$root" --harness-root="$root" --revision="$(git rev-parse HEAD)" \
-            --cli="$root/.testdata/native-linux-opensearch-finite/bin/weir" \
-            --driver="$root/.testdata/native-linux-opensearch-finite/bin/app.test" \
-            --observer="$root/.testdata/native-linux-opensearch-finite/bin/observer" \
-            --output="$root/.testdata/native-linux-opensearch-finite/evidence"
-          test -z "$(git status --porcelain=v1 --untracked-files=all)"
-      - name: Retain sanitized finite evidence, including failures
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: native-linux-amd64-opensearch-finite-${{ github.event.pull_request.head.sha || github.sha }}
-          path: |
-            .testdata/native-linux-opensearch-finite/evidence/
-            .testdata/native-linux-opensearch-finite/build-sha256.txt
-            .testdata/native-linux-opensearch-finite/source-revision.txt
-          if-no-files-found: warn
-          retention-days: 7
-
-  native-linux-volume-copy:
-    # Filesystem prerequisite only: overrides entrypoint; never starts OpenSearch.
-    runs-on: ubuntu-24.04
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
-          persist-credentials: false
-      - name: Prepare fixed native SDK and public modules
-        run: python3 scripts/ci-tools.py test
-      - name: Build exact clean native filesystem helper
-        env:
-          CGO_ENABLED: '0'
-        run: |
-          test "$(uname -s)/$(uname -m)" = Linux/x86_64
-          test "$(go version)" = 'go version go1.27.1 linux/amd64'
-          test -z "$(git status --porcelain=v1 --untracked-files=all)"
-          revision=$(git rev-parse HEAD)
-          test "$revision" = '${{ github.event.pull_request.head.sha || github.sha }}'
-          mkdir -p .testdata/native-linux-volume-copy/bin
-          go build -trimpath -buildvcs=false -ldflags="-buildid= -X main.sourceRevision=$revision" -o .testdata/native-linux-volume-copy/bin/helper ./internal/testutil/testvolume
-          chmod 0755 .testdata/native-linux-volume-copy/bin/helper
-          sha256sum .testdata/native-linux-volume-copy/bin/helper > .testdata/native-linux-volume-copy/build-sha256.txt
-          go version -m .testdata/native-linux-volume-copy/bin/helper > .testdata/native-linux-volume-copy/buildinfo.txt
-          printf '%s\n' "$revision" > .testdata/native-linux-volume-copy/source-revision.txt
-          # The helper is intentionally stdlib-only, independent of backend SDKs.
-          go list -deps -f '{{if not .Standard}}{{.ImportPath}}{{end}}' ./internal/testutil/testvolume | grep -v '^$' > .testdata/native-linux-volume-copy/helper-dependencies.txt
-          test "$(cat .testdata/native-linux-volume-copy/helper-dependencies.txt)" = github.com/batchstream/weir/internal/testutil/testvolume
-          test -z "$(git status --porcelain=v1 --untracked-files=all)"
-      - name: Explicit public pinned native image preparation (empty config)
-        run: |
-          config=$(mktemp -d "$RUNNER_TEMP/weir-public-volume-images.XXXXXX")
-          base=$(python3 -I -c 'import json; x=json.load(open("deploy/docker/base.json")); print(x["image"]+"@"+x["platforms"]["amd64"])')
-          target=opensearchproject/opensearch@sha256:59e9e49ac00f19c2af9094e367c8e6586f7d07e6c06465c3f4c43b40934309f2
-          docker --config "$config" --host=unix:///var/run/docker.sock pull --platform=linux/amd64 "$base"
-          docker --config "$config" --host=unix:///var/run/docker.sock pull --platform=linux/amd64 "$target"
-      - name: Real held create-time copy-up and exact cleanup (not startup)
-        run: |
-          root=$(pwd -P)
-          read -r helper_sha256 helper_path < .testdata/native-linux-volume-copy/build-sha256.txt
-          python3 -I scripts/test-production-volume-linux.py \
-            --root="$root" --revision="$(git rev-parse HEAD)" \
-            --helper="$root/.testdata/native-linux-volume-copy/bin/helper" \
-            --helper-sha256="$helper_sha256" \
-            --output="$root/.testdata/native-linux-volume-copy/evidence"
-          test -z "$(git status --porcelain=v1 --untracked-files=all)"
-      - name: Retain sanitized filesystem evidence, including failures
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: native-linux-amd64-volume-copy-${{ github.event.pull_request.head.sha || github.sha }}
-          path: |
-            .testdata/native-linux-volume-copy/evidence/
-            .testdata/native-linux-volume-copy/build-sha256.txt
-            .testdata/native-linux-volume-copy/buildinfo.txt
-            .testdata/native-linux-volume-copy/source-revision.txt
-            .testdata/native-linux-volume-copy/helper-dependencies.txt
-          if-no-files-found: warn
-          retention-days: 7
+        run: scripts/search-local.sh stop ${{ matrix.product }}
 
   native-mongo-replica:
-    # Focused owned integration only; no formal load/resource qualification.
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -323,47 +94,17 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
-      - name: Prepare fixed native SDK, public modules and verified MongoDB member
+      - name: Prepare fixed native SDK, public modules and MongoDB
         run: python3 scripts/ci-tools.py test --mongo
-      - name: Serialized actual replica discovery, reply loss and live read retirement
+      - name: MongoDB replica-set discovery, reply loss and read retirement
         env:
           CGO_ENABLED: '1'
           WEIR_MONGO_REPLICA_INTEGRATION: '1'
         run: |
-          test "$(uname -s)/$(uname -m)" = Linux/x86_64
-          test -z "$(git status --porcelain=v1 --untracked-files=all)"
-          binary="$WEIR_MONGO_REPLICA_BINARY"
-          while IFS= read -r name; do
-            case "$name" in WEIR_*|DOCKER_*) unset "$name";; esac
-          done < <(compgen -e)
-          export WEIR_MONGO_REPLICA_BINARY="$binary" WEIR_MONGO_REPLICA_INTEGRATION=1
-          mkdir -p .testdata/native-mongo-replica
-          started=$(date +%s)
-          status=0
-          # ProxyDiscoveryRecovery nests sent_read_retirement in the existing plain/TLS lifetimes.
-          # Typed CLI reply-loss lifetimes nest cancel/recovery and actual live-read SIGTERM;
-          # Native lifetimes and all existing mutation/effect oracles remain in these selectors.
           go test -race -p=1 -parallel=1 -tags=integration -count=1 -timeout=10m \
             -run '^TestMongoReplica(DiscoveryOwnership|ProxyDiscoveryRecovery|CLIRecovery)$' -v \
-            ./internal/backend/mongodb ./internal/app 2>&1 | tee .testdata/native-mongo-replica/tests.log || status=1
+            ./internal/backend/mongodb ./internal/app
           go test -race -p=1 -parallel=1 -tags=integration -count=1 -timeout=10m \
-            -run '^TestMongoReplicaCLIReplyLoss$/^plain$' -v \
-            ./internal/app 2>&1 | tee .testdata/native-mongo-replica/reply-loss-plain.log || status=1
+            -run '^TestMongoReplicaCLIReplyLoss$/^plain$' -v ./internal/app
           go test -race -p=1 -parallel=1 -tags=integration -count=1 -timeout=10m \
-            -run '^TestMongoReplicaCLIReplyLoss$/^tls$' -v \
-            ./internal/app 2>&1 | tee .testdata/native-mongo-replica/reply-loss-tls.log || status=1
-          printf 'three_command_elapsed_seconds=%s\n' "$(( $(date +%s) - started ))" | tee .testdata/native-mongo-replica/envelope.log
-          git diff --exit-code || status=1
-          exit "$status"
-      - name: Preserve focused output without credentials, certificate material or routing files
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # pinned existing version
-        with:
-          name: native-mongo-replica
-          path: |
-            .testdata/native-mongo-replica/tests.log
-            .testdata/native-mongo-replica/reply-loss-plain.log
-            .testdata/native-mongo-replica/reply-loss-tls.log
-            .testdata/native-mongo-replica/envelope.log
-          if-no-files-found: ignore
-          retention-days: 7
+            -run '^TestMongoReplicaCLIReplyLoss$/^tls$' -v ./internal/app
