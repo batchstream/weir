@@ -109,16 +109,13 @@ func (b *Backend) Create(t *testing.T, index, body string) {
 
 func (b *Backend) Do(t *testing.T, method, path, body string) (int, []byte) {
 	t.Helper()
-	request, err := http.NewRequest(method, b.URL+path, bytes.NewBufferString(body))
-	if err != nil {
-		t.Fatal(err)
+	response, err := b.send(method, path, body)
+	if err != nil && (method == http.MethodGet || method == http.MethodDelete) {
+		// A proxied exchange in the same test can leave a server-closed
+		// connection idle in this pool. Reads and deletes are safe to resend once.
+		b.Client.CloseIdleConnections()
+		response, err = b.send(method, path, body)
 	}
-	request.GetBody = nil
-	if b.Username != "" {
-		request.SetBasicAuth(b.Username, b.Password)
-	}
-	request.Header.Set("Content-Type", "application/json")
-	response, err := b.Client.Do(request)
 	if err != nil {
 		t.Fatalf("independent backend %s %s failed: %v", method, path, err)
 	}
@@ -128,4 +125,18 @@ func (b *Backend) Do(t *testing.T, method, path, body string) (int, []byte) {
 		t.Fatal(err)
 	}
 	return response.StatusCode, raw
+}
+
+// send never lets the transport replay a request on its own.
+func (b *Backend) send(method, path, body string) (*http.Response, error) {
+	request, err := http.NewRequest(method, b.URL+path, bytes.NewBufferString(body))
+	if err != nil {
+		return nil, err
+	}
+	request.GetBody = nil
+	if b.Username != "" {
+		request.SetBasicAuth(b.Username, b.Password)
+	}
+	request.Header.Set("Content-Type", "application/json")
+	return b.Client.Do(request)
 }
