@@ -26,6 +26,7 @@ import (
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/stats"
 )
 
 type qualificationRecord struct {
@@ -646,6 +647,111 @@ func reportQualificationStats(t *testing.T, stats map[string]*qualificationStats
 	}
 }
 
+type qualificationStreamContextKey int
+
+const qualificationStreamKey qualificationStreamContextKey = 0
+
+// InPayload observes completed receive/decode, not raw HTTP/2 arrival. Records
+// contain only timings, message classes and lengths, never payloads or IDs.
+type qualificationReceiveRecord struct {
+	Kind               string
+	Offset             time.Duration
+	Length, WireLength int
+}
+
+type qualificationReceiveStream struct {
+	mu                              sync.Mutex
+	counts                          [4]int64 // head, chunk, native end, other
+	records                         [16]qualificationReceiveRecord
+	next                            uint64
+	lastChunk, lastReturn           time.Duration
+	hasChunk, hasReturn             bool
+	attributed                      int64
+	maxGap, preReceive, postReceive time.Duration
+}
+
+type qualificationReceiveStats struct {
+	start   time.Time
+	streams [32]qualificationReceiveStream
+}
+
+func (s *qualificationReceiveStats) TagRPC(ctx context.Context, _ *stats.RPCTagInfo) context.Context {
+	return ctx
+}
+func (s *qualificationReceiveStats) TagConn(ctx context.Context, _ *stats.ConnTagInfo) context.Context {
+	return ctx
+}
+func (s *qualificationReceiveStats) HandleConn(context.Context, stats.ConnStats) {}
+
+func (s *qualificationReceiveStats) record(ctx context.Context, record qualificationReceiveRecord, class int) {
+	index, ok := ctx.Value(qualificationStreamKey).(int)
+	if !ok || index < 0 || index >= len(s.streams) {
+		return
+	}
+	stream := &s.streams[index]
+	stream.mu.Lock()
+	if class >= 0 {
+		stream.counts[class]++
+	}
+	if record.Kind == "recv_chunk" {
+		stream.lastChunk, stream.hasChunk = record.Offset, true
+	}
+	if record.Kind == "callback_enter" && stream.hasChunk {
+		if stream.hasReturn && stream.lastChunk >= stream.lastReturn && record.Offset >= stream.lastChunk {
+			stream.attributed++
+			gap := record.Offset - stream.lastReturn
+			if gap > stream.maxGap {
+				stream.maxGap, stream.preReceive, stream.postReceive = gap, stream.lastChunk-stream.lastReturn, record.Offset-stream.lastChunk
+			}
+		}
+		stream.hasChunk = false
+	}
+	if record.Kind == "callback_return" {
+		stream.lastReturn, stream.hasReturn = record.Offset, true
+	}
+	stream.records[stream.next%uint64(len(stream.records))] = record
+	stream.next++
+	stream.mu.Unlock()
+}
+
+func (s *qualificationReceiveStats) HandleRPC(ctx context.Context, event stats.RPCStats) {
+	payload, ok := event.(*stats.InPayload)
+	if !ok {
+		return
+	}
+	kind, class := "recv_other", 3
+	if response, ok := payload.Payload.(*pb.ExecuteResponse); ok && response != nil && response.Event != nil {
+		switch response.Event.Value.(type) {
+		case *pb.Event_Head:
+			kind, class = "recv_head", 0
+		case *pb.Event_Chunk:
+			kind, class = "recv_chunk", 1
+		case *pb.Event_NativeEnd:
+			kind, class = "recv_native_end", 2
+		}
+	}
+	record := qualificationReceiveRecord{Kind: kind, Offset: payload.RecvTime.Sub(s.start), Length: payload.Length, WireLength: payload.WireLength}
+	s.record(ctx, record, class)
+}
+
+func (s *qualificationReceiveStats) callback(ctx context.Context, kind string, at time.Time) {
+	record := qualificationReceiveRecord{Kind: kind, Offset: at.Sub(s.start)}
+	s.record(ctx, record, -1)
+}
+
+func (s *qualificationReceiveStats) summary(index int) string {
+	stream := &s.streams[index]
+	stream.mu.Lock()
+	counts, records, next := stream.counts, stream.records, stream.next
+	attributed, gap, pre, post := stream.attributed, stream.maxGap, stream.preReceive, stream.postReceive
+	stream.mu.Unlock()
+	ordered := make([]qualificationReceiveRecord, 0, len(records))
+	for n := next - min(next, uint64(len(records))); n < next; n++ {
+		ordered = append(ordered, records[n%uint64(len(records))])
+	}
+	return fmt.Sprintf("completed_receive_counts_head_chunk_native_end_other=%v attributed_callback_gaps=%d max_attributed_gap=%s return_to_completed_receive=%s completed_receive_to_callback=%s boundary_recent=%+v boundary_note=completed_receive_decode_not_raw_HTTP2_arrival", counts, attributed, gap, pre, post, ordered)
+}
+
 func qualificationSlowConsumers(ctx context.Context, work qualificationWorkload, measurement time.Time) (string, error) {
 	start := measurement.Add(work.duration / 4)
 	if remaining := time.Until(start); remaining > 0 {
@@ -660,13 +766,18 @@ func qualificationSlowConsumers(ctx context.Context, work qualificationWorkload,
 	duration := min(120*time.Second, work.duration/2)
 	phase, cancel := context.WithTimeout(ctx, duration)
 	defer cancel()
-	connection, err := grpc.NewClient("passthrough:///"+work.process.address, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithNoProxy(), grpc.WithDisableRetry(), grpc.WithDisableServiceConfig(), grpc.WithStaticStreamWindowSize(64<<10), grpc.WithStaticConnWindowSize(4<<20))
+	receiveStats := &qualificationReceiveStats{start: start}
+	connection, err := grpc.NewClient("passthrough:///"+work.process.address, grpc.WithStatsHandler(receiveStats), grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithNoProxy(), grpc.WithDisableRetry(), grpc.WithDisableServiceConfig(), grpc.WithStaticStreamWindowSize(64<<10), grpc.WithStaticConnWindowSize(4<<20))
 	if err != nil {
 		return "", err
 	}
 	defer connection.Close()
 	client := pb.NewStoreServiceClient(connection)
-	errors := make(chan error, 32)
+	type streamFailure struct {
+		index int
+		err   error
+	}
+	errors := make(chan streamFailure, 32)
 	progress := make([]atomic.Int64, 32)
 	callbacks := make([]atomic.Int64, 32)
 	lastProgress := make([]atomic.Int64, 32)
@@ -685,11 +796,13 @@ func qualificationSlowConsumers(ctx context.Context, work qualificationWorkload,
 		pending.Add(1)
 		go func() {
 			defer pending.Done()
+			rpcContext := context.WithValue(phase, qualificationStreamKey, index)
 			dataset := work.datasets[index%2]
 			for phase.Err() == nil {
 				offered.Add(1)
 				consume := func(ctx context.Context, _ *weirclient.NativeResponse, chunk []byte) error {
 					callbackStart := time.Now()
+					receiveStats.callback(rpcContext, "callback_enter", callbackStart)
 					timing := &timings[index]
 					if timing.lastReturn.IsZero() {
 						timing.firstCallback = callbackStart.Sub(start)
@@ -700,7 +813,10 @@ func qualificationSlowConsumers(ctx context.Context, work qualificationWorkload,
 						timing.gapMax = max(timing.gapMax, gap)
 					}
 					timing.lastCallback = callbackStart.Sub(start)
-					defer func() { timing.lastReturn = time.Now() }()
+					defer func() {
+						timing.lastReturn = time.Now()
+						receiveStats.callback(rpcContext, "callback_return", timing.lastReturn)
+					}()
 					progress[index].Add(int64(len(chunk)))
 					callbacks[index].Add(1)
 					previous := lastProgress[index].Swap(time.Now().UnixNano())
@@ -728,12 +844,13 @@ func qualificationSlowConsumers(ctx context.Context, work qualificationWorkload,
 					return waitErr
 				}
 				opts := weirclient.NativeOptions{StoreName: dataset.store, Request: dataset.native[3], Consume: consume}
-				result, err := weirclient.Native(phase, client, opts)
+				result, err := weirclient.Native(rpcContext, client, opts)
 				if phase.Err() != nil {
 					return
 				}
 				if err != nil || result == nil || result.Failure != nil || result.Completion != weirclient.NativeResponseComplete {
-					errors <- fmt.Errorf("slow stream %d failed: %v %v", index, result, err)
+					failure := streamFailure{index: index, err: fmt.Errorf("slow stream %d failed", index)}
+					errors <- failure
 					cancel()
 					return
 				}
@@ -755,7 +872,8 @@ func qualificationSlowConsumers(ctx context.Context, work qualificationWorkload,
 			for index := range lastProgress {
 				previous := lastProgress[index].Load()
 				if previous == 0 || time.Since(time.Unix(0, previous)) > 2*time.Second {
-					errors <- fmt.Errorf("slow stream %d lost continuous progress for over 2s", index)
+					failure := streamFailure{index: index, err: fmt.Errorf("slow stream %d lost continuous progress for over 2s", index)}
+					errors <- failure
 					cancel()
 					observing = false
 					break
@@ -765,8 +883,8 @@ func qualificationSlowConsumers(ctx context.Context, work qualificationWorkload,
 	}
 	pending.Wait()
 	select {
-	case err := <-errors:
-		return "", err
+	case failure := <-errors:
+		return "", fmt.Errorf("%w: %s", failure.err, receiveStats.summary(failure.index))
 	default:
 	}
 	if ctx.Err() != nil {
@@ -776,7 +894,7 @@ func qualificationSlowConsumers(ctx context.Context, work qualificationWorkload,
 	for index := range progress {
 		if callbacks[index].Load() < int64(duration/(500*time.Millisecond)-8) {
 			timing := timings[index]
-			return "", fmt.Errorf("slow stream %d failed to demonstrate continued chunk delivery: callbacks=%d bytes=%d callback_wait_count=%d callback_wait_sum=%s callback_wait_max=%s callback_return_gap_count=%d callback_return_gap_sum=%s callback_return_gap_max=%s first_callback_offset=%s last_callback_offset=%s", index, callbacks[index].Load(), progress[index].Load(), timing.waitCount, timing.waitSum, timing.waitMax, timing.gapCount, timing.gapSum, timing.gapMax, timing.firstCallback, timing.lastCallback)
+			return "", fmt.Errorf("slow stream %d failed to demonstrate continued chunk delivery: callbacks=%d bytes=%d callback_wait_count=%d callback_wait_sum=%s callback_wait_max=%s callback_return_gap_count=%d callback_return_gap_sum=%s callback_return_gap_max=%s first_callback_offset=%s last_callback_offset=%s %s", index, callbacks[index].Load(), progress[index].Load(), timing.waitCount, timing.waitSum, timing.waitMax, timing.gapCount, timing.gapSum, timing.gapMax, timing.firstCallback, timing.lastCallback, receiveStats.summary(index))
 		}
 		minimumCallbacks = min(minimumCallbacks, callbacks[index].Load())
 		minimumBytes = min(minimumBytes, progress[index].Load())
