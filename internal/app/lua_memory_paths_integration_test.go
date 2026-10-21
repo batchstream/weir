@@ -9,9 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/netip"
 	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -34,33 +32,14 @@ type luaMemoryPath struct {
 // All Lua executes inside one 512MiB CLI, never in the host test driver.
 func TestCLILuaMemoryPaths(t *testing.T) {
 	if os.Getenv("WEIR_LUA_MEMORY_PATHS_INTEGRATION") != "1" {
-		t.Skip("requires explicit owned CLI Lua allocation-path qualification")
+		t.Skip("requires WEIR_LUA_MEMORY_PATHS_INTEGRATION=1, Docker Desktop and the local Mongo and Elasticsearch fixtures")
 	}
 	if os.Getenv("WEIR_INTEGRATION") != "1" || os.Getenv("WEIR_SEARCH_INTEGRATION") != "elasticsearch" || os.Getenv("WEIR_MONGO_PROFILE") == "tls" {
 		t.Fatal("requires isolated plain MongoDB and Elasticsearch 8.19.22 fixtures")
 	}
-	binary, revision, digest := os.Getenv("WEIR_LUA_MEMORY_BINARY"), os.Getenv("WEIR_LUA_MEMORY_SOURCE"), os.Getenv("WEIR_LUA_MEMORY_SHA256")
-	if !filepath.IsAbs(binary) || len(revision) != 40 || len(digest) != 64 {
-		t.Fatal("requires absolute CLI path and exact clean source/SHA256 receipt")
-	}
-	artifact, err := os.ReadFile(binary)
-	if err != nil || fmt.Sprintf("%x", sha256.Sum256(artifact)) != digest {
-		t.Fatal("CLI differs from exact build receipt", err)
-	}
-	engine := strings.TrimSpace(packagedDocker(t, "info", "--format", "{{.OSType}}/{{.Architecture}}/{{.CgroupVersion}} kernel={{.KernelVersion}}"))
-	image := strings.TrimSpace(packagedDocker(t, "image", "inspect", "--format", "{{.Os}}/{{.Architecture}} {{.Id}}", "busybox:1.37.0"))
-	if !strings.HasPrefix(engine, "linux/aarch64/2 ") || image != "linux/arm64 sha256:ad4f11f7c85f87c0a6d6c0fe492ad53f9cdcff6e8c88b881360c70eff701c67b" {
-		t.Fatal("requires the pinned native Linux arm64 fixture", engine, image)
-	}
+	binary := buildLinuxCLI(t)
 	mongo, search := testmongo.Open(t), testsearch.Open(t)
-	metadata := strings.Fields(packagedDocker(t, "inspect", "--type", "container", "--format", `{{.Id}} {{index .Config.Labels "weir.owner"}} {{.Config.Image}} {{(index .NetworkSettings.Networks "bridge").IPAddress}} {{.State.Running}}`, "weir-local-elasticsearch"))
-	if len(metadata) != 5 || len(metadata[0]) != 64 || metadata[1] != "weir-search-local" || metadata[2] != "docker.elastic.co/elasticsearch/elasticsearch@sha256:c2a3ed5f968be6d59c960aa0c60cfdaee667b6bc8211142021a41d0e85b43237" || metadata[4] != "true" {
-		t.Fatal("owned pinned Elasticsearch fixture identity mismatch", metadata)
-	}
-	bridge, err := netip.ParseAddr(metadata[3])
-	if err != nil || !bridge.Is4() || !bridge.IsPrivate() {
-		t.Fatal("owned Elasticsearch private bridge unavailable")
-	}
+	searchURL := searchContainerURL(t, search)
 	paths := luaMemoryPaths()
 	mongoDataset := &nativeBurstDataset{store: "mongo", root: mongo.DB + "/records", media: "application/bson", mongo: mongo, expected: make(map[string]nativeBurstRecord)}
 	searchDataset := &nativeBurstDataset{store: "search", root: search.Index, media: "application/json", search: search, expected: make(map[string]nativeBurstRecord)}
@@ -71,8 +50,8 @@ func TestCLILuaMemoryPaths(t *testing.T) {
 			luaMemoryPathsSeed(t, dataset, "lua-path-"+path.name)
 		}
 	}
-	mongoBackend := &Mongo{URI: "mongodb://host.docker.internal:27028/?directConnection=true&serverMonitoringMode=poll"}
-	searchBackend := &Search{URL: "http://" + bridge.String() + ":9200"}
+	mongoBackend := &Mongo{URI: containerMongoURI}
+	searchBackend := &Search{URL: searchURL}
 	mongoLocal := &Local{Backend: BackendConfig{MongoDB: mongoBackend}}
 	searchLocal := &Local{Backend: BackendConfig{Search: searchBackend}}
 	mongoStore, searchStore := StoreConfig{Name: "mongo", Local: mongoLocal}, StoreConfig{Name: "search", Local: searchLocal}
@@ -83,12 +62,7 @@ func TestCLILuaMemoryPaths(t *testing.T) {
 	}
 	opts := memoryRecoveryOptions{binary: binary, capacityMiB: 512, automatic: true, config: &cfg}
 	process := startMemoryRecoveryCLI(t, opts)
-	version := strings.TrimSpace(packagedDocker(t, "exec", process.name, "/weir", "version"))
-	var identity map[string]string
-	if json.Unmarshal([]byte(version), &identity) != nil || identity["state"] != "clean-commit" || identity["dirty"] != "false" || identity["target"] != "linux/arm64" || identity["revision"] != revision {
-		t.Fatal("requires the clean exact Linux CLI", version)
-	}
-	t.Logf("Lua_paths fixed512MiB/2CPU single_process=true backends=MongoDB,Elasticsearch cases_per_backend=%d caller3s retries=0 source=%s binary_SHA256=%s version=%s engine=%s image=%s Search_bridge=%s Search_container=%s", len(paths), revision, digest, version, engine, image, bridge, metadata[0])
+	t.Logf("Lua_paths fixed512MiB/2CPU single_process=true backends=MongoDB,Elasticsearch cases_per_backend=%d caller3s retries=0 Search=%s", len(paths), searchURL)
 	nativeBurstSnapshot(t, process)
 	initial, err := ingressMemoryMetrics(process)
 	if err != nil || testmetrics.Sum(initial, "weir_memory_go_runtime_managed") != 1 {

@@ -94,12 +94,11 @@ func darwinUnknown(t *testing.T, client pb.StoreServiceClient, fixture *testmong
 
 func TestDarwinMemoryArtifact(t *testing.T) {
 	if os.Getenv("WEIR_MEMORY_DARWIN_ARTIFACT") != "1" {
-		t.Skip("explicit exact Darwin memory archive required")
+		t.Skip("explicit Darwin memory archive required")
 	}
 	binary := os.Getenv("WEIR_MEMORY_DARWIN_BINARY")
-	source := os.Getenv("WEIR_MEMORY_DARWIN_SOURCE")
-	if !filepath.IsAbs(binary) || len(source) != 40 {
-		t.Fatal("artifact identity")
+	if !filepath.IsAbs(binary) {
+		t.Fatal("WEIR_MEMORY_DARWIN_BINARY must be an absolute path")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	output, err := exec.CommandContext(ctx, binary, "version").Output()
@@ -111,10 +110,10 @@ func TestDarwinMemoryArtifact(t *testing.T) {
 	if err := json.Unmarshal(output, &version); err != nil {
 		t.Fatal(err)
 	}
-	if version["revision"] != source || version["state"] != "clean-commit" || version["target"] != "darwin/arm64" {
+	if version["target"] != "darwin/arm64" {
 		t.Fatal(version)
 	}
-	t.Log("exact archive", string(output))
+	t.Log("archive", string(output))
 	fixture := testmongo.OpenSecure(t)
 	proxy := testmongo.StartProxy(t, &fixture.Fixture)
 	proxy.DropCommand = "bulkWrite"

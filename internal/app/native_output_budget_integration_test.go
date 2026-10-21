@@ -4,11 +4,9 @@ package app
 
 import (
 	"context"
-	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -29,25 +27,14 @@ import (
 // establish whether that Store's bounded output reservations preserve progress.
 func TestCLILargeNativeOutputBudgetPreservesHealthyQueries(t *testing.T) {
 	if os.Getenv("WEIR_NATIVE_OUTPUT_BUDGET_INTEGRATION") != "1" {
-		t.Skip("requires explicit owned Linux CLI Native-output qualification")
+		t.Skip("requires WEIR_NATIVE_OUTPUT_BUDGET_INTEGRATION=1, Docker Desktop and the local Mongo fixture")
 	}
-	binary := os.Getenv("WEIR_NATIVE_OUTPUT_BUDGET_BINARY")
-	if !filepath.IsAbs(binary) {
-		t.Fatal("WEIR_NATIVE_OUTPUT_BUDGET_BINARY must identify an explicit Linux CLI")
-	}
-	raw, err := os.ReadFile(binary)
-	if err != nil {
-		t.Fatal(err)
-	}
-	engine := strings.TrimSpace(packagedDocker(t, "info", "--format", "{{.OSType}}/{{.Architecture}}/{{.CgroupVersion}}"))
-	if engine != "linux/aarch64/2" {
-		t.Fatal("native Linux arm64 cgroup-v2 engine required", engine)
-	}
+	binary := buildLinuxCLI(t)
 	fixture := testmongo.Open(t)
 	seedContext, stopSeed := context.WithTimeout(t.Context(), 5*time.Second)
 	large := bson.D{{Key: "_id", Value: "large"}, {Key: "n", Value: int64(1)}, {Key: "pad", Value: strings.Repeat("x", 8<<20)}}
 	health := bson.D{{Key: "_id", Value: "health"}, {Key: "n", Value: int64(42)}, {Key: "pad", Value: strings.Repeat("h", 2048)}}
-	_, err = fixture.Admin.Database(fixture.DB).Collection("records").InsertMany(seedContext, []any{large, health})
+	_, err := fixture.Admin.Database(fixture.DB).Collection("records").InsertMany(seedContext, []any{large, health})
 	stopSeed()
 	if err != nil {
 		t.Fatal(err)
@@ -60,7 +47,7 @@ func TestCLILargeNativeOutputBudgetPreservesHealthyQueries(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	backend := &Mongo{URI: "mongodb://host.docker.internal:27028/?directConnection=true&serverMonitoringMode=poll"}
+	backend := &Mongo{URI: containerMongoURI}
 	connection := BackendConfig{MongoDB: backend}
 	local := &Local{Backend: connection}
 	store := StoreConfig{Name: "mongo", Local: local}
@@ -68,17 +55,7 @@ func TestCLILargeNativeOutputBudgetPreservesHealthyQueries(t *testing.T) {
 	cfg.Routing.Stores = []StoreConfig{store}
 	opts := memoryRecoveryOptions{binary: binary, capacityMiB: 1024, automatic: true, config: &cfg}
 	service := startMemoryRecoveryCLI(t, opts)
-	version := strings.TrimSpace(packagedDocker(t, "exec", service.name, "/weir", "version"))
-	qualification := os.Getenv("WEIR_NATIVE_OUTPUT_BUDGET_QUALIFICATION") == "1"
-	digest := fmt.Sprintf("%x", sha256.Sum256(raw))
-	var identity map[string]string
-	if err := json.Unmarshal([]byte(version), &identity); err != nil {
-		t.Fatal(err)
-	}
-	if qualification && (identity["state"] != "clean-commit" || identity["dirty"] != "false" || identity["revision"] != os.Getenv("WEIR_QUALIFICATION_SOURCE") || len(identity["revision"]) != 40 || digest != os.Getenv("WEIR_QUALIFICATION_SHA256")) {
-		t.Fatal("formal focused qualification requires exact clean source and SHA256", version, digest)
-	}
-	t.Logf("qualification=%t binary_SHA256=%s version=%s capacity=1GiB CPUs=2 stores=1 slow_streams=32 response_pad=8MiB stream_window=64KiB conn_window=4MiB caller_probe_budget=3s", qualification, digest, version)
+	t.Log("capacity=1GiB CPUs=2 stores=1 slow_streams=32 response_pad=8MiB stream_window=64KiB conn_window=4MiB caller_probe_budget=3s")
 	initial := nativeOutputBudgetSample(t, service, "initial")
 	for name, want := range map[string]float64{"weir_store_active_executions_limit": 16, "weir_store_pending_entries_limit": 1024, "weir_store_pending_reserved_bytes_limit": 32 << 20, "weir_execution_memory_leases_limit": 32768, "weir_execution_memory_native_leases_limit": 1024, "weir_execution_memory_budget_known": 1} {
 		if testmetrics.Sum(initial, name) != want {

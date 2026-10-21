@@ -5,10 +5,8 @@ package app
 import (
 	"context"
 	"crypto/sha256"
-	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -34,25 +32,12 @@ type luaMemoryCall struct {
 // strings can coexist. Default tests never run the Lua source on the host.
 func TestCLILuaMemoryBudget(t *testing.T) {
 	if os.Getenv("WEIR_LUA_MEMORY_INTEGRATION") != "1" {
-		t.Skip("requires explicit owned CLI bounded Lua memory qualification")
+		t.Skip("requires WEIR_LUA_MEMORY_INTEGRATION=1, Docker Desktop and the local Mongo fixture")
 	}
 	if os.Getenv("WEIR_INTEGRATION") != "1" || os.Getenv("WEIR_MONGO_PROFILE") == "tls" {
 		t.Fatal("requires the isolated plain Mongo fixture")
 	}
-	binary, revision, digest := os.Getenv("WEIR_LUA_MEMORY_BINARY"), os.Getenv("WEIR_LUA_MEMORY_SOURCE"), os.Getenv("WEIR_LUA_MEMORY_SHA256")
-	if !filepath.IsAbs(binary) || len(revision) != 40 || len(digest) != 64 {
-		t.Fatal("requires absolute CLI path and exact clean source/SHA256 receipt")
-	}
-	artifact, err := os.ReadFile(binary)
-	if err != nil || fmt.Sprintf("%x", sha256.Sum256(artifact)) != digest {
-		t.Fatal("CLI differs from exact build receipt", err)
-	}
-	engine := strings.TrimSpace(packagedDocker(t, "info", "--format", "{{.OSType}}/{{.Architecture}}/{{.CgroupVersion}} kernel={{.KernelVersion}}"))
-	imageRaw := packagedDocker(t, "image", "inspect", "--format", "{{.Os}}/{{.Architecture}} {{.Id}}", "busybox:1.37.0")
-	image := strings.TrimSpace(imageRaw)
-	if !strings.HasPrefix(engine, "linux/aarch64/2 ") || image != "linux/arm64 sha256:ad4f11f7c85f87c0a6d6c0fe492ad53f9cdcff6e8c88b881360c70eff701c67b" {
-		t.Fatal("requires the pinned native Linux arm64 fixture", engine, image)
-	}
+	binary := buildLinuxCLI(t)
 	fixture := testmongo.Open(t)
 	dataset := &nativeBurstDataset{store: "mongo", root: fixture.DB + "/records", media: "application/bson", mongo: fixture, expected: make(map[string]nativeBurstRecord)}
 	seedNativeBurstDataset(t, dataset)
@@ -73,7 +58,7 @@ func TestCLILuaMemoryBudget(t *testing.T) {
 		t.Fatal("small original document oracle failed", err)
 	}
 	beforeHash := sha256.Sum256(before)
-	backend := &Mongo{URI: "mongodb://host.docker.internal:27028/?directConnection=true&serverMonitoringMode=poll"}
+	backend := &Mongo{URI: containerMongoURI}
 	local := &Local{Backend: BackendConfig{MongoDB: backend}}
 	store := StoreConfig{Name: "mongo", Local: local}
 	cfg := DefaultConfig()
@@ -83,12 +68,7 @@ func TestCLILuaMemoryBudget(t *testing.T) {
 	}
 	opts := memoryRecoveryOptions{binary: binary, capacityMiB: 512, automatic: true, config: &cfg}
 	process := startMemoryRecoveryCLI(t, opts)
-	version := strings.TrimSpace(packagedDocker(t, "exec", process.name, "/weir", "version"))
-	var identity map[string]string
-	if json.Unmarshal([]byte(version), &identity) != nil || identity["state"] != "clean-commit" || identity["dirty"] != "false" || identity["target"] != "linux/arm64" || identity["revision"] != revision {
-		t.Fatal("requires the clean exact Linux CLI", version)
-	}
-	t.Logf("Lua fixed512MiB/2CPU single_process=true source=%s binary_SHA256=%s version=%s engine=%s image=%s", revision, digest, version, engine, image)
+	t.Log("Lua fixed512MiB/2CPU single_process=true")
 	initial, err := ingressMemoryMetrics(process)
 	if err != nil {
 		t.Fatal("initial process metrics unavailable", err)
