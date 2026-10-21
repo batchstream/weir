@@ -120,10 +120,14 @@ class ImageTests(unittest.TestCase):
 
     def test_smoke_rejects_unexpected_version_output(self):
         digest = 'sha256:' + 'a' * 64
-        expected = dict(product='weir', version='dev', go=ci.package.GO, target='linux/amd64')
-        for change in ({}, dict(product='other'), dict(target='linux/arm64'), dict(go='go1.0')):
+        source = 'a' * 40
+        expected = dict(product='weir', version='dev', revision=source, go=ci.package.GO, target='linux/amd64')
+        environment = dict(GITHUB_SHA=source)
+        changes = ({}, dict(product='other'), dict(revision='b' * 40), dict(target='linux/arm64'), dict(go='go1.0'))
+        for change in changes:
             output = json.dumps(dict(expected, **change)).encode()
             with self.subTest(change=change), tempfile.TemporaryDirectory() as temporary, \
+                 patch.dict(os.environ, environment), \
                  patch.object(ci, 'OUT', Path(temporary)), \
                  patch.object(ci.package, 'oci_index_digest', return_value=digest), \
                  patch.object(ci.platform, 'machine', return_value='x86_64'), \

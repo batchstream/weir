@@ -98,7 +98,8 @@ def smoke():
             release.IMAGE + '@' + digest, 'version']
     raw = package.run(args, env=env, timeout=180).decode()
     identity = json.loads(raw)
-    if identity.get('product') != 'weir' or identity.get('target') != 'linux/' + arch or identity.get('go') != package.GO:
+    expected = dict(product='weir', revision=os.environ['GITHUB_SHA'], target='linux/' + arch, go=package.GO)
+    if any(identity.get(key) != value for key, value in expected.items()):
         raise ValueError('unexpected weir version output: ' + raw)
     print('Smoke', raw.strip(), flush=True)
 

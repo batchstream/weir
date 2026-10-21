@@ -7,6 +7,9 @@ import (
 	"runtime/debug"
 )
 
+// revision is the source commit, set by scripts/package.py with -X main.revision.
+var revision string
+
 type versionIdentity struct {
 	Product  string `json:"product"`
 	Version  string `json:"version"`
@@ -17,10 +20,11 @@ type versionIdentity struct {
 
 func printVersion(output io.Writer) error {
 	identity := versionIdentity{
-		Product: "weir",
-		Version: "dev",
-		Go:      runtime.Version(),
-		Target:  runtime.GOOS + "/" + runtime.GOARCH,
+		Product:  "weir",
+		Version:  "dev",
+		Revision: revision,
+		Go:       runtime.Version(),
+		Target:   runtime.GOOS + "/" + runtime.GOARCH,
 	}
 
 	if info, ok := debug.ReadBuildInfo(); ok {
@@ -29,7 +33,7 @@ func printVersion(output io.Writer) error {
 			identity.Version = info.Main.Version
 		}
 		for _, setting := range info.Settings {
-			if setting.Key == "vcs.revision" {
+			if setting.Key == "vcs.revision" && identity.Revision == "" {
 				identity.Revision = setting.Value
 			}
 		}

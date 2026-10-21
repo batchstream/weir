@@ -249,7 +249,8 @@ upstream identities, patch diffs and focused regression tests live under
 ## Releases
 
 Build reproducible Linux and macOS amd64/arm64 archives and their `SHA256SUMS`
-from a clean commit (`--oci` also builds the Linux image locally):
+from a clean commit (`--oci` also builds the Linux image locally). Packaged
+binaries report that commit as `revision` in `weir version`:
 
 ```sh
 python3 scripts/package.py --output dist/local-build

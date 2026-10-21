@@ -207,6 +207,7 @@ class PackageTests(unittest.TestCase):
                 if args == ['go', 'list', '-m', '-json', 'all']:
                     return b'{"Path":"github.com/batchstream/weir","Main":true}'
                 if args[:2] == ['go', 'build']:
+                    self.assertIn('-ldflags=-buildid= -X main.revision=' + '0' * 40, args)
                     binary = Path(args[args.index('-o') + 1])
                     binary.write_bytes(f'{args[-1]} {env["GOOS"]}/{env["GOARCH"]}'.encode())
                     return b''

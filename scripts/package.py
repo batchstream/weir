@@ -276,7 +276,7 @@ def build_source(opts):
     graph = json_stream(run(['go', 'list', '-m', '-json', 'all'], cwd=source, env=env))
     dependencies.check_modules(graph, source)
     binaries = work / 'binaries'
-    flags = ['-trimpath', '-buildvcs=false', '-mod=readonly', '-ldflags=-buildid=']
+    flags = ['-trimpath', '-buildvcs=false', '-mod=readonly', '-ldflags=-buildid= -X main.revision=' + opts['revision']]
     archives = []
     for system, arch in TARGETS:
         target = system + '-' + arch
