@@ -8,6 +8,7 @@ import (
 	"errors"
 	"io"
 	"net"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -80,6 +81,50 @@ func TestQualificationTransportFragmented(t *testing.T) {
 	}
 }
 
+func TestQualificationTransportRepeatedWorkerRPCs(t *testing.T) {
+	start := time.Now()
+	observer := &qualificationTransport{start: start}
+	observer.observe([]byte(http2.ClientPreface), true, start)
+	nextID := uint32(1)
+	startRPC := func(worker int, offset time.Duration) uint32 {
+		id := nextID
+		nextID += 2
+		headers := qualificationTestHeaders(t, strconv.Itoa(worker))
+		observer.observe(qualificationTestFrame(http2.FrameHeaders, 4, id, headers), true, start.Add(offset))
+		return id
+	}
+	// Worker31's original stream1 remains active while the other workers
+	// complete three successive RPCs. Completed IDs must not exhaust the
+	// worker count or evict the still-active failure evidence.
+	failedID := startRPC(31, 0)
+	observer.observe(qualificationTestFrame(http2.FrameData, 0, failedID, []byte{1}), false, start)
+	for round := range 3 {
+		for worker := range 31 {
+			offset := time.Duration(round*40) * time.Second
+			id := startRPC(worker, offset)
+			observer.observe(qualificationTestFrame(http2.FrameData, 1, id, []byte{1}), false, start.Add(offset))
+		}
+	}
+	observer.observe(qualificationTestFrame(http2.FrameWindowUpdate, 0, failedID, []byte{0, 0, 4, 0}), true, start.Add(118*time.Second))
+	observer.observe(qualificationTestFrame(http2.FrameData, 1, failedID, []byte{1, 2}), false, start.Add(119*time.Second))
+	// The delayed worker also performs two successive RPCs after its first.
+	for round := range 2 {
+		offset := 119*time.Second + time.Duration(round+1)*100*time.Millisecond
+		id := startRPC(31, offset)
+		observer.observe(qualificationTestFrame(http2.FrameData, 1, id, []byte{1}), false, start.Add(offset))
+	}
+	if observer.incomplete != "" || observer.used != 96 {
+		t.Fatalf("repeated RPC coverage incomplete: %s", observer.summary(31))
+	}
+	original := observer.streams[0]
+	if original.id != 1 || original.worker != 31 || original.dataFrames != 2 || original.dataBytes != 3 || original.updates != 1 || original.records[2].Offset != 119*time.Second {
+		t.Fatalf("original failed stream evidence overwritten: %s", observer.summary(31))
+	}
+	if !strings.Contains(observer.summary(31), `transport_diagnostic_incomplete=""`) {
+		t.Fatal("complete repeated-RPC timeline reported incomplete")
+	}
+}
+
 func TestQualificationTransportCorrelationBounds(t *testing.T) {
 	for _, worker := range []string{"0", "31"} {
 		observer := &qualificationTransport{}
@@ -125,10 +170,10 @@ func TestQualificationTransportCorrelationBounds(t *testing.T) {
 	})
 	t.Run("stream_limit", func(t *testing.T) {
 		observer := &qualificationTransport{}
-		for id := uint32(1); id <= 65; id += 2 {
+		for id := uint32(1); id <= 257; id += 2 {
 			observer.observe(qualificationTestFrame(http2.FrameData, 0, id, nil), false, time.Now())
 		}
-		if observer.used != 32 || observer.incomplete != "stream_limit" {
+		if observer.used != 128 || observer.incomplete != "stream_limit" || observer.streams[0].id != 1 || observer.streams[0].dataFrames != 1 {
 			t.Fatal("stream bound not enforced")
 		}
 	})

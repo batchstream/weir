@@ -42,9 +42,13 @@ type qualificationTransport struct {
 	connections        int
 	incoming, outgoing qualificationFrameParser
 	decoder            *hpack.Decoder
-	streams            [32]qualificationFrameStream
-	used               int
-	connection         qualificationFrameStream
+	// Workers loop Native, so 32 workers are not a lifetime stream-ID bound.
+	// Capacity is 128 lifetime IDs, not a guaranteed per-worker RPC bound.
+	// Never retire or overwrite earlier evidence; any excess marks the
+	// diagnostic incomplete rather than silently dropping IDs.
+	streams    [128]qualificationFrameStream
+	used       int
+	connection qualificationFrameStream
 }
 
 type qualificationFrameParser struct {
