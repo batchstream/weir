@@ -215,6 +215,7 @@ class Contracts(unittest.TestCase):
                     info["Entrypoint"] = ["./opensearch-docker-entrypoint.sh"]
                     if not info["Cmd"]:
                         info["Cmd"] = ["opensearch"]
+                info["HeapOptions"] = flags.get("--env", "").removeprefix("OPENSEARCH_JAVA_OPTS=")
                 info["Tmpfs"] = dict(arg[len("--tmpfs="):].split(":", 1) for arg in args if arg.startswith("--tmpfs="))
             self.resources[name] = info
             if self.failure == "partial-" + args[0]:
@@ -246,6 +247,8 @@ class Contracts(unittest.TestCase):
             identity = args[2]
             pair = next((name, info) for name, info in self.resources.items() if info["Id"] == identity)
             is_cli = pair[0].endswith("-cli")
+            if args[-2:] == ["/bin/printenv", "OPENSEARCH_JAVA_OPTS"]:
+                return "wrong" if self.failure == "heap-options" else pair[1]["HeapOptions"] + "\n"
             sha = self.controller.hashes["cli"] if is_cli else "d" * 64
             cpu = dict(usage_usec=10, nr_periods=1, nr_throttled=0, throttled_usec=0)
             memory_events = dict(low=0, high=0, max=0, oom=0, oom_kill=0)
@@ -300,6 +303,12 @@ class Contracts(unittest.TestCase):
 
     def test_formal_load_uses_owned_host_cli_and_preserves_finite_budget(self):
         self.formal_load_contract("elasticsearch")
+
+    def test_formal_opensearch_rejects_wrong_heap_options(self):
+        self.failure = "heap-options"
+        with self.assertRaisesRegex(RuntimeError, "formal OpenSearch heap options mismatch"):
+            self.formal_load_contract("opensearch")
+        self.assertEqual(self.resources, {})
 
     def test_opensearch_formal_load_uses_same_workload_and_controls(self):
         self.formal_load_contract("opensearch")
@@ -419,6 +428,18 @@ class Contracts(unittest.TestCase):
 
     def formal_backend_contract(self, product):
         backend = json.loads((self.opts.output / "backend-container.json").read_text())
+        memory = 2 << 30 if product == "opensearch" else 1536 << 20
+        create = next(args for args in self.calls if args[:2] == ["container", "create"] and
+                      args[args.index("--name") + 1].endswith("-backend"))
+        heap = "--env=OPENSEARCH_JAVA_OPTS=-Xms1g -Xmx1g" if product == "opensearch" else "--env=ES_JAVA_OPTS=-Xms512m -Xmx512m"
+        self.assertIn(heap, create)
+        self.assertEqual((backend["Memory"], backend["Swap"], backend["CPU"], backend["PIDs"]),
+                         (memory, memory, 2_000_000_000, 512))
+        if product == "opensearch":
+            self.assertEqual(backend["HeapOptions"], "-Xms1g -Xmx1g")
+            capacity = json.loads((self.opts.output / "backend-capacity.json").read_text())
+            self.assertEqual(capacity, dict(memory=memory, swap=memory, cpu=2_000_000_000,
+                                            pids=512, heap_options="-Xms1g -Xmx1g"))
         destination = "/usr/share/" + product + "/data"
         mounts = [m for m in backend["Mounts"] if m["Destination"] == destination]
         self.assertEqual(len(mounts), 1)
@@ -1366,6 +1387,9 @@ class Contracts(unittest.TestCase):
         self.assertIn("--read-only", cli)
         self.assertIn("--pids-limit=96", cli)
         self.assertIn("--memory=1073741824", cli)
+        self.assertIn("--env=OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m", backend)
+        self.assertIn("--memory=1610612736", backend)
+        self.assertIn("--pids-limit=512", backend)
         self.assertEqual(backend[-1], M.OS_REPOSITORY + "@" + M.OS_PINS["amd64"])
         self.assertNotIn("--entrypoint", " ".join(backend))
         self.assertFalse(any("type=volume" in a for a in backend))
