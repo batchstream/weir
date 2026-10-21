@@ -4,16 +4,10 @@ package app
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
-	"io"
 	"os"
-	"os/exec"
 	"regexp"
-	"runtime"
 	"strconv"
-	"strings"
 	"testing"
 	"time"
 
@@ -24,26 +18,13 @@ import (
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
-// This is focused functional recovery, not the formal load/fault qualification.
-// New-topology lost acknowledgements and transaction ambiguity belong to stage 5b.
+// TestMongoReplicaCLIRecovery checks that one CLI process recovers across
+// replica-set topology changes over plain and TLS connections.
 func TestMongoReplicaCLIRecovery(t *testing.T) {
 	if os.Getenv("WEIR_MONGO_REPLICA_INTEGRATION") != "1" {
 		t.Skip("explicit owned replica integration opt-in")
 	}
 	binary := buildEndpointProcess(t)
-	testBinary, err := os.Executable()
-	if err != nil {
-		t.Fatal("cannot identify native test driver")
-	}
-	cliDigest := replicaExecutableDigest(t, binary)
-	driverDigest := replicaExecutableDigest(t, testBinary)
-	versionContext, stopVersion := context.WithTimeout(t.Context(), 3*time.Second)
-	version, err := exec.CommandContext(versionContext, binary, "version").Output()
-	stopVersion()
-	if err != nil {
-		t.Fatal("cannot identify native CLI version", err)
-	}
-	t.Logf("native_driver=%s driver_SHA256=%s CLI_binary=%s CLI_SHA256=%s Go=%s target=%s/%s CLI_version=%s", testBinary, driverDigest, binary, cliDigest, runtime.Version(), runtime.GOOS, runtime.GOARCH, strings.TrimSpace(string(version)))
 	for _, secure := range []bool{false, true} {
 		name := "plain"
 		if secure {
@@ -191,24 +172,9 @@ func TestMongoReplicaCLIRecovery(t *testing.T) {
 				t.Error(err)
 			}
 			replicaClosedOwner(t, service)
-			t.Logf("TLS=%t same_PID=%d focused lifecycle gates passed; no cgroup or formal qualification claimed", secure, pid)
+			t.Logf("TLS=%t same_PID=%d focused lifecycle gates passed", secure, pid)
 		})
 	}
-}
-
-func replicaExecutableDigest(t *testing.T, filename string) string {
-	t.Helper()
-	file, err := os.Open(filename)
-	if err != nil {
-		t.Fatal("cannot open owned executable")
-	}
-	hash := sha256.New()
-	_, copyErr := io.Copy(hash, file)
-	closeErr := file.Close()
-	if copyErr != nil || closeErr != nil {
-		t.Fatal("cannot hash owned executable")
-	}
-	return hex.EncodeToString(hash.Sum(nil))
 }
 
 func replicaCLIHealth(ctx context.Context, client *weirclient.Client, database string) error {

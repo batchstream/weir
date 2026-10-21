@@ -168,7 +168,7 @@ func TestOfflineRetirementNodeJoinsDefaultOwners(t *testing.T) {
 }
 
 func TestOfflineRetirementNodeChild(t *testing.T) {
-	mode := os.Getenv("WEIR_STAGE5B0_RETIREMENT_CHILD")
+	mode := os.Getenv("WEIR_RETIREMENT_CHILD")
 	if mode == "" {
 		t.Skip("owned self-subprocess only")
 	}
@@ -201,7 +201,7 @@ func TestOfflineRetirementSIGTERMActualNode(t *testing.T) {
 					child.Env = append(child.Env, item)
 				}
 			}
-			child.Env = append(child.Env, "WEIR_STAGE5B0_RETIREMENT_CHILD="+mode)
+			child.Env = append(child.Env, "WEIR_RETIREMENT_CHILD="+mode)
 			output, err := child.StdoutPipe()
 			if err != nil {
 				t.Fatal(err)

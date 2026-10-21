@@ -44,8 +44,8 @@ func TestSearchLuaBulkRequiresPositivePrimaryEvidence(t *testing.T) {
 				command := &pb.Command{Operation: variant}
 				work := &execution.Plan{Command: command, Backend: native}
 				raw := []byte(fmt.Sprintf(`{"errors":false,"took":1,"items":[{%q:{"_index":"records","_id":"item","status":%d,"_version":1,"_seq_no":0,"_primary_term":1,"result":%q,"_shards":{"total":%d,"successful":%d,"failed":%d}}}]}`, operation, status, action, total, successful, failed))
-				replyInput48 := bulkResponse{works: []*execution.Plan{work}, status: 200, raw: raw, err: nil}
-				results := adapter.bulkResults(context.Background(), replyInput48)
+				bulkReply := bulkResponse{works: []*execution.Plan{work}, status: 200, raw: raw, err: nil}
+				results := adapter.bulkResults(context.Background(), bulkReply)
 				result := results[0].GetMutationResult()
 				if evidence == "zero" {
 					if result.Outcome != pb.MutationOutcome_UNKNOWN || result.Failure == nil {
@@ -54,8 +54,8 @@ func TestSearchLuaBulkRequiresPositivePrimaryEvidence(t *testing.T) {
 				} else if result.Outcome != pb.MutationOutcome_APPLIED || (result.Failure != nil) != (evidence == "replica_failure") {
 					t.Fatal("confirmed application evidence lost", result)
 				}
-				replyInput58 := bulkResponse{works: []*execution.Plan{work}, status: 200, raw: raw, err: errTimeout}
-				lost := adapter.bulkResults(context.Background(), replyInput58)
+				lostReply := bulkResponse{works: []*execution.Plan{work}, status: 200, raw: raw, err: errTimeout}
+				lost := adapter.bulkResults(context.Background(), lostReply)
 				if lost[0].GetMutationResult().Outcome != pb.MutationOutcome_UNKNOWN {
 					t.Fatal("transport failure trusted body", lost[0])
 				}

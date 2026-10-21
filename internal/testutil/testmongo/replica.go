@@ -47,7 +47,6 @@ type replicaMember struct {
 }
 
 // Replica owns exactly three foreground processes. It never adopts an endpoint.
-// This is a functional fixture, not a database or cgroup qualification profile.
 type Replica struct {
 	URI, SetName, DB                      string
 	Username, Password, CAFile, BadCAFile string

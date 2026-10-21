@@ -277,8 +277,8 @@ func TestBulkUnknownRetainsSanitizedFailureCause(t *testing.T) {
 			adapter := &Adapter{}
 			work := unsentWritePlan()
 			works := []*execution.Plan{work}
-			replyInput228 := bulkResponse{works: works, status: test.status, raw: []byte(test.raw), err: test.err}
-			results := adapter.bulkResults(context.Background(), replyInput228)
+			bulkReply := bulkResponse{works: works, status: test.status, raw: []byte(test.raw), err: test.err}
+			results := adapter.bulkResults(context.Background(), bulkReply)
 			mutation := results[0].GetMutationResult()
 			if mutation.GetOutcome() != pb.MutationOutcome_UNKNOWN || mutation.GetFailure().GetCode() != test.code || mutation.GetFailure().GetMessage() != test.message {
 				t.Fatal("uncertainty or sanitized cause changed", mutation)

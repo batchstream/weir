@@ -112,8 +112,8 @@ func TestBulkEvidenceIsNotHTTPStatus(t *testing.T) {
 		t.Fatal(failure)
 	}
 	for _, raw := range []string{`{}`, `{"errors":false,"took":0,"items":[]}`, `{"errors":false,"took":0,"items":[{"delete":{"_index":"records","_id":"a","status":404}}]}`, `{"errors":false,"took":0,"items":[{"delete":{"_index":"records","_id":"other","status":200}}]}`} {
-		replyInput114 := bulkResponse{works: []*execution.Plan{work}, status: 200, raw: []byte(raw), err: nil}
-		results := a.bulkResults(context.Background(), replyInput114)
+		bulkReply := bulkResponse{works: []*execution.Plan{work}, status: 200, raw: []byte(raw), err: nil}
+		results := a.bulkResults(context.Background(), bulkReply)
 		if results[0].GetMutationResult().Outcome != pb.MutationOutcome_UNKNOWN {
 			t.Fatal("invented acknowledgement", raw)
 		}
@@ -137,8 +137,8 @@ func TestNativeErrorStatusAndPositiveAcknowledgement(t *testing.T) {
 	native := &plan{index: "records", id: "a", action: "delete"}
 	work := &execution.Plan{ID: op.Index, Command: op.Command, Backend: native}
 	raw := []byte(`{"errors":false,"took":1,"items":[{"delete":{"_index":"records","_id":"a","status":200,"result":"deleted","_seq_no":1,"_primary_term":1,"_shards":{"total":2,"successful":1,"failed":1}}}]}`)
-	replyInput139 := bulkResponse{works: []*execution.Plan{work}, status: 200, raw: raw, err: nil}
-	results := a.bulkResults(context.Background(), replyInput139)
+	bulkReply := bulkResponse{works: []*execution.Plan{work}, status: 200, raw: raw, err: nil}
+	results := a.bulkResults(context.Background(), bulkReply)
 	if results[0].GetMutationResult().Outcome != pb.MutationOutcome_APPLIED || results[0].GetMutationResult().GetFailure().GetCode() != pb.FailureCode_UNAVAILABLE {
 		t.Fatal("positive primary acknowledgement discarded", results)
 	}

@@ -51,8 +51,7 @@ func replicaTestMessage(t *testing.T, opcode uint32, document bson.D) []byte {
 		binary.LittleEndian.PutUint32(message[8:12], 42)
 		message = append(message, make([]byte, 20)...)
 		binary.LittleEndian.PutUint32(message[32:36], 1)
-		// Exact structural regression for native-wire-diagnostic-01: MongoDB
-		// 8.0.32 returns OP_REPLY AwaitCapable (8), not only flags zero.
+		// MongoDB 8.0.32 returns OP_REPLY AwaitCapable (8), not only flags zero.
 		binary.LittleEndian.PutUint32(message[16:20], replicaReplyAwaitCapable)
 	default:
 		t.Fatal("unsupported test message")

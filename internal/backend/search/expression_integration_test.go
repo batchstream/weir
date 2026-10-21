@@ -320,8 +320,8 @@ func TestSearchExpressionRealConflictEvidence(t *testing.T) {
 	}
 	n := &plan{index: b.Index, id: "counter", action: "expression"}
 	work := &execution.Plan{Backend: n}
-	replyInput305 := bulkResponse{works: []*execution.Plan{work}, status: code, raw: raw, err: nil}
-	results := a.bulkResults(context.Background(), replyInput305)
+	bulkReply := bulkResponse{works: []*execution.Plan{work}, status: code, raw: raw, err: nil}
+	results := a.bulkResults(context.Background(), bulkReply)
 	result := results[0].GetMutationResult()
 	if result.Outcome != pb.MutationOutcome_NOT_APPLIED || result.GetFailure().GetCode() != pb.FailureCode_CONFLICT {
 		t.Fatal(result)
