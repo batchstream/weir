@@ -17,7 +17,7 @@ spec.loader.exec_module(ci)
 
 
 class ImageTests(unittest.TestCase):
-    def test_entrypoint_accepts_verified_main_and_release_sources(self):
+    def test_entrypoint_accepts_main_and_release_sources(self):
         source = 'a' * 40
         cases = (
             dict(GITHUB_EVENT_NAME='workflow_dispatch', GITHUB_REF='refs/heads/main', RELEASE_VERSION=''),
@@ -72,7 +72,7 @@ class ImageTests(unittest.TestCase):
                         ci.main()
                     action.assert_not_called()
 
-    def test_entrypoint_requires_the_verified_source_to_remain_clean_and_unchanged(self):
+    def test_entrypoint_requires_a_clean_checkout_of_the_workflow_source(self):
         source = 'a' * 40
         environment = dict(GITHUB_REPOSITORY='batchstream/weir', GITHUB_EVENT_NAME='workflow_dispatch',
                            GITHUB_REF='refs/heads/main', GITHUB_SHA=source, RELEASE_VERSION='')
@@ -125,7 +125,8 @@ class ImageTests(unittest.TestCase):
         environment = dict(GITHUB_SHA=source)
         changes = ({}, dict(product='other'), dict(revision='b' * 40), dict(target='linux/arm64'), dict(go='go1.0'))
         for change in changes:
-            output = json.dumps(dict(expected, **change)).encode()
+            identity = dict(expected, **change)
+            output = json.dumps(identity).encode()
             with self.subTest(change=change), tempfile.TemporaryDirectory() as temporary, \
                  patch.dict(os.environ, environment), \
                  patch.object(ci, 'OUT', Path(temporary)), \

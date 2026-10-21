@@ -153,7 +153,8 @@ def validate_patch(source, inputs, module, pin):
 
 def go_environment():
     # Ignore user Go settings, workspace, compiler overrides, proxies and experiments.
-    env = {k: os.environ[k] for k in ('PATH', 'HOME', 'TMPDIR', 'SYSTEMROOT', 'GOROOT', 'GOMODCACHE') if k in os.environ}
+    # GOROOT is not inherited: the go command on PATH locates its own matching toolchain.
+    env = {k: os.environ[k] for k in ('PATH', 'HOME', 'TMPDIR', 'SYSTEMROOT', 'GOMODCACHE') if k in os.environ}
     env.update(GOENV='off', GOTOOLCHAIN='local', GOWORK='off', GOPROXY='off', GOSUMDB='off',
                GOFLAGS='', GOEXPERIMENT='', CGO_ENABLED='0', GOAMD64='v1', GOARM64='v8.0')
     actual = run(['go', 'env', 'GOVERSION'], env=env).decode().strip()

@@ -247,7 +247,8 @@ class PackageTests(unittest.TestCase):
             manifests = [{'mediaType': 'application/vnd.oci.image.manifest.v1+json',
                           'digest': 'sha256:' + '1' * 64, 'platform': {'os': 'linux', 'architecture': arch}}
                          for arch in platforms]
-            inner = json.dumps({'schemaVersion': 2, 'manifests': manifests}).encode()
+            index = {'schemaVersion': 2, 'manifests': manifests}
+            inner = json.dumps(index).encode()
             digest = 'sha256:' + package.sha(inner)
             if nested:
                 blobs['blobs/sha256/' + digest[7:]] = inner

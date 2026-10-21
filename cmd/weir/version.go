@@ -28,7 +28,7 @@ func printVersion(output io.Writer) error {
 	}
 
 	if info, ok := debug.ReadBuildInfo(); ok {
-		// Module-aware installs such as go install ...@vX.Y.Z record the module version.
+		// go build records module and VCS details when available; packaged builds use the injected revision.
 		if info.Main.Version != "" && info.Main.Version != "(devel)" {
 			identity.Version = info.Main.Version
 		}
