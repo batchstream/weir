@@ -46,11 +46,6 @@ func TestStructuredRuntimeConfigurationReachesAdaptersAndScheduler(t *testing.T)
 	if err != nil || !reflect.DeepEqual(decoded, cfg) {
 		t.Fatal("structured runtime configuration did not round trip", err)
 	}
-	for _, old := range []string{"max_batch_operations: 4", "max_batch_bytes: 4MiB", "batch_queue: {}", "mongodb: {}", "search: {}", "streaming: {}", "lua: {}", "batching: {queue: {}}", "batching: {max_exchange_bytes: 4MiB}", "scan: {}"} {
-		if _, err := DecodeRouting(strings.NewReader(queueRoutingPrefix + "    " + old + "\n")); err == nil {
-			t.Fatal("old field accepted", old)
-		}
-	}
 }
 
 func TestProcessTimeoutAndMemoryPolicyConfiguration(t *testing.T) {

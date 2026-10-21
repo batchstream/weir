@@ -65,7 +65,7 @@ func TestAdapterSchemaHasNoCrossAdapterOrWrapperFields(t *testing.T) {
 	} {
 		input := "stores:\n  - name: example\n    backend:\n" + fragment
 		if _, err := DecodeRouting(strings.NewReader(input)); err == nil {
-			t.Fatal("removed wrapper or inapplicable field was accepted", fragment)
+			t.Fatal("unknown or inapplicable adapter field was accepted", fragment)
 		}
 	}
 }

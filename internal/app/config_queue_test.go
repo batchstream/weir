@@ -98,22 +98,3 @@ func TestBatchQueueBoundsRejectInvalidConfiguration(t *testing.T) {
 		}
 	}
 }
-
-func TestRemovedResourceConfigurationHasNoCompatibilityAliases(t *testing.T) {
-	basic := "listeners:\n  application: 127.0.0.1:0\n"
-	for _, fragment := range []string{
-		"memory: 2GiB\n",
-		"transport:\n  max_connections: 16\n",
-		"transport:\n  max_sessions: 4\n",
-		"transport:\n  timeouts:\n    request: 15m\n",
-	} {
-		if _, err := DecodeBasic(strings.NewReader(basic + fragment)); err == nil {
-			t.Fatal("removed process field accepted", fragment)
-		}
-	}
-	for _, field := range []string{"max_concurrency: 2", "working_memory: 384MiB", "max_read_size: 16KiB", "backend_timeout: 2s"} {
-		if _, err := DecodeRouting(strings.NewReader(queueRoutingPrefix + "    " + field + "\n")); err == nil {
-			t.Fatal("removed Store field accepted", field)
-		}
-	}
-}

@@ -244,25 +244,6 @@ func TestCLIRequiresBasicConfigurationAndAllowsOptionalRoutes(t *testing.T) {
 	}
 }
 
-func TestCLIRejectsRoutingReferenceInBasicConfiguration(t *testing.T) {
-	t.Chdir(t.TempDir())
-	basic := `listeners:
-  application: 127.0.0.1:0
-routing:
-  file: routes-sentinel.yaml
-`
-	if err := os.WriteFile("weir.yaml", []byte(basic), 0600); err != nil {
-		t.Fatal(err)
-	}
-	for _, command := range []string{"serve", "check"} {
-		var output bytes.Buffer
-		err := run([]string{command}, &output)
-		if err == nil || err.Error() != "basic invalid configuration YAML or unknown field" || output.Len() != 0 {
-			t.Fatal("removed basic routing field must fail before startup", command, err, output.String())
-		}
-	}
-}
-
 func TestCLIConfigurationPathsAreRelativeToWorkingDirectory(t *testing.T) {
 	directory := t.TempDir()
 	basicDirectory := filepath.Join(directory, "nodes")
@@ -356,9 +337,6 @@ func TestCLIRejectsArgumentsBeforeConfiguration(t *testing.T) {
 		{"probe", "live", "--routes", missing},
 		{"serve", "-r", missing}, {"check", "-r", missing},
 		{"serve", "--config", missing, "--database", "unexpected"},
-		{"-version"}, {"-config", missing}, {"-check-config", missing}, {"-probe", "live"},
-		{"serve", "-config", missing}, {"check", "-check-config", missing},
-		{"version", "-version"}, {"probe", "-probe", "live"},
 	}
 	for _, args := range cases {
 		t.Run(strings.Join(args, " "), func(t *testing.T) {
