@@ -95,11 +95,11 @@ func TestCLILuaMemoryBudget(t *testing.T) {
 	}
 	labels := map[string]string{"store": "mongo"}
 	for name, want := range map[string]float64{"weir_store_active_executions_limit": 16, "weir_store_pending_entries_limit": 1024, "weir_store_pending_reserved_bytes_limit": 32 << 20, "weir_store_batch_max_operations": 128, "weir_store_batch_max_bytes": 4 << 20, "weir_store_batch_max_wait_seconds": .02} {
-		if qualificationGauge(t, initial, name, labels) != want {
+		if requireGauge(t, initial, name, labels) != want {
 			t.Fatal("default Store policy changed", name, want)
 		}
 	}
-	qualificationExecutionMemory(t, initial, process.capacity)
+	executionMemorySnapshot(t, initial, process.capacity)
 	if testmetrics.Sum(initial, "weir_memory_go_runtime_managed") != 1 {
 		t.Fatal("CLI default automatic Go memory policy inactive")
 	}

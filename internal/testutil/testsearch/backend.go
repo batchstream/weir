@@ -8,12 +8,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
-	"net/url"
 	"os"
-	"regexp"
-	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -24,7 +20,7 @@ var sequence atomic.Uint64
 
 type Backend struct {
 	URL, Product, Index string
-	// Profile records the fixed fixture version, never runtime admission policy.
+	// Profile names the fixture product and version.
 	Profile                    string
 	Username, Password, CAFile string
 	Client                     *http.Client
@@ -39,8 +35,6 @@ func Open(t *testing.T) *Backend {
 		endpoint, profile = "http://127.0.0.1:19200", "elasticsearch-8.19.22"
 	case "opensearch":
 		endpoint, profile = "http://127.0.0.1:19202", "opensearch-3.3.0"
-	case "opensearch-2.19":
-		endpoint, profile, product = "http://127.0.0.1:19201", "opensearch-2.19.6", "opensearch"
 	case "":
 		t.Skip("Search real-backend suite requires explicit WEIR_SEARCH_INTEGRATION=elasticsearch|opensearch")
 	default:
@@ -74,51 +68,6 @@ func Open(t *testing.T) *Backend {
 	return b
 }
 
-type OwnedEndpoint struct {
-	URL, Owner, Product string
-}
-
-// OpenOwned is only for the finite controller's product-explicit fresh backend.
-// Open's historical fixed-address opt-ins and identities are unchanged.
-func OpenOwned(t *testing.T, opts OwnedEndpoint) *Backend {
-	t.Helper()
-	profile, err := ownedProfile(opts.Product)
-	if err != nil {
-		t.Fatal(err)
-	}
-	u, err := url.Parse(opts.URL)
-	if err != nil || u.Scheme != "http" || u.Hostname() != "127.0.0.1" || u.User != nil || u.Path != "" || u.RawQuery != "" || u.Fragment != "" {
-		t.Fatal("owned backend requires a plain loopback origin")
-	}
-	_, port, err := net.SplitHostPort(u.Host)
-	n, parseErr := strconv.Atoi(port)
-	if err != nil || parseErr != nil || n < 1 || n > 65535 || !regexp.MustCompile(`^weir-finite-[0-9a-f]{32}$`).MatchString(opts.Owner) {
-		t.Fatal("invalid finite endpoint/owner")
-	}
-	transport := &http.Transport{Proxy: nil, MaxConnsPerHost: 8, MaxIdleConnsPerHost: 8, DisableCompression: true}
-	client := &http.Client{Transport: transport, Timeout: 3 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
-	b := &Backend{URL: opts.URL, Product: opts.Product, Profile: profile, Index: "weir_finite_" + strings.TrimPrefix(opts.Owner, "weir-finite-"), Client: client}
-	status, raw := b.Do(t, "GET", "/", "")
-	if status != http.StatusOK {
-		t.Fatal("owned backend identity status", status)
-	}
-	verifyVersion(t, raw, b.Profile, opts.Owner)
-	t.Cleanup(transport.CloseIdleConnections)
-	b.Create(t, b.Index, `{"settings":{"number_of_shards":1,"number_of_replicas":0},"mappings":{"properties":{"n":{"type":"long"}}}}`)
-	return b
-}
-
-func ownedProfile(product string) (string, error) {
-	switch product {
-	case "elasticsearch":
-		return "elasticsearch-8.19.22", nil
-	case "opensearch":
-		return "opensearch-3.3.0", nil
-	default:
-		return "", fmt.Errorf("missing or unsupported owned search product")
-	}
-}
-
 func verifyVersion(t *testing.T, raw []byte, profile, cluster string) {
 	t.Helper()
 	var root struct {
@@ -134,7 +83,6 @@ func verifyVersion(t *testing.T, raw []byte, profile, cluster string) {
 	}
 	v := root.Version
 	valid := profile == "elasticsearch-8.19.22" && v.Number == "8.19.22" && v.Distribution == "" && v.BuildFlavor == "default"
-	valid = valid || profile == "opensearch-2.19.6" && v.Number == "2.19.6" && v.Distribution == "opensearch"
 	valid = valid || profile == "opensearch-3.3.0" && v.Number == "3.3.0" && v.Distribution == "opensearch"
 	if !valid {
 		t.Fatal("wrong isolated backend version/distribution")

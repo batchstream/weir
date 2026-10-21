@@ -147,12 +147,12 @@ func runIngressMemoryCase(t *testing.T, artifact ingressMemoryArtifact, capacity
 	}
 	labels := map[string]string{"store": "mongo"}
 	for name, want := range map[string]float64{"weir_store_active_executions_limit": 16, "weir_store_pending_entries_limit": 1024, "weir_store_pending_reserved_bytes_limit": 32 << 20, "weir_store_batch_max_operations": 128, "weir_store_batch_max_bytes": 4 << 20, "weir_store_batch_max_wait_seconds": .02} {
-		got := qualificationGauge(t, initial, name, labels)
+		got := requireGauge(t, initial, name, labels)
 		if got != want {
 			t.Fatal("default Store policy changed", name, want)
 		}
 	}
-	qualificationExecutionMemory(t, initial, process.capacity)
+	executionMemorySnapshot(t, initial, process.capacity)
 	ingressMemoryIdle(t, process, time.Now().Add(5*time.Second), 0)
 	client, healthClient := openIngressMemoryClient(t, process), openIngressMemoryClient(t, process)
 	ingressMemoryIdle(t, process, time.Now().Add(5*time.Second), 2)
@@ -615,17 +615,17 @@ func ingressMemoryIdle(t *testing.T, process *memoryRecoveryCLI, deadline time.T
 		for _, name := range []string{"weir_store_pending_entries", "weir_store_pending_reserved_bytes", "weir_store_active_executions", "weir_store_paused_native_outputs", "weir_store_paused_native_reserved_bytes", "weir_store_result_reserved_entries", "weir_store_result_reserved_bytes", "weir_store_retained_result_reserved_bytes", "weir_store_working_reserved_bytes", "weir_store_publishers", "weir_ingress_sessions", "weir_ingress_queued_response_bytes", "weir_memory_latched", "weir_memory_unknown"} {
 			idle = idle && metrics[name] != nil && testmetrics.Sum(metrics, name) == 0
 		}
-		for suffix, want := range map[string]float64{"used_bytes": float64(connections * qualificationIngressConnectionBytes), "resident_bytes": float64(connections * qualificationIngressConnectionBytes), "ingress_connections": float64(connections), "ingress_connection_bytes": float64(connections * qualificationIngressConnectionBytes)} {
+		for suffix, want := range map[string]float64{"used_bytes": float64(connections * ingressConnectionBytes), "resident_bytes": float64(connections * ingressConnectionBytes), "ingress_connections": float64(connections), "ingress_connection_bytes": float64(connections * ingressConnectionBytes)} {
 			name := "weir_execution_memory_" + suffix
 			idle = idle && metrics[name] != nil && testmetrics.Sum(metrics, name) == want
 		}
 		idle = idle && metrics["weir_execution_memory_budget_known"] != nil && testmetrics.Sum(metrics, "weir_execution_memory_budget_known") == 1 && metrics["weir_memory_cgroup_valid"] != nil && testmetrics.Sum(metrics, "weir_memory_cgroup_valid") == 1 && metrics["weir_memory_cgroup_limit_bytes"] != nil && testmetrics.Sum(metrics, "weir_memory_cgroup_limit_bytes") == process.capacity && metrics["weir_memory_cgroup_working_set_bytes"] != nil && testmetrics.Sum(metrics, "weir_memory_cgroup_working_set_bytes") <= process.capacity*.70
 		if idle && time.Now().Before(deadline) {
-			t.Logf("ingress_final5s temporary_Node/Store/RPC/ingress/wire/Q/I_ownership0 latch0 connections=%d connection_bytes=%d Node_used=resident=connection_bytes elapsed=%s", connections, connections*qualificationIngressConnectionBytes, time.Since(deadline.Add(-5*time.Second)))
+			t.Logf("ingress_final5s temporary_Node/Store/RPC/ingress/wire/Q/I_ownership0 latch0 connections=%d connection_bytes=%d Node_used=resident=connection_bytes elapsed=%s", connections, connections*ingressConnectionBytes, time.Since(deadline.Add(-5*time.Second)))
 			return
 		}
 		if time.Now().After(deadline) {
-			t.Error("fixed absolute5s ingress ownership recovery failed", "expected_connections", connections, "expected_used_resident_connection_bytes", connections*qualificationIngressConnectionBytes, err)
+			t.Error("fixed absolute5s ingress ownership recovery failed", "expected_connections", connections, "expected_used_resident_connection_bytes", connections*ingressConnectionBytes, err)
 			return
 		}
 		time.Sleep(10 * time.Millisecond)

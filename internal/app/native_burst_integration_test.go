@@ -342,21 +342,21 @@ func executeNativeBurstCall(ctx context.Context, client *weirclient.Client, data
 func nativeBurstSnapshot(t *testing.T, process *memoryRecoveryCLI) map[string]float64 {
 	t.Helper()
 	metrics := process.sample(t)
-	values := qualificationExecutionMemory(t, metrics, process.capacity)
-	latched := qualificationGauge(t, metrics, "weir_memory_latched", nil)
+	values := executionMemorySnapshot(t, metrics, process.capacity)
+	latched := requireGauge(t, metrics, "weir_memory_latched", nil)
 	if latched != 0 {
 		t.Error("small burst unexpectedly latched memory pressure")
 	}
 	for _, store := range []string{"mongo", "search"} {
 		labels := map[string]string{"store": store}
 		for name, want := range map[string]float64{"weir_store_active_executions_limit": 16, "weir_store_pending_entries_limit": 1024, "weir_store_pending_reserved_bytes_limit": 32 << 20, "weir_store_batch_max_operations": 128, "weir_store_batch_max_bytes": 4 << 20, "weir_store_batch_max_wait_seconds": .02} {
-			actual := qualificationGauge(t, metrics, name, labels)
+			actual := requireGauge(t, metrics, name, labels)
 			if actual != want {
 				t.Error("default Store policy changed", store, name, actual, want)
 			}
 		}
 		for name, limit := range map[string]float64{"weir_store_active_executions": 16, "weir_store_pending_entries": 1024, "weir_store_pending_reserved_bytes": 32 << 20} {
-			actual := qualificationGauge(t, metrics, name, labels)
+			actual := requireGauge(t, metrics, name, labels)
 			if actual > limit {
 				t.Error("Store exceeded unchanged default bound", store, name, actual, limit)
 			}

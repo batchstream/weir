@@ -221,7 +221,7 @@ func ingressMemoryIncomplete(t *testing.T, ctx context.Context, condition ingres
 		budget := testmetrics.Sum(metrics, "weir_execution_memory_budget_bytes")
 		connections := testmetrics.Sum(metrics, "weir_execution_memory_ingress_connections")
 		connectionBytes := testmetrics.Sum(metrics, "weir_execution_memory_ingress_connection_bytes")
-		valid = valid && connections == 34 && connectionBytes == 34*qualificationIngressConnectionBytes && ingress <= reserved && reserved+connectionBytes <= resident && resident <= used && used <= budget && budget > 0
+		valid = valid && connections == 34 && connectionBytes == 34*ingressConnectionBytes && ingress <= reserved && reserved+connectionBytes <= resident && resident <= used && used <= budget && budget > 0
 		if selected >= 0 && valid {
 			oracleCtx, cancel := context.WithDeadline(ctx, holdDeadline)
 			filter := bson.D{{Key: "_id", Value: bson.D{{Key: "$ne", Value: "hot"}}}}
