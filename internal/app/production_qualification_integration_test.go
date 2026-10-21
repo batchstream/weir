@@ -12,6 +12,7 @@ import (
 	"os"
 	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -26,6 +27,7 @@ import (
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/stats"
 	"google.golang.org/grpc/status"
 )
@@ -801,7 +803,8 @@ func qualificationSlowConsumers(ctx context.Context, work qualificationWorkload,
 	phase, cancel := context.WithTimeout(ctx, duration)
 	defer cancel()
 	receiveStats := &qualificationReceiveStats{start: start}
-	connection, err := grpc.NewClient("passthrough:///"+work.process.address, grpc.WithStatsHandler(receiveStats), grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithNoProxy(), grpc.WithDisableRetry(), grpc.WithDisableServiceConfig(), grpc.WithStaticStreamWindowSize(64<<10), grpc.WithStaticConnWindowSize(4<<20))
+	transport := &qualificationTransport{start: start}
+	connection, err := grpc.NewClient("passthrough:///"+work.process.address, grpc.WithContextDialer(transport.dial), grpc.WithStatsHandler(receiveStats), grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithNoProxy(), grpc.WithDisableRetry(), grpc.WithDisableServiceConfig(), grpc.WithStaticStreamWindowSize(64<<10), grpc.WithStaticConnWindowSize(4<<20))
 	if err != nil {
 		return "", err
 	}
@@ -827,6 +830,7 @@ func qualificationSlowConsumers(ctx context.Context, work qualificationWorkload,
 		go func() {
 			defer pending.Done()
 			rpcContext := context.WithValue(phase, qualificationStreamKey, index)
+			rpcContext = metadata.AppendToOutgoingContext(rpcContext, qualificationWorkerHeader, strconv.Itoa(index))
 			dataset := work.datasets[index%2]
 			for phase.Err() == nil {
 				offered.Add(1)
@@ -914,7 +918,7 @@ func qualificationSlowConsumers(ctx context.Context, work qualificationWorkload,
 	pending.Wait()
 	select {
 	case failure := <-failures:
-		return "", fmt.Errorf("%w: %s", failure.err, receiveStats.summary(failure.index))
+		return "", fmt.Errorf("%w: %s %s", failure.err, receiveStats.summary(failure.index), transport.summary(failure.index))
 	default:
 	}
 	if ctx.Err() != nil {
@@ -924,7 +928,7 @@ func qualificationSlowConsumers(ctx context.Context, work qualificationWorkload,
 	for index := range progress {
 		if callbacks[index].Load() < int64(duration/(500*time.Millisecond)-8) {
 			timing := timings[index]
-			return "", fmt.Errorf("slow stream %d failed to demonstrate continued chunk delivery: callbacks=%d bytes=%d callback_wait_count=%d callback_wait_sum=%s callback_wait_max=%s callback_return_gap_count=%d callback_return_gap_sum=%s callback_return_gap_max=%s first_callback_offset=%s last_callback_offset=%s %s", index, callbacks[index].Load(), progress[index].Load(), timing.waitCount, timing.waitSum, timing.waitMax, timing.gapCount, timing.gapSum, timing.gapMax, timing.firstCallback, timing.lastCallback, receiveStats.summary(index))
+			return "", fmt.Errorf("slow stream %d failed to demonstrate continued chunk delivery: callbacks=%d bytes=%d callback_wait_count=%d callback_wait_sum=%s callback_wait_max=%s callback_return_gap_count=%d callback_return_gap_sum=%s callback_return_gap_max=%s first_callback_offset=%s last_callback_offset=%s %s %s", index, callbacks[index].Load(), progress[index].Load(), timing.waitCount, timing.waitSum, timing.waitMax, timing.gapCount, timing.gapSum, timing.gapMax, timing.firstCallback, timing.lastCallback, receiveStats.summary(index), transport.summary(index))
 		}
 		minimumCallbacks = min(minimumCallbacks, callbacks[index].Load())
 		minimumBytes = min(minimumBytes, progress[index].Load())
