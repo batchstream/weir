@@ -238,11 +238,8 @@ func (a *Adapter) mgetUnique(ctx context.Context, works []*execution.Plan) []obs
 				}
 			case reply.Seq == nil || reply.Term == nil || *reply.Seq < 0 || *reply.Term < 1 || !object(reply.Source):
 				observation.reply, observation.failure = nil, failure
-			case validateJSON(ctx, reply.Source) != nil:
-				observation.reply, observation.failure = nil, failure
-				if ctx.Err() != nil {
-					observation.failure = protocol.ContextFailure(ctx)
-				}
+			case ctx.Err() != nil:
+				observation.reply, observation.failure = nil, protocol.ContextFailure(ctx)
 			}
 			observed[indexes[i]] = observation
 			if memory := searchMemory(ctx); memory != nil {

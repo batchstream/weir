@@ -251,6 +251,40 @@ func TestMgetRequiresCompleteIDCorrespondenceAndIsolatesItemErrors(t *testing.T)
 	}
 }
 
+func TestMgetRejectsInvalidNestedSourceWithoutReplay(t *testing.T) {
+	sources := map[string]string{
+		"duplicate":         `{"nested":[{"key":1,"key":2}]}`,
+		"escaped_duplicate": `{"nested":[{"key":1,"` + string(rune(92)) + `u006bey":2}]}`,
+		"depth":             `{"nested":` + strings.Repeat("[", 10001) + `0` + strings.Repeat("]", 10001) + `}`,
+		"high_surrogate":    `{"nested":[{"value":"\ud800"}]}`,
+		"low_surrogate":     `{"nested":[{"value":"\udc00"}]}`,
+		"utf8":              "{\"nested\":[{\"value\":\"" + string([]byte{0xff}) + "\"}]}",
+	}
+	for name, source := range sources {
+		t.Run(name, func(t *testing.T) {
+			var calls atomic.Int32
+			handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				calls.Add(1)
+				_, _ = fmt.Fprintf(w, `{"docs":[{"_index":"records","_id":"first","found":true,"_seq_no":1,"_primary_term":1,"_source":{"valid":true}},{"_index":"records","_id":"second","found":true,"_seq_no":1,"_primary_term":1,"_source":%s}]}`, source)
+			})
+			server := httptest.NewServer(handler)
+			defer server.Close()
+			cfg := Config{Store: "search", URL: server.URL}
+			a := &Adapter{config: cfg, client: server.Client(), ctx: t.Context()}
+			works := []*execution.Plan{batchTestPlan(t, a, "read", "records/s:first"), batchTestPlan(t, a, "read", "records/s:second")}
+			results := a.mgetUnique(t.Context(), works)
+			for _, result := range results {
+				if result.reply != nil || result.failure == nil {
+					t.Fatal("invalid envelope published a source", result)
+				}
+			}
+			if len(results) != 2 || calls.Load() != 1 {
+				t.Fatal("invalid envelope lost correspondence or replayed", len(results), calls.Load())
+			}
+		})
+	}
+}
+
 func TestMixedLuaCreateConflictRetriesOnlyConfirmedItem(t *testing.T) {
 	for _, mode := range []string{"conflict", "unknown", "exhausted", "single"} {
 		t.Run(mode, func(t *testing.T) {
