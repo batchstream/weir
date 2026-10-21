@@ -58,6 +58,36 @@ commit; fresh Lua evaluation requires confirmed abort/conflict evidence. Native
 remains opaque: the caller supplies command-level concerns and manages any
 backend-specific cursor/session semantics.
 
+## Bounded CPU investigation
+
+CPU profiling is disabled by default and exposes no HTTP pprof endpoint. For a
+matched performance investigation, start the actual CLI with both flags:
+
+```sh
+weir serve --config weir.yaml --routes routes.yaml \
+  --cpu-profile .testdata/weir-cpu.pprof --cpu-profile-duration 30s
+go tool pprof -top .testdata/weir-cpu.pprof
+```
+
+Prepare the private output directory first. The output must be a new file; creation
+is exclusive with mode `0600`, and existing files (including symlinks) are never
+overwritten. Both flags are required together; duration must be positive and at
+most `60s`. Capture begins before node assembly, not after warmup. The timer stops
+and flushes the runtime profiler and closes the file without stopping service;
+serve exit also stops capture and joins its worker without waiting out the capture
+duration. Existing node drain budgets are unchanged; profiler flush/file close add
+cleanup latency outside those budgets. Abrupt termination can leave an incomplete
+file. Use a local regular-file destination on trusted storage; filesystem IO and
+runtime flushing are not hard wall-clock bounded. File-close errors fail serve;
+the Go profiler API does not report asynchronous write errors, so verify that the
+retained profile parses. Treat profiles as sensitive process information.
+
+Retain generated output only in ignored `.testdata/` or external artifacts. Match
+binary, workload, resource limits and observation windows across comparisons, and
+account for profiling overhead and startup samples. This facility enables later
+measurement; it identifies no presumed hotspot and claims neither optimization nor
+performance/production qualification.
+
 ## Metrics
 
 Observe completed work and actual backend demand together with queue and memory
