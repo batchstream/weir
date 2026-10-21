@@ -74,14 +74,21 @@ jobs:
           persist-credentials: false
       - name: Prepare fixed native SDK and public modules
         run: python3 scripts/ci-tools.py test
-      - name: Start local ${{ matrix.product }} fixture
-        run: scripts/search-local.sh start ${{ matrix.product }}
+      - name: Start local ${{ matrix.product }} fixture with normal capacity
+        run: scripts/search-local.sh start ${{ matrix.product }} normal
       - name: Search backend and CLI integration tests
         env:
           WEIR_SEARCH_INTEGRATION: ${{ matrix.product }}
         run: |
-          go test -p=1 -tags=integration -count=1 -timeout=10m ./internal/backend/search
+          go test -p=1 -tags=integration -count=1 -timeout=10m -skip '^TestSearchRealBackendCongestion$' ./internal/backend/search
           go test -tags=integration -count=1 -timeout=5m -run '^TestProcessSearchCRUD$' -v ./internal/app
+      - name: Search congestion test with the overload fixture
+        env:
+          WEIR_SEARCH_INTEGRATION: ${{ matrix.product }}
+        run: |
+          scripts/search-local.sh stop ${{ matrix.product }}
+          scripts/search-local.sh start ${{ matrix.product }} overload
+          go test -tags=integration -count=1 -timeout=5m -run '^TestSearchRealBackendCongestion$' -v ./internal/backend/search
       - name: Stop local ${{ matrix.product }} fixture
         if: always()
         run: scripts/search-local.sh stop ${{ matrix.product }}

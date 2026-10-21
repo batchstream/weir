@@ -160,15 +160,16 @@ Integration tests use the `integration` build tag and local fixtures:
 
 - `scripts/mongo-local.sh start` runs a single-member MongoDB 8.0.32 replica set
   on `127.0.0.1:27028` from `.tools/` (requires `mongosh` 2.6.0).
-- `scripts/search-local.sh start elasticsearch|opensearch [overload|normal]` runs
+- `scripts/search-local.sh start elasticsearch|opensearch normal|overload` runs
   Elasticsearch 8.19.22 on `127.0.0.1:19200` or OpenSearch 3.3.0 on
-  `127.0.0.1:19202` in Docker. The default `overload` profile shrinks the write
-  thread pool for congestion tests; stop the fixture before changing profiles.
+  `127.0.0.1:19202` in Docker. Use `normal` capacity for ordinary runs; the
+  `overload` profile (the default) shrinks the write thread pool for
+  `TestSearchRealBackendCongestion`. Stop the fixture before changing profiles.
 
 ```sh
 scripts/mongo-local.sh start
-scripts/search-local.sh start elasticsearch
-WEIR_SEARCH_INTEGRATION=elasticsearch scripts/test-integration.sh
+scripts/search-local.sh start elasticsearch normal
+WEIR_SEARCH_INTEGRATION=elasticsearch scripts/test-integration.sh -skip '^TestSearchRealBackendCongestion$'
 ```
 
 `scripts/test-integration.sh` sets `WEIR_INTEGRATION=1` and serializes packages
@@ -176,9 +177,13 @@ because MongoDB fault injection uses a server-global failpoint. Search tests tha
 need no MongoDB run on their own, as in CI:
 
 ```sh
-scripts/search-local.sh start opensearch
-WEIR_SEARCH_INTEGRATION=opensearch go test -p=1 -tags=integration ./internal/backend/search
-WEIR_SEARCH_INTEGRATION=opensearch go test -tags=integration -run '^TestProcessSearchCRUD$' ./internal/app
+scripts/search-local.sh start opensearch normal
+export WEIR_SEARCH_INTEGRATION=opensearch
+go test -p=1 -tags=integration -skip '^TestSearchRealBackendCongestion$' ./internal/backend/search
+go test -tags=integration -run '^TestProcessSearchCRUD$' ./internal/app
+scripts/search-local.sh stop opensearch
+scripts/search-local.sh start opensearch overload
+go test -tags=integration -run '^TestSearchRealBackendCongestion$' ./internal/backend/search
 ```
 
 ### Replica-set tests
