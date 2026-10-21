@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify candidate assets or publish a stable, already verified merged-main release."""
+"""Publish a stable GitHub release for a merged-main source whose image is already on GHCR."""
 import argparse
 import hashlib
 import json
@@ -8,6 +8,9 @@ from pathlib import Path
 import re
 import subprocess
 import tempfile
+
+IMAGE = 'ghcr.io/batchstream/weir'
+ARCHIVES = tuple('weir-' + system + '-' + arch + '.tar.gz' for system in ('linux', 'darwin') for arch in ('amd64', 'arm64'))
 
 
 def version_valid(value):
@@ -42,37 +45,21 @@ def check_source(version):
         raise ValueError('release source must be merged into main')
 
 
-def verify_assets(directory, delivery, *, checksum_layout='release'):
-    if checksum_layout not in ('release', 'artifact'):
-        raise ValueError('unknown checksum layout')
-    source = delivery['source']
-    if re.fullmatch('[0-9a-f]{40}', source) is None:
-        raise ValueError('invalid source revision')
-    if json.loads((directory / 'delivery.json').read_text()) != delivery:
-        raise ValueError('delivery receipt differs from verified workflow output')
-    product = directory / 'weir-first'
-    receipt = json.loads((product / 'receipt.json').read_text())
-    if receipt['source'] != source or receipt['binaries'] != delivery['images']['weir']['binaries']:
-        raise ValueError('release source or binary identity mismatch')
-    targets = {'linux-amd64', 'linux-arm64', 'darwin-amd64', 'darwin-arm64'}
-    expected = {'weir-' + target + '.tar.gz' for target in targets}
-    if set(receipt['archives']) != expected:
-        raise ValueError('release must contain exactly four platform archives')
-    if set(receipt['binaries']) != targets:
-        raise ValueError('release must contain exactly four platform binaries')
-    for name, digest in receipt['archives'].items():
-        if hashlib.sha256((product / name).read_bytes()).hexdigest() != digest:
-            raise ValueError('release archive checksum mismatch: ' + name)
-    assets = [directory / 'delivery.json', product / 'receipt.json', product / 'module-graph.json']
-    assets += [product / name for name in sorted(expected)]
-    assets += [product / (target + '-linked.json') for target in sorted(receipt['binaries'])]
-    checksums = ''
-    for item in assets:
-        name = item.relative_to(directory).as_posix() if checksum_layout == 'artifact' else item.name
-        checksums += hashlib.sha256(item.read_bytes()).hexdigest() + '  ' + name + '\n'
+def release_assets(directory):
+    # The four platform archives plus the SHA256SUMS that package.py wrote for them.
     checksum_file = directory / 'SHA256SUMS'
-    checksum_file.write_text(checksums)
-    return assets + [checksum_file]
+    listed = {}
+    for line in checksum_file.read_text().splitlines():
+        digest, name = line.split('  ', 1)
+        listed[name] = digest
+    if set(listed) != set(ARCHIVES):
+        raise ValueError('SHA256SUMS must list exactly the four platform archives')
+    for name in ARCHIVES:
+        if hashlib.sha256((directory / name).read_bytes()).hexdigest() != listed[name]:
+            raise ValueError('release archive checksum mismatch: ' + name)
+    assets = [directory / name for name in ARCHIVES]
+    assets.append(checksum_file)
+    return assets
 
 
 def resume_release(version, assets):
@@ -86,7 +73,7 @@ def resume_release(version, assets):
     if release['tagName'] != version or release['isDraft']:
         raise ValueError('existing release identity or publication state differs')
     expected = {item.name: item for item in assets}
-    with tempfile.TemporaryDirectory(prefix='weir-release-verify-') as temporary:
+    with tempfile.TemporaryDirectory(prefix='weir-release-') as temporary:
         if release['assets']:
             run(['gh', 'release', 'download', version, '--repo', 'batchstream/weir', '--dir', temporary])
         existing = {item.name: item for item in Path(temporary).iterdir()}
@@ -101,33 +88,13 @@ def resume_release(version, assets):
     return True
 
 
-def verify_workflow_assets(directory, delivery, *, checksum_layout='release'):
-    source = delivery['source']
-    if source != os.environ['GITHUB_SHA'] or run(['git', 'rev-parse', 'HEAD']) != source:
-        raise ValueError('release source differs from workflow checkout')
-    assets = verify_assets(directory, delivery, checksum_layout=checksum_layout)
-    return assets
-
-
-def publish(version, directory):
-    if not version_valid(version):
-        raise ValueError('release version must be vMAJOR.MINOR.PATCH')
-    check_source(version)
-    delivery = json.loads(os.environ['WEIR_DELIVERY'])
-    source = delivery['source']
-    assets = verify_workflow_assets(directory, delivery)
-    # Verify both lightweight and annotated tags; never retarget a version.
-    tag = 'refs/tags/' + version
-    refs = dict(line.split()[::-1] for line in run(['git', 'ls-remote', '--tags', 'origin', tag, tag + '^{}']).splitlines())
-    if refs and refs.get(tag + '^{}', refs.get(tag)) != source:
-        raise ValueError('release tag already points to a different source')
-    image = 'ghcr.io/batchstream/weir'
-    digest = delivery['images']['weir']['oci']['index']
+def tag_image(version, source, digest):
+    # Copy the published source image to its version tag; never retag different content.
     if re.fullmatch(r'sha256:[0-9a-f]{64}', digest) is None:
         raise ValueError('invalid image digest')
-    if run(['regctl', 'manifest', 'head', image + ':' + source]) != digest:
-        raise ValueError('published source image differs from verified artifact')
-    reference = image + ':' + version
+    if run(['regctl', 'manifest', 'head', IMAGE + ':' + source]) != digest:
+        raise ValueError('published source image differs from the built image')
+    reference = IMAGE + ':' + version
     existing = subprocess.run(['regctl', 'manifest', 'head', reference], capture_output=True, text=True, timeout=60)
     if existing.returncode == 0:
         if existing.stdout.strip() != digest:
@@ -135,22 +102,36 @@ def publish(version, directory):
     elif 'not found' not in existing.stderr.lower() and '404' not in existing.stderr:
         raise RuntimeError('version image preflight failed')
     else:
-        run(['regctl', 'image', 'copy', image + '@' + digest, reference])
+        run(['regctl', 'image', 'copy', IMAGE + '@' + digest, reference])
     if run(['regctl', 'manifest', 'head', reference]) != digest:
         raise ValueError('version image verification failed')
+    return reference
+
+
+def publish(version, directory):
+    if not version_valid(version):
+        raise ValueError('release version must be vMAJOR.MINOR.PATCH')
+    check_source(version)
+    source = os.environ['GITHUB_SHA']
+    assets = release_assets(directory)
+    # Check both lightweight and annotated tags; never retarget a version.
+    tag = 'refs/tags/' + version
+    refs = dict(line.split()[::-1] for line in run(['git', 'ls-remote', '--tags', 'origin', tag, tag + '^{}']).splitlines())
+    if refs and refs.get(tag + '^{}', refs.get(tag)) != source:
+        raise ValueError('release tag already points to a different source')
+    digest = os.environ['WEIR_IMAGE_DIGEST']
+    reference = tag_image(version, source, digest)
     if refs and resume_release(version, assets):
         return
     notes = directory / 'release-notes.md'
     notes.write_text(
-        f'Source: `{source}` (merged main).\n\n'
-        f'Image: `{reference}@{digest}`. Native Linux amd64 tests, race tests, '
-        'reproducible builds and anonymous amd64 image smoke completed before this release. '
-        'Archives are provided for Linux and macOS amd64/arm64; build availability does not imply native production qualification. '
-        'Windows server builds are unavailable with the current Lua dependency.\n\n'
-        'Verify downloaded assets with `sha256sum -c SHA256SUMS`. The binary reports its immutable source identity.\n\n'
+        f'Weir {version}, built from `{source}`.\n\n'
+        f'Image: `{reference}` (`{digest}`), for Linux amd64 and arm64.\n\n'
+        'Archives are provided for Linux and macOS on amd64 and arm64. '
+        'Windows server builds are unavailable because the Lua dependency uses Unix process primitives. '
+        'Verify downloaded archives with `sha256sum -c SHA256SUMS`.\n\n'
         'Use the [Go SDK](https://github.com/batchstream/weir-go) and '
-        '[Helm chart](https://github.com/batchstream/weir-charts). '
-        'Deployment isolation and backend qualification remain required; see '
+        '[Helm chart](https://github.com/batchstream/weir-charts); see '
         f'[the architecture](https://github.com/batchstream/weir/blob/{source}/docs/architecture.md).\n')
     run(['gh', 'release', 'create', version, '--repo', 'batchstream/weir', '--target', source,
          '--title', version, '--notes-file', str(notes), *map(str, assets)])
@@ -158,27 +139,15 @@ def publish(version, directory):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    modes = parser.add_mutually_exclusive_group()
-    modes.add_argument('--check-version', action='store_true')
-    modes.add_argument('--check-source', action='store_true')
-    modes.add_argument('--verify-only', action='store_true',
-                       help='verify candidate assets and write SHA256SUMS; no publication or qualification')
+    parser.add_argument('--check-source', action='store_true', help='only validate the optional version and merged source')
     parser.add_argument('version')
-    parser.add_argument('directory', nargs='?', type=Path)
+    parser.add_argument('directory', nargs='?', type=Path, help='directory holding the archives and SHA256SUMS')
     args = parser.parse_args()
     if args.check_source:
         check_source(args.version)
         return
-    if args.check_version:
-        if args.version and not version_valid(args.version):
-            raise ValueError('release version must be vMAJOR.MINOR.PATCH')
-        return
     if args.directory is None:
-        parser.error('release artifact directory is required')
-    if args.verify_only:
-        delivery = json.loads(os.environ['WEIR_DELIVERY'])
-        verify_workflow_assets(args.directory, delivery, checksum_layout='artifact')
-        return
+        parser.error('release archive directory is required')
     publish(args.version, args.directory)
 
 

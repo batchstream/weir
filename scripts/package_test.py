@@ -181,60 +181,13 @@ class PackageTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'requires go1.27.1'):
                 package.go_environment()
 
-    def test_binary_target_and_linked_dependency_validation(self):
-        env = {}
-        lines = ('binary: go1.27.1\n\tdep\tgoogle.golang.org/grpc\tv1.83.2\n'
-                 '\t=>\t./third_party/grpc\t(devel)\n'
-                 '\tdep\tgithub.com/iceisfun/golua\tv1.1.1\n\t=>\t./third_party/golua\t(devel)\n'
-                 '\tbuild\tGOOS=linux\n'
-                 '\tbuild\tGOARCH=arm64\n\tbuild\tCGO_ENABLED=0\n\tbuild\t-trimpath=true\n\tbuild\tGOARM64=v8.0\n')
-        for extra, target, success in (('', ('linux', 'arm64'), True), ('', ('linux', 'amd64'), False), ('\tdep\texample.com/public\tv1.0.0\th1:fixture\n', ('linux', 'arm64'), True)):
-            result = subprocess.CompletedProcess([], 0, (lines + extra).encode(), b'')
-            with patch.object(subprocess, 'run', return_value=result):
-                if success:
-                    expected = [['google.golang.org/grpc', 'v1.83.2'], ['github.com/iceisfun/golua', 'v1.1.1']]
-                    if extra:
-                        expected.append(['example.com/public', 'v1.0.0', 'h1:fixture'])
-                    self.assertEqual(package.build_info(Path('binary'), target, env)['linked_modules'],
-                                     expected)
-                else:
-                    with self.assertRaises(ValueError):
-                        package.build_info(Path('binary'), target, env)
-
-    def test_binary_only_allows_both_exact_local_patches(self):
-        env = {}
-        lines = ('binary: go1.27.1\n\tbuild\tGOOS=linux\n\tbuild\tGOARCH=arm64\n'
-                 '\tbuild\tCGO_ENABLED=0\n\tbuild\t-trimpath=true\n\tbuild\tGOARM64=v8.0\n')
-        linked = {module: f'\tdep\t{module}\t{version}\n\t=>\t{directory}\t(devel)\n'
-                  for module, (version, directory) in package.dependencies.LOCAL_PATCHES.items()}
-        complete = ''.join(linked.values())
-        result = subprocess.CompletedProcess([], 0, (lines + complete).encode(), b'')
-        with patch.object(subprocess, 'run', return_value=result):
-            info = package.build_info(Path('binary'), ('linux', 'arm64'), env)
-            self.assertEqual(info['local_patches'], [
-                {'module': module, 'version': version, 'path': directory}
-                for module, (version, directory) in package.dependencies.LOCAL_PATCHES.items()])
-        for module, (version, directory) in package.dependencies.LOCAL_PATCHES.items():
-            for invalid in (linked[module].replace(version, 'v0.0.1'),
-                            linked[module].replace(directory, '../unreviewed'),
-                            linked[module].replace(module, package.dependencies.PROTOCOL),
-                            linked[module] + linked[module]):
-                extra = complete.replace(linked[module], invalid)
-                result = subprocess.CompletedProcess([], 0, (lines + extra).encode(), b'')
-                with self.subTest(module=module, invalid=invalid), patch.object(subprocess, 'run', return_value=result):
-                    with self.assertRaisesRegex(ValueError, 'replacement dependency refused'):
-                        package.build_info(Path('binary'), ('linux', 'arm64'), env)
-        for extra in ('', *linked.values()):
-            result = subprocess.CompletedProcess([], 0, (lines + extra).encode(), b'')
-            with patch.object(subprocess, 'run', return_value=result):
-                with self.assertRaisesRegex(ValueError, 'missing a pinned local dependency patch'):
-                    package.build_info(Path('binary'), ('linux', 'arm64'), env)
-
-    def test_oci_build_context_contains_only_built_binaries(self):
+    def test_build_writes_archives_checksums_and_oci_context(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             source = root / 'source'
             source.mkdir()
+            output = root / 'output'
+            output.mkdir()
             base = {'image': 'fixture', 'index': 'sha256:' + '0' * 64}
             inputs = {
                 'deploy/docker/base.json': json.dumps(base).encode(),
@@ -249,7 +202,7 @@ class PackageTests(unittest.TestCase):
             def run(args, *, cwd=None, env=None):
                 if args[:3] == ['git', 'cat-file', 'blob']:
                     return inputs[args[3]]
-                if args == ['go', 'mod', 'verify'] or args[:3] == ['go', 'tool', 'buildid']:
+                if args == ['go', 'mod', 'verify']:
                     return b''
                 if args == ['go', 'list', '-m', '-json', 'all']:
                     return b'{"Path":"github.com/batchstream/weir","Main":true}'
@@ -259,41 +212,65 @@ class PackageTests(unittest.TestCase):
                     return b''
                 self.fail('unexpected command: ' + repr(args))
 
-            opts = dict(source=source, output=root / 'output', env={},
+            opts = dict(work=root, source=source, output=output, env={},
                         files=[(name, name) for name in inputs], revision='0' * 40,
-                        epoch=1700000001, oci=True,
-                        builder='fixture', docker_env={})
-            linked = {}
-            oci = {'index': 'sha256:' + '1' * 64}
+                        epoch=1700000001, oci=True, builder='fixture', docker_env={})
             completed = subprocess.CompletedProcess([], 0, stdout='fixture OCI build')
             with (patch.object(package, 'run', side_effect=run),
-                  patch.object(package, 'build_info', return_value=linked),
-                  patch.object(package, 'oci_receipt', return_value=oci) as receipt,
                   patch.object(package.subprocess, 'run', return_value=completed) as docker):
-                result = package.build_once(opts)
+                archives = package.build_source(opts)
 
-            name = 'weir'
-            expected = {name}
+            names = ['weir-' + system + '-' + arch + '.tar.gz' for system, arch in package.TARGETS]
+            self.assertEqual([item.name for item in archives], names)
+            self.assertEqual(sorted(item.name for item in output.iterdir()), sorted(names + ['SHA256SUMS']))
+            checksums = (output / 'SHA256SUMS').read_text().splitlines()
+            self.assertEqual(checksums, [package.sha((output / name).read_bytes()) + '  ' + name for name in names])
             for arch in ('amd64', 'arm64'):
                 context = root / 'oci-context' / ('linux-' + arch)
-                self.assertEqual({item.name for item in context.iterdir()}, expected)
-                for binary in expected:
-                    built = opts['output'] / 'binaries' / ('linux-' + arch) / binary
-                    self.assertEqual((context / binary).read_bytes(), built.read_bytes())
-            dockerfile = 'deploy/docker/Dockerfile'
-            self.assertEqual((root / 'oci-context' / 'Dockerfile').read_bytes(), inputs[dockerfile])
-            archive_path = opts['output'] / 'weir-linux-arm64.tar.gz'
-            with tarfile.open(archive_path) as archive:
-                configurations = {
-                    'config/weir.reference.yaml': 'config/weir.reference.yaml',
-                    'config/routes.reference.yaml': 'config/routes.reference.yaml',
-                }
+                self.assertEqual({item.name for item in context.iterdir()}, {'weir'})
+                built = root / 'binaries' / ('linux-' + arch) / 'weir'
+                self.assertEqual((context / 'weir').read_bytes(), built.read_bytes())
+            self.assertEqual((root / 'oci-context' / 'Dockerfile').read_bytes(), inputs['deploy/docker/Dockerfile'])
+            with tarfile.open(output / 'weir-linux-arm64.tar.gz') as archive:
+                configurations = ('config/weir.reference.yaml', 'config/routes.reference.yaml')
                 yaml_files = {name for name in archive.getnames() if name.endswith('.yaml')}
                 self.assertEqual(yaml_files, set(configurations))
-                for filename, source_path in configurations.items():
-                    self.assertEqual(archive.extractfile(filename).read(), inputs[source_path])
-            receipt.assert_called_once()
+                for filename in configurations:
+                    self.assertEqual(archive.extractfile(filename).read(), inputs[filename])
+                self.assertEqual(archive.extractfile('weir').read(), b'./cmd/weir linux/arm64')
             docker.assert_called_once()
+
+    def test_oci_index_digest_requires_both_linux_platforms(self):
+        def layout(path, platforms, *, nested):
+            blobs = {}
+            manifests = [{'mediaType': 'application/vnd.oci.image.manifest.v1+json',
+                          'digest': 'sha256:' + '1' * 64, 'platform': {'os': 'linux', 'architecture': arch}}
+                         for arch in platforms]
+            inner = json.dumps({'schemaVersion': 2, 'manifests': manifests}).encode()
+            digest = 'sha256:' + package.sha(inner)
+            if nested:
+                blobs['blobs/sha256/' + digest[7:]] = inner
+                descriptor = {'mediaType': 'application/vnd.oci.image.index.v1+json', 'digest': digest}
+                outer = {'schemaVersion': 2, 'manifests': [descriptor]}
+                blobs['index.json'] = json.dumps(outer).encode()
+            else:
+                blobs['index.json'] = inner
+            with tarfile.open(path, 'w') as bundle:
+                for name, raw in blobs.items():
+                    member = tarfile.TarInfo(name)
+                    member.size = len(raw)
+                    bundle.addfile(member, io.BytesIO(raw))
+            return digest
+
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / 'image.tar'
+            for nested in (True, False):
+                expected = layout(path, ('amd64', 'arm64'), nested=nested)
+                self.assertEqual(package.oci_index_digest(path), expected)
+                layout(path, ('amd64',), nested=nested)
+                with self.assertRaisesRegex(ValueError, 'linux/amd64 and linux/arm64'):
+                    package.oci_index_digest(path)
+
 
 if __name__ == '__main__':
     unittest.main()

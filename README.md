@@ -248,20 +248,22 @@ upstream identities, patch diffs and focused regression tests live under
 
 ## Releases
 
-Build reproducible archives from a clean commit:
+Build reproducible Linux and macOS amd64/arm64 archives and their `SHA256SUMS`
+from a clean commit (`--oci` also builds the Linux image locally):
 
 ```sh
 python3 scripts/package.py --output dist/local-build
 ```
 
-Run **Verified Weir images** on `main` with a stable `vMAJOR.MINOR.PATCH` release
-version. It tests the source, reproduces Linux amd64/arm64 images and four platform
-archives, publishes verified content to GHCR and checks an anonymous pull before
-creating version tags and release assets. Existing versions cannot be replaced
-with different content. Publishing a GitHub release also triggers verification;
-its tag must identify source already merged into `main`.
+Run **Weir images** on `main` with a stable `vMAJOR.MINOR.PATCH` release
+version. It tests the source, builds the archives and the Linux amd64/arm64
+image, pushes the image to GHCR tagged with the source SHA, runs `weir version`
+from the pulled image, then tags the version and creates the GitHub release with
+the archives. Existing tags are never replaced with different content.
+Publishing a GitHub release also runs the workflow; its tag must identify
+source already merged into `main`.
 
-Use `ghcr.io/batchstream/weir:vMAJOR.MINOR.PATCH` or pin the image digest from
-`delivery.json`. A release created by another workflow with `GITHUB_TOKEN` must
-invoke the image workflow explicitly. Windows server builds are unavailable
+Use `ghcr.io/batchstream/weir:vMAJOR.MINOR.PATCH`, or pin the image digest listed
+in the release notes. A release created by another workflow with `GITHUB_TOKEN`
+must invoke the image workflow explicitly. Windows server builds are unavailable
 because the Lua dependency uses Unix process primitives.

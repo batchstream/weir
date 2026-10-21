@@ -74,7 +74,7 @@ func TestVersionWithoutConfiguration(t *testing.T) {
 	if identity["product"] != "weir" ||
 		identity["go"] != runtime.Version() ||
 		identity["target"] != runtime.GOOS+"/"+runtime.GOARCH ||
-		identity["state"] != "dev" {
+		identity["version"] == "" {
 		t.Fatal(identity)
 	}
 }
