@@ -485,8 +485,18 @@ publications, full owned container/image/PID identity and unchanged nonroot,
 read-only, cap-drop, no-new-privileges controls. The same observer validates actual
 2CPU/1GiB, zero swap and 96-PID cgroup controls before/after the workload. The
 native Mongo process and driver remain outside that CLI cgroup. Mongo uses stock
-settings; each search product retains its finite startup/heap/resource settings,
-but formal data uses a new owned disposable host directory rather than finite-only 256MiB tmpfs.
+settings. Formal OpenSearch dependencies use 2CPU/2GiB containers, memory=swap,
+512 PIDs and a 1GiB JVM heap (`-Xms1g -Xmx1g`), for both load and fault and
+both transports. Docker/cgroup guards enforce container bounds; the controller
+checks the selected heap environment and retains `backend-capacity.json`.
+This external dependency capacity correction follows an observed HTTP 429
+`circuit_breaking_exception`; it changes no breaker, GC, queue, plugin or network
+policy and does not establish production qualification. Elasticsearch and finite
+cells retain 1536MiB containers and 512MiB heaps. The load CLI remains 1GiB,
+the fault CLI 512MiB; workload, deadlines, p99 and ownership gates are unchanged.
+On the owned 7GiB runner, the 2GiB OpenSearch and 1GiB load CLI bounds leave
+room for the native Mongo dependency and driver outside the CLI quota.
+Formal data uses a new owned disposable host directory rather than finite-only 256MiB tmpfs.
 OpenSearch keeps its existing nonroot writable container layer (the CLI remains
 read-only), stock image entrypoint and existing log/tmp tmpfs. Its formal-only
 CMD runs a shell setting `umask 0002`, then execs the actual stock entrypoint with

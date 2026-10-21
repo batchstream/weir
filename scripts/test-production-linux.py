@@ -567,6 +567,12 @@ class Controller:
             if backend_product(self.opts)[0] == "opensearch":
                 expected_command = OS_LOAD_COMMAND if self.opts.profile in FORMAL_PROFILES else ["opensearch"]
                 require(info.get("Entrypoint") == ["./opensearch-docker-entrypoint.sh"] and info.get("Cmd") == expected_command, "backend stock entrypoint changed")
+                if spec.get("heap_options"):
+                    heap = self.docker(["exec", "--user=" + spec["user"], resource.identity,
+                                        "/bin/printenv", "OPENSEARCH_JAVA_OPTS"], 5).strip()
+                    require(heap == spec["heap_options"], "formal OpenSearch heap options mismatch")
+                    self.evidence("backend-capacity.json", dict(memory=spec["memory"], swap=spec["memory"],
+                                                               cpu=2_000_000_000, pids=spec["pids"], heap_options=heap))
                 expected_tmpfs = OS_TMPFS
             else:
                 expected_command = ES_LOAD_COMMAND if self.opts.profile in FORMAL_PROFILES else ES_COMMAND
@@ -1125,7 +1131,9 @@ class Controller:
             if self.opts.profile in FORMAL_PROFILES:
                 extra = [arg for arg in extra if not arg.startswith("--tmpfs=/usr/share/opensearch/data:")]
                 extra += ["--mount", "type=bind,src=" + str(data) + ",dst=/usr/share/opensearch/data"]
-                es_spec.update(extra=extra, command=OS_LOAD_COMMAND)
+                extra = [arg for arg in extra if not arg.startswith("--env=OPENSEARCH_JAVA_OPTS=")]
+                extra += ["--env=OPENSEARCH_JAVA_OPTS=-Xms1g -Xmx1g"]
+                es_spec.update(memory=2 << 30, extra=extra, command=OS_LOAD_COMMAND, heap_options="-Xms1g -Xmx1g")
         if self.opts.transport == "tls":
             self.tls_backend_spec(es_spec)
         self.phase_deadline = min(self.deadline, time.monotonic() + 90)
