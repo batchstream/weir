@@ -134,8 +134,3 @@ work to its deadline. Cancellation then stops owned work; bounded cleanup joins
 runtimes and closes backend connections, listeners and diagnostics. Cancellation
 never proves a sent write was not applied. Remote transaction locks can outlive
 local cancellation or best-effort session cleanup. See [operations](operations.md).
-
-Default tests use offline/owned loopback fixtures. Live databases, process memory
-pressure and deployment checks require explicit opt-ins. Successful compilation,
-local database execution and sustained deployment measurements establish different
-levels of coverage.

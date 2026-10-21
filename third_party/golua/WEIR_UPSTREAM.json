@@ -234,7 +234,7 @@
     },
     {
       "path": "WEIR_PATCH.md",
-      "sha256": "953d6dcef1fb7df5c7040f675955cbe007bbd70cdb1ec68f1abd5d3130a3e684"
+      "sha256": "0d7d6348b2ccdde03f961ca12d75b550c812288fd7e6540ac52f03ae36ca2492"
     },
     {
       "path": "budget/budget.go",

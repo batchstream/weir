@@ -131,19 +131,11 @@ business RPC. A drained/failed active connection leaves incomplete writes indete
 The same rules cover finite native exchanges. Explicit client Close
 cancels background work, closes owned channels and joins refresh/DNS work.
 
-## Acceptance
+## Testing
 
-Default offline tests must cover arbitrary seed ResolveStore, direct-only business RPCs,
-periodic peer convergence, same-group replicas, ownership conflicts, origin lease
-expiry without resurrection, terminal withdrawal, mixed origin lease policies,
-delayed responses after watermark collection, complete finite-handshake validation,
-server-side exchange deadlines without a caller deadline, malformed atomic exchange rejection,
-seed self-selection, lease expiry and lifecycle cleanup. Client tests must prove
-business never reaches the seed, multiple targets receive independent RPCs, DNS
-changes are observed while old connections remain healthy, invalid/expired
-mappings fail, and writes are not replayed after an ambiguous transport failure.
-
-Actual process/backend verification must initialize through a node that does not
-own the requested Store, execute and independently verify persisted operations at
-the owner, and exercise process replacement/replica changes. Tagged compilation,
-local fixture execution and real Kubernetes deployment are distinct evidence.
+Offline tests cover seed ResolveStore, direct-only business RPCs, peer
+convergence, ownership conflicts, origin lease expiry and terminal withdrawal,
+exchange validation and client target and DNS handling, including no replay after
+an ambiguous transport failure. `TestIndependentWeirProcesses` (integration tag)
+initializes a client through a node that does not own the Store and verifies
+persisted operations at the owner.
