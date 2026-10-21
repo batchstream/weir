@@ -3,6 +3,7 @@
 package testsearch
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -11,6 +12,32 @@ import (
 	"sync/atomic"
 	"testing"
 )
+
+func TestResponseError(t *testing.T) {
+	tests := []struct {
+		name, body, want string
+	}{
+		{"capacity", `{"error":{"type":"circuit_breaking_exception","reason":"private URL credential resource","root_cause":[{"reason":"private"}]},"status":503}`, "circuit_breaking_exception"},
+		{"rejection", `{"error":{"type":"es_rejected_execution_exception"}}`, "es_rejected_execution_exception"},
+		{"malformed", `{"error":`, "unavailable"},
+		{"string error", `{"error":"private"}`, "unavailable"},
+		{"missing type", `{"error":{"reason":"private"}}`, "unavailable"},
+		{"unsafe type", `{"error":{"type":"https://private/credential"}}`, "unavailable"},
+		{"long type", `{"error":{"type":"` + strings.Repeat("a", 97) + `"}}`, "unavailable"},
+		{"oversized body", `{"error":{"type":"exception"},"reason":"` + strings.Repeat("a", 2<<20) + `"}`, "unavailable"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			for _, status := range []int{429, 503} {
+				got := ResponseError(status, []byte(test.body)).Error()
+				want := fmt.Sprintf("HTTP status=%d backend_error_type=%s", status, test.want)
+				if got != want {
+					t.Fatalf("got %q, want %q", got, want)
+				}
+			}
+		})
+	}
+}
 
 func TestExecutionProfileContractOwnedProduct(t *testing.T) {
 	for product, expected := range map[string]string{"elasticsearch": "elasticsearch-8.19.22", "opensearch": "opensearch-3.3.0"} {

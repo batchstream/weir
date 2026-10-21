@@ -161,14 +161,31 @@ func (b *Backend) Create(t *testing.T, index, body string) {
 	}
 	status, raw := b.Do(t, "PUT", "/"+index, body)
 	if status != 200 {
-		t.Fatalf("test index setup status=%d body=%s", status, raw)
+		t.Fatalf("test index setup failed: %v", ResponseError(status, raw))
 	}
 	t.Cleanup(func() {
-		status, _ := b.Do(t, "DELETE", "/"+index, "")
+		status, raw := b.Do(t, "DELETE", "/"+index, "")
 		if status != 200 && status != 404 {
-			t.Error("test index cleanup failed", status)
+			t.Errorf("test index cleanup failed: %v", ResponseError(status, raw))
 		}
 	})
+}
+
+var responseErrorType = regexp.MustCompile(`^[a-z][a-z0-9_]{0,95}$`)
+
+// ResponseError reports only status and a bounded structured type, never backend
+// reasons, resource names, URLs, credentials, or the raw response body.
+func ResponseError(status int, body []byte) error {
+	var response struct {
+		Error struct {
+			Type string `json:"type"`
+		} `json:"error"`
+	}
+	errorType := "unavailable"
+	if len(body) <= 2<<20 && json.Unmarshal(body, &response) == nil && responseErrorType.MatchString(response.Error.Type) {
+		errorType = response.Error.Type
+	}
+	return fmt.Errorf("HTTP status=%d backend_error_type=%s", status, errorType)
 }
 
 func (b *Backend) Do(t *testing.T, method, path, body string) (int, []byte) {
