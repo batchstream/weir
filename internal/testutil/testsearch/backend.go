@@ -120,7 +120,7 @@ func (b *Backend) Do(t *testing.T, method, path, body string) (int, []byte) {
 	request.Header.Set("Content-Type", "application/json")
 	response, err := b.Client.Do(request)
 	if err != nil {
-		t.Fatal("independent backend request failed")
+		t.Fatalf("independent backend %s %s failed: %v", method, path, err)
 	}
 	defer response.Body.Close()
 	raw, err := io.ReadAll(io.LimitReader(response.Body, 2<<20))
