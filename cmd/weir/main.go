@@ -38,6 +38,7 @@ func run(args []string, output io.Writer) error {
 
 	serveConfig := "weir.yaml"
 	serveRoutes := ""
+	profileOptions := cpuProfileOptions{}
 	serveCommand := &cobra.Command{
 		Use:   "serve",
 		Short: "Start the node using process configuration and optional local Stores",
@@ -47,12 +48,16 @@ func run(args []string, output io.Writer) error {
 				return errors.New("--config requires a file")
 			}
 
+			if err := profileOptions.validate(); err != nil {
+				return err
+			}
+
 			cfg, err := app.Load(serveConfig, serveRoutes)
 			if err != nil {
 				return err
 			}
 
-			return serve(command.Context(), cfg, command.OutOrStdout())
+			return serve(command.Context(), cfg, command.OutOrStdout(), profileOptions)
 		},
 	}
 	serveCommand.Flags().StringVarP(
@@ -68,6 +73,9 @@ func run(args []string, output io.Writer) error {
 		"",
 		"optional local Store YAML configuration file",
 	)
+
+	serveCommand.Flags().StringVar(&profileOptions.path, "cpu-profile", "", "new CPU profile output file (exclusive create, mode 0600)")
+	serveCommand.Flags().DurationVar(&profileOptions.duration, "cpu-profile-duration", 0, "CPU capture duration, required with --cpu-profile (positive, at most 60s)")
 
 	checkConfig := "weir.yaml"
 	checkRoutes := ""
@@ -166,10 +174,22 @@ func run(args []string, output io.Writer) error {
 	return root.ExecuteContext(context.Background())
 }
 
-func serve(ctx context.Context, cfg app.Config, output io.Writer) error {
+func serve(ctx context.Context, cfg app.Config, output io.Writer, options cpuProfileOptions) (resultErr error) {
 	// The CLI owns signals from before assembly until all owned resources close.
 	signals, cancelSignal := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
 	defer cancelSignal()
+
+	profile, err := startCPUProfile(options)
+	if err != nil {
+		return err
+	}
+	if profile != nil {
+		defer func() {
+			if err := profile.close(); err != nil {
+				resultErr = errors.Join(resultErr, err)
+			}
+		}()
+	}
 
 	return serveContext(signals, cfg, output)
 }
