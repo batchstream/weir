@@ -13,6 +13,7 @@ import (
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 	"github.com/batchstream/weir/internal/testutil/testmetrics"
 	"github.com/batchstream/weir/internal/testutil/testsearch"
+	dto "github.com/prometheus/client_model/go"
 )
 
 // TestProcessSearchCRUD drives a finite SDK sequence (Put, Read, Native, Lua,
@@ -53,7 +54,7 @@ func TestProcessSearchCRUD(t *testing.T) {
 	}
 	dataset.native = []*pb.NativeRequest{native}
 	initial := testmetrics.Scrape(t, process.diagnostic)
-	rejections := testmetrics.Sum(initial, "weir_execution_memory_budget_rejections_total")
+	rejections := searchCRUDRejections(t, initial)
 	ctx, cancel := context.WithTimeout(t.Context(), time.Minute)
 	defer cancel()
 	openOptions := weirclient.OpenOptions{Seed: process.address, Stores: []string{"search"}}
@@ -97,23 +98,30 @@ func TestProcessSearchCRUD(t *testing.T) {
 	waitSearchCRUDIdle(t, process.diagnostic, rejections)
 }
 
+func searchCRUDRejections(t *testing.T, metrics map[string]*dto.MetricFamily) float64 {
+	t.Helper()
+	if metrics["weir_execution_memory_budget_rejections_total"] == nil {
+		t.Fatal("execution memory budget rejection counter is missing")
+	}
+	return testmetrics.Sum(metrics, "weir_execution_memory_budget_rejections_total")
+}
+
 // waitSearchCRUDIdle requires every owned execution, queue, publication and
-// session gauge to return to zero within 5s, with no new budget rejections.
+// session gauge to return to zero and the memory latch to be clear within 5s,
+// with no new budget rejections.
 func waitSearchCRUDIdle(t *testing.T, diagnostics string, rejections float64) {
 	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
 	for {
 		metrics := testmetrics.Scrape(t, diagnostics)
-		if testmetrics.Sum(metrics, "weir_execution_memory_budget_rejections_total") != rejections {
+		if searchCRUDRejections(t, metrics) != rejections {
 			t.Fatal("finite SDK sequence was rejected by the execution memory budget")
 		}
 		nonzero := make(map[string]float64)
-		for _, name := range []string{"used_bytes", "leases", "native_leases", "resident_bytes", "input_reserved_bytes", "input_used_bytes", "wire_bytes", "wire_buffers", "starting", "settled", "borrowed", "waiting", "terminal", "ingress_bytes", "ingress_reserved_bytes", "ingress_buffers", "ingress_messages", "ingress_waiting", "ingress_connections", "ingress_connection_bytes"} {
-			if value := testmetrics.Sum(metrics, "weir_execution_memory_"+name); value != 0 {
-				nonzero[name] = value
-			}
+		if value := testmetrics.Sum(metrics, "weir_memory_latched"); value != 0 {
+			nonzero["weir_memory_latched"] = value
 		}
-		for _, name := range []string{"weir_store_pending_entries", "weir_store_pending_reserved_bytes", "weir_store_active_executions", "weir_store_paused_native_outputs", "weir_store_paused_native_reserved_bytes", "weir_store_result_reserved_entries", "weir_store_result_reserved_bytes", "weir_store_retained_result_reserved_bytes", "weir_store_working_reserved_bytes", "weir_store_publishers", "weir_ingress_sessions", "weir_ingress_queued_response_bytes"} {
+		for _, name := range []string{"weir_execution_memory_used_bytes", "weir_execution_memory_leases", "weir_execution_memory_native_leases", "weir_execution_memory_resident_bytes", "weir_execution_memory_input_reserved_bytes", "weir_execution_memory_input_used_bytes", "weir_execution_memory_wire_bytes", "weir_execution_memory_wire_buffers", "weir_execution_memory_starting", "weir_execution_memory_settled", "weir_execution_memory_borrowed", "weir_execution_memory_waiting", "weir_execution_memory_terminal", "weir_execution_memory_ingress_bytes", "weir_execution_memory_ingress_reserved_bytes", "weir_execution_memory_ingress_buffers", "weir_execution_memory_ingress_messages", "weir_execution_memory_ingress_waiting", "weir_execution_memory_ingress_connections", "weir_execution_memory_ingress_connection_bytes", "weir_store_pending_entries", "weir_store_pending_reserved_bytes", "weir_store_active_executions", "weir_store_paused_native_outputs", "weir_store_paused_native_reserved_bytes", "weir_store_result_reserved_entries", "weir_store_result_reserved_bytes", "weir_store_retained_result_reserved_bytes", "weir_store_working_reserved_bytes", "weir_store_publishers", "weir_ingress_sessions", "weir_ingress_queued_response_bytes"} {
 			if metrics[name] == nil {
 				t.Fatal("required gauge is missing", name)
 			}

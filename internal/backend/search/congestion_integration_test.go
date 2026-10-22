@@ -81,7 +81,7 @@ func TestSearchRealBackendCongestion(t *testing.T) {
 		}
 	}
 	if rejected == 0 || applied == 0 {
-		t.Fatal("real rejection not exercised; use the task's bounded write-pool test profile", applied, rejected)
+		t.Fatal("real rejection not exercised; start the Search fixture with the overload profile", applied, rejected)
 	}
 	t.Log("applied", applied, "definite native capacity rejections", rejected)
 }

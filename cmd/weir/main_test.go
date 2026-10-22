@@ -337,6 +337,7 @@ func TestCLIRejectsArgumentsBeforeConfiguration(t *testing.T) {
 		{"probe", "live", "--routes", missing},
 		{"serve", "-r", missing}, {"check", "-r", missing},
 		{"serve", "--config", missing, "--database", "unexpected"},
+		{"-version"}, {"serve", "-config", missing},
 	}
 	for _, args := range cases {
 		t.Run(strings.Join(args, " "), func(t *testing.T) {
