@@ -1,7 +1,7 @@
 Darwin binaries link github.com/ebitengine/purego v0.10.2.
 Source: https://github.com/ebitengine/purego/tree/7f6f1382ade268f99d75e03a6b6447c2be53279c
 Copyright 2022 The Ebitengine Authors (Apache-2.0).
-Unmodified upstream dependency; no Weir runtime/bridge fork.
+Unmodified upstream dependency.
 
 Upstream README External Code identifies Go runtime-derived code under BSD-3-Clause:
 abi_*.h, wincallback.go, zcallback_darwin_*.s,

@@ -1,5 +1,0 @@
-stores:
-  - name: records
-    backend:
-      mongodb:
-        uri: mongodb://db.example.invalid:27017/?directConnection=true
