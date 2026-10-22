@@ -7,44 +7,36 @@ import (
 	"runtime/debug"
 )
 
-// Set only by the clean-commit packaging entry point. Ordinary builds stay dev.
-var sourceRevision string
+// revision is the source commit, set by scripts/package.py with -X main.revision.
+var revision string
+
+type versionIdentity struct {
+	Product  string `json:"product"`
+	Version  string `json:"version"`
+	Revision string `json:"revision,omitempty"`
+	Go       string `json:"go"`
+	Target   string `json:"target"`
+}
 
 func printVersion(output io.Writer) error {
-	identity := struct {
-		Product  string `json:"product"`
-		Version  string `json:"version"`
-		Revision string `json:"revision"`
-		Go       string `json:"go"`
-		Target   string `json:"target"`
-		State    string `json:"state"`
-		Dirty    string `json:"dirty"`
-	}{
-		"weir",
-		"dev",
-		"unknown",
-		runtime.Version(),
-		runtime.GOOS + "/" + runtime.GOARCH,
-		"dev",
-		"unknown",
+	identity := versionIdentity{
+		Product:  "weir",
+		Version:  "dev",
+		Revision: revision,
+		Go:       runtime.Version(),
+		Target:   runtime.GOOS + "/" + runtime.GOARCH,
 	}
 
 	if info, ok := debug.ReadBuildInfo(); ok {
+		// go build records module and VCS details when available; packaged builds use the injected revision.
+		if info.Main.Version != "" && info.Main.Version != "(devel)" {
+			identity.Version = info.Main.Version
+		}
 		for _, setting := range info.Settings {
-			switch setting.Key {
-			case "vcs.revision":
+			if setting.Key == "vcs.revision" && identity.Revision == "" {
 				identity.Revision = setting.Value
-			case "vcs.modified":
-				identity.Dirty = setting.Value
 			}
 		}
-	}
-
-	if sourceRevision != "" {
-		identity.Revision = sourceRevision
-		identity.Version = "local-" + sourceRevision
-		identity.State = "clean-commit"
-		identity.Dirty = "false"
 	}
 
 	return json.NewEncoder(output).Encode(identity)
