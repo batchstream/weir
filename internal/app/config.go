@@ -378,7 +378,7 @@ func (cfg RoutingConfig) validateStores() error {
 			return errors.New("invalid or duplicate Store")
 		}
 		if (definition.Backend.MongoDB == nil) == (definition.Backend.Search == nil) {
-			return errors.New("LocalStore requires exactly one adapter")
+			return errors.New("Store requires exactly one backend adapter")
 		}
 		names[definition.Name] = true
 	}

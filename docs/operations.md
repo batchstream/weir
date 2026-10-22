@@ -32,9 +32,9 @@ Kubernetes manifests and scaling guidance live under
 For automatic primary discovery, use the strict
 [replica-set connection profile](configuration.md#store-settings): an explicit set
 name with one to seven seeds and `directConnection` omitted or `false`. The driver
-uses ordinary replica-set topology discovery; Weir does not implement elections,
-secondary routing, SRV, mongos or load balancing. Direct mode intentionally stays
-on one member and cannot provide automatic failover.
+uses ordinary replica-set topology discovery and follows MongoDB's own elections;
+secondary routing, SRV, mongos and load balancing are unsupported. Direct mode
+stays on one member and cannot provide automatic failover.
 
 Seeds are bootstrap addresses, not a routing allowlist or global connection cap.
 Every advertised member address must be reachable from Weir. With TLS, each
@@ -75,8 +75,8 @@ overwritten. Both flags are required together; duration must be positive and at
 most `60s`. Capture begins before node assembly, not after warmup. The timer stops
 and flushes the runtime profiler and closes the file without stopping service;
 serve exit also stops capture and joins its worker without waiting out the capture
-duration. Existing node drain budgets are unchanged; profiler flush/file close add
-cleanup latency outside those budgets. Abrupt termination can leave an incomplete
+duration. Profiler flush and file close add cleanup latency outside the node
+drain budgets. Abrupt termination can leave an incomplete
 file. Use a local regular-file destination on trusted storage; filesystem IO and
 runtime flushing are not hard wall-clock bounded. File-close errors fail serve;
 the Go profiler API does not report asynchronous write errors, so verify that the
@@ -113,17 +113,12 @@ workspace promise; `ingress_bytes` and `ingress_reserved_bytes` describe receive
 ownership. These are reservation estimates, not RSS measurements. Compare them
 with actual memory metrics and `budget_rejections_total`.
 
-An admitted record's later working-memory growth may await a finite snapshot of
-other Native invocations still in initial preparation, only within the actual
-allocation/evaluation context's deadline. This is FIFO scheduling precedence over
-fresh execution starts across the Node, not extra memory credit: allocations
-remain forbidden until the complete reservation fits the unchanged ledger.
-Native initial IO can continue growing, converging or retiring while growth waits.
-Other records, settled slow outputs and future Native starts cannot extend that
-snapshot. If its remaining speculative working reservations cannot make the growth
-fit, or the snapshot finishes without releasing sufficient capacity, growth fails
-rather than awaiting a consumer Ack. A missing deadline fails promptly under
-pressure; cancellation removes the scheduling claim without releasing live data.
+When the account is full, an admitted record that needs more working memory can
+wait, within its own deadline, for Native invocations that are still starting to
+release capacity. It takes precedence over new executions but never receives
+extra credit. If capacity does not become available, the record fails with a
+capacity error instead of waiting for a slow consumer; a record without a
+deadline fails promptly under pressure.
 
 Typed record counters are updated once at Store completion, after final result
 normalization (including result-budget failures). Result-budget normalization can
@@ -167,9 +162,7 @@ RPC status or proof that the client received the response. An incomplete respons
 with `Failure` can be delivered in an RPC that finishes gRPC OK; it still increments
 `completion="response_incomplete"`. A complete opaque HTTP 500 response increments
 `completion="response_complete"`, without inferring business failure or updating
-either typed record counter. Native completion adds exactly four series per Store:
-61 runtime series in total, or 67 with Mongo connection metrics. The maximum
-16-Store diagnostics fixture has 1,195 Weir series (excluding Go/process collectors).
+either typed record counter. Native completion adds exactly four series per Store.
 
 Search HTTP metrics include failed attempts and exclude Native relay. HTTP
 success does not prove every bulk item succeeded. Bulk elapsed time includes
@@ -200,8 +193,6 @@ It cannot reclaim a live working set or memory outside Go.
 An explicitly present `GOMEMLIMIT`, including `off`, or an already finite runtime
 limit takes precedence. A later external runtime-limit change ends automatic
 ownership. Shutdown restores the previous setting only while Weir still owns it.
-Embedded `app.Open` leaves global GC policy unchanged; process owners can explicitly
-call `Node.ManageRuntimeMemoryLimit`.
 
 Inspect `weir_memory_go_runtime_limit_bytes`, `weir_memory_go_runtime_managed`,
 `weir_memory_recovery_allowance_bytes` and
@@ -228,19 +219,14 @@ work can retain locks until MongoDB's own transaction timeout and cleanup. A los
 commit acknowledgement remains UNKNOWN. Confirmed abort/conflict retries retain
 the original caller lifetime.
 
-Align termination grace with preStop, `lifecycle.shutdown_timeout` and cleanup.
-Each Store preserves the full admitted drain (default `5s`), then owns one
-absolute retirement budget (default `2s`), shared by concurrent Close callers.
-Detached MongoDB cleanup keeps its ordinary caller-independent `2s` bound, but
-forced adapter teardown cancels that cleanup and all operation/metadata waiters.
-Remote cleanup gets at most the first three quarters of retirement; adapter close
-gets the remaining context through seven eighths, reserving the final eighth for
-actual execution, publication and close-worker joins. MongoDB stops admission and
-closes/joins its owned raw transports before disconnecting the client. An expired
-best-effort session cleanup is not confirmed remote cleanup or replay permission;
-actual disconnect/raw-close errors and missed joins remain shutdown failures.
-A noncooperative adapter returns a bounded failure, never a false successful stop.
-Consumer-owned record evidence remains charged until genuine Ack/session closure.
+Align termination grace with preStop, `lifecycle.shutdown_timeout` and
+`lifecycle.cleanup_timeout`. Each Store drains admitted work for up to the
+shutdown timeout (default `5s`), then gets one cleanup budget (default `2s`) to
+cancel remaining work, end MongoDB sessions and close backend connections. An
+expired best-effort session cleanup is neither confirmed remote cleanup nor
+permission to replay. Disconnect errors and work that does not stop within the
+budget are reported as shutdown failures, never as a clean stop. Results not yet
+acknowledged by the consumer stay charged until Ack or stream closure.
 During rolling updates, terminating Pods can retain connections while new Pods start;
 `maxSurge: 0` does not cap that overlap. Scaling replicas increases aggregate
 backend demand and does not add database capacity.

@@ -34,8 +34,7 @@ type Target interface {
 	SetOverloaded(bool)
 }
 
-// Guard owns the existing memory sampler and exposes its last observation.
-// There is no second diagnostics sampling loop.
+// Guard owns the memory sampler and exposes its last observation.
 type Guard struct {
 	limits        Limits
 	mu            sync.Mutex

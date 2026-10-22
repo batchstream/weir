@@ -21,8 +21,7 @@ or byte limit. Document.content_type identifies the actual backend representatio
 Read does not negotiate alternative output encodings. NativeRequest carries
 a resource and an opaque request Document; NativeHead carries optional metadata
 and a body content type. Shared validation checks envelopes while each adapter
-interprets its content type and bytes. No database-specific public DTO is required
-to add another Store.
+interprets its content type and bytes.
 
 ExecuteResponse contains index and Event. Record results are emitted individually
 in ordinal order. Native emits typed events at index 1 and require a valid
@@ -31,8 +30,9 @@ through a bounded ticket queue. The Store scheduler aggregates compatible record
 within and across clients. Clients send and receive concurrently to permit
 backpressure in both directions.
 
-Request envelopes reject unknown fields, enum values and operation variants;
-ignoring a future write condition or command option could change its effects.
+Request envelopes reject unknown fields, enum values and operation variants,
+because ignoring an unrecognized write condition or command option could change
+its effects.
 The wire validator checks known field framing directly in the transport's buffer
 fragments before allocation, and shared validation checks the decoded values.
 Response readers reject unknown fields and undeclared failure codes, and check
@@ -84,12 +84,7 @@ PeerDiscoveryService.
 [weir-protocol](https://github.com/batchstream/weir-protocol) owns canonical public
 schemas, generated Go bindings and shared validation/DNS helpers. Both Weir and
 [weir-go](https://github.com/batchstream/weir-go) depend on it; it depends on neither.
-The SDK has no dependency on the server. Server acceptance tests can consume the
-SDK without introducing a cycle. This repository generates only internal peer
-bindings with scripts/generate.sh. Future language SDKs can independently generate
+The SDK has no dependency on the server. This repository generates only internal
+peer bindings with `scripts/generate.sh`. Clients in other languages can generate
 the public schema and implement discovery, endpoint refresh, load balancing and
-safe typed completion. The current dependencies are protocol v0.14.0 and Go SDK v0.16.0.
-
-Internal execution plans retain scheduling budgets and backend state. They borrow
-the public Command and publish the public Event directly; no second request or
-result DTO hierarchy duplicates the protocol.
+typed completion handling. Weir uses protocol v0.14.0 and Go SDK v0.16.0.

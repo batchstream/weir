@@ -1,5 +1,5 @@
 #!/bin/sh
-# Creates/restarts only this task-owned replica set; never adopts unmarked data.
+# Creates/restarts only this script's fixture replica set; never adopts unmarked data.
 # WEIR_MONGOD overrides the mongod binary. WEIR_MONGO_BIND adds comma-separated
 # literal IP addresses to the default loopback bind, e.g. the Docker bridge
 # gateway on a Linux CI runner. Empty and wildcard entries are refused.
@@ -54,8 +54,8 @@ case "${1:-start}" in
     case "$args" in
      *"$root"*)
       case "$args" in
-       *" --bind_ip $bind --port "*) echo 'Task replica set already running'; exit 0;;
-       *) echo "Task replica set is already running with a different bind; stop it before starting with --bind_ip $bind" >&2; exit 1;;
+       *" --bind_ip $bind --port "*) echo 'Fixture replica set already running'; exit 0;;
+       *) echo "Fixture replica set is already running with a different bind; stop it before starting with --bind_ip $bind" >&2; exit 1;;
       esac
       ;;
     esac
@@ -68,8 +68,8 @@ case "${1:-start}" in
   go run ./internal/testutil/testmongo/localinit -address 127.0.0.1:27028
   ;;
  stop)
-  # mongod shutdown only targets the process that owns this task's data path.
-  if [ ! -f "$root/mongod.pid" ]; then echo 'No task process recorded' >&2; exit 1; fi
+  # mongod shutdown only targets the process that owns this fixture's data path.
+  if [ ! -f "$root/mongod.pid" ]; then echo 'No fixture process recorded' >&2; exit 1; fi
   pid=$(cat "$root/mongod.pid")
   args=$(ps -ww -p "$pid" -o args= || true)
   case "$args" in *"$root"*) kill -TERM "$pid";; *) echo 'PID ownership mismatch; refusing to signal' >&2;exit 1;; esac

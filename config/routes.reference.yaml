@@ -37,9 +37,8 @@ stores:
         # Completed target qualification entries. Default: 64; integer >= 0.
         # 0 disables caching; pending checks do not occupy this capacity.
         metadata_cache_entries: 64
-        # Connection creation workers PER MEMBER POOL. Default: 2; 0 selects 2.
-        # Neither this nor the seed bound caps total topology/data sockets.
-        # This does not cap active connections or backend operations.
+        # Concurrent connection creation PER MEMBER POOL. Default: 2; 0 selects 2.
+        # Limits creation only, not total sockets or backend operations.
         max_connecting: 2
         # Total confirmed-conflict transaction attempts, including the first.
         # Default: 5; 0 selects 5; 1 disables retries. Never replays unknown writes.
@@ -75,8 +74,8 @@ stores:
       #   ca_file: /etc/weir/ca.pem
 
     # Bounds waiting inputs; dispatch releases capacity. Full queues wait for
-    # space or caller cancellation. Native output uses the Node's shared
-    # execution-memory account independently of these input queue bounds.
+    # space or caller cancellation. Native output is charged to the Node's
+    # shared execution-memory account.
     queue:
       # Waiting operations. Default: 1024; 0 selects 1024; positive integer.
       max_operations: 1024

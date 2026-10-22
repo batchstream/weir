@@ -32,12 +32,8 @@ Nil, missing/multiple return values, arrays and scalar results are invalid.
 Source must return the function itself. The current and input documents are
 callback arguments; they are not globals.
 
-This entry point, result actions, value conversion, helper meanings and restricted
-environment are the `weir.v1` Lua contract. Runtime implementation updates must
-preserve these script behaviors. New helpers may be additive; changes to existing
-semantics require an explicit public contract change, rather than interpreting
-the same source differently after an upgrade. There is one runtime contract and
-no per-request language selector.
+The entry point, result actions, value conversion, helper meanings and restricted
+environment form the `weir.v1` Lua contract, which applies to every transform.
 
 ## Document values
 
@@ -97,8 +93,7 @@ String functions are `len`, `sub`, `upper`, `lower`, `reverse`, `byte`, `char` a
 Go's `strings.ToUpper/ToLower`. For example, `utf8.upper("café straße")` returns
 `"CAFÉ STRAßE"`; simple casing does not expand `ß` to `SS`. These functions check
 execution cancellation while walking the input and reject invalid UTF-8.
-Files, processes,
-network access, dynamic loading, debug access, random state and
+Files, processes, network access, dynamic loading, debug access, random state and
 coroutines are unavailable. Library tables and globals are fresh for every
 evaluation, including concurrent evaluations.
 
@@ -116,27 +111,20 @@ history entries, deduplicate objects by a business key, normalize strings, or
 delete fields. Weir imposes no built-in merge policy.
 The [complex product fixture](../internal/luaengine/testdata/product_merge.lua)
 demonstrates history deduplication by nested values, tail limits and incoming-first
-offer priority. It explicitly constructs empty arrays and recognizes typed leaves
-while retaining the original business rules.
+offer priority. It explicitly constructs empty arrays and recognizes typed leaves.
 
-Weir does not impose source, input, current or result byte, node or nesting-depth
-admission limits. Value validation, JSON encoding and value/table conversion use
-explicit stacks and check the caller context; cyclic values and invalid types
-remain errors. JSON decoding uses Go's standard library and retains that
-library's parsing boundaries. Backend document-format limits still apply.
-Process `lua` exposes optional `max_instructions`, `max_call_depth` and
-`max_stack_slots` budgets.
-The default instruction budget is unlimited; zero call/stack settings use the
-VM native defaults. Compilation, top-level execution and the callback inherit
-the caller context. Evaluations run concurrently inside the main Weir process without a fixed
-concurrency cap or evaluation timeout.
-Each evaluation creates its own VM, globals, library tables and string metatable.
-The process loads the allowed standard-library functions and constants once;
-evaluations copy those immutable values into fresh tables, then bind their own
-context and observation time.
+Source, input and result sizes follow the [payload contracts](payloads.md);
+backend document-format limits apply, and cyclic values and invalid types are
+errors. Process `lua` exposes optional `max_instructions`, `max_call_depth` and
+`max_stack_slots` budgets. The default instruction budget is unlimited; zero
+call/stack settings use the VM native defaults. Compilation, top-level execution
+and the callback inherit the caller context, so the caller's deadline bounds
+evaluation. Evaluations run concurrently inside the main Weir process within the
+Store's execution slots; each creates its own VM, globals, library tables and
+string metatable.
+
 The parser, compiler, restricted VM and bridge share one allocation budget on
-the Node execution-memory account.
-New object storage, string buffers, table growth, compiler structures and output
+the Node execution-memory account. New object storage, string buffers, table growth, compiler structures and output
 conversion reserve memory before creating it, including expansion of shared Lua
 subtrees into a document. Existing backing capacity can be reused without another
 charge. This conservatively counts allocations retained for the evaluation's

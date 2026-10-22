@@ -37,9 +37,10 @@ visibility waits. Completion returns its slot independently of result consumptio
 Native output releases its execution slot while retained replies and publication
 remain charged to the Node's shared execution-memory account. Further backend
 reads fairly reacquire a slot through the same scheduler. The Node also bounds
-Native invocations to 1024. Store paused count/bytes are observations, with no
-separate queue-derived output limit. Memory exhaustion returns an explicit
-capacity failure rather than retaining an execution slot behind a slow consumer.
+Native invocations to 1024. `weir_store_paused_native_outputs` and
+`weir_store_paused_native_reserved_bytes` report paused Native output. Memory
+exhaustion returns an explicit capacity failure rather than retaining an
+execution slot behind a slow consumer.
 
 ## Backend grouping
 

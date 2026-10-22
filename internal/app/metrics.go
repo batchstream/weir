@@ -147,7 +147,7 @@ func (n *Node) Collect(ch chan<- prometheus.Metric) {
 	} {
 		desc := prometheus.NewDesc(
 			"weir_memory_"+name,
-			"Existing overload Guard state, without additional sampling or backend calls.",
+			"Last overload guard memory observation; scraping does not sample or call backends.",
 			nil,
 			nil,
 		)
