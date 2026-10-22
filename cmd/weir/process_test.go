@@ -34,7 +34,7 @@ import (
 )
 
 // This fixture speaks only enough synthetic HTTP to reach lifecycle boundaries.
-// It is not a database and supplies no database correctness qualification.
+// It is not a database and does not test database correctness.
 type startupBackend struct {
 	server                     *httptest.Server
 	hold                       string

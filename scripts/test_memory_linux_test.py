@@ -27,6 +27,7 @@ class CleanupTests(unittest.TestCase):
         self.process = MagicMock(pid=123, returncode=0)
         self.process.poll.return_value = None
         self.process.wait.return_value = 0
+        self.cleanups = []
 
     def command(self, args, **kwargs):
         self.calls.append(args)
@@ -87,17 +88,24 @@ class CleanupTests(unittest.TestCase):
         result = subprocess.CompletedProcess(args, code, output)
         return result
 
+    def cleanup(self, resources):
+        result = self.original_cleanup(resources)
+        self.cleanups.append(result)
+        return result
+
     def execute(self):
-        candidate = MagicMock()
-        candidate.__enter__.return_value.getsockname.return_value = ("127.0.0.1", 12345)
+        reservation = MagicMock()
+        reservation.__enter__.return_value.getsockname.return_value = ("127.0.0.1", 12345)
         connection = MagicMock()
         env = dict(WEIR_MEMORY_INTEGRATION="1", WEIR_MEMORY_HOST_MONGO="1")
+        self.original_cleanup = self.fixture.cleanup
         with patch.dict(os.environ, env), patch.object(self.fixture.sys, "platform", "darwin"), \
              patch.object(subprocess, "run", side_effect=self.command), \
              patch.object(subprocess, "Popen", return_value=self.process), \
-             patch.object(self.fixture.socket, "socket", return_value=candidate), \
+             patch.object(self.fixture, "cleanup", side_effect=self.cleanup), \
+             patch.object(self.fixture.socket, "socket", return_value=reservation), \
              patch.object(self.fixture.socket, "create_connection", return_value=connection), \
-             contextlib.redirect_stdout(io.StringIO()):
+             contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
             with self.assertRaises(Exception) as caught:
                 self.fixture.main()
         return str(caught.exception)
@@ -109,10 +117,8 @@ class CleanupTests(unittest.TestCase):
         self.process.send_signal.assert_called_once()
         self.process.wait.assert_called_once()
         self.assertFalse(self.resources)
-        receipt = json.loads((self.fixture.OUTPUT / "cleanup.json").read_text())
-        self.assertIn("original test failure", receipt["test_error"])
-        self.assertTrue(receipt["errors"])
-        self.assertTrue(receipt["all_stopped"])
+        self.assertTrue(self.cleanups[-1]["errors"])
+        self.assertTrue(self.cleanups[-1]["all_stopped"])
 
     def test_inspect_failure_does_not_skip_network_and_host(self):
         # guard succeeds; cli inspect fails after create/start. Host must always Wait.
@@ -123,8 +129,7 @@ class CleanupTests(unittest.TestCase):
         self.assertTrue(any(args[:3] == ["docker", "network", "rm"] for args in self.calls))
         self.assertIn("owned-cli", self.resources)
         self.assertNotIn("owned-guard", self.resources)
-        receipt = json.loads((self.fixture.OUTPUT / "cleanup.json").read_text())
-        self.assertFalse(receipt["all_stopped"])
+        self.assertFalse(self.cleanups[-1]["all_stopped"])
         self.assertTrue((self.fixture.OUTPUT / "weir").exists())
 
     def test_partial_create_and_build_failures(self):
@@ -153,8 +158,7 @@ class CleanupTests(unittest.TestCase):
         self.process.kill.assert_called_once()
         self.assertEqual(self.process.wait.call_count, 2)
         self.assertTrue((self.fixture.OUTPUT / "mongo-data").exists())
-        receipt = json.loads((self.fixture.OUTPUT / "cleanup.json").read_text())
-        self.assertFalse(receipt["all_stopped"])
+        self.assertFalse(self.cleanups[-1]["all_stopped"])
 
     def test_output_owner_mismatch_preserves_files(self):
         self.failure = "marker"
@@ -163,13 +167,12 @@ class CleanupTests(unittest.TestCase):
         self.assertTrue((self.fixture.OUTPUT / "mongo-data").exists())
         self.assertTrue((self.fixture.OUTPUT / "weir").exists())
 
-    def test_absent_candidate_has_explicit_evidence(self):
+    def test_absent_container_counts_as_stopped(self):
         self.failure = "absent"
         self.execute()
         self.process.wait.assert_called_once()
         self.assertFalse(self.resources)
-        receipt = json.loads((self.fixture.OUTPUT / "cleanup.json").read_text())
-        self.assertTrue(receipt["all_stopped"])
+        self.assertTrue(self.cleanups[-1]["all_stopped"])
 
 
 if __name__ == "__main__":

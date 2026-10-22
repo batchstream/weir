@@ -4,13 +4,10 @@ package app
 
 import (
 	"context"
-	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"net/netip"
 	"os"
-	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
@@ -46,40 +43,14 @@ type nativeBurstResult struct {
 
 func TestCLINativeSmallBurstPreservesAdmission(t *testing.T) {
 	if os.Getenv("WEIR_NATIVE_BURST_INTEGRATION") != "1" {
-		t.Skip("requires explicit clean Linux CLI Native burst qualification")
+		t.Skip("requires WEIR_NATIVE_BURST_INTEGRATION=1, Docker and the local Mongo and Elasticsearch fixtures")
 	}
 	if os.Getenv("WEIR_INTEGRATION") != "1" || os.Getenv("WEIR_SEARCH_INTEGRATION") != "elasticsearch" || os.Getenv("WEIR_MONGO_PROFILE") == "tls" {
 		t.Fatal("requires isolated plain MongoDB and Elasticsearch 8.19.22 fixtures")
 	}
-	binary := os.Getenv("WEIR_NATIVE_BURST_BINARY")
-	if !filepath.IsAbs(binary) {
-		t.Fatal("WEIR_NATIVE_BURST_BINARY must be an absolute Linux CLI path")
-	}
-	raw, err := os.ReadFile(binary)
-	if err != nil {
-		t.Fatal(err)
-	}
-	digest, revision := fmt.Sprintf("%x", sha256.Sum256(raw)), os.Getenv("WEIR_NATIVE_BURST_SOURCE")
-	if len(revision) != 40 || digest != os.Getenv("WEIR_NATIVE_BURST_SHA256") {
-		t.Fatal("requires an exact source and binary SHA256 receipt")
-	}
-	engine := strings.TrimSpace(packagedDocker(t, "info", "--format", "{{.OSType}}/{{.Architecture}}/{{.CgroupVersion}} kernel={{.KernelVersion}}"))
-	if !strings.HasPrefix(engine, "linux/aarch64/2 ") {
-		t.Fatal("requires native Linux arm64 cgroup-v2", engine)
-	}
-	image := strings.TrimSpace(packagedDocker(t, "image", "inspect", "--format", "{{.Os}}/{{.Architecture}} {{.Id}}", "busybox:1.37.0"))
-	if image != "linux/arm64 sha256:ad4f11f7c85f87c0a6d6c0fe492ad53f9cdcff6e8c88b881360c70eff701c67b" {
-		t.Fatal("cached CLI fixture identity changed", image)
-	}
+	binary := buildLinuxCLI(t)
 	mongo, search := testmongo.Open(t), testsearch.Open(t)
-	metadata := strings.Fields(packagedDocker(t, "inspect", "--type", "container", "--format", `{{.Id}} {{index .Config.Labels "weir.owner"}} {{.Config.Image}} {{(index .NetworkSettings.Networks "bridge").IPAddress}} {{.State.Running}}`, "weir-local-elasticsearch"))
-	if len(metadata) != 5 || len(metadata[0]) != 64 || metadata[1] != "weir-search-local" || metadata[2] != "docker.elastic.co/elasticsearch/elasticsearch@sha256:c2a3ed5f968be6d59c960aa0c60cfdaee667b6bc8211142021a41d0e85b43237" || metadata[4] != "true" {
-		t.Fatal("owned pinned Elasticsearch fixture identity mismatch", metadata)
-	}
-	bridge, err := netip.ParseAddr(metadata[3])
-	if err != nil || !bridge.Is4() || !bridge.IsPrivate() {
-		t.Fatal("owned Elasticsearch private bridge unavailable")
-	}
+	searchURL := searchContainerURL(t, search)
 	datasets := []*nativeBurstDataset{
 		{store: "mongo", root: mongo.DB + "/records", media: "application/bson", mongo: mongo, expected: make(map[string]nativeBurstRecord)},
 		{store: "search", root: search.Index, media: "application/json", search: search, expected: make(map[string]nativeBurstRecord)},
@@ -87,18 +58,13 @@ func TestCLINativeSmallBurstPreservesAdmission(t *testing.T) {
 	for _, dataset := range datasets {
 		seedNativeBurstDataset(t, dataset)
 	}
-	mongoBackend, searchBackend := &Mongo{URI: "mongodb://host.docker.internal:27028/?directConnection=true&serverMonitoringMode=poll"}, &Search{URL: "http://" + bridge.String() + ":9200"}
+	mongoBackend, searchBackend := &Mongo{URI: containerMongoURI}, &Search{URL: searchURL}
 	mongoLocal, searchLocal := &Local{Backend: BackendConfig{MongoDB: mongoBackend}}, &Local{Backend: BackendConfig{Search: searchBackend}}
 	cfg := DefaultConfig()
 	cfg.Routing.Stores = []StoreConfig{{Name: "mongo", Local: mongoLocal}, {Name: "search", Local: searchLocal}}
 	opts := memoryRecoveryOptions{binary: binary, capacityMiB: 1024, automatic: true, config: &cfg}
 	process := startMemoryRecoveryCLI(t, opts)
-	version := strings.TrimSpace(packagedDocker(t, "exec", process.name, "/weir", "version"))
-	var identity map[string]string
-	if json.Unmarshal([]byte(version), &identity) != nil || identity["state"] != "clean-commit" || identity["dirty"] != "false" || identity["target"] != "linux/arm64" || identity["revision"] != revision {
-		t.Fatal("qualification requires the clean exact Linux source identity", version)
-	}
-	t.Logf("fixed10x256 mixed1KiB 1GiB/2CPU caller3s cleanup5s retries=0 SHA256=%s version=%s engine=%s image=%s Search_bridge=%s container=%s", digest, version, engine, image, bridge, metadata[0])
+	t.Logf("fixed10x256 mixed1KiB 1GiB/2CPU caller3s cleanup5s retries=0 Search=%s container=%s", searchURL, process.name)
 	initial := nativeBurstSnapshot(t, process)
 	if initial["budget_rejections_total"] != 0 {
 		t.Error("fresh CLI already reported Native budget rejection", initial)
@@ -342,21 +308,21 @@ func executeNativeBurstCall(ctx context.Context, client *weirclient.Client, data
 func nativeBurstSnapshot(t *testing.T, process *memoryRecoveryCLI) map[string]float64 {
 	t.Helper()
 	metrics := process.sample(t)
-	values := qualificationExecutionMemory(t, metrics, process.capacity)
-	latched := qualificationGauge(t, metrics, "weir_memory_latched", nil)
+	values := executionMemorySnapshot(t, metrics, process.capacity)
+	latched := requireGauge(t, metrics, "weir_memory_latched", nil)
 	if latched != 0 {
 		t.Error("small burst unexpectedly latched memory pressure")
 	}
 	for _, store := range []string{"mongo", "search"} {
 		labels := map[string]string{"store": store}
 		for name, want := range map[string]float64{"weir_store_active_executions_limit": 16, "weir_store_pending_entries_limit": 1024, "weir_store_pending_reserved_bytes_limit": 32 << 20, "weir_store_batch_max_operations": 128, "weir_store_batch_max_bytes": 4 << 20, "weir_store_batch_max_wait_seconds": .02} {
-			actual := qualificationGauge(t, metrics, name, labels)
+			actual := requireGauge(t, metrics, name, labels)
 			if actual != want {
 				t.Error("default Store policy changed", store, name, actual, want)
 			}
 		}
 		for name, limit := range map[string]float64{"weir_store_active_executions": 16, "weir_store_pending_entries": 1024, "weir_store_pending_reserved_bytes": 32 << 20} {
-			actual := qualificationGauge(t, metrics, name, labels)
+			actual := requireGauge(t, metrics, name, labels)
 			if actual > limit {
 				t.Error("Store exceeded unchanged default bound", store, name, actual, limit)
 			}

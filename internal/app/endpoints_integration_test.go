@@ -26,7 +26,8 @@ import (
 func buildEndpointProcess(t *testing.T) string {
 	t.Helper()
 	binary := filepath.Join(t.TempDir(), "weir")
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	// A cold race build cache can exceed half a minute on CI runners.
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "go", "build", "-race", "-o", binary, "./cmd/weir")
 	cmd.Dir = testutil.Root(t)

@@ -134,13 +134,6 @@ def main():
         output.write(str(bins) + '\n')
         if args.mode != 'smoke':
             output.write(str(root / 'go/bin') + '\n')
-    # Runner labels select a moving image; record the actual machine separately.
-    record = dict(architecture=arch, kernel=platform.release(), machine=platform.machine(),
-                  logical_cpus=os.cpu_count(), memory_bytes=os.sysconf('SC_PAGE_SIZE') * os.sysconf('SC_PHYS_PAGES'),
-                  image_os=os.environ.get('ImageOS'), image_version=os.environ.get('ImageVersion'),
-                  runner_arch=os.environ.get('RUNNER_ARCH'), runner_name=os.environ.get('RUNNER_NAME'),
-                  source=os.environ.get('GITHUB_SHA'), run_id=os.environ.get('GITHUB_RUN_ID'), pins=pins)
-    print('CI_ENVIRONMENT=' + json.dumps(record, sort_keys=True), flush=True)
 
 
 if __name__ == '__main__':

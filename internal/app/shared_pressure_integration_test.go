@@ -26,7 +26,7 @@ import (
 // owned CLI container's working set. No production memory hooks are installed.
 func TestCLISharedMemoryRecoveryProbe(t *testing.T) {
 	if os.Getenv("WEIR_SHARED_PRESSURE_INTEGRATION") != "1" {
-		t.Skip("explicit owned shared-memory pressure qualification required")
+		t.Skip("requires explicit owned shared-memory pressure fixture")
 	}
 	if runtime.GOOS != "darwin" || runtime.GOARCH != "arm64" {
 		t.Fatal("requires native Darwin arm64 driver and Linux arm64 CLI")

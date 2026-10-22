@@ -8,9 +8,11 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/netip"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"slices"
 	"strings"
@@ -19,9 +21,10 @@ import (
 
 	weirclient "github.com/batchstream/weir-go"
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
-	"github.com/batchstream/weir/internal/testutil/testexecution"
+	"github.com/batchstream/weir/internal/testutil"
 	"github.com/batchstream/weir/internal/testutil/testmetrics"
 	"github.com/batchstream/weir/internal/testutil/testmongo"
+	"github.com/batchstream/weir/internal/testutil/testsearch"
 	dto "github.com/prometheus/client_model/go"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"google.golang.org/grpc"
@@ -30,30 +33,15 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-// This opts into native Linux Docker and the fixed, independently checked local
-// MongoDB fixture. The host driver never shares the service process's Go heap.
+// TestCLIBusinessHeapRecovery runs the Linux CLI in a memory-limited
+// container against scripts/mongo-local.sh. The host driver never
+// shares the service process's Go heap.
 func TestCLIBusinessHeapRecovery(t *testing.T) {
 	if os.Getenv("WEIR_MEMORY_RECOVERY_INTEGRATION") != "1" {
-		t.Skip("requires explicit owned CLI memory-recovery qualification")
+		t.Skip("requires WEIR_MEMORY_RECOVERY_INTEGRATION=1, Docker and the local Mongo fixture")
 	}
-	if runtime.GOOS != "darwin" || runtime.GOARCH != "arm64" {
-		t.Fatal("this qualification requires a native Darwin arm64 driver")
-	}
-	binary := os.Getenv("WEIR_MEMORY_RECOVERY_BINARY")
-	if !filepath.IsAbs(binary) {
-		t.Fatal("WEIR_MEMORY_RECOVERY_BINARY must identify this source's Linux CLI")
-	}
-	engine := strings.TrimSpace(packagedDocker(t, "info", "--format", "{{.OSType}}/{{.Architecture}}/{{.CgroupVersion}}"))
-	if engine != "linux/aarch64/2" {
-		t.Fatal("native Linux arm64 cgroup-v2 engine required", engine)
-	}
-	image := strings.TrimSpace(packagedDocker(t, "image", "inspect", "--format", "{{.Os}}/{{.Architecture}} {{.Id}}", "busybox:1.37.0"))
-	if image != "linux/arm64 sha256:ad4f11f7c85f87c0a6d6c0fe492ad53f9cdcff6e8c88b881360c70eff701c67b" {
-		t.Fatal("the previously cached pinned native fixture image is required", image)
-	}
-	t.Logf("driver Go=%s host=%s/%s engine=%s image=%s", runtime.Version(), runtime.GOOS, runtime.GOARCH,
-		strings.TrimSpace(packagedDocker(t, "info", "--format", "{{.ServerVersion}} kernel={{.KernelVersion}} {{.OSType}}/{{.Architecture}} cgroup={{.CgroupVersion}}")), image)
 	fixture := testmongo.Open(t)
+	binary := buildLinuxCLI(t)
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
 	document := bson.D{{Key: "_id", Value: "large"}, {Key: "pad", Value: strings.Repeat("x", 12<<20)}}
@@ -98,24 +86,86 @@ type memoryRecoveryOptions struct {
 	sharedMemoryMiB int
 	automatic       bool
 	config          *Config
-	// Only production load/fault consumers opt into the validated boundary.
-	execution *testexecution.ValidatedInputs
 }
 
+// containerMongoURI reaches scripts/mongo-local.sh from a CLI container
+// through the host gateway. On Linux, mongod must also bind the Docker bridge
+// gateway (WEIR_MONGO_BIND).
+const containerMongoURI = "mongodb://host.docker.internal:27028/?directConnection=true&serverMonitoringMode=poll"
+
+var fullContainerID = regexp.MustCompile(`^[0-9a-f]{64}$`)
+
+// buildLinuxCLI cross-compiles the CLI for a Linux container on this host's
+// architecture.
+func buildLinuxCLI(t *testing.T) string {
+	t.Helper()
+	directory := t.TempDir()
+	if err := os.Chmod(directory, 0755); err != nil {
+		t.Fatal(err)
+	}
+	binary := filepath.Join(directory, "weir")
+	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Minute)
+	defer cancel()
+	command := exec.CommandContext(ctx, "go", "build", "-trimpath", "-o", binary, "./cmd/weir")
+	command.Dir = testutil.Root(t)
+	command.Env = append(os.Environ(), "GOOS=linux", "GOARCH="+runtime.GOARCH, "CGO_ENABLED=0")
+	output, err := command.CombinedOutput()
+	if err != nil {
+		t.Fatal("Linux CLI build failed", err, string(output))
+	}
+	return binary
+}
+
+// containerHostAddress rewrites a host listener address so a CLI container
+// reaches it through the host gateway.
+func containerHostAddress(t *testing.T, address string) string {
+	t.Helper()
+	_, port, err := net.SplitHostPort(address)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return net.JoinHostPort("host.docker.internal", port)
+}
+
+// searchContainerURL returns the bridge address of the scripts/search-local.sh
+// container so a CLI container reaches Search without a host round trip.
+func searchContainerURL(t *testing.T, backend *testsearch.Backend) string {
+	t.Helper()
+	name := "weir-local-elasticsearch"
+	if backend.Product == "opensearch" {
+		name = "weir-local-opensearch-3.3"
+	}
+	raw := packagedDocker(t, "inspect", "--type", "container", "--format", `{{index .Config.Labels "weir.owner"}} {{(index .NetworkSettings.Networks "bridge").IPAddress}} {{.State.Running}}`, name)
+	fields := strings.Fields(raw)
+	if len(fields) != 3 || fields[0] != "weir-search-local" || fields[2] != "true" {
+		t.Fatal("local Search fixture container is not running", raw)
+	}
+	address, err := netip.ParseAddr(fields[1])
+	if err != nil || !address.Is4() || !address.IsPrivate() {
+		t.Fatal("local Search fixture requires a private bridge address", raw, err)
+	}
+	return "http://" + address.String() + ":9200"
+}
+
+func validateContainerOwnership(raw, id, owner string) error {
+	fields := strings.Fields(raw)
+	if !fullContainerID.MatchString(id) || len(fields) < 2 || fields[0] != id || fields[1] != owner {
+		return fmt.Errorf("container ID/owner mismatch; refuse stop/remove: %q", raw)
+	}
+	return nil
+}
+
+// name is the full container ID; owner is the container name and its
+// weir.owner label.
 type memoryRecoveryCLI struct {
-	name, address, diagnostic string
-	capacity                  float64
-	automatic                 bool
-	stores                    int
+	name, owner, address, diagnostic string
+	capacity                         float64
+	automatic                        bool
+	stores                           int
 }
 
 func startMemoryRecoveryCLI(t *testing.T, opts memoryRecoveryOptions) *memoryRecoveryCLI {
 	t.Helper()
-	if opts.execution != nil {
-		if err := validateProductionCLIOptions(opts); err != nil {
-			t.Fatal(err)
-		}
-	}
 	directory := t.TempDir()
 	if err := os.Chmod(directory, 0755); err != nil {
 		t.Fatal(err)
@@ -143,7 +193,7 @@ func startMemoryRecoveryCLI(t *testing.T, opts memoryRecoveryOptions) *memoryRec
 	}
 	if opts.config == nil {
 		for index := range stores {
-			backend := &Mongo{URI: "mongodb://host.docker.internal:27028/?directConnection=true&serverMonitoringMode=poll"}
+			backend := &Mongo{URI: containerMongoURI}
 			connection := BackendConfig{MongoDB: backend}
 			local := &Local{Backend: connection}
 			definition := StoreConfig{Name: fmt.Sprintf("mongo%d", index), Local: local}
@@ -153,11 +203,15 @@ func startMemoryRecoveryCLI(t *testing.T, opts memoryRecoveryOptions) *memoryRec
 		stores = len(cfg.Routing.Stores)
 	}
 	writeConfigFiles(t, filepath.Join(directory, "node.yaml"), cfg, 0644)
-	args := []string{"create", "--name", owner, "--label", "weir.owner=" + owner, "--platform=linux/arm64", "--pull=never",
+	args := []string{"create", "--name", owner, "--label", "weir.owner=" + owner, "--platform=linux/" + runtime.GOARCH, "--pull=never",
 		"--read-only", "--cap-drop=ALL", "--security-opt=no-new-privileges", "--user=65532:65532",
 		fmt.Sprintf("--memory=%dm", opts.capacityMiB), fmt.Sprintf("--memory-swap=%dm", opts.capacityMiB), "--cpus=2", "--pids-limit=96",
 		"--publish", applicationAddress + ":7447", "--publish", "127.0.0.1::7449",
 		"--mount", "type=bind,src=" + directory + ",dst=/fixture,readonly", "--mount", "type=bind,src=" + opts.binary + ",dst=/weir,readonly"}
+	if runtime.GOOS == "linux" {
+		// Docker Engine on Linux maps the host gateway only on request.
+		args = append(args, "--add-host=host.docker.internal:host-gateway")
+	}
 	if !opts.automatic {
 		args = append(args, "--env=GOMEMLIMIT=off")
 	}
@@ -176,7 +230,7 @@ func startMemoryRecoveryCLI(t *testing.T, opts memoryRecoveryOptions) *memoryRec
 			if strings.TrimSpace(string(raw)) == "Error response from daemon: No such container: "+owner {
 				return
 			}
-			t.Error("cleanup could not verify candidate ownership; preserving evidence", owner, err, string(raw))
+			t.Error("cleanup could not verify container ownership; leaving it in place", owner, err, string(raw))
 			return
 		}
 		if err := validateContainerOwnership(string(raw), containerID, owner); err != nil {
@@ -225,21 +279,16 @@ func startMemoryRecoveryCLI(t *testing.T, opts memoryRecoveryOptions) *memoryRec
 			t.Error("cleanup removal did not prove container absence", err, string(raw))
 		}
 	})
-	if opts.execution != nil {
-		if err := opts.execution.RecheckCLI(); err != nil {
-			t.Fatal(err)
-		}
-	}
 	containerID = strings.TrimSpace(packagedDocker(t, args...))
 	if !fullContainerID.MatchString(containerID) {
-		t.Fatal("Docker create did not return a full container ID; preserve evidence", containerID)
+		t.Fatal("Docker create did not return a full container ID", containerID)
 	}
 	created := packagedDocker(t, "inspect", "--type", "container", "--format", `{{.Id}} {{index .Config.Labels "weir.owner"}}`, owner)
 	if err := validateContainerOwnership(created, containerID, owner); err != nil {
 		t.Fatal(err)
 	}
 	packagedDocker(t, "start", containerID)
-	service := &memoryRecoveryCLI{name: containerID, capacity: float64(opts.capacityMiB << 20), automatic: opts.automatic, stores: stores}
+	service := &memoryRecoveryCLI{name: containerID, owner: owner, capacity: float64(opts.capacityMiB << 20), automatic: opts.automatic, stores: stores}
 	service.address = strings.TrimSpace(packagedDocker(t, "port", owner, "7447/tcp"))
 	if service.address != applicationAddress {
 		t.Fatal("Docker published address differs from the real advertised endpoint", service.address, applicationAddress)
@@ -478,11 +527,8 @@ func memoryRecoveryWireDiagnostic(t *testing.T, metrics map[string]*dto.MetricFa
 	}
 	t.Logf("wire_threshold_diagnostic phase=%s metrics=%s", phase, raw)
 	if full {
-		raw, err = json.Marshal(metrics)
-		if err != nil {
-			t.Fatal(err)
-		}
-		t.Logf("wire_threshold_diagnostic timeout_all_metric_families=%s", raw)
+		// Histogram +Inf buckets have no JSON encoding.
+		t.Logf("wire_threshold_diagnostic timeout_all_metric_families=%v", metrics)
 	}
 }
 

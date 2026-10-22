@@ -18,7 +18,7 @@ OWNER = "weir-memory-" + uuid.uuid4().hex[:12]
 OUTPUT = ROOT / ".testdata" / OWNER
 
 
-def run(args, timeout=60, env=None, log=None):
+def run(args, timeout=60, env=None, log=None, echo=True):
     result = subprocess.run(
         args,
         cwd=ROOT,
@@ -30,7 +30,7 @@ def run(args, timeout=60, env=None, log=None):
     )
     if log:
         (OUTPUT / log).write_text(result.stdout)
-    else:
+    elif echo:
         print(result.stdout, end="", flush=True)
     if result.returncode:
         raise subprocess.CalledProcessError(result.returncode, args, output=result.stdout)
@@ -45,9 +45,7 @@ def inspect(kind, name):
         "network": '{"Id":{{json .Id}},"Owner":{{json (index .Labels "weir.owner")}}}',
     }
     try:
-        result = run(
-            ["docker", kind, "inspect", "--format", formats[kind], name], log=kind + "-inspect.json"
-        )
+        result = run(["docker", kind, "inspect", "--format", formats[kind], name], echo=False)
     except subprocess.CalledProcessError as error:
         # Only an exact daemon not-found response proves absence. Engine failures
         # and timeouts leave ownership/existence unknown and must not permit rm.
@@ -61,16 +59,12 @@ def inspect(kind, name):
 
 
 def cleanup(resources):
-    receipts, errors = [], []
+    errors = []
     containers_stopped = True
     for name in reversed(resources["containers"]):
-        receipt = {"container": name, "steps": []}
-        receipts.append(receipt)
         try:
             info = inspect("container", name)
-            receipt["inspection"] = info
             if info is None:
-                receipt["absent"] = True
                 continue
             if info["Owner"] != OWNER:
                 raise RuntimeError("container owner mismatch; refusing modification")
@@ -87,49 +81,36 @@ def cleanup(resources):
         for args, log in commands:
             try:
                 run(args, timeout=15, log=log)
-                step = {"action": args[1], "ok": True}
-                receipt["steps"].append(step)
             except Exception as error:
-                message = f"{name} {args[1]}: {error}"
-                step = {"action": args[1], "error": str(error)}
-                receipt["steps"].append(step)
-                errors.append(message)
+                errors.append(f"{name} {args[1]}: {error}")
         try:
             info = inspect("container", name)
-            receipt["after_stop"] = info
             if info is not None:
                 if info["Owner"] != OWNER or info["Running"]:
                     raise RuntimeError("owner changed or container still running")
                 run(["docker", "rm", "-v", name], timeout=15)
                 if inspect("container", name) is not None:
                     raise RuntimeError("container still present after rm")
-            receipt["absent"] = True
         except Exception as error:
             errors.append(f"{name} removal: {error}")
             containers_stopped = False
     network_removed = True
     if resources["network"] is not None:
         name = resources["network"]
-        receipt = {"network": name}
-        receipts.append(receipt)
         try:
             info = inspect("network", name)
-            receipt["inspection"] = info
             if info is not None:
                 if info["Owner"] != OWNER:
                     raise RuntimeError("network owner mismatch; refusing modification")
                 run(["docker", "network", "rm", name], timeout=15)
                 if inspect("network", name) is not None:
                     raise RuntimeError("network still present after rm")
-            receipt["absent"] = True
         except Exception as error:
             errors.append(f"{name} cleanup: {error}")
             network_removed = False
     host = resources["host_mongo"]
     host_stopped = host is None
     if host is not None:
-        receipt = {"host_mongo_pid": host.pid, "bind": "127.0.0.1"}
-        receipts.append(receipt)
         try:
             host.send_signal(signal.SIGTERM)
         except Exception as error:
@@ -148,7 +129,6 @@ def cleanup(resources):
                 host_stopped = True
             except Exception as error:
                 errors.append(f"host final Wait: {error}")
-        receipt.update(waited=host_stopped, returncode=host.returncode)
     if resources["host_output"] is not None:
         try:
             resources["host_output"].close()
@@ -169,14 +149,11 @@ def cleanup(resources):
                         shutil.rmtree(item)
                 else:
                     item.unlink(missing_ok=True)
-                file_receipt = {"file": item.name, "absent": True}
-                receipts.append(file_receipt)
             except Exception as error:
                 errors.append(f"{item.name} cleanup: {error}")
     except Exception as error:
         errors.append(str(error))
     result = {
-        "resources": receipts,
         "errors": errors,
         "all_stopped": containers_stopped and network_removed and host_stopped,
     }
@@ -193,7 +170,7 @@ def main():
     network, database = OWNER, OWNER + "-mongo"
     host_db = os.environ.get("WEIR_MEMORY_HOST_MONGO") == "1"
     database_address = "memory-mongo:27017"
-    test_error = None
+    failed = False
     try:
         engine = json.loads(
             run(
@@ -203,7 +180,7 @@ def main():
                     "--format",
                     '{"OSType":{{json .OSType}},"Architecture":{{json .Architecture}},"KernelVersion":{{json .KernelVersion}},"CgroupVersion":{{json .CgroupVersion}},"NCPU":{{json .NCPU}},"MemTotal":{{json .MemTotal}}}',
                 ],
-                log="engine.json",
+                echo=False,
             ).stdout
         )
         image = inspect("image", IMAGE)
@@ -219,7 +196,6 @@ def main():
             raise RuntimeError(
                 "requires actual Linux cgroup-v2 engine and same-architecture local pinned image; no QEMU"
             )
-        (OUTPUT / "image.json").write_text(json.dumps(image, indent=2))
         env = dict(
             os.environ,
             GOPROXY="off",
@@ -259,7 +235,7 @@ def main():
         ]
         for args, log in commands:
             run(args, timeout=120, env=env, log=log)
-        # Register exact candidate names before commands which can partially succeed.
+        # Register owned names before commands which can partially succeed.
         resources["network"] = network
         run(
             ["docker", "network", "create"]
@@ -269,9 +245,9 @@ def main():
         if host_db:
             if sys.platform != "darwin":
                 raise RuntimeError("host fallback is explicit Darwin fixture only")
-            with socket.socket() as candidate:
-                candidate.bind(("127.0.0.1", 0))
-                port = candidate.getsockname()[1]
+            with socket.socket() as reservation:
+                reservation.bind(("127.0.0.1", 0))
+                port = reservation.getsockname()[1]
             data = OUTPUT / "mongo-data"
             data.mkdir()
             mongo_binary = ROOT / ".tools/mongodb-macos-aarch64--8.0.32/bin/mongod"
@@ -292,7 +268,6 @@ def main():
                 stdout=resources["host_output"],
                 stderr=subprocess.STDOUT,
             )
-            (OUTPUT / "mongo-host-pid").write_text(str(resources["host_mongo"].pid))
             for _ in range(50):
                 try:
                     with socket.create_connection(("127.0.0.1", port), timeout=0.1):
@@ -396,27 +371,21 @@ def main():
             )
             result = run(["docker", "start", "--attach", container], timeout=150, log=name + ".log")
             state = inspect("container", container)
-            (OUTPUT / (name + "-state.json")).write_text(json.dumps(state, indent=2))
             if result.returncode or state["ExitCode"] or state["OOMKilled"]:
                 raise RuntimeError(f"{name} failed; preserve {OUTPUT / (name + '.log')}")
-    except BaseException as error:
-        test_error = f"{type(error).__name__}: {error}"
+    except BaseException:
+        failed = True
         raise
     finally:
-        receipt = cleanup(resources)
-        receipt["test_error"] = test_error
-        try:
-            (OUTPUT / "cleanup.json").write_text(json.dumps(receipt, indent=2))
-        except Exception as error:
-            receipt["errors"].append(f"cleanup receipt write: {error}")
-        if receipt["errors"] or not receipt["all_stopped"]:
+        result = cleanup(resources)
+        if result["errors"] or not result["all_stopped"]:
             print(
-                f"Fixture cleanup has errors or unresolved resources: {receipt}; logs: {OUTPUT}",
+                f"Fixture cleanup has errors or unresolved resources: {result}; logs: {OUTPUT}",
                 file=sys.stderr,
                 flush=True,
             )
-            if test_error is None:
-                raise RuntimeError("fixture cleanup incomplete; see cleanup receipt")
+            if not failed:
+                raise RuntimeError("fixture cleanup incomplete; see logs")
         else:
             print(f"Stopped owned fixtures; logs: {OUTPUT}", flush=True)
 

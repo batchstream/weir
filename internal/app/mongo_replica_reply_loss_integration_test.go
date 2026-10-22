@@ -50,11 +50,6 @@ func TestMongoReplicaCLIReplyLoss(t *testing.T) {
 	}
 	// This is the ordinary CLI, not an in-process adapter or test-only server.
 	binary := buildEndpointProcess(t)
-	driver, err := os.Executable()
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Logf("reply_loss CLI=%s CLI_SHA256=%s driver=%s driver_SHA256=%s production_qualified=false", binary, replicaExecutableDigest(t, binary), driver, replicaExecutableDigest(t, driver))
 	for _, secure := range []bool{false, true} {
 		profile := "plain"
 		if secure {

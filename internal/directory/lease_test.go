@@ -64,7 +64,7 @@ func TestOriginLeaseAndExchangeAnchorAreIndependentOfReceiverPolicy(t *testing.T
 	owner.renew(start)
 	nodes := owner.snapshot()
 	if len(nodes) != 1 || (nodes[0].LeaseRemainingMs <= 60000 || nodes[0].LeaseRemainingMs > 180000) || nodes[0].OriginLeaseMs != 180000 {
-		t.Fatal("long owner lease was capped by historical constants", nodes)
+		t.Fatal("long owner lease was capped by a fixed constant", nodes)
 	}
 	nodes[0].LeaseRemainingMs = 170000
 	anchor := start.Add(5 * time.Second)

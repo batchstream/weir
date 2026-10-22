@@ -11,10 +11,8 @@ import (
 	"io"
 	"math"
 	"net/http"
-	"net/netip"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -37,10 +35,6 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-type typedMemoryArtifact struct {
-	binary, revision, digest string
-}
-
 type typedMemoryDocument struct {
 	id, resource, media string
 	bytes               int
@@ -48,7 +42,7 @@ type typedMemoryDocument struct {
 }
 
 type typedMemoryProcessOptions struct {
-	artifact typedMemoryArtifact
+	binary   string
 	capacity int
 	stores   []StoreConfig
 }
@@ -66,36 +60,20 @@ type typedMemoryOutcome struct {
 // every no-stall large Read must return its entire independently seeded document.
 func TestCLITypedMemoryBudget(t *testing.T) {
 	if os.Getenv("WEIR_TYPED_MEMORY_BUDGET_INTEGRATION") != "1" {
-		t.Skip("requires explicit owned CLI typed-memory qualification")
+		t.Skip("requires WEIR_TYPED_MEMORY_BUDGET_INTEGRATION=1, Docker and the local Mongo and Elasticsearch fixtures")
 	}
 	if os.Getenv("WEIR_INTEGRATION") != "1" || os.Getenv("WEIR_SEARCH_INTEGRATION") != "elasticsearch" || os.Getenv("WEIR_MONGO_PROFILE") == "tls" {
 		t.Fatal("requires isolated plain MongoDB and Elasticsearch8.19.22 fixtures")
 	}
-	artifact := typedMemoryArtifact{binary: os.Getenv("WEIR_TYPED_MEMORY_BINARY"), revision: os.Getenv("WEIR_TYPED_MEMORY_SOURCE"), digest: os.Getenv("WEIR_TYPED_MEMORY_SHA256")}
-	if !filepath.IsAbs(artifact.binary) || len(artifact.revision) != 40 || len(artifact.digest) != 64 {
-		t.Fatal("requires absolute CLI path and exact clean source/SHA256 receipt")
-	}
-	raw, err := os.ReadFile(artifact.binary)
-	if err != nil || fmt.Sprintf("%x", sha256.Sum256(raw)) != artifact.digest {
-		t.Fatal("CLI bytes differ from the exact receipt", err)
-	}
-	engine := strings.TrimSpace(packagedDocker(t, "info", "--format", "{{.OSType}}/{{.Architecture}}/{{.CgroupVersion}} kernel={{.KernelVersion}}"))
-	if !strings.HasPrefix(engine, "linux/aarch64/2 ") {
-		t.Fatal("requires native Linux arm64 cgroup-v2", engine)
-	}
-	image := strings.TrimSpace(packagedDocker(t, "image", "inspect", "--format", "{{.Os}}/{{.Architecture}} {{.Id}}", "busybox:1.37.0"))
-	if image != "linux/arm64 sha256:ad4f11f7c85f87c0a6d6c0fe492ad53f9cdcff6e8c88b881360c70eff701c67b" {
-		t.Fatal("cached CLI fixture identity differs", image)
-	}
-	t.Logf("source=%s SHA256=%s engine=%s image=%s single_process=true no_retry=true", artifact.revision, artifact.digest, engine, image)
 	mongo := testmongo.Open(t)
+	binary := buildLinuxCLI(t)
 	documents := seedTypedMemoryMongo(t, mongo)
-	mongoBackend := &Mongo{URI: "mongodb://host.docker.internal:27028/?directConnection=true&serverMonitoringMode=poll"}
+	mongoBackend := &Mongo{URI: containerMongoURI}
 	local := &Local{Backend: BackendConfig{MongoDB: mongoBackend}}
 	primary, sibling := StoreConfig{Name: "mongo", Local: local}, StoreConfig{Name: "sibling", Local: local}
 	for _, capacity := range []int{512, 1024} {
 		t.Run(fmt.Sprintf("original_pressure/%dMiB", capacity), func(t *testing.T) {
-			opts := typedMemoryProcessOptions{artifact: artifact, capacity: capacity, stores: []StoreConfig{primary}}
+			opts := typedMemoryProcessOptions{binary: binary, capacity: capacity, stores: []StoreConfig{primary}}
 			process := startTypedMemoryProcess(t, opts)
 			pressure := typedMemoryPressureOptions{process: process, documents: documents[:32], health: documents[33], stores: []string{"mongo"}}
 			runTypedMemoryPressure(t, pressure)
@@ -103,7 +81,7 @@ func TestCLITypedMemoryBudget(t *testing.T) {
 	}
 	for _, capacity := range []int{256, 512, 1024} {
 		t.Run(fmt.Sprintf("no_stall/%dMiB", capacity), func(t *testing.T) {
-			opts := typedMemoryProcessOptions{artifact: artifact, capacity: capacity, stores: []StoreConfig{primary}}
+			opts := typedMemoryProcessOptions{binary: binary, capacity: capacity, stores: []StoreConfig{primary}}
 			process := startTypedMemoryProcess(t, opts)
 			client := openTypedMemoryClient(t, process, []string{"mongo"})
 			for _, document := range []typedMemoryDocument{documents[0], documents[32]} {
@@ -129,13 +107,13 @@ func TestCLITypedMemoryBudget(t *testing.T) {
 		})
 	}
 	t.Run("cross_store_typed_native/1024MiB", func(t *testing.T) {
-		opts := typedMemoryProcessOptions{artifact: artifact, capacity: 1024, stores: []StoreConfig{primary, sibling}}
+		opts := typedMemoryProcessOptions{binary: binary, capacity: 1024, stores: []StoreConfig{primary, sibling}}
 		process := startTypedMemoryProcess(t, opts)
 		pressure := typedMemoryPressureOptions{process: process, documents: documents[:32], health: documents[33], stores: []string{"mongo", "sibling"}, nativeEvery: 4}
 		runTypedMemoryPressure(t, pressure)
 	})
 	t.Run("search_no_stall/1024MiB", func(t *testing.T) {
-		runTypedMemorySearch(t, artifact)
+		runTypedMemorySearch(t, binary)
 	})
 }
 
@@ -146,14 +124,9 @@ func startTypedMemoryProcess(t *testing.T, opts typedMemoryProcessOptions) *memo
 	if cfg.Basic.Transport.MaxPendingRecords != 32 || time.Duration(cfg.Basic.Transport.Timeouts.Stall) != 30*time.Second {
 		t.Fatal("original stream admission/stall policy changed")
 	}
-	options := memoryRecoveryOptions{binary: opts.artifact.binary, capacityMiB: opts.capacity, automatic: true, config: &cfg}
+	options := memoryRecoveryOptions{binary: opts.binary, capacityMiB: opts.capacity, automatic: true, config: &cfg}
 	process := startMemoryRecoveryCLI(t, options)
-	version := strings.TrimSpace(packagedDocker(t, "exec", process.name, "/weir", "version"))
-	var identity map[string]string
-	if json.Unmarshal([]byte(version), &identity) != nil || identity["state"] != "clean-commit" || identity["dirty"] != "false" || identity["revision"] != opts.artifact.revision || identity["target"] != "linux/arm64" {
-		t.Fatal("running CLI is not the exact clean Linux artifact", version)
-	}
-	t.Logf("CLI capacity=%dMiB CPUs=2 version=%s", opts.capacity, version)
+	t.Logf("CLI capacity=%dMiB CPUs=2", opts.capacity)
 	// Inspect independently before the shared helper stops/removes its owned CLI.
 	t.Cleanup(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
@@ -161,7 +134,7 @@ func startTypedMemoryProcess(t *testing.T, opts typedMemoryProcessOptions) *memo
 		format := `{{index .Config.Labels "weir.owner"}} {{.State.Running}} {{.State.OOMKilled}} {{.State.ExitCode}}`
 		raw, err := exec.CommandContext(ctx, "docker", "inspect", "--type", "container", "--format", format, process.name).CombinedOutput()
 		fields := strings.Fields(string(raw))
-		if err != nil || len(fields) != 4 || fields[0] != process.name || fields[1] != "true" || fields[2] != "false" || fields[3] != "0" {
+		if err != nil || len(fields) != 4 || fields[0] != process.owner || fields[1] != "true" || fields[2] != "false" || fields[3] != "0" {
 			t.Error("independent Docker survival/OOM check failed", err, string(raw))
 		}
 		t.Logf("independent_Docker_before_cleanup=%s error=%v", strings.TrimSpace(string(raw)), err)
@@ -759,25 +732,18 @@ func waitTypedMemoryIdle(t *testing.T, process *memoryRecoveryCLI, largestBudget
 	}
 }
 
-func runTypedMemorySearch(t *testing.T, artifact typedMemoryArtifact) {
+func runTypedMemorySearch(t *testing.T, binary string) {
 	t.Helper()
 	fixture := testsearch.Open(t)
-	metadata := strings.Fields(packagedDocker(t, "inspect", "--type", "container", "--format", `{{.Id}} {{index .Config.Labels "weir.owner"}} {{.Config.Image}} {{(index .NetworkSettings.Networks "bridge").IPAddress}} {{.State.Running}}`, "weir-local-elasticsearch"))
-	if len(metadata) != 5 || len(metadata[0]) != 64 || metadata[1] != "weir-search-local" || metadata[2] != "docker.elastic.co/elasticsearch/elasticsearch@sha256:c2a3ed5f968be6d59c960aa0c60cfdaee667b6bc8211142021a41d0e85b43237" || metadata[4] != "true" {
-		t.Fatal("owned pinned Elasticsearch identity mismatch", metadata)
-	}
-	bridge, err := netip.ParseAddr(metadata[3])
-	if err != nil || !bridge.Is4() || !bridge.IsPrivate() {
-		t.Fatal("owned Elasticsearch private bridge unavailable")
-	}
+	searchURL := searchContainerURL(t, fixture)
 	code, _ := fixture.Do(t, http.MethodPut, "/"+fixture.Index+"/_mapping", `{"dynamic":false}`)
 	if code != http.StatusOK {
 		t.Fatal("owned many-fields mapping failed", code)
 	}
-	backend := &Search{URL: "http://" + bridge.String() + ":9200"}
+	backend := &Search{URL: searchURL}
 	local := &Local{Backend: BackendConfig{Search: backend}}
 	store := StoreConfig{Name: "search", Local: local}
-	options := typedMemoryProcessOptions{artifact: artifact, capacity: 1024, stores: []StoreConfig{store}}
+	options := typedMemoryProcessOptions{binary: binary, capacity: 1024, stores: []StoreConfig{store}}
 	process := startTypedMemoryProcess(t, options)
 	client := openTypedMemoryClient(t, process, []string{"search"})
 	for index, id := range []string{"large12MiB", "manyfields12MiB"} {

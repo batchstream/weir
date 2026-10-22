@@ -1,8 +1,8 @@
 # Scaling Weir with observed backend demand
 
 `hpa.json` is an optional CPU HPA example with one to four replicas and at most
-one scale change per minute. It is not applied by the integration fixture.
-Each Pod runs one Weir process, including Lua evaluation.
+one scale change per minute. Each Pod runs one Weir process, including Lua
+evaluation.
 
 Each Store defaults to 16 simultaneous adapter invocations, shared by reads,
 mutations and Native streaming. `batching.max_in_flight` controls

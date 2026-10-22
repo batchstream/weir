@@ -40,8 +40,6 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-type ingressMemoryArtifact struct{ binary, revision, digest string }
-
 type ingressMemoryDocument struct {
 	id       string
 	raw      []byte
@@ -69,12 +67,12 @@ type ingressMemoryResult struct {
 // memory safety, but never counts as a successful ordinary-write profile.
 func TestCLIIngressConcurrentPut(t *testing.T) {
 	if os.Getenv("WEIR_INGRESS_MEMORY_INTEGRATION") != "1" {
-		t.Skip("requires explicit owned CLI ingress Put qualification")
+		t.Skip("requires WEIR_INGRESS_MEMORY_INTEGRATION=1, Docker and the local Mongo fixture")
 	}
-	artifact := ingressMemoryReceipt(t)
+	binary := ingressMemoryBinary(t)
 	for _, capacity := range []int{512, 1024} {
 		if !t.Run(fmt.Sprintf("%dMiB", capacity), func(t *testing.T) {
-			runIngressMemoryCase(t, artifact, capacity, false)
+			runIngressMemoryCase(t, binary, capacity, false)
 		}) {
 			return
 		}
@@ -84,48 +82,33 @@ func TestCLIIngressConcurrentPut(t *testing.T) {
 // B has a separate opt-in so failure in A cannot silently start a new profile.
 func TestCLIIngressPartialUploads(t *testing.T) {
 	if os.Getenv("WEIR_INGRESS_MEMORY_PARTIAL_INTEGRATION") != "1" {
-		t.Skip("requires separate explicit partial-upload ingress qualification")
+		t.Skip("requires WEIR_INGRESS_MEMORY_PARTIAL_INTEGRATION=1, Docker and the local Mongo fixture")
 	}
-	artifact := ingressMemoryReceipt(t)
+	binary := ingressMemoryBinary(t)
 	for _, capacity := range []int{512, 1024} {
 		if !t.Run(fmt.Sprintf("%dMiB", capacity), func(t *testing.T) {
-			runIngressMemoryCase(t, artifact, capacity, true)
+			runIngressMemoryCase(t, binary, capacity, true)
 		}) {
 			return
 		}
 	}
 }
 
-func ingressMemoryReceipt(t *testing.T) ingressMemoryArtifact {
+func ingressMemoryBinary(t *testing.T) string {
 	t.Helper()
 	if os.Getenv("WEIR_INTEGRATION") != "1" || os.Getenv("WEIR_MONGO_PROFILE") == "tls" {
 		t.Fatal("requires the isolated plain Mongo fixture")
 	}
-	artifact := ingressMemoryArtifact{binary: os.Getenv("WEIR_INGRESS_MEMORY_BINARY"), revision: os.Getenv("WEIR_INGRESS_MEMORY_SOURCE"), digest: os.Getenv("WEIR_INGRESS_MEMORY_SHA256")}
-	if !filepath.IsAbs(artifact.binary) || len(artifact.revision) != 40 || len(artifact.digest) != 64 {
-		t.Fatal("requires absolute CLI path, full source revision and binary SHA256")
-	}
-	raw, err := os.ReadFile(artifact.binary)
-	if err != nil || fmt.Sprintf("%x", sha256.Sum256(raw)) != artifact.digest {
-		t.Fatal("CLI differs from clean exact build receipt", err)
-	}
-	engine := strings.TrimSpace(packagedDocker(t, "info", "--format", "{{.OSType}}/{{.Architecture}}/{{.CgroupVersion}} kernel={{.KernelVersion}}"))
-	imageRaw := packagedDocker(t, "image", "inspect", "--format", "{{.Os}}/{{.Architecture}} {{.Id}}", "busybox:1.37.0")
-	image := strings.TrimSpace(imageRaw)
-	if !strings.HasPrefix(engine, "linux/aarch64/2 ") || image != "linux/arm64 sha256:ad4f11f7c85f87c0a6d6c0fe492ad53f9cdcff6e8c88b881360c70eff701c67b" {
-		t.Fatal("requires the pinned native Linux arm64 fixture", engine, image)
-	}
-	t.Logf("exact_CLI source=%s SHA256=%s engine=%s image=%s", artifact.revision, artifact.digest, engine, image)
-	return artifact
+	return buildLinuxCLI(t)
 }
 
-func runIngressMemoryCase(t *testing.T, artifact ingressMemoryArtifact, capacity int, partial bool) {
+func runIngressMemoryCase(t *testing.T, binary string, capacity int, partial bool) {
 	t.Helper()
 	fixture := testmongo.Open(t)
 	dataset := &nativeBurstDataset{store: "mongo", root: fixture.DB + "/records", media: "application/bson", mongo: fixture, expected: make(map[string]nativeBurstRecord)}
 	seedNativeBurstDataset(t, dataset)
 	documents := ingressMemoryDocuments(t)
-	backend := &Mongo{URI: "mongodb://host.docker.internal:27028/?directConnection=true&serverMonitoringMode=poll"}
+	backend := &Mongo{URI: containerMongoURI}
 	local := &Local{Backend: BackendConfig{MongoDB: backend}}
 	store := StoreConfig{Name: "mongo", Local: local}
 	cfg := DefaultConfig()
@@ -133,26 +116,21 @@ func runIngressMemoryCase(t *testing.T, artifact ingressMemoryArtifact, capacity
 	if cfg.Basic.Transport.MaxPendingRecords != 32 || time.Duration(cfg.Basic.Transport.Timeouts.Stall) != 30*time.Second {
 		t.Fatal("default transport policy changed")
 	}
-	opts := memoryRecoveryOptions{binary: artifact.binary, capacityMiB: capacity, automatic: true, config: &cfg}
+	opts := memoryRecoveryOptions{binary: binary, capacityMiB: capacity, automatic: true, config: &cfg}
 	process := startMemoryRecoveryCLI(t, opts)
-	version := strings.TrimSpace(packagedDocker(t, "exec", process.name, "/weir", "version"))
-	var identity map[string]string
-	if json.Unmarshal([]byte(version), &identity) != nil || identity["state"] != "clean-commit" || identity["dirty"] != "false" || identity["revision"] != artifact.revision || identity["target"] != "linux/arm64" {
-		t.Fatal("requires the clean exact Linux CLI identity", version)
-	}
-	t.Logf("ingress profile_partial=%t capacity=%dMiB CPUs=2 records=32 exact_BSON_bytes=%d common_caller=5s retries=0 version=%s", partial, capacity, 12<<20, version)
+	t.Logf("ingress partial=%t capacity=%dMiB CPUs=2 records=32 exact_BSON_bytes=%d common_caller=5s retries=0", partial, capacity, 12<<20)
 	initial, err := ingressMemoryMetrics(process)
 	if err != nil {
 		t.Fatal("initial metrics unavailable", err)
 	}
 	labels := map[string]string{"store": "mongo"}
 	for name, want := range map[string]float64{"weir_store_active_executions_limit": 16, "weir_store_pending_entries_limit": 1024, "weir_store_pending_reserved_bytes_limit": 32 << 20, "weir_store_batch_max_operations": 128, "weir_store_batch_max_bytes": 4 << 20, "weir_store_batch_max_wait_seconds": .02} {
-		got := qualificationGauge(t, initial, name, labels)
+		got := requireGauge(t, initial, name, labels)
 		if got != want {
 			t.Fatal("default Store policy changed", name, want)
 		}
 	}
-	qualificationExecutionMemory(t, initial, process.capacity)
+	executionMemorySnapshot(t, initial, process.capacity)
 	ingressMemoryIdle(t, process, time.Now().Add(5*time.Second), 0)
 	client, healthClient := openIngressMemoryClient(t, process), openIngressMemoryClient(t, process)
 	ingressMemoryIdle(t, process, time.Now().Add(5*time.Second), 2)
@@ -521,7 +499,7 @@ func ingressMemoryDocker(t *testing.T, process *memoryRecoveryCLI) {
 	raw, err := ingressMemoryDockerInspect(ctx, process.name)
 	fields := strings.Fields(raw)
 	t.Logf("ingress_Docker at=%s state=%s error=%v", time.Now().UTC().Format(time.RFC3339Nano), raw, err)
-	if err != nil || len(fields) != 4 || fields[0] != process.name {
+	if err != nil || len(fields) != 4 || fields[0] != process.owner {
 		t.Error("independent Docker ownership/state unknown", err)
 	} else if fields[1] != "true" || fields[2] != "false" || fields[3] != "0" {
 		t.Error("CLI stopped/OOM/nonzero exit during ingress profile", fields)
@@ -615,17 +593,17 @@ func ingressMemoryIdle(t *testing.T, process *memoryRecoveryCLI, deadline time.T
 		for _, name := range []string{"weir_store_pending_entries", "weir_store_pending_reserved_bytes", "weir_store_active_executions", "weir_store_paused_native_outputs", "weir_store_paused_native_reserved_bytes", "weir_store_result_reserved_entries", "weir_store_result_reserved_bytes", "weir_store_retained_result_reserved_bytes", "weir_store_working_reserved_bytes", "weir_store_publishers", "weir_ingress_sessions", "weir_ingress_queued_response_bytes", "weir_memory_latched", "weir_memory_unknown"} {
 			idle = idle && metrics[name] != nil && testmetrics.Sum(metrics, name) == 0
 		}
-		for suffix, want := range map[string]float64{"used_bytes": float64(connections * qualificationIngressConnectionBytes), "resident_bytes": float64(connections * qualificationIngressConnectionBytes), "ingress_connections": float64(connections), "ingress_connection_bytes": float64(connections * qualificationIngressConnectionBytes)} {
+		for suffix, want := range map[string]float64{"used_bytes": float64(connections * ingressConnectionBytes), "resident_bytes": float64(connections * ingressConnectionBytes), "ingress_connections": float64(connections), "ingress_connection_bytes": float64(connections * ingressConnectionBytes)} {
 			name := "weir_execution_memory_" + suffix
 			idle = idle && metrics[name] != nil && testmetrics.Sum(metrics, name) == want
 		}
 		idle = idle && metrics["weir_execution_memory_budget_known"] != nil && testmetrics.Sum(metrics, "weir_execution_memory_budget_known") == 1 && metrics["weir_memory_cgroup_valid"] != nil && testmetrics.Sum(metrics, "weir_memory_cgroup_valid") == 1 && metrics["weir_memory_cgroup_limit_bytes"] != nil && testmetrics.Sum(metrics, "weir_memory_cgroup_limit_bytes") == process.capacity && metrics["weir_memory_cgroup_working_set_bytes"] != nil && testmetrics.Sum(metrics, "weir_memory_cgroup_working_set_bytes") <= process.capacity*.70
 		if idle && time.Now().Before(deadline) {
-			t.Logf("ingress_final5s temporary_Node/Store/RPC/ingress/wire/Q/I_ownership0 latch0 connections=%d connection_bytes=%d Node_used=resident=connection_bytes elapsed=%s", connections, connections*qualificationIngressConnectionBytes, time.Since(deadline.Add(-5*time.Second)))
+			t.Logf("ingress_final5s temporary_Node/Store/RPC/ingress/wire/Q/I_ownership0 latch0 connections=%d connection_bytes=%d Node_used=resident=connection_bytes elapsed=%s", connections, connections*ingressConnectionBytes, time.Since(deadline.Add(-5*time.Second)))
 			return
 		}
 		if time.Now().After(deadline) {
-			t.Error("fixed absolute5s ingress ownership recovery failed", "expected_connections", connections, "expected_used_resident_connection_bytes", connections*qualificationIngressConnectionBytes, err)
+			t.Error("fixed absolute5s ingress ownership recovery failed", "expected_connections", connections, "expected_used_resident_connection_bytes", connections*ingressConnectionBytes, err)
 			return
 		}
 		time.Sleep(10 * time.Millisecond)
@@ -760,7 +738,7 @@ func ingressMemoryExchange(ctx context.Context, options ingressMemoryExchangeOpt
 	request.Header.Set("te", "trailers")
 	deadline, ok := ctx.Deadline()
 	if !ok {
-		return result, fmt.Errorf("qualification RPC requires an absolute deadline")
+		return result, fmt.Errorf("ingress RPC requires an absolute deadline")
 	}
 	remaining := max(int64(1), (time.Until(deadline).Nanoseconds()+999)/1000)
 	request.Header.Set("grpc-timeout", fmt.Sprintf("%du", remaining))
@@ -785,7 +763,7 @@ func ingressMemoryExchange(ctx context.Context, options ingressMemoryExchangeOpt
 		}
 		length := binary.BigEndian.Uint32(header[1:])
 		if header[0] != 0 || length > 64<<10 || total+5+int(length) > 64<<10 {
-			return result, fmt.Errorf("unexpected compressed/oversized qualification response")
+			return result, fmt.Errorf("unexpected compressed/oversized ingress response")
 		}
 		total += 5 + int(length)
 		encoded := make([]byte, length)

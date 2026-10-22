@@ -67,8 +67,8 @@ func TestBulkAcknowledgementExceedsExchangeWindowWithoutRejection(t *testing.T) 
 	if output.Len() <= (8<<20) || output.Len() <= settings.ExchangeBytes {
 		t.Fatal("bad fixture size", output.Len())
 	}
-	replyInput68 := bulkResponse{works: works, status: 200, raw: output.Bytes(), err: nil}
-	results := adapter.bulkResults(context.Background(), replyInput68)
+	bulkReply := bulkResponse{works: works, status: 200, raw: output.Bytes(), err: nil}
+	results := adapter.bulkResults(context.Background(), bulkReply)
 	if results[0].GetMutationResult().GetOutcome() != pb.MutationOutcome_APPLIED {
 		t.Fatalf("valid %d-byte acknowledgement above %d-byte batch window returned %v", output.Len(), settings.ExchangeBytes, results[0].GetMutationResult())
 	}

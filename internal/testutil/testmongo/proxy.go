@@ -113,7 +113,7 @@ func startProxy(t *testing.T, opts proxyOptions) *Proxy {
 	p := &Proxy{listener: listener, backendAddress: upstream.Host, conns: make(map[net.Conn]struct{}), done: make(chan struct{}), discovery: opts.discovery, operations: opts.operations, reads: opts.reads, lua: opts.lua, memberIndex: opts.memberIndex}
 	if opts.serverTLS != nil {
 		// Test-only TLS termination observes decrypted commands for fault injection.
-		// Production direct-to-mongod TLS is qualified separately.
+		// Direct client-to-mongod TLS is covered by the secure fixture tests.
 		listener = tls.NewListener(listener, opts.serverTLS)
 		p.listener = listener
 		p.clientTLS = opts.clientTLS

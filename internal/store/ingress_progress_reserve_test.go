@@ -13,8 +13,8 @@ func TestIngressWorkingBoundaryExchangesOnlyBoundedUnusedInput(t *testing.T) {
 		name         string
 		budget, free uint64
 	}{
-		{name: "main", budget: 501079517, free: 7286},
-		{name: "PR112", budget: 460395314, free: 6112},
+		{name: "larger-budget", budget: 501079517, free: 7286},
+		{name: "smaller-budget", budget: 460395314, free: 6112},
 	} {
 		t.Run(boundary.name, func(t *testing.T) {
 			memory := NewExecutionMemory()

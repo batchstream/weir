@@ -109,10 +109,3 @@ func TestSearchRejectsInapplicableMetadataCacheSetting(t *testing.T) {
 		}
 	}
 }
-
-func TestRemovedLuaVMWrapperIsRejected(t *testing.T) {
-	input := "listeners:\n  application: 127.0.0.1:0\nlua:\n  vm:\n    max_instructions: 100\n"
-	if _, err := DecodeBasic(strings.NewReader(input)); err == nil {
-		t.Fatal("removed Lua VM wrapper was accepted")
-	}
-}

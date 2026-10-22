@@ -20,6 +20,9 @@ func TestSearchRealBackendCongestion(t *testing.T) {
 		results []*pb.Event
 	}
 	var samples []sample
+	// Stop once both a confirmed capacity rejection and an applied write have
+	// been seen; a single wave can be entirely rejected on a busy host.
+	congested, persisted := false, false
 	for wave := 0; wave < 10; wave++ {
 		start := make(chan struct{})
 		replies := make(chan sample, 4)
@@ -42,15 +45,15 @@ func TestSearchRealBackendCongestion(t *testing.T) {
 		close(start)
 		workers.Wait()
 		close(replies)
-		congested := false
 		for result := range replies {
 			samples = append(samples, result)
 			for _, event := range result.results {
 				mutation := event.GetMutationResult()
 				congested = congested || mutation.GetOutcome() == pb.MutationOutcome_NOT_APPLIED && mutation.GetFailure().GetCode() == pb.FailureCode_UNAVAILABLE && mutation.GetFailure().GetMessage() == "backend capacity unavailable"
+				persisted = persisted || mutation.GetOutcome() == pb.MutationOutcome_APPLIED
 			}
 		}
-		if congested {
+		if congested && persisted {
 			break
 		}
 	}
@@ -78,7 +81,7 @@ func TestSearchRealBackendCongestion(t *testing.T) {
 		}
 	}
 	if rejected == 0 || applied == 0 {
-		t.Fatal("real rejection not exercised; use the task's bounded write-pool test profile", applied, rejected)
+		t.Fatal("real rejection not exercised; start the Search fixture with the overload profile", applied, rejected)
 	}
 	t.Log("applied", applied, "definite native capacity rejections", rejected)
 }

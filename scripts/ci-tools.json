@@ -1,8 +1,4 @@
 {
-  "checkout": {
-    "version": "v7.0.1",
-    "commit": "3d3c42e5aac5ba805825da76410c181273ba90b1"
-  },
   "buildkit": {
     "version": "v0.33.0",
     "image": "docker.io/moby/buildkit@sha256:6c2fa84a6b61ccd72899dde4239f8d5717f05f9a8ca6f3cad185fb1a95a94de3"

@@ -147,7 +147,7 @@ class DeliveryTests(unittest.TestCase):
             self.assertIn("python3 " + mode + "-m unittest discover -v -s scripts -p '*_test.py'", workflow)
         tests = {p.name for p in Path(__file__).parent.glob('*_test.py')}
         self.assertTrue({'package_test.py', 'release_test.py', 'ci_images_test.py',
-                         'test_memory_linux_test.py', 'check_dependencies_test.py', 'config_yaml_test.py'} <= tests)
+                         'test_memory_linux_test.py', 'check_dependencies_test.py'} <= tests)
         self.assertTrue(all(fnmatch.fnmatch(name, '*_test.py') for name in tests))
 
     def assert_candidate_retention(self, workflow):

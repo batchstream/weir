@@ -39,12 +39,9 @@ type processFaultBackend struct {
 }
 
 type processFaultSuite struct {
-	process               *memoryRecoveryCLI
-	client                *weirclient.Client
-	pid                   string
-	nativePrepareShutdown func(*testing.T)
-	nativeShutdown        func(*testing.T, *processFaultGate) time.Time
-	nativePID             func(*testing.T) string
+	process *memoryRecoveryCLI
+	client  *weirclient.Client
+	pid     string
 }
 
 type processFaultGate struct {
@@ -61,41 +58,36 @@ type processFaultObservationOffset struct {
 	events, commands int
 }
 
-// This suite owns its proxies, database names, indexes, and CLI container. It
-// never stops a database or installs a server-global failpoint. Run separately
-// from the sustained-load qualification so injected faults do not distort it.
-func TestProductionProcessFaultQualification(t *testing.T) {
-	if os.Getenv("WEIR_PRODUCTION_FAULT_QUALIFICATION") != "1" {
-		t.Skip("requires explicit owned Linux CLI fault qualification")
+// TestProcessFaults injects lost acknowledgements, cancellation, slow IO,
+// backend unavailability and SIGTERM through owned proxies in front of the
+// local fixtures. It never stops a database or installs a server-global
+// failpoint. Run it separately from TestProcessLoad so faults do not distort
+// load measurements. It needs Docker, scripts/mongo-local.sh and
+// scripts/search-local.sh.
+func TestProcessFaults(t *testing.T) {
+	if os.Getenv("WEIR_FAULT_INTEGRATION") != "1" {
+		t.Skip("requires WEIR_FAULT_INTEGRATION=1, Docker and the local Mongo and Search fixtures")
 	}
-	execution := loadProductionExecution(t, "fault")
-	profile := execution.Profile()
-	binary, digest := execution.CLIPath(), execution.CLISHA256()
-	adapter := inspectLegacyDesktop(t, execution)
 	mongo, search := testmongo.Open(t), testsearch.Open(t)
-	verifyLegacyMongoVersion(t, mongo)
-	t.Logf("actual backend Elasticsearch=%s container=%s", search.Profile, adapter.searchID)
+	verifyMongoVersion(t, mongo)
+	binary := buildLinuxCLI(t)
 	proxyOptions := testmongo.ProxyOptions{Fixture: mongo, ListenAddress: "0.0.0.0:0"}
 	mongoProxy := testmongo.StartProxyOn(t, proxyOptions)
 	mongoURI, err := url.Parse(mongoProxy.URI())
 	if err != nil {
 		t.Fatal(err)
 	}
-	mongoURI.Host = adapter.proxyHost(mongoURI.Host)
+	mongoURI.Host = containerHostAddress(t, mongoURI.Host)
 	searchProxy := startProcessFaultHTTPProxy(t, search.URL)
 	mongoConnection := &Mongo{URI: mongoURI.String()}
-	searchConnection := &Search{URL: adapter.proxyURL(searchProxy)}
+	searchConnection := &Search{URL: "http://" + containerHostAddress(t, searchProxy.listener.Addr().String())}
 	mongoLocal := &Local{Backend: BackendConfig{MongoDB: mongoConnection}}
 	searchLocal := &Local{Backend: BackendConfig{Search: searchConnection}}
 	mongoStore, searchStore := StoreConfig{Name: "mongo", Local: mongoLocal}, StoreConfig{Name: "search", Local: searchLocal}
 	cfg := DefaultConfig()
 	cfg.Routing.Stores = []StoreConfig{mongoStore, searchStore}
-	opts := memoryRecoveryOptions{binary: binary, capacityMiB: 512, automatic: true, config: &cfg, execution: execution}
+	opts := memoryRecoveryOptions{binary: binary, capacityMiB: 512, automatic: true, config: &cfg}
 	process := startMemoryRecoveryCLI(t, opts)
-	version := packagedDocker(t, "exec", process.name, "/weir", "version")
-	if err := execution.CheckVersion([]byte(version)); err != nil {
-		t.Fatal("CLI version cross-check failed", err)
-	}
 	openContext, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	openOptions := weirclient.OpenOptions{Seed: process.address, Stores: []string{"mongo", "search"}}
 	client, err := weirclient.Open(openContext, openOptions)
@@ -109,8 +101,8 @@ func TestProductionProcessFaultQualification(t *testing.T) {
 		{store: "mongo", root: mongo.DB + "/records", media: "application/bson", mongo: mongo, mongoProxy: mongoProxy},
 		{store: "search", root: search.Index, media: "application/json", search: search, searchProxy: searchProxy},
 	}
-	t.Logf("qualification=false profile=%s intent=%s source=%s SHA256=%s version=%s container=%s PID=%s capacity=512MiB CPUs=2 default_store_execution=16 default_stall=30s", profile.ID, profile.Intent, execution.ServerSource().Revision, digest, strings.TrimSpace(version), process.name, suite.pid)
-	t.Log("predeclared gates: healthy Read/Native <=3s during one held IO; cancellation and all resource credits <=3s; proxy recovery and same-SDK CRUD/Native <=5s; ack-loss native=INCOMPLETE, typed=UNKNOWN, oracle increment/version exactly one; fault SIGTERM <=8s exit=0 no OOM; no forced GC or database failpoints")
+	t.Logf("backend=%s container=%s PID=%s capacity=512MiB CPUs=2 default_store_execution=16 default_stall=30s", search.Profile, process.name, suite.pid)
+	t.Log("gates: healthy Read/Native <=3s during one held IO; cancellation and all resource credits <=3s; proxy recovery and same-SDK CRUD/Native <=5s; ack-loss native=INCOMPLETE, typed=UNKNOWN, oracle increment/version exactly one; fault SIGTERM <=8s exit=0 no OOM; no forced GC or database failpoints")
 	for _, backend := range backends {
 		if !t.Run(backend.store, func(t *testing.T) {
 			processFaultHealthy(t, &suite, backend)
@@ -605,12 +597,7 @@ func processFaultUnavailable(t *testing.T, suite *processFaultSuite, backend pro
 	if err != nil || time.Now().After(deadline) {
 		t.Fatal("recovered CRUD/Native exceeded fixed 5s fixture recovery gate", err)
 	}
-	actualPID := ""
-	if suite.nativePID != nil {
-		actualPID = suite.nativePID(t)
-	} else {
-		actualPID = processFaultPID(t, suite.process)
-	}
+	actualPID := processFaultPID(t, suite.process)
 	if actualPID != suite.pid {
 		t.Fatal("recovery replaced the service process", suite.pid, actualPID)
 	}
@@ -687,7 +674,7 @@ func processFaultIdle(t *testing.T, process *memoryRecoveryCLI, bound time.Durat
 			}
 		}
 		// This suite keeps its two Store SDK channels alive across every fault.
-		connectionBytes := float64(2 * qualificationIngressConnectionBytes)
+		connectionBytes := float64(2 * ingressConnectionBytes)
 		for name, want := range map[string]float64{
 			"weir_execution_memory_ingress_connections":      2,
 			"weir_execution_memory_ingress_connection_bytes": connectionBytes,
@@ -717,11 +704,7 @@ func processFaultShutdown(t *testing.T, suite *processFaultSuite, backend proces
 	processFaultSeed(t, backend, id)
 	gate := processFaultArm(backend, id, "shutdown")
 	defer gate.close()
-	callerBound := 12 * time.Second
-	if suite.nativePrepareShutdown != nil {
-		callerBound = 25 * time.Second
-	}
-	ctx, cancel := context.WithTimeout(t.Context(), callerBound)
+	ctx, cancel := context.WithTimeout(t.Context(), 12*time.Second)
 	defer cancel()
 	request, err := processFaultNative(backend, id, true)
 	if err != nil {
@@ -735,48 +718,31 @@ func processFaultShutdown(t *testing.T, suite *processFaultSuite, backend proces
 		done <- err
 	}()
 	processFaultWait(t, gate.ack, "ack lost while service receives SIGTERM")
-	if suite.nativePrepareShutdown != nil {
-		suite.nativePrepareShutdown(t)
-	}
 	select {
 	case err := <-done:
 		t.Fatal("fault caller retired before SIGTERM", err)
 	default:
 	}
 	start := time.Now()
-	if suite.nativeShutdown != nil {
-		start = suite.nativeShutdown(t, gate)
-	} else {
-		packagedDocker(t, "kill", "--signal=TERM", suite.process.name)
-		// Release the observer after SIGTERM so the service drains a real failed IO
-		// rather than waiting for this test's own callback timeout.
-		gate.close()
-		waitContext, stopWait := context.WithDeadline(t.Context(), start.Add(8*time.Second))
-		waitRaw, waitErr := exec.CommandContext(waitContext, "docker", "wait", suite.process.name).CombinedOutput()
-		stopWait()
-		state := strings.Fields(string(waitRaw))
-		if waitErr != nil || len(state) != 1 || state[0] != "0" || time.Since(start) > 8*time.Second {
-			t.Fatal("fault shutdown exceeded 8s or failed", state, waitErr, time.Since(start))
-		}
-		oom := strings.TrimSpace(packagedDocker(t, "inspect", "--type", "container", "--format", "{{.State.OOMKilled}}", suite.process.name))
-		if oom != "false" {
-			t.Fatal("fault shutdown OOM", oom)
-		}
+	packagedDocker(t, "kill", "--signal=TERM", suite.process.name)
+	// Release the observer after SIGTERM so the service drains a real failed IO
+	// rather than waiting for this test's own callback timeout.
+	gate.close()
+	waitContext, stopWait := context.WithDeadline(t.Context(), start.Add(8*time.Second))
+	waitRaw, waitErr := exec.CommandContext(waitContext, "docker", "wait", suite.process.name).CombinedOutput()
+	stopWait()
+	state := strings.Fields(string(waitRaw))
+	if waitErr != nil || len(state) != 1 || state[0] != "0" || time.Since(start) > 8*time.Second {
+		t.Fatal("fault shutdown exceeded 8s or failed", state, waitErr, time.Since(start))
 	}
-	joinBound := time.Second
-	if suite.nativeShutdown != nil {
-		joinBound = time.Until(start.Add(8 * time.Second))
-		if joinBound <= 0 {
-			t.Fatal("fault caller join exceeded actual SIGTERM deadline")
-		}
+	oom := strings.TrimSpace(packagedDocker(t, "inspect", "--type", "container", "--format", "{{.State.OOMKilled}}", suite.process.name))
+	if oom != "false" {
+		t.Fatal("fault shutdown OOM", oom)
 	}
 	select {
 	case <-done:
-	case <-time.After(joinBound):
+	case <-time.After(time.Second):
 		t.Fatal("fault caller did not retire after service shutdown")
-	}
-	if suite.nativeShutdown != nil && time.Since(start) > 8*time.Second {
-		t.Fatal("fault caller retired beyond actual SIGTERM deadline")
 	}
 	n, _ := processFaultOracle(t, backend, id)
 	if n != 1 {
@@ -831,12 +797,7 @@ const processFaultProxyTimeout = 20 * time.Second
 
 func startProcessFaultHTTPProxy(t *testing.T, upstream string) *processFaultHTTPProxy {
 	t.Helper()
-	return startProcessFaultHTTPProxyOn(t, upstream, "0.0.0.0:0")
-}
-
-func startProcessFaultHTTPProxyOn(t *testing.T, upstream, address string) *processFaultHTTPProxy {
-	t.Helper()
-	listener, err := net.Listen("tcp", address)
+	listener, err := net.Listen("tcp", "0.0.0.0:0")
 	if err != nil {
 		t.Fatal(err)
 	}

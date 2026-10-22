@@ -36,7 +36,7 @@ depth reserve a 32 KiB payload plus allocator headroom. Repeating calls within
 that peak does not consume additional stack credit. This includes Weir's
 `table.sort`, which uses Go's `sort.Sort`: nested comparator calls add both a
 native frame and a Lua frame. Four-target VM and Go sort frame measurements set
-the bound; final build qualification must preserve and check those receipts.
+the bound.
 
 Capacity refusal, integer overflow and caller cancellation are sticky. Their
 typed panic bypasses every VM protected-call/error-handler recovery layer; a Lua

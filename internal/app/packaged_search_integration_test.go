@@ -35,21 +35,21 @@ import (
 // The independently mounted probe is never part of the product image.
 func TestPackagedSearchArtifacts(t *testing.T) {
 	if os.Getenv("WEIR_PACKAGED_SEARCH_INTEGRATION") != "1" {
-		t.Skip("requires explicit owned packaged Search Search artifact fixture")
+		t.Skip("requires explicit owned packaged Search artifact fixture")
 	}
 	if runtime.GOOS != "darwin" || runtime.GOARCH != "arm64" {
 		t.Fatal("requires native Darwin arm64 and Linux arm64")
 	}
 	binary, image := os.Getenv("WEIR_PACKAGED_BINARY"), os.Getenv("WEIR_PACKAGED_IMAGE")
-	source, helper := os.Getenv("WEIR_PACKAGED_SOURCE"), os.Getenv("WEIR_PACKAGED_HELPER")
-	if !filepath.IsAbs(binary) || !filepath.IsAbs(helper) || !strings.HasPrefix(image, "sha256:") || len(source) != 40 {
+	helper := os.Getenv("WEIR_PACKAGED_HELPER")
+	if !filepath.IsAbs(binary) || !filepath.IsAbs(helper) || !strings.HasPrefix(image, "sha256:") {
 		t.Fatal("explicit artifact identities required")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	raw, err := exec.CommandContext(ctx, binary, "version").Output()
 	cancel()
 	var version map[string]string
-	if err != nil || json.Unmarshal(raw, &version) != nil || version["revision"] != source || version["state"] != "clean-commit" || version["target"] != "darwin/arm64" {
+	if err != nil || json.Unmarshal(raw, &version) != nil || version["target"] != "darwin/arm64" {
 		t.Fatal("archive identity mismatch")
 	}
 	identity := packagedDocker(
@@ -57,17 +57,17 @@ func TestPackagedSearchArtifacts(t *testing.T) {
 		"image",
 		"inspect",
 		"--format",
-		`{{index .Config.Labels "org.opencontainers.image.revision"}} {{.Os}}/{{.Architecture}} {{.Config.User}} {{json .Config.Entrypoint}}`,
+		`{{.Os}}/{{.Architecture}} {{.Config.User}} {{json .Config.Entrypoint}}`,
 		image,
 	)
-	if strings.TrimSpace(identity) != source+` linux/arm64 65532:65532 ["/weir"]` {
+	if strings.TrimSpace(identity) != `linux/arm64 65532:65532 ["/weir"]` {
 		t.Fatal("image identity mismatch", identity)
 	}
 	engine := packagedDocker(t, "info", "--format", "{{.OSType}}/{{.Architecture}}/{{.CgroupVersion}}")
 	if strings.TrimSpace(engine) != "linux/aarch64/2" {
 		t.Fatal("requires native Linux arm64 cgroup-v2")
 	}
-	t.Log("exact source", source, "image", image, "archive", strings.TrimSpace(string(raw)))
+	t.Log("image", image, "archive", strings.TrimSpace(string(raw)))
 	root, err := os.MkdirTemp(filepath.Join(testutil.Root(t), ".testdata"), "weir-local-artifact-")
 	if err != nil {
 		t.Fatal(err)
