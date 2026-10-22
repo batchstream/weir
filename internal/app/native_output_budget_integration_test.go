@@ -27,7 +27,7 @@ import (
 // establish whether that Store's bounded output reservations preserve progress.
 func TestCLILargeNativeOutputBudgetPreservesHealthyQueries(t *testing.T) {
 	if os.Getenv("WEIR_NATIVE_OUTPUT_BUDGET_INTEGRATION") != "1" {
-		t.Skip("requires WEIR_NATIVE_OUTPUT_BUDGET_INTEGRATION=1, Docker Desktop and the local Mongo fixture")
+		t.Skip("requires WEIR_NATIVE_OUTPUT_BUDGET_INTEGRATION=1, Docker and the local Mongo fixture")
 	}
 	binary := buildLinuxCLI(t)
 	fixture := testmongo.Open(t)
@@ -126,8 +126,10 @@ func TestCLILargeNativeOutputBudgetPreservesHealthyQueries(t *testing.T) {
 		deadline := canceled.Add(5 * time.Second)
 		for {
 			metrics := service.sample(t)
-			idle := true
-			for _, name := range []string{"weir_store_pending_entries", "weir_store_pending_reserved_bytes", "weir_store_active_executions", "weir_store_paused_native_outputs", "weir_store_paused_native_reserved_bytes", "weir_store_result_reserved_entries", "weir_store_result_reserved_bytes", "weir_store_retained_result_reserved_bytes", "weir_store_working_reserved_bytes", "weir_store_publishers", "weir_ingress_sessions", "weir_ingress_queued_response_bytes", "weir_execution_memory_used_bytes", "weir_execution_memory_input_reserved_bytes", "weir_execution_memory_input_used_bytes", "weir_execution_memory_wire_bytes", "weir_execution_memory_wire_buffers", "weir_execution_memory_leases", "weir_execution_memory_native_leases", "weir_execution_memory_starting", "weir_execution_memory_settled", "weir_execution_memory_borrowed", "weir_execution_memory_resident_bytes", "weir_execution_memory_waiting", "weir_execution_memory_terminal"} {
+			// Open probe connections keep their fixed ingress connection charge.
+			connectionBytes := testmetrics.Sum(metrics, "weir_execution_memory_ingress_connection_bytes")
+			idle := testmetrics.Sum(metrics, "weir_execution_memory_used_bytes") == connectionBytes && testmetrics.Sum(metrics, "weir_execution_memory_resident_bytes") == connectionBytes
+			for _, name := range []string{"weir_store_pending_entries", "weir_store_pending_reserved_bytes", "weir_store_active_executions", "weir_store_paused_native_outputs", "weir_store_paused_native_reserved_bytes", "weir_store_result_reserved_entries", "weir_store_result_reserved_bytes", "weir_store_retained_result_reserved_bytes", "weir_store_working_reserved_bytes", "weir_store_publishers", "weir_ingress_sessions", "weir_ingress_queued_response_bytes", "weir_execution_memory_input_reserved_bytes", "weir_execution_memory_input_used_bytes", "weir_execution_memory_wire_bytes", "weir_execution_memory_wire_buffers", "weir_execution_memory_leases", "weir_execution_memory_native_leases", "weir_execution_memory_starting", "weir_execution_memory_settled", "weir_execution_memory_borrowed", "weir_execution_memory_waiting", "weir_execution_memory_terminal"} {
 				idle = idle && metrics[name] != nil && testmetrics.Sum(metrics, name) == 0
 			}
 			if idle || time.Now().After(deadline) {

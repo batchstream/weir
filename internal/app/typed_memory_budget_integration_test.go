@@ -60,7 +60,7 @@ type typedMemoryOutcome struct {
 // every no-stall large Read must return its entire independently seeded document.
 func TestCLITypedMemoryBudget(t *testing.T) {
 	if os.Getenv("WEIR_TYPED_MEMORY_BUDGET_INTEGRATION") != "1" {
-		t.Skip("requires WEIR_TYPED_MEMORY_BUDGET_INTEGRATION=1, Docker Desktop and the local Mongo and Elasticsearch fixtures")
+		t.Skip("requires WEIR_TYPED_MEMORY_BUDGET_INTEGRATION=1, Docker and the local Mongo and Elasticsearch fixtures")
 	}
 	if os.Getenv("WEIR_INTEGRATION") != "1" || os.Getenv("WEIR_SEARCH_INTEGRATION") != "elasticsearch" || os.Getenv("WEIR_MONGO_PROFILE") == "tls" {
 		t.Fatal("requires isolated plain MongoDB and Elasticsearch8.19.22 fixtures")
@@ -134,7 +134,7 @@ func startTypedMemoryProcess(t *testing.T, opts typedMemoryProcessOptions) *memo
 		format := `{{index .Config.Labels "weir.owner"}} {{.State.Running}} {{.State.OOMKilled}} {{.State.ExitCode}}`
 		raw, err := exec.CommandContext(ctx, "docker", "inspect", "--type", "container", "--format", format, process.name).CombinedOutput()
 		fields := strings.Fields(string(raw))
-		if err != nil || len(fields) != 4 || fields[0] != process.name || fields[1] != "true" || fields[2] != "false" || fields[3] != "0" {
+		if err != nil || len(fields) != 4 || fields[0] != process.owner || fields[1] != "true" || fields[2] != "false" || fields[3] != "0" {
 			t.Error("independent Docker survival/OOM check failed", err, string(raw))
 		}
 		t.Logf("independent_Docker_before_cleanup=%s error=%v", strings.TrimSpace(string(raw)), err)

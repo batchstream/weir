@@ -67,7 +67,7 @@ type ingressMemoryResult struct {
 // memory safety, but never counts as a successful ordinary-write profile.
 func TestCLIIngressConcurrentPut(t *testing.T) {
 	if os.Getenv("WEIR_INGRESS_MEMORY_INTEGRATION") != "1" {
-		t.Skip("requires WEIR_INGRESS_MEMORY_INTEGRATION=1, Docker Desktop and the local Mongo fixture")
+		t.Skip("requires WEIR_INGRESS_MEMORY_INTEGRATION=1, Docker and the local Mongo fixture")
 	}
 	binary := ingressMemoryBinary(t)
 	for _, capacity := range []int{512, 1024} {
@@ -82,7 +82,7 @@ func TestCLIIngressConcurrentPut(t *testing.T) {
 // B has a separate opt-in so failure in A cannot silently start a new profile.
 func TestCLIIngressPartialUploads(t *testing.T) {
 	if os.Getenv("WEIR_INGRESS_MEMORY_PARTIAL_INTEGRATION") != "1" {
-		t.Skip("requires WEIR_INGRESS_MEMORY_PARTIAL_INTEGRATION=1, Docker Desktop and the local Mongo fixture")
+		t.Skip("requires WEIR_INGRESS_MEMORY_PARTIAL_INTEGRATION=1, Docker and the local Mongo fixture")
 	}
 	binary := ingressMemoryBinary(t)
 	for _, capacity := range []int{512, 1024} {
@@ -499,7 +499,7 @@ func ingressMemoryDocker(t *testing.T, process *memoryRecoveryCLI) {
 	raw, err := ingressMemoryDockerInspect(ctx, process.name)
 	fields := strings.Fields(raw)
 	t.Logf("ingress_Docker at=%s state=%s error=%v", time.Now().UTC().Format(time.RFC3339Nano), raw, err)
-	if err != nil || len(fields) != 4 || fields[0] != process.name {
+	if err != nil || len(fields) != 4 || fields[0] != process.owner {
 		t.Error("independent Docker ownership/state unknown", err)
 	} else if fields[1] != "true" || fields[2] != "false" || fields[3] != "0" {
 		t.Error("CLI stopped/OOM/nonzero exit during ingress profile", fields)
