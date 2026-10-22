@@ -32,7 +32,7 @@ type luaMemoryCall struct {
 // strings can coexist. Default tests never run the Lua source on the host.
 func TestCLILuaMemoryBudget(t *testing.T) {
 	if os.Getenv("WEIR_LUA_MEMORY_INTEGRATION") != "1" {
-		t.Skip("requires WEIR_LUA_MEMORY_INTEGRATION=1, Docker Desktop and the local Mongo fixture")
+		t.Skip("requires WEIR_LUA_MEMORY_INTEGRATION=1, Docker and the local Mongo fixture")
 	}
 	if os.Getenv("WEIR_INTEGRATION") != "1" || os.Getenv("WEIR_MONGO_PROFILE") == "tls" {
 		t.Fatal("requires the isolated plain Mongo fixture")

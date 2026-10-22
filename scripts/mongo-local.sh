@@ -1,14 +1,15 @@
 #!/bin/sh
-# Creates/restarts only this task-owned loopback replica set; never adopts unmarked data.
+# Creates/restarts only this task-owned replica set; never adopts unmarked data.
+# WEIR_MONGOD overrides the mongod binary. WEIR_MONGO_BIND adds addresses to the
+# default loopback bind, e.g. the Docker bridge gateway on a Linux CI runner.
 set -eu
 cd "$(dirname "$0")/.."
 root="$PWD/.testdata/mongo-local"
-binary="$PWD/.tools/mongodb-macos-aarch64--8.0.32/bin/mongod"
+binary=${WEIR_MONGOD:-"$PWD/.tools/mongodb-macos-aarch64--8.0.32/bin/mongod"}
+bind=127.0.0.1${WEIR_MONGO_BIND:+,$WEIR_MONGO_BIND}
 case "${1:-start}" in
  start)
   test -x "$binary"
-  command -v mongosh >/dev/null
-  test "$(mongosh --version)" = 2.6.0
   if [ -e "$root" ]; then
    test -f "$root/.weir-owner"
    test "$(cat "$root/.weir-owner")" = 'weir-mongo-local mongodb-8.0.32 loopback-27028'
@@ -20,8 +21,8 @@ case "${1:-start}" in
    mkdir -p "$root"
    printf 'weir-mongo-local mongodb-8.0.32 loopback-27028\n' > "$root/.weir-owner"
   fi
-  "$binary" --dbpath "$root" --bind_ip 127.0.0.1 --port 27028 --replSet weir_local --setParameter enableTestCommands=1 --logpath "$root/mongod.log" --pidfilepath "$root/mongod.pid" --fork
-  mongosh --quiet --norc 'mongodb://127.0.0.1:27028/?directConnection=true' --eval 'try { rs.status() } catch(e) { if(e.code!==94)throw e; rs.initiate({_id:"weir_local",members:[{_id:0,host:"127.0.0.1:27028"}]}) }; for(let i=0;i<100;i++){if(db.hello().isWritablePrimary)break;sleep(100)}; if(rs.conf()._id!=="weir_local")throw new Error("wrong replica set"); const d=db.getSiblingDB("weir_local"); if(!d.getCollectionNames().includes("records"))d.createCollection("records")'
+  "$binary" --dbpath "$root" --bind_ip "$bind" --port 27028 --replSet weir_local --setParameter enableTestCommands=1 --logpath "$root/mongod.log" --pidfilepath "$root/mongod.pid" --fork
+  go run ./internal/testutil/testmongo/localinit -address 127.0.0.1:27028
   ;;
  stop)
   # mongod shutdown only targets this task's loopback process/data path.

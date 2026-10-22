@@ -43,7 +43,7 @@ type nativeBurstResult struct {
 
 func TestCLINativeSmallBurstPreservesAdmission(t *testing.T) {
 	if os.Getenv("WEIR_NATIVE_BURST_INTEGRATION") != "1" {
-		t.Skip("requires WEIR_NATIVE_BURST_INTEGRATION=1, Docker Desktop and the local Mongo and Elasticsearch fixtures")
+		t.Skip("requires WEIR_NATIVE_BURST_INTEGRATION=1, Docker and the local Mongo and Elasticsearch fixtures")
 	}
 	if os.Getenv("WEIR_INTEGRATION") != "1" || os.Getenv("WEIR_SEARCH_INTEGRATION") != "elasticsearch" || os.Getenv("WEIR_MONGO_PROFILE") == "tls" {
 		t.Fatal("requires isolated plain MongoDB and Elasticsearch 8.19.22 fixtures")

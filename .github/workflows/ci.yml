@@ -93,6 +93,44 @@ jobs:
         if: always()
         run: scripts/search-local.sh stop ${{ matrix.product }}
 
+  process-integration:
+    name: process-integration-${{ matrix.product }}
+    strategy:
+      fail-fast: false
+      matrix:
+        product: [elasticsearch, opensearch]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Prepare fixed native SDK, public modules and MongoDB
+        run: python3 scripts/ci-tools.py test --mongo
+      - name: Start local MongoDB and ${{ matrix.product }} fixtures
+        run: |
+          docker pull busybox:1.37.0
+          # CLI containers reach mongod through the Docker bridge gateway.
+          gateway=$(docker network inspect bridge --format '{{(index .IPAM.Config 0).Gateway}}')
+          WEIR_MONGOD="$WEIR_MONGO_REPLICA_BINARY" WEIR_MONGO_BIND="$gateway" scripts/mongo-local.sh start
+          scripts/search-local.sh start ${{ matrix.product }} normal
+      - name: CLI fault and short load tests
+        env:
+          WEIR_INTEGRATION: '1'
+          WEIR_SEARCH_INTEGRATION: ${{ matrix.product }}
+          WEIR_FAULT_INTEGRATION: '1'
+          WEIR_LOAD_INTEGRATION: '1'
+          WEIR_LOAD_MEASUREMENT: 1m
+        run: |
+          go test -tags=integration -count=1 -timeout=8m -run '^TestProcessFaults$' -v ./internal/app
+          go test -tags=integration -count=1 -timeout=8m -run '^TestProcessLoad$' -v ./internal/app
+      - name: Stop local fixtures
+        if: always()
+        run: |
+          scripts/search-local.sh stop ${{ matrix.product }}
+          scripts/mongo-local.sh stop || true
+
   native-mongo-replica:
     runs-on: ubuntu-24.04
     timeout-minutes: 15

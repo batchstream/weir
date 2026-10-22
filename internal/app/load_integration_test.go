@@ -69,18 +69,18 @@ type loadSlowResult struct {
 // TestProcessLoad drives a fixed-arrival SDK workload with slow consumers and
 // a burst through one CLI container that keeps the default Store policy. It
 // gates latency, resource bounds and recovery, then checks every acknowledged
-// effect against the backends. It needs Docker Desktop, scripts/mongo-local.sh
+// effect against the backends. It needs Docker, scripts/mongo-local.sh
 // and scripts/search-local.sh.
 func TestProcessLoad(t *testing.T) {
 	if os.Getenv("WEIR_LOAD_INTEGRATION") != "1" {
-		t.Skip("requires WEIR_LOAD_INTEGRATION=1, Docker Desktop and the local Mongo and Search fixtures")
+		t.Skip("requires WEIR_LOAD_INTEGRATION=1, Docker and the local Mongo and Search fixtures")
 	}
 	duration := loadMeasurement(t)
-	binary := buildLinuxCLI(t)
 	mongo := testmongo.Open(t)
 	verifyMongoVersion(t, mongo)
 	search := testsearch.Open(t)
 	searchURL := searchContainerURL(t, search)
+	binary := buildLinuxCLI(t)
 	t.Logf("Search service_transport=%s host_oracle=%s", searchURL, search.URL)
 	datasets := seedLoadDatasets(t, mongo, search)
 	mongoBackend := &Mongo{URI: containerMongoURI}

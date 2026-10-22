@@ -62,15 +62,15 @@ type processFaultObservationOffset struct {
 // backend unavailability and SIGTERM through owned proxies in front of the
 // local fixtures. It never stops a database or installs a server-global
 // failpoint. Run it separately from TestProcessLoad so faults do not distort
-// load measurements. It needs Docker Desktop, scripts/mongo-local.sh and
+// load measurements. It needs Docker, scripts/mongo-local.sh and
 // scripts/search-local.sh.
 func TestProcessFaults(t *testing.T) {
 	if os.Getenv("WEIR_FAULT_INTEGRATION") != "1" {
-		t.Skip("requires WEIR_FAULT_INTEGRATION=1, Docker Desktop and the local Mongo and Search fixtures")
+		t.Skip("requires WEIR_FAULT_INTEGRATION=1, Docker and the local Mongo and Search fixtures")
 	}
-	binary := buildLinuxCLI(t)
 	mongo, search := testmongo.Open(t), testsearch.Open(t)
 	verifyMongoVersion(t, mongo)
+	binary := buildLinuxCLI(t)
 	proxyOptions := testmongo.ProxyOptions{Fixture: mongo, ListenAddress: "0.0.0.0:0"}
 	mongoProxy := testmongo.StartProxyOn(t, proxyOptions)
 	mongoURI, err := url.Parse(mongoProxy.URI())

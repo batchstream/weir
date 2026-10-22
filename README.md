@@ -159,7 +159,8 @@ installs its Linux toolchain and modules with `scripts/ci-tools.py`.
 Integration tests use the `integration` build tag and local fixtures:
 
 - `scripts/mongo-local.sh start` runs a single-member MongoDB 8.0.32 replica set
-  on `127.0.0.1:27028` from `.tools/` (requires `mongosh` 2.6.0).
+  on `127.0.0.1:27028` from `.tools/`; `WEIR_MONGOD` selects another `mongod`
+  binary and `WEIR_MONGO_BIND` adds bind addresses.
 - `scripts/search-local.sh start elasticsearch|opensearch normal|overload` runs
   Elasticsearch 8.19.22 on `127.0.0.1:19200` or OpenSearch 3.3.0 on
   `127.0.0.1:19202` in Docker. Use `normal` capacity for ordinary runs; the
@@ -204,9 +205,12 @@ go test -race -p=1 -parallel=1 -tags=integration -count=1 -timeout=20m \
 ### Load, fault and memory tests
 
 These tests cross-compile the Linux CLI and run it in a CPU- and memory-limited
-`busybox:1.37.0` container on Docker Desktop, reaching the MongoDB and Search
-fixtures above through the host gateway. Each needs `WEIR_INTEGRATION=1`,
-`WEIR_SEARCH_INTEGRATION` when it uses Search, and its own opt-in:
+`busybox:1.37.0` container, reaching the MongoDB and Search fixtures above
+through `host.docker.internal`. On Linux Docker Engine, also bind mongod to the
+bridge gateway, as CI does:
+`WEIR_MONGO_BIND=$(docker network inspect bridge --format '{{(index .IPAM.Config 0).Gateway}}')`.
+Each needs `WEIR_INTEGRATION=1`, `WEIR_SEARCH_INTEGRATION` when it uses Search,
+and its own opt-in:
 
 | Opt-in | Test |
 | --- | --- |
