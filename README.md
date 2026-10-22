@@ -160,7 +160,8 @@ Integration tests use the `integration` build tag and local fixtures:
 
 - `scripts/mongo-local.sh start` runs a single-member MongoDB 8.0.32 replica set
   on `127.0.0.1:27028` from `.tools/`; `WEIR_MONGOD` selects another `mongod`
-  binary and `WEIR_MONGO_BIND` adds bind addresses.
+  binary and `WEIR_MONGO_BIND` adds comma-separated literal, non-wildcard IP
+  bind addresses. A running fixture is reused only when its bind matches.
 - `scripts/search-local.sh start elasticsearch|opensearch normal|overload` runs
   Elasticsearch 8.19.22 on `127.0.0.1:19200` or OpenSearch 3.3.0 on
   `127.0.0.1:19202` in Docker. Use `normal` capacity for ordinary runs; the

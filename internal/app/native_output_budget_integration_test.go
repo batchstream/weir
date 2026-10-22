@@ -29,8 +29,8 @@ func TestCLILargeNativeOutputBudgetPreservesHealthyQueries(t *testing.T) {
 	if os.Getenv("WEIR_NATIVE_OUTPUT_BUDGET_INTEGRATION") != "1" {
 		t.Skip("requires WEIR_NATIVE_OUTPUT_BUDGET_INTEGRATION=1, Docker and the local Mongo fixture")
 	}
-	binary := buildLinuxCLI(t)
 	fixture := testmongo.Open(t)
+	binary := buildLinuxCLI(t)
 	seedContext, stopSeed := context.WithTimeout(t.Context(), 5*time.Second)
 	large := bson.D{{Key: "_id", Value: "large"}, {Key: "n", Value: int64(1)}, {Key: "pad", Value: strings.Repeat("x", 8<<20)}}
 	health := bson.D{{Key: "_id", Value: "health"}, {Key: "n", Value: int64(42)}, {Key: "pad", Value: strings.Repeat("h", 2048)}}
@@ -126,9 +126,16 @@ func TestCLILargeNativeOutputBudgetPreservesHealthyQueries(t *testing.T) {
 		deadline := canceled.Add(5 * time.Second)
 		for {
 			metrics := service.sample(t)
-			// Open probe connections keep their fixed ingress connection charge.
-			connectionBytes := testmetrics.Sum(metrics, "weir_execution_memory_ingress_connection_bytes")
-			idle := testmetrics.Sum(metrics, "weir_execution_memory_used_bytes") == connectionBytes && testmetrics.Sum(metrics, "weir_execution_memory_resident_bytes") == connectionBytes
+			// The healthy probe connection may stay open with its fixed ingress
+			// charge; the closed slow connection must not keep one.
+			idle := true
+			for _, name := range []string{"weir_execution_memory_ingress_connections", "weir_execution_memory_ingress_connection_bytes", "weir_execution_memory_used_bytes", "weir_execution_memory_resident_bytes"} {
+				idle = idle && metrics[name] != nil
+			}
+			connections := testmetrics.Sum(metrics, "weir_execution_memory_ingress_connections")
+			connectionBytes := connections * ingressConnectionBytes
+			idle = idle && connections <= 1 && testmetrics.Sum(metrics, "weir_execution_memory_ingress_connection_bytes") == connectionBytes
+			idle = idle && testmetrics.Sum(metrics, "weir_execution_memory_used_bytes") == connectionBytes && testmetrics.Sum(metrics, "weir_execution_memory_resident_bytes") == connectionBytes
 			for _, name := range []string{"weir_store_pending_entries", "weir_store_pending_reserved_bytes", "weir_store_active_executions", "weir_store_paused_native_outputs", "weir_store_paused_native_reserved_bytes", "weir_store_result_reserved_entries", "weir_store_result_reserved_bytes", "weir_store_retained_result_reserved_bytes", "weir_store_working_reserved_bytes", "weir_store_publishers", "weir_ingress_sessions", "weir_ingress_queued_response_bytes", "weir_execution_memory_input_reserved_bytes", "weir_execution_memory_input_used_bytes", "weir_execution_memory_wire_bytes", "weir_execution_memory_wire_buffers", "weir_execution_memory_leases", "weir_execution_memory_native_leases", "weir_execution_memory_starting", "weir_execution_memory_settled", "weir_execution_memory_borrowed", "weir_execution_memory_waiting", "weir_execution_memory_terminal"} {
 				idle = idle && metrics[name] != nil && testmetrics.Sum(metrics, name) == 0
 			}

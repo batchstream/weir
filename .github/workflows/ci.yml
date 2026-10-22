@@ -113,6 +113,7 @@ jobs:
           docker pull busybox:1.37.0
           # CLI containers reach mongod through the Docker bridge gateway.
           gateway=$(docker network inspect bridge --format '{{(index .IPAM.Config 0).Gateway}}')
+          test -n "$gateway"
           WEIR_MONGOD="$WEIR_MONGO_REPLICA_BINARY" WEIR_MONGO_BIND="$gateway" scripts/mongo-local.sh start
           scripts/search-local.sh start ${{ matrix.product }} normal
       - name: CLI fault and short load tests
@@ -128,8 +129,10 @@ jobs:
       - name: Stop local fixtures
         if: always()
         run: |
-          scripts/search-local.sh stop ${{ matrix.product }}
-          scripts/mongo-local.sh stop || true
+          status=0
+          scripts/search-local.sh stop ${{ matrix.product }} || status=1
+          scripts/mongo-local.sh stop || status=1
+          exit "$status"
 
   native-mongo-replica:
     runs-on: ubuntu-24.04

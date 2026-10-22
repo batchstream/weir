@@ -65,8 +65,8 @@ func TestCLITypedMemoryBudget(t *testing.T) {
 	if os.Getenv("WEIR_INTEGRATION") != "1" || os.Getenv("WEIR_SEARCH_INTEGRATION") != "elasticsearch" || os.Getenv("WEIR_MONGO_PROFILE") == "tls" {
 		t.Fatal("requires isolated plain MongoDB and Elasticsearch8.19.22 fixtures")
 	}
-	binary := buildLinuxCLI(t)
 	mongo := testmongo.Open(t)
+	binary := buildLinuxCLI(t)
 	documents := seedTypedMemoryMongo(t, mongo)
 	mongoBackend := &Mongo{URI: containerMongoURI}
 	local := &Local{Backend: BackendConfig{MongoDB: mongoBackend}}
