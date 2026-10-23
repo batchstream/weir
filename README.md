@@ -217,7 +217,6 @@ and its own opt-in:
 | --- | --- |
 | `WEIR_LOAD_INTEGRATION=1` | `TestProcessLoad`: fixed 200 RPC/s SDK traffic for a 30s warmup plus 600s (`WEIR_LOAD_MEASUREMENT` shortens it), with slow consumers and a burst; p99, resource-bound and recovery gates and an independent oracle |
 | `WEIR_FAULT_INTEGRATION=1` | `TestProcessFaults`: lost acknowledgements, cancellation, slow IO, unavailability and SIGTERM through owned proxies, with no replay |
-| `WEIR_MEMORY_RECOVERY_INTEGRATION=1` | `TestCLIBusinessHeapRecovery` |
 | `WEIR_NATIVE_BURST_INTEGRATION=1` | `TestCLINativeSmallBurstPreservesAdmission` (Elasticsearch) |
 | `WEIR_NATIVE_OUTPUT_BUDGET_INTEGRATION=1` | `TestCLILargeNativeOutputBudgetPreservesHealthyQueries` |
 | `WEIR_TYPED_MEMORY_BUDGET_INTEGRATION=1` | `TestCLITypedMemoryBudget` (Elasticsearch) |
@@ -231,14 +230,34 @@ WEIR_INTEGRATION=1 WEIR_SEARCH_INTEGRATION=elasticsearch WEIR_LOAD_INTEGRATION=1
 ```
 
 Run the load and fault tests separately so injected faults do not distort load
-measurements. `WEIR_MEMORY_INTEGRATION=1 scripts/test-memory-linux.py` runs the
-Linux memory guard tests in owned containers. TLS fixtures, packaged artifacts and
-shared-memory pressure use the `WEIR_*` variables checked at the start of each
-test.
+measurements. `WEIR_MONGO_SECURE_INTEGRATION=1` and
+`WEIR_SEARCH_SECURE_INTEGRATION=1` enable the TLS and authentication tests, which
+start their own fixtures.
+
+`scripts/test-memory-linux.py` runs the Linux memory Guard and CLI tests, each in
+its own memory-limited container: the Guard sampler and CLI under pressure,
+reclaimable page cache, released Go heap, shared memory, automatic and
+`GOMEMLIMIT=off` runtime limits, and external tmpfs pressure. It needs a Linux
+cgroup-v2 Docker engine of the host architecture and the script's pinned MongoDB
+image present locally; it pulls and installs nothing:
+
+```sh
+docker pull mongo:8.0@sha256:4968f22d0c6c10ef29952f3e807f62872ba22b3312f25803564fbfc08255efc2
+WEIR_MEMORY_INTEGRATION=1 scripts/test-memory-linux.py
+```
+
+On macOS, `WEIR_MEMORY_DARWIN_NATIVE=1` runs the native `phys_footprint` Guard
+test and the in-process automatic memory test (the latter also needs
+`WEIR_MONGO_SECURE_INTEGRATION=1`):
+
+```sh
+WEIR_MEMORY_DARWIN_NATIVE=1 WEIR_MONGO_SECURE_INTEGRATION=1 \
+  go test -tags=integration -count=1 -run '^TestDarwin' ./internal/overload ./internal/app
+```
 
 The [weir-tests](https://github.com/batchstream/weir-tests) repository contains
-matched direct/Weir workloads and blackbox integration. Keep generated logs,
-profiles and experiment output under ignored `.testdata/`.
+matched direct/Weir workloads and blackbox integration. Keep generated logs and
+profiles under ignored `.testdata/`.
 
 The local gRPC and Lua patches are required for allocation ownership. Their
 upstream identities, patch diffs and focused regression tests live under

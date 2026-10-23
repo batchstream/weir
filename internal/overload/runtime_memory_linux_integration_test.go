@@ -26,7 +26,7 @@ func TestLinuxExplicitOffKeepsReleasedHeapBaseline(t *testing.T) {
 func runLinuxRuntimeMemoryRecovery(t *testing.T, automatic bool) {
 	t.Helper()
 	if os.Getenv("WEIR_MEMORY_RECOVERY") != "1" {
-		t.Skip("requires an owned 256 MiB Linux cgroup and a separate process per case")
+		t.Skip("requires WEIR_MEMORY_RECOVERY=1 in a 256 MiB cgroup, one process per case; see scripts/test-memory-linux.py")
 	}
 	_, explicit := os.LookupEnv("GOMEMLIMIT")
 	if automatic && explicit || !automatic && os.Getenv("GOMEMLIMIT") != "off" {
@@ -95,19 +95,20 @@ func runLinuxRuntimeMemoryRecovery(t *testing.T, automatic bool) {
 	}
 }
 
-// This experiment keeps tmpfs pages charged to the cgroup without mapping them
-// into Go's RSS, including the case where other users occupy the recovery line.
+// TestLinuxRuntimeMemoryExternalPressure keeps tmpfs pages charged to the
+// cgroup without mapping them into Go's RSS, including the case where other
+// users occupy the recovery line.
 func TestLinuxRuntimeMemoryExternalPressure(t *testing.T) {
-	value := os.Getenv("WEIR_RUNTIME_SHARED_PRESSURE_MIB")
+	value := os.Getenv("WEIR_MEMORY_EXTERNAL_PRESSURE_MIB")
 	if value == "" {
-		t.Skip("explicit owned 512 MiB Linux shared-memory experiment required")
+		t.Skip("requires WEIR_MEMORY_EXTERNAL_PRESSURE_MIB in a 512 MiB cgroup; see scripts/test-memory-linux.py")
 	}
 	if _, explicit := os.LookupEnv("GOMEMLIMIT"); explicit {
-		t.Fatal("shared-pressure experiment requires absent explicit GOMEMLIMIT")
+		t.Fatal("external pressure requires unset GOMEMLIMIT")
 	}
 	sharedMiB, err := strconv.Atoi(value)
 	if err != nil || sharedMiB != 344 && sharedMiB != 352 && sharedMiB != 368 {
-		t.Fatal("requires a fixed 344/352/368 MiB shared fixture")
+		t.Fatal("WEIR_MEMORY_EXTERNAL_PRESSURE_MIB must be 344, 352 or 368")
 	}
 	limits := DefaultLimits()
 	guard := New(nil, limits)

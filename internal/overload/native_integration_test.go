@@ -18,7 +18,7 @@ import (
 
 func TestLinuxReclaimablePageCacheDoesNotOverload(t *testing.T) {
 	if os.Getenv("WEIR_MEMORY_PAGE_CACHE") != "1" {
-		t.Skip("requires an owned 256 MiB Docker memory fixture")
+		t.Skip("requires WEIR_MEMORY_PAGE_CACHE=1 in a 256 MiB cgroup; see scripts/test-memory-linux.py")
 	}
 	guard := New(nil, DefaultLimits())
 	initial := guard.Snapshot()
@@ -116,7 +116,7 @@ func independentStat(t *testing.T, key string) uint64 {
 
 func TestLinuxReleasedGoHeapRecoversAfterScavenge(t *testing.T) {
 	if os.Getenv("WEIR_MEMORY_PAGE_CACHE") != "1" {
-		t.Skip("requires an owned 256 MiB Docker memory fixture")
+		t.Skip("requires WEIR_MEMORY_PAGE_CACHE=1 in a 256 MiB cgroup; see scripts/test-memory-linux.py")
 	}
 	guard := New(nil, DefaultLimits())
 	if snapshot := guard.Snapshot(); snapshot.Unknown || snapshot.Cgroup.Limit != 256<<20 || snapshot.Latched {
@@ -162,7 +162,7 @@ func TestLinuxReleasedGoHeapRecoversAfterScavenge(t *testing.T) {
 
 func TestLinuxSharedMemoryDoesOverload(t *testing.T) {
 	if os.Getenv("WEIR_MEMORY_SHMEM") != "1" {
-		t.Skip("requires an owned 256 MiB Docker fixture with 240 MiB shm")
+		t.Skip("requires WEIR_MEMORY_SHMEM=1 in a 256 MiB cgroup with 240 MiB shm; see scripts/test-memory-linux.py")
 	}
 	guard := New(nil, DefaultLimits())
 	if snapshot := guard.Snapshot(); snapshot.Unknown || snapshot.Cgroup.Limit != 256<<20 || snapshot.Latched {
@@ -201,7 +201,7 @@ func TestLinuxSharedMemoryDoesOverload(t *testing.T) {
 
 func TestLinuxMemoryNative(t *testing.T) {
 	if os.Getenv("WEIR_MEMORY_NATIVE") != "1" {
-		t.Skip("requires owned scripts/test-memory-linux.py fixture")
+		t.Skip("requires WEIR_MEMORY_NATIVE=1; see scripts/test-memory-linux.py")
 	}
 	var uname syscall.Utsname
 	if err := syscall.Uname(&uname); err != nil {
@@ -278,7 +278,7 @@ func TestLinuxMemoryNative(t *testing.T) {
 				break
 			}
 			if time.Since(start) > 2*time.Second {
-				t.Fatal("fixed 2s convergence deadline", s, rss)
+				t.Fatal("Guard did not converge within 2s", s, rss)
 			}
 			time.Sleep(20 * time.Millisecond)
 		}

@@ -9,7 +9,7 @@ from pathlib import Path
 import subprocess
 import tempfile
 import unittest
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 
 class CleanupTests(unittest.TestCase):
@@ -24,9 +24,6 @@ class CleanupTests(unittest.TestCase):
         self.resources = {}
         self.calls = []
         self.failure = ""
-        self.process = MagicMock(pid=123, returncode=0)
-        self.process.poll.return_value = None
-        self.process.wait.return_value = 0
         self.cleanups = []
 
     def command(self, args, **kwargs):
@@ -40,6 +37,8 @@ class CleanupTests(unittest.TestCase):
             meta = dict(OSType="linux", CgroupVersion="2", Architecture="aarch64")
             output = json.dumps(meta)
         elif args[:3] == ["docker", "image", "inspect"]:
+            if self.failure == "image":
+                raise subprocess.CalledProcessError(1, args, output="Error response from daemon: No such image")
             meta = dict(Id="pinned", Architecture="arm64", Os="linux", RepoDigests=[])
             output = json.dumps(meta if "--format" in args else [meta])
         elif args[0] == "go":
@@ -79,7 +78,7 @@ class CleanupTests(unittest.TestCase):
                     (self.fixture.OUTPUT / "owner").write_text("other")
                 if self.failure == "absent":
                     self.resources.pop(args[-1])
-                raise RuntimeError("original test failure")
+                raise RuntimeError("case failure")
         elif args[:2] == ["docker", "logs"]:
             if self.failure == "logs":
                 raise subprocess.TimeoutExpired(args, 1)
@@ -94,41 +93,32 @@ class CleanupTests(unittest.TestCase):
         return result
 
     def execute(self):
-        reservation = MagicMock()
-        reservation.__enter__.return_value.getsockname.return_value = ("127.0.0.1", 12345)
-        connection = MagicMock()
-        env = dict(WEIR_MEMORY_INTEGRATION="1", WEIR_MEMORY_HOST_MONGO="1")
+        env = dict(WEIR_MEMORY_INTEGRATION="1")
         self.original_cleanup = self.fixture.cleanup
-        with patch.dict(os.environ, env), patch.object(self.fixture.sys, "platform", "darwin"), \
+        with patch.dict(os.environ, env), \
              patch.object(subprocess, "run", side_effect=self.command), \
-             patch.object(subprocess, "Popen", return_value=self.process), \
              patch.object(self.fixture, "cleanup", side_effect=self.cleanup), \
-             patch.object(self.fixture.socket, "socket", return_value=reservation), \
-             patch.object(self.fixture.socket, "create_connection", return_value=connection), \
              contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
             with self.assertRaises(Exception) as caught:
                 self.fixture.main()
         return str(caught.exception)
 
-    def test_logs_failure_preserves_original_and_stops_all(self):
+    def test_logs_failure_preserves_case_failure_and_stops_all(self):
         self.failure = "logs"
         error = self.execute()
-        self.assertIn("original test failure", error)
-        self.process.send_signal.assert_called_once()
-        self.process.wait.assert_called_once()
+        self.assertIn("case failure", error)
         self.assertFalse(self.resources)
         self.assertTrue(self.cleanups[-1]["errors"])
         self.assertTrue(self.cleanups[-1]["all_stopped"])
 
-    def test_inspect_failure_does_not_skip_network_and_host(self):
-        # guard succeeds; cli inspect fails after create/start. Host must always Wait.
+    def test_inspect_failure_does_not_skip_network_and_database(self):
+        # guard succeeds; cli inspect fails after create/start.
         self.failure = "inspect"
-        error = self.execute()
-        self.process.send_signal.assert_called_once()
-        self.process.wait.assert_called_once()
+        self.execute()
         self.assertTrue(any(args[:3] == ["docker", "network", "rm"] for args in self.calls))
         self.assertIn("owned-cli", self.resources)
         self.assertNotIn("owned-guard", self.resources)
+        self.assertNotIn("owned-mongo", self.resources)
         self.assertFalse(self.cleanups[-1]["all_stopped"])
         self.assertTrue((self.fixture.OUTPUT / "weir").exists())
 
@@ -146,33 +136,37 @@ class CleanupTests(unittest.TestCase):
     def test_owner_mismatch_is_not_modified(self):
         self.failure = "mismatch"
         self.execute()
-        expected = {"owned-guard": "other"}
+        expected = {"owned-mongo": "other", "owned-guard": "other"}
         self.assertEqual(self.resources, expected)
         self.assertFalse(any(args[:2] in (["docker", "stop"], ["docker", "rm"]) for args in self.calls))
-        self.process.wait.assert_called_once()
-
-    def test_wait_failure_preserves_data(self):
-        self.failure = "wait"
-        self.process.wait.side_effect = subprocess.TimeoutExpired("owned mongod", 10)
-        self.execute()
-        self.process.kill.assert_called_once()
-        self.assertEqual(self.process.wait.call_count, 2)
-        self.assertTrue((self.fixture.OUTPUT / "mongo-data").exists())
-        self.assertFalse(self.cleanups[-1]["all_stopped"])
 
     def test_output_owner_mismatch_preserves_files(self):
         self.failure = "marker"
         self.execute()
-        self.process.wait.assert_called_once()
-        self.assertTrue((self.fixture.OUTPUT / "mongo-data").exists())
         self.assertTrue((self.fixture.OUTPUT / "weir").exists())
 
     def test_absent_container_counts_as_stopped(self):
         self.failure = "absent"
         self.execute()
-        self.process.wait.assert_called_once()
         self.assertFalse(self.resources)
         self.assertTrue(self.cleanups[-1]["all_stopped"])
+
+    def test_missing_image_names_pull(self):
+        self.failure = "image"
+        error = self.execute()
+        self.assertIn("docker pull " + self.fixture.IMAGE, error)
+        self.assertFalse(any(args[0] == "go" for args in self.calls))
+
+    def test_every_case_gets_its_own_bounded_container(self):
+        cases = {case["name"]: self.fixture.container_args(case, "net") for case in self.fixture.CASES}
+        self.assertEqual(len(cases), len(self.fixture.CASES))
+        for args in cases.values():
+            self.assertIn("--read-only", args)
+            self.assertTrue(any(arg.startswith("--memory=") for arg in args))
+        self.assertIn("--shm-size=240m", cases["shmem"])
+        self.assertIn("type=volume,dst=/scratch", cases["page-cache"])
+        self.assertIn("GOMEMLIMIT=off", cases["runtime-off"])
+        self.assertNotIn("GOMEMLIMIT=off", cases["runtime-automatic"])
 
 
 if __name__ == "__main__":

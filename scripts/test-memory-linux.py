@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""Explicit opt-in, native Linux memory fixture. No image pulls, credentials or host cgroup writes."""
+"""Runs the Linux memory Guard and CLI tests in owned, memory-limited containers.
 
-import shutil
-import signal
-import socket
-import time
+Requires a Linux cgroup-v2 Docker engine of the host architecture and IMAGE
+present locally (`docker pull` it once); the script pulls nothing, needs no
+credentials and never writes host cgroups.
+"""
+
 import json
 import os
 from pathlib import Path
@@ -13,9 +14,34 @@ import sys
 import uuid
 
 ROOT = Path(__file__).resolve().parent.parent
-IMAGE = "sha256:997ed65ff26fc20107e799f0fd1477e5af782b42bd651d870c5436b95fd0323c"
+# Official MongoDB 8.0.32 multi-architecture index. It runs the database and,
+# with the test binary as entrypoint, every test container.
+IMAGE = "mongo:8.0@sha256:4968f22d0c6c10ef29952f3e807f62872ba22b3312f25803564fbfc08255efc2"
 OWNER = "weir-memory-" + uuid.uuid4().hex[:12]
 OUTPUT = ROOT / ".testdata" / OWNER
+
+# Each case runs in its own container so its cgroup and process are fresh.
+CASES = [
+    dict(name="guard", binary="overload.test", run="^TestLinuxMemoryNative$", memory=512, count=3,
+         env=["WEIR_MEMORY_NATIVE=1"]),
+    dict(name="cli", binary="app.test", run="^TestLinuxMemoryCLI$", memory=512, count=3,
+         env=["WEIR_MEMORY_NATIVE=1", "WEIR_MEMORY_MONGO_ADDR=memory-mongo:27017"]),
+    # Page cache must be disk-backed, so TMPDIR is an anonymous volume, not tmpfs.
+    dict(name="page-cache", binary="overload.test", run="^TestLinuxReclaimablePageCacheDoesNotOverload$", memory=256,
+         env=["WEIR_MEMORY_PAGE_CACHE=1", "TMPDIR=/scratch"], volume="/scratch"),
+    dict(name="released-heap", binary="overload.test", run="^TestLinuxReleasedGoHeapRecoversAfterScavenge$", memory=256,
+         env=["WEIR_MEMORY_PAGE_CACHE=1"]),
+    dict(name="shmem", binary="overload.test", run="^TestLinuxSharedMemoryDoesOverload$", memory=256, shm=240,
+         env=["WEIR_MEMORY_SHMEM=1"]),
+    dict(name="runtime-automatic", binary="overload.test", run="^TestLinuxAutomaticRuntimeMemoryRecoversReleasedHeap$",
+         memory=256, env=["WEIR_MEMORY_RECOVERY=1"]),
+    dict(name="runtime-off", binary="overload.test", run="^TestLinuxExplicitOffKeepsReleasedHeapBaseline$",
+         memory=256, env=["WEIR_MEMORY_RECOVERY=1", "GOMEMLIMIT=off"]),
+] + [
+    dict(name=f"external-{mib}", binary="overload.test", run="^TestLinuxRuntimeMemoryExternalPressure$", memory=512,
+         shm=384, env=[f"WEIR_MEMORY_EXTERNAL_PRESSURE_MIB={mib}"])
+    for mib in (344, 352, 368)
+]
 
 
 def run(args, timeout=60, env=None, log=None, echo=True):
@@ -54,8 +80,48 @@ def inspect(kind, name):
             absent = f"Error response from daemon: network {name} not found"
         if kind != "image" and error.output.strip() == absent:
             return None
+        if kind == "image":
+            raise RuntimeError(f"image {name} is not present locally; run `docker pull {name}`") from error
         raise
     return json.loads(result.stdout)
+
+
+def container_args(case, network):
+    args = [
+        "docker",
+        "create",
+        "--name",
+        OWNER + "-" + case["name"],
+        "--label",
+        "weir.owner=" + OWNER,
+        "--network",
+        network,
+        f"--memory={case['memory']}m",
+        f"--memory-swap={case['memory']}m",
+        "--cpus=2",
+        "--pids-limit=96",
+        "--read-only",
+        "--tmpfs",
+        "/tmp:rw,size=32m",
+        "--mount",
+        f"type=bind,src={OUTPUT},dst=/fixture,readonly",
+    ]
+    if "shm" in case:
+        args.append(f"--shm-size={case['shm']}m")
+    if "volume" in case:
+        args += ["--mount", "type=volume,dst=" + case["volume"]]
+    for variable in case["env"]:
+        args += ["--env", variable]
+    args += [
+        "--entrypoint",
+        "/fixture/" + case["binary"],
+        IMAGE,
+        "-test.run=" + case["run"],
+        f"-test.count={case.get('count', 1)}",
+        "-test.timeout=120s",
+        "-test.v",
+    ]
+    return args
 
 
 def cleanup(resources):
@@ -108,54 +174,20 @@ def cleanup(resources):
         except Exception as error:
             errors.append(f"{name} cleanup: {error}")
             network_removed = False
-    host = resources["host_mongo"]
-    host_stopped = host is None
-    if host is not None:
-        try:
-            host.send_signal(signal.SIGTERM)
-        except Exception as error:
-            errors.append(f"host SIGTERM: {error}")
-        try:
-            host.wait(timeout=10)
-            host_stopped = True
-        except Exception as error:
-            errors.append(f"host Wait: {error}")
-            try:
-                host.kill()
-            except Exception as error:
-                errors.append(f"host kill: {error}")
-            try:
-                host.wait(timeout=3)
-                host_stopped = True
-            except Exception as error:
-                errors.append(f"host final Wait: {error}")
-    if resources["host_output"] is not None:
-        try:
-            resources["host_output"].close()
-        except Exception as error:
-            errors.append(f"host log close: {error}")
     try:
         if (OUTPUT / "owner").read_text().strip() != OWNER:
             raise RuntimeError("output owner mismatch; preserving all files")
-        files = []
-        if host_stopped:
-            files.append(OUTPUT / "mongo-data")
         if containers_stopped:
-            files.extend(OUTPUT / name for name in ("weir", "app.test", "overload.test"))
-        for item in files:
-            try:
-                if item.name == "mongo-data":
-                    if item.exists():
-                        shutil.rmtree(item)
-                else:
-                    item.unlink(missing_ok=True)
-            except Exception as error:
-                errors.append(f"{item.name} cleanup: {error}")
+            for name in ("weir", "app.test", "overload.test"):
+                try:
+                    (OUTPUT / name).unlink(missing_ok=True)
+                except Exception as error:
+                    errors.append(f"{name} cleanup: {error}")
     except Exception as error:
         errors.append(str(error))
     result = {
         "errors": errors,
-        "all_stopped": containers_stopped and network_removed and host_stopped,
+        "all_stopped": containers_stopped and network_removed,
     }
     return result
 
@@ -166,10 +198,8 @@ def main():
     OUTPUT.mkdir(parents=True)
     (OUTPUT / "owner").write_text(OWNER + "\n")
     print(f"memory logs: {OUTPUT}", flush=True)
-    resources = {"containers": [], "network": None, "host_mongo": None, "host_output": None}
+    resources = {"containers": [], "network": None}
     network, database = OWNER, OWNER + "-mongo"
-    host_db = os.environ.get("WEIR_MEMORY_HOST_MONGO") == "1"
-    database_address = "memory-mongo:27017"
     failed = False
     try:
         engine = json.loads(
@@ -194,12 +224,11 @@ def main():
             or image["Os"] != "linux"
         ):
             raise RuntimeError(
-                "requires actual Linux cgroup-v2 engine and same-architecture local pinned image; no QEMU"
+                "requires a Linux cgroup-v2 engine and a same-architecture local image; no QEMU"
             )
         env = dict(
             os.environ,
             GOPROXY="off",
-            GOSUMDB="off",
             CGO_ENABLED="0",
             GOOS="linux",
             GOARCH=architecture,
@@ -237,142 +266,56 @@ def main():
             run(args, timeout=120, env=env, log=log)
         # Register owned names before commands which can partially succeed.
         resources["network"] = network
+        run(["docker", "network", "create", "--internal", "--label", "weir.owner=" + OWNER, network])
+        resources["containers"].append(database)
         run(
-            ["docker", "network", "create"]
-            + ([] if host_db else ["--internal"])
-            + ["--label", "weir.owner=" + OWNER, network]
+            [
+                "docker",
+                "run",
+                "-d",
+                "--name",
+                database,
+                "--label",
+                "weir.owner=" + OWNER,
+                "--network",
+                network,
+                "--network-alias",
+                "memory-mongo",
+                "--memory=768m",
+                "--memory-swap=768m",
+                "--cpus=1",
+                "--pids-limit=128",
+                "--tmpfs",
+                "/data/db:rw,size=256m",
+                "--entrypoint",
+                "mongod",
+                IMAGE,
+                "--bind_ip_all",
+                "--replSet",
+                "weir_memory",
+                "--wiredTigerCacheSizeGB=0.25",
+                "--setParameter",
+                "enableTestCommands=1",
+            ]
         )
-        if host_db:
-            if sys.platform != "darwin":
-                raise RuntimeError("host fallback is explicit Darwin fixture only")
-            with socket.socket() as reservation:
-                reservation.bind(("127.0.0.1", 0))
-                port = reservation.getsockname()[1]
-            data = OUTPUT / "mongo-data"
-            data.mkdir()
-            mongo_binary = ROOT / ".tools/mongodb-macos-aarch64--8.0.32/bin/mongod"
-            resources["host_output"] = (OUTPUT / "mongo-host.log").open("w")
-            resources["host_mongo"] = subprocess.Popen(
-                [
-                    str(mongo_binary),
-                    "--dbpath",
-                    str(data),
-                    "--bind_ip",
-                    "127.0.0.1",
-                    "--port",
-                    str(port),
-                    "--replSet",
-                    "weir_memory",
-                    "--wiredTigerCacheSizeGB=0.25",
-                ],
-                stdout=resources["host_output"],
-                stderr=subprocess.STDOUT,
-            )
-            for _ in range(50):
-                try:
-                    with socket.create_connection(("127.0.0.1", port), timeout=0.1):
-                        break
-                except OSError:
-                    if resources["host_mongo"].poll() is not None:
-                        raise RuntimeError("host fixture startup failed")
-                    time.sleep(0.1)
-            bootstrap = f'rs.initiate({{_id:"weir_memory",members:[{{_id:0,host:"127.0.0.1:{port}"}}]}}); for(let i=0;i<100;i++){{if(db.hello().isWritablePrimary)break;sleep(100)}}; if(!db.hello().isWritablePrimary)throw new Error("not primary"); print(db.version());'
-            run(
-                [
-                    "mongosh",
-                    "--quiet",
-                    "--norc",
-                    f"mongodb://127.0.0.1:{port}/?directConnection=true",
-                    "--eval",
-                    bootstrap,
-                ],
-                timeout=30,
-                log="mongo-bootstrap.log",
-            )
-            database_address = f"host.docker.internal:{port}"
-        else:
-            resources["containers"].append(database)
-            run(
-                [
-                    "docker",
-                    "run",
-                    "-d",
-                    "--name",
-                    database,
-                    "--label",
-                    "weir.owner=" + OWNER,
-                    "--network",
-                    network,
-                    "--network-alias",
-                    "memory-mongo",
-                    "--memory=768m",
-                    "--memory-swap=768m",
-                    "--cpus=1",
-                    "--pids-limit=128",
-                    "--tmpfs",
-                    "/data/db:rw,size=256m",
-                    "--entrypoint",
-                    "mongod",
-                    IMAGE,
-                    "--bind_ip_all",
-                    "--replSet",
-                    "weir_memory",
-                    "--wiredTigerCacheSizeGB=0.25",
-                    "--setParameter",
-                    "enableTestCommands=1",
-                ]
-            )
-            bootstrap = '''for(let i=0;i<100;i++){try{db.adminCommand({ping:1});break}catch(e){sleep(100)}};
+        bootstrap = '''for(let i=0;i<100;i++){try{db.adminCommand({ping:1});break}catch(e){sleep(100)}};
     rs.initiate({_id:"weir_memory",members:[{_id:0,host:"memory-mongo:27017"}]});
     for(let i=0;i<100;i++){if(db.hello().isWritablePrimary)break;sleep(100)};
     if(!db.hello().isWritablePrimary)throw new Error("not primary"); print(db.version());'''
-            run(
-                ["docker", "exec", database, "mongosh", "--quiet", "--norc", "--eval", bootstrap],
-                timeout=30,
-                log="mongo-bootstrap.log",
-            )
-        for name, binary, selector in [
-            ("guard", "overload.test", "^TestLinuxMemoryNative$"),
-            ("cli", "app.test", "^TestLinuxMemoryCLI$"),
-        ]:
-            container = OWNER + "-" + name
+        run(
+            ["docker", "exec", database, "mongosh", "--quiet", "--norc", "--eval", bootstrap],
+            timeout=30,
+            log="mongo-bootstrap.log",
+        )
+        for case in CASES:
+            container = OWNER + "-" + case["name"]
             resources["containers"].append(container)
-            run(
-                [
-                    "docker",
-                    "create",
-                    "--name",
-                    container,
-                    "--label",
-                    "weir.owner=" + OWNER,
-                    "--network",
-                    network,
-                    "--memory=512m",
-                    "--memory-swap=512m",
-                    "--cpus=2",
-                    "--pids-limit=96",
-                    "--read-only",
-                    "--tmpfs",
-                    "/tmp:rw,size=32m",
-                    "--mount",
-                    f"type=bind,src={OUTPUT},dst=/fixture,readonly",
-                    "--env",
-                    "WEIR_MEMORY_NATIVE=1",
-                    "--env",
-                    "WEIR_MEMORY_MONGO_ADDR=" + database_address,
-                    "--entrypoint",
-                    "/fixture/" + binary,
-                    IMAGE,
-                    "-test.run=" + selector,
-                    "-test.count=3",
-                    "-test.timeout=120s",
-                    "-test.v",
-                ]
-            )
-            result = run(["docker", "start", "--attach", container], timeout=150, log=name + ".log")
+            run(container_args(case, network))
+            result = run(["docker", "start", "--attach", container], timeout=150, log=case["name"] + ".log")
             state = inspect("container", container)
             if result.returncode or state["ExitCode"] or state["OOMKilled"]:
-                raise RuntimeError(f"{name} failed; preserve {OUTPUT / (name + '.log')}")
+                raise RuntimeError(f"{case['name']} failed; preserve {OUTPUT / (case['name'] + '.log')}")
+            print(f"{case['name']}: ok", flush=True)
     except BaseException:
         failed = True
         raise
