@@ -71,124 +71,121 @@ func TestMongoTLSApplicationAssemblyAllOperations(t *testing.T) {
 	cfg.Routing.Stores = []StoreConfig{service}
 
 	node := secureNode(t, cfg)
-	for name, address := range map[string]string{"direct": node.Address()} {
-		t.Run(name, func(t *testing.T) {
-			conn, err := grpc.NewClient(address, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithDisableRetry())
-			if err != nil {
-				t.Fatal(err)
-			}
-			defer conn.Close()
-			client := pb.NewStoreServiceClient(conn)
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-			root := fixture.DB + "/records"
-			document := bson.D{{Key: "_id", Value: name}, {Key: "n", Value: int64(9007199254740993)}}
-			raw, err := bson.Marshal(document)
-			if err != nil {
-				t.Fatal(err)
-			}
-			doc := &pb.Document{ContentType: "application/bson", Data: raw}
-			put := &pb.MutateRequest_Put{Put: doc}
-			request := &pb.MutateRequest{Resource: root + "/s:" + name, Action: put}
-			recordResult, err := testutil.ExecuteRecord(ctx, client, testutil.RecordRequest("mongo", request))
-			result := recordResult.GetMutationResult()
-			if err != nil || result.GetOutcome() != pb.MutationOutcome_APPLIED {
-				t.Fatal(result, err)
-			}
-			read := &pb.ReadRequest{Resource: request.Resource}
-			recordResult2, err := testutil.ExecuteRecord(ctx, client, testutil.RecordRequest("mongo", read))
-			found := recordResult2.GetReadResult()
-			if err != nil || !bytes.Equal(found.GetDocument().GetData(), raw) {
-				t.Fatal("opaque BSON changed", err)
-			}
-			create := &pb.MutateRequest_Create{Create: doc}
-			request.Action = create
-			recordResult3, err := testutil.ExecuteRecord(ctx, client, testutil.RecordRequest("mongo", request))
-			result = recordResult3.GetMutationResult()
-			if err != nil || result.GetOutcome() != pb.MutationOutcome_NOT_APPLIED {
-				t.Fatal("duplicate not definite", result, err)
-			}
-			empty := &pb.Empty{}
-			remove := &pb.MutateRequest_Delete{Delete: empty}
-			request.Action = remove
-			recordResult4, err := testutil.ExecuteRecord(ctx, client, testutil.RecordRequest("mongo", request))
-			result = recordResult4.GetMutationResult()
-			if err != nil || result.GetOutcome() != pb.MutationOutcome_APPLIED {
-				t.Fatal(result, err)
-			}
-			recordResult5, err := testutil.ExecuteRecord(ctx, client, testutil.RecordRequest("mongo", read))
-			found = recordResult5.GetReadResult()
-			if err != nil || found.GetMissing() == nil {
-				t.Fatal("missing contract", err)
-			}
-			request.Action = create
-			recordResult6, err := testutil.ExecuteRecord(ctx, client, testutil.RecordRequest("mongo", request))
-			result = recordResult6.GetMutationResult()
-			if err != nil || result.GetOutcome() != pb.MutationOutcome_APPLIED {
-				t.Fatal(result, err)
-			}
-			replace := &pb.MutateRequest_Replace{Replace: doc}
-			request.Action = replace
-			recordResult7, err := testutil.ExecuteRecord(ctx, client, testutil.RecordRequest("mongo", request))
-			result = recordResult7.GetMutationResult()
-			if err != nil || result.GetOutcome() != pb.MutationOutcome_APPLIED {
-				t.Fatal(result, err)
-			}
-			increment := bson.D{{Key: "$inc", Value: bson.D{{Key: "n", Value: int64(1)}}}}
-			expression, _ := bson.Marshal(increment)
-			expressionDoc := &pb.Document{ContentType: mongodb.ExpressionContentType, Data: expression}
-			form := &pb.Transform_BackendExpression{BackendExpression: expressionDoc}
-			transform := &pb.Transform{Form: form}
-			action := &pb.MutateRequest_AtomicTransform{AtomicTransform: transform}
-			request.Action = action
-			recordResult8, err := testutil.ExecuteRecord(ctx, client, testutil.RecordRequest("mongo", request))
-			result = recordResult8.GetMutationResult()
-			if err != nil || result.GetOutcome() != pb.MutationOutcome_APPLIED {
-				t.Fatal(result, err)
-			}
-			batch := []*pb.MutateRequest{request}
-			reply, err := testutil.MutateRecords(ctx, client, "mongo", batch)
-			if err != nil || len(reply) != 1 || reply[0].GetOutcome() != pb.MutationOutcome_APPLIED {
-				t.Fatal("batch mutation", reply, err)
-			}
-			recordResult9, err := testutil.ExecuteRecord(ctx, client, testutil.RecordRequest("mongo", read))
-			found = recordResult9.GetReadResult()
-			if err != nil || bson.Raw(found.GetDocument().GetData()).Lookup("n").AsInt64() != 9007199254740995 {
-				t.Fatal("expression replay/type change", err)
-			}
-			command := bson.D{{Key: "count", Value: "records"}}
-			body, _ := bson.Marshal(command)
-			nativeRequest := &pb.Document{ContentType: "application/bson", Data: body}
-			nativeCall := &pb.NativeRequest{Resource: fixture.DB, Request: nativeRequest}
-			nativeVariant := &pb.Command_Native{Native: nativeCall}
-			call := &pb.Command{Operation: nativeVariant}
-			stream, err := testutil.ExecuteEvents(ctx, client, "mongo", call)
-			if err != nil {
-				t.Fatal(err)
-			}
-			var response []byte
-			for {
-				frame, err := stream.Recv()
-				if err != nil {
-					t.Fatal(err)
-				}
-				response = append(response, frame.GetChunk()...)
-				if end := frame.GetNativeEnd(); end != nil {
-					if end.Failure != nil || end.Completion != pb.NativeCompletion_RESPONSE_COMPLETE {
-						t.Fatal(end)
-					}
-					break
-				}
-			}
-			if _, err := stream.Recv(); err != io.EOF {
-				t.Fatal(err)
-			}
-			if bson.Raw(response).Lookup("ok").AsInt64() != 1 {
-				t.Fatal("Native lost response")
-			}
-			t.Log("production basic/routing YAML Load/Open: CRUD, conflict/missing, opaque int64, expression, batch mutation, Native End/EOF passed")
-		})
+	const name = "direct"
+	conn, err := grpc.NewClient(node.Address(), grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithDisableRetry())
+	if err != nil {
+		t.Fatal(err)
 	}
+	defer conn.Close()
+	client := pb.NewStoreServiceClient(conn)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	root := fixture.DB + "/records"
+	document := bson.D{{Key: "_id", Value: name}, {Key: "n", Value: int64(9007199254740993)}}
+	raw, err := bson.Marshal(document)
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc := &pb.Document{ContentType: "application/bson", Data: raw}
+	put := &pb.MutateRequest_Put{Put: doc}
+	request := &pb.MutateRequest{Resource: root + "/s:" + name, Action: put}
+	recordResult, err := testutil.ExecuteRecord(ctx, client, testutil.RecordRequest("mongo", request))
+	result := recordResult.GetMutationResult()
+	if err != nil || result.GetOutcome() != pb.MutationOutcome_APPLIED {
+		t.Fatal(result, err)
+	}
+	read := &pb.ReadRequest{Resource: request.Resource}
+	recordResult2, err := testutil.ExecuteRecord(ctx, client, testutil.RecordRequest("mongo", read))
+	found := recordResult2.GetReadResult()
+	if err != nil || !bytes.Equal(found.GetDocument().GetData(), raw) {
+		t.Fatal("opaque BSON changed", err)
+	}
+	create := &pb.MutateRequest_Create{Create: doc}
+	request.Action = create
+	recordResult3, err := testutil.ExecuteRecord(ctx, client, testutil.RecordRequest("mongo", request))
+	result = recordResult3.GetMutationResult()
+	if err != nil || result.GetOutcome() != pb.MutationOutcome_NOT_APPLIED {
+		t.Fatal("duplicate not definite", result, err)
+	}
+	empty := &pb.Empty{}
+	remove := &pb.MutateRequest_Delete{Delete: empty}
+	request.Action = remove
+	recordResult4, err := testutil.ExecuteRecord(ctx, client, testutil.RecordRequest("mongo", request))
+	result = recordResult4.GetMutationResult()
+	if err != nil || result.GetOutcome() != pb.MutationOutcome_APPLIED {
+		t.Fatal(result, err)
+	}
+	recordResult5, err := testutil.ExecuteRecord(ctx, client, testutil.RecordRequest("mongo", read))
+	found = recordResult5.GetReadResult()
+	if err != nil || found.GetMissing() == nil {
+		t.Fatal("missing contract", err)
+	}
+	request.Action = create
+	recordResult6, err := testutil.ExecuteRecord(ctx, client, testutil.RecordRequest("mongo", request))
+	result = recordResult6.GetMutationResult()
+	if err != nil || result.GetOutcome() != pb.MutationOutcome_APPLIED {
+		t.Fatal(result, err)
+	}
+	replace := &pb.MutateRequest_Replace{Replace: doc}
+	request.Action = replace
+	recordResult7, err := testutil.ExecuteRecord(ctx, client, testutil.RecordRequest("mongo", request))
+	result = recordResult7.GetMutationResult()
+	if err != nil || result.GetOutcome() != pb.MutationOutcome_APPLIED {
+		t.Fatal(result, err)
+	}
+	increment := bson.D{{Key: "$inc", Value: bson.D{{Key: "n", Value: int64(1)}}}}
+	expression, _ := bson.Marshal(increment)
+	expressionDoc := &pb.Document{ContentType: mongodb.ExpressionContentType, Data: expression}
+	form := &pb.Transform_BackendExpression{BackendExpression: expressionDoc}
+	transform := &pb.Transform{Form: form}
+	action := &pb.MutateRequest_AtomicTransform{AtomicTransform: transform}
+	request.Action = action
+	recordResult8, err := testutil.ExecuteRecord(ctx, client, testutil.RecordRequest("mongo", request))
+	result = recordResult8.GetMutationResult()
+	if err != nil || result.GetOutcome() != pb.MutationOutcome_APPLIED {
+		t.Fatal(result, err)
+	}
+	batch := []*pb.MutateRequest{request}
+	reply, err := testutil.MutateRecords(ctx, client, "mongo", batch)
+	if err != nil || len(reply) != 1 || reply[0].GetOutcome() != pb.MutationOutcome_APPLIED {
+		t.Fatal("batch mutation", reply, err)
+	}
+	recordResult9, err := testutil.ExecuteRecord(ctx, client, testutil.RecordRequest("mongo", read))
+	found = recordResult9.GetReadResult()
+	if err != nil || bson.Raw(found.GetDocument().GetData()).Lookup("n").AsInt64() != 9007199254740995 {
+		t.Fatal("expression replay/type change", err)
+	}
+	command := bson.D{{Key: "count", Value: "records"}}
+	body, _ := bson.Marshal(command)
+	nativeRequest := &pb.Document{ContentType: "application/bson", Data: body}
+	nativeCall := &pb.NativeRequest{Resource: fixture.DB, Request: nativeRequest}
+	nativeVariant := &pb.Command_Native{Native: nativeCall}
+	call := &pb.Command{Operation: nativeVariant}
+	stream, err := testutil.ExecuteEvents(ctx, client, "mongo", call)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var response []byte
+	for {
+		frame, err := stream.Recv()
+		if err != nil {
+			t.Fatal(err)
+		}
+		response = append(response, frame.GetChunk()...)
+		if end := frame.GetNativeEnd(); end != nil {
+			if end.Failure != nil || end.Completion != pb.NativeCompletion_RESPONSE_COMPLETE {
+				t.Fatal(end)
+			}
+			break
+		}
+	}
+	if _, err := stream.Recv(); err != io.EOF {
+		t.Fatal(err)
+	}
+	if bson.Raw(response).Lookup("ok").AsInt64() != 1 {
+		t.Fatal("Native lost response")
+	}
+	t.Log("production basic/routing YAML Load/Open: CRUD, conflict/missing, opaque int64, expression, batch mutation, Native End/EOF passed")
 }
 
 // recordsStoreConfig hosts one unbatched MongoDB Store named records on local

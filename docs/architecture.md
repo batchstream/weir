@@ -113,7 +113,9 @@ isolated network. A stalled input or output
 cancels only its RPC after the stall timeout: the handler and its Store work end
 at once, but gRPC keeps the stream's last unsent message until the client reads
 it or the connection closes. Keepalive pings and the idle and handshake timeouts
-close unresponsive connections. Confirmed write evidence remains valid.
+close unresponsive connections. Every connection ends with GOAWAY after about
+five minutes so clients re-resolve their address; running streams finish first.
+Confirmed write evidence remains valid.
 
 ## Lifecycle
 

@@ -9,7 +9,7 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-// Admission is the process-wide RPC gate shared by every listener.
+// Admission is the process-wide gate for business RPCs.
 type Admission struct {
 	draining   chan struct{}
 	once       sync.Once
@@ -51,7 +51,7 @@ func (a *Admission) check() error {
 func (a *Admission) Describe(ch chan<- *prometheus.Desc) { prometheus.DescribeByCollect(a, ch) }
 
 func (a *Admission) Collect(ch chan<- prometheus.Metric) {
-	desc := prometheus.NewDesc("weir_ingress_sessions", "Active RPCs across all listeners.", nil, nil)
+	desc := prometheus.NewDesc("weir_ingress_sessions", "Active business RPCs.", nil, nil)
 	ch <- prometheus.MustNewConstMetric(desc, prometheus.GaugeValue, float64(a.activeRPCs.Load()))
 	a.rejections.Collect(ch)
 }

@@ -69,17 +69,14 @@ func TestSearchTLSApplicationAssemblyAllOperations(t *testing.T) {
 	cfg.Routing.Stores = []StoreConfig{service}
 
 	node := secureNode(t, cfg)
-	for name, address := range map[string]string{"direct": node.Address()} {
-		t.Run(name, func(t *testing.T) {
-			conn, err := grpc.NewClient(address, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithDisableRetry())
-			if err != nil {
-				t.Fatal(err)
-			}
-			defer conn.Close()
-			client := pb.NewStoreServiceClient(conn)
-			searchClientOperations(t, client, fixture, name)
-		})
+	const name = "direct"
+	conn, err := grpc.NewClient(node.Address(), grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithDisableRetry())
+	if err != nil {
+		t.Fatal(err)
 	}
+	defer conn.Close()
+	client := pb.NewStoreServiceClient(conn)
+	searchClientOperations(t, client, fixture, name)
 }
 
 func searchClientOperations(t *testing.T, client pb.StoreServiceClient, fixture *testsearch.SecureFixture, name string) {

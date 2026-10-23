@@ -33,7 +33,7 @@ func Open(ctx context.Context, cfg Config) (*Node, error) {
 		shutdownTimeout: time.Duration(cfg.Basic.Lifecycle.ShutdownTimeout),
 		admission:       admission,
 		stores:          make(map[string]*store.Runtime, len(cfg.Routing.Stores)),
-		Errors:          make(chan error, 3),
+		Errors:          make(chan error, 2),
 		state:           "constructed",
 		registry:        prometheus.NewRegistry(),
 	}

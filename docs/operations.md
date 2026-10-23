@@ -27,6 +27,12 @@ headless Service so clients connect to every Pod; the
 [weir-charts](https://github.com/batchstream/weir-charts) Helm chart is the
 deployment reference. Every Pod runs one Weir process.
 
+Each client connection ends with GOAWAY after about five minutes. Running streams
+finish first, and the client reconnects and re-resolves the address, so replicas
+added by scaling start receiving calls within that time. Adding or removing a
+Store needs a coordinated rollout: until every replica runs the new definitions,
+a request can reach a replica that answers NotFound, and the SDK does not retry.
+
 ## MongoDB discovery and failover
 
 For automatic primary discovery, use the strict [replica-set connection

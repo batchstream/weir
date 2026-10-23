@@ -254,10 +254,22 @@ func TestUnhostedStoreIsNotFound(t *testing.T) {
 	if status.Code(err) != codes.NotFound || result != nil {
 		t.Fatal("unhosted Store was not reported as not found", result, err)
 	}
+	// A method the server does not serve, such as an outdated client's
+	// ResolveStore, is refused before gRPC reads its request.
+	empty := &pb.Empty{}
+	reply := &pb.Empty{}
+	err = conn.Invoke(ctx, "/weir.v1.StoreService/ResolveStore", empty, reply)
+	if status.Code(err) != codes.Unimplemented {
+		t.Fatal("unserved method was not refused", err)
+	}
 	families := testmetrics.Registry(t, node.registry)
 	labels := map[string]string{"method": "execute", "status": "non_ok"}
 	if metric := testmetrics.Sample(families, "weir_rpc_completions_total", labels); metric.GetCounter().GetValue() != 1 {
 		t.Fatal("rejected RPC was not counted", metric)
+	}
+	reason := map[string]string{"reason": "method"}
+	if metric := testmetrics.Sample(families, "weir_admission_rejections_total", reason); metric.GetCounter().GetValue() != 1 {
+		t.Fatal("unserved method was not counted as a method rejection", metric)
 	}
 }
 

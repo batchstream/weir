@@ -26,15 +26,19 @@ type Limits struct {
 	Stall             time.Duration
 	Handshake         time.Duration
 	Idle              time.Duration
+	// MaxConnectionAge ends each client connection with GOAWAY after roughly
+	// this age. Streams already running finish first; the client reconnects
+	// and re-resolves its address, which spreads load onto new replicas.
+	MaxConnectionAge time.Duration
 }
 
 func DefaultLimits() Limits {
-	limits := Limits{MaxPendingRecords: RecordStreamItems, KeepaliveInterval: 30 * time.Second, KeepaliveTimeout: 5 * time.Second, Stall: 30 * time.Second, Handshake: 5 * time.Second, Idle: time.Minute}
+	limits := Limits{MaxPendingRecords: RecordStreamItems, KeepaliveInterval: 30 * time.Second, KeepaliveTimeout: 5 * time.Second, Stall: 30 * time.Second, Handshake: 5 * time.Second, Idle: time.Minute, MaxConnectionAge: 5 * time.Minute}
 	return limits
 }
 
 func (l Limits) Validate() error {
-	if l.Stall <= 0 || l.Handshake < 0 || l.Idle < 0 || l.MaxPendingRecords < 0 || l.KeepaliveInterval < 0 || l.KeepaliveInterval > 0 && l.KeepaliveInterval < time.Second || l.KeepaliveTimeout < 0 {
+	if l.Stall <= 0 || l.Handshake < 0 || l.Idle < 0 || l.MaxPendingRecords < 0 || l.KeepaliveInterval < 0 || l.KeepaliveInterval > 0 && l.KeepaliveInterval < time.Second || l.KeepaliveTimeout < 0 || l.MaxConnectionAge < 0 {
 		return status.Error(codes.InvalidArgument, "invalid transport configuration")
 	}
 	return nil
@@ -70,6 +74,9 @@ func New(cfg Config) (*Server, error) {
 	if l.KeepaliveTimeout == 0 {
 		l.KeepaliveTimeout = defaults.KeepaliveTimeout
 	}
+	if l.MaxConnectionAge == 0 {
+		l.MaxConnectionAge = defaults.MaxConnectionAge
+	}
 	if err := l.Validate(); err != nil {
 		return nil, err
 	}
@@ -92,7 +99,7 @@ func New(cfg Config) (*Server, error) {
 		metrics:   newTransportMetrics(),
 		serving:   make(chan struct{}),
 	}
-	keepaliveParameters := keepalive.ServerParameters{Time: l.KeepaliveInterval, Timeout: l.KeepaliveTimeout, MaxConnectionIdle: l.Idle}
+	keepaliveParameters := keepalive.ServerParameters{Time: l.KeepaliveInterval, Timeout: l.KeepaliveTimeout, MaxConnectionIdle: l.Idle, MaxConnectionAge: l.MaxConnectionAge}
 	options := []grpc.ServerOption{
 		grpc.MaxRecvMsgSize(MaxMessageBytes),
 		grpc.MaxSendMsgSize(MaxMessageBytes),

@@ -92,7 +92,7 @@ func TestDiagnosticsLifecycleIsolationAndNoSyntheticExecutions(t *testing.T) {
 			t.Fatal("scrape increased business counters")
 		}
 		if after["weir_store_executions_total"] != nil {
-			t.Fatal("directory-only created Runtime metrics")
+			t.Fatal("a node without Stores created Runtime metrics")
 		}
 	}
 	other := testmetrics.Scrape(t, second.DiagnosticAddress())

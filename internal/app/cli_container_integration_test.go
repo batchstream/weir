@@ -120,8 +120,8 @@ type cliContainer struct {
 }
 
 // startCLIContainer starts the CLI in a memory- and CPU-limited busybox
-// container, publishes its application listener on the advertised host
-// address and waits for readiness. Cleanup stops and removes only the container
+// container, publishes its application listener on a loopback host address
+// and waits for readiness. Cleanup stops and removes only the container
 // it created.
 func startCLIContainer(t *testing.T, opts cliContainerOptions) *cliContainer {
 	t.Helper()

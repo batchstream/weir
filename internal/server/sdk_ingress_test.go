@@ -13,6 +13,8 @@ import (
 	"github.com/batchstream/weir/internal/execution"
 	"github.com/batchstream/weir/internal/server"
 	"github.com/batchstream/weir/internal/store"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 type sdkIngressReadAdapter struct{}
@@ -102,6 +104,11 @@ func TestSDKReadsEveryHostedStoreThroughOneAddress(t *testing.T) {
 			t.Cleanup(func() { _ = client.Close() })
 			for _, name := range names {
 				sdkIngressRead(t, client, name)
+			}
+			request := &weirclient.ReadRequest{Resource: "records/s:key"}
+			missing := weirclient.ReadOptions{StoreName: "missing", Requests: []*weirclient.ReadRequest{request}}
+			if _, err := client.Read(t.Context(), missing); status.Code(err) != codes.NotFound {
+				t.Fatal("unhosted Store did not fail with NotFound through the SDK", err)
 			}
 		})
 	}

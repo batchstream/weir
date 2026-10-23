@@ -61,7 +61,7 @@ func (n *Node) Collect(ch chan<- prometheus.Metric) {
 	}
 	desc = prometheus.NewDesc(
 		"weir_node_ready",
-		"Validated data listeners entered service and node is not draining or failed. Does not promise backend health.",
+		"The application listener entered service and the node is not draining or failed. Does not promise backend health.",
 		nil,
 		nil,
 	)

@@ -480,7 +480,7 @@ func TestCLISignalBeforeStart(t *testing.T) {
 	if !strings.HasPrefix(line, "opened ") {
 		t.Fatal(line)
 	}
-	p.terminate(t, "Open returned with both listeners, diagnostics and local runtime; Start not called")
+	p.terminate(t, "Open returned with the application listener, diagnostics and local runtime; Start not called")
 	reserveReleasedAddresses(t, strings.Fields(strings.TrimPrefix(line, "opened ")))
 	p.wait(t, 1)
 	if !strings.HasSuffix(p.stderr.text(), "context canceled\n") || strings.Contains(p.stdout.text(), "listening") {

@@ -161,13 +161,11 @@ func closeRetirementNode(t *testing.T, fixture retirementNodeFixture) {
 	if testmetrics.Sum(families, "weir_ingress_sessions") != 0 {
 		t.Fatal("Node returned before real handlers joined")
 	}
-	for _, address := range []string{node.Address()} {
-		listener, err := net.Listen("tcp", address)
-		if err != nil {
-			t.Fatal("Node did not release its listener", err)
-		}
-		_ = listener.Close()
+	listener, err := net.Listen("tcp", node.Address())
+	if err != nil {
+		t.Fatal("Node did not release its listener", err)
 	}
+	_ = listener.Close()
 	t.Logf("actual Node Close elapsed=%s error=%v runtime=%+v", elapsed, err, node.stores["records"].Stats())
 }
 

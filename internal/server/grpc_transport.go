@@ -47,10 +47,11 @@ func (s *Server) cancelRPC(ctx context.Context, phase string) {
 	}
 }
 
-func (s *Server) observeStream(service any, stream grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+// observeStream counts Execute, the only method admitRPC lets through.
+func (s *Server) observeStream(service any, stream grpc.ServerStream, _ *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
 	s.admission.activeRPCs.Add(1)
 	defer s.admission.activeRPCs.Add(-1)
 	err := handler(service, stream)
-	s.metrics.rpcs.WithLabelValues(methodLabel(info.FullMethod), statusLabel(err)).Inc()
+	s.metrics.rpcs.WithLabelValues("execute", statusLabel(err)).Inc()
 	return err
 }
