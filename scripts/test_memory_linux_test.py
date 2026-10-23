@@ -79,9 +79,14 @@ class CleanupTests(unittest.TestCase):
                 if self.failure == "absent":
                     self.resources.pop(args[-1])
                 raise RuntimeError("case failure")
+        elif args[:2] == ["docker", "exec"]:
+            if self.failure == "kernel":
+                raise subprocess.CalledProcessError(137, args, output="")
         elif args[:2] == ["docker", "logs"]:
             if self.failure == "logs":
                 raise subprocess.TimeoutExpired(args, 1)
+            if self.failure == "kernel" and args[-1].endswith("mongo"):
+                output = "MongoDB cannot start: " + self.fixture.KERNEL_REFUSAL
         elif args[:2] == ["docker", "rm"] or args[:3] == ["docker", "network", "rm"]:
             self.resources.pop(args[-1])
         result = subprocess.CompletedProcess(args, code, output)
@@ -136,7 +141,7 @@ class CleanupTests(unittest.TestCase):
     def test_owner_mismatch_is_not_modified(self):
         self.failure = "mismatch"
         self.execute()
-        expected = {"owned-mongo": "other", "owned-guard": "other"}
+        expected = {"owned-guard": "other"}
         self.assertEqual(self.resources, expected)
         self.assertFalse(any(args[:2] in (["docker", "stop"], ["docker", "rm"]) for args in self.calls))
 
@@ -156,6 +161,19 @@ class CleanupTests(unittest.TestCase):
         error = self.execute()
         self.assertIn("docker pull " + self.fixture.IMAGE, error)
         self.assertFalse(any(args[0] == "go" for args in self.calls))
+
+    def test_guard_cases_run_before_and_without_the_database(self):
+        self.failure = "kernel"
+        error = self.execute()
+        self.assertIn("kernel below 6.19", error)
+        creates = [args for args in self.calls if args[:2] in (["docker", "create"], ["docker", "run"])]
+        names = [args[args.index("--name") + 1] for args in creates]
+        guard = ["owned-" + case["name"] for case in self.fixture.CASES if not case.get("database")]
+        self.assertEqual(names, guard + ["owned-mongo"])
+        for args in creates[:-1]:
+            self.assertEqual(args[args.index("--network") + 1], "none")
+        self.assertFalse(self.resources)
+        self.assertTrue(self.cleanups[-1]["all_stopped"])
 
     def test_every_case_gets_its_own_bounded_container(self):
         cases = {case["name"]: self.fixture.container_args(case, "net") for case in self.fixture.CASES}

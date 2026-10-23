@@ -16,6 +16,10 @@ import (
 // the real phys_footprint sampler.
 const darwinMemoryBudget = 2 << 30
 
+// darwinFootprintTolerance bounds how far the sampled footprint may drift from
+// the startup footprint plus the fixture's resident mappings.
+const darwinFootprintTolerance = 16 << 20
+
 func TestDarwinMemoryNative(t *testing.T) {
 	if os.Getenv("WEIR_MEMORY_DARWIN_NATIVE") != "1" {
 		t.Skip("requires WEIR_MEMORY_DARWIN_NATIVE=1; allocates up to 2 GiB")
@@ -85,18 +89,20 @@ func TestDarwinMemoryNative(t *testing.T) {
 		}
 		for {
 			s := guard.Snapshot()
-			if !s.Unknown && s.Latched == step.latched {
+			expected := pressure.base + uint64(len(pressure.pages))<<20
+			drift := max(s.Bytes, expected) - min(s.Bytes, expected)
+			if !s.Unknown && s.Latched == step.latched && drift < darwinFootprintTolerance {
 				if step.label == "middle" && (s.Bytes <= watermark(darwinMemoryBudget, 70, false) || s.Bytes >= watermark(darwinMemoryBudget, 80, true)) {
 					t.Fatal("not in hysteresis band", s)
 				}
 				if s.Source != "darwin_phys_footprint" || s.Cgroup.State != "not_applicable" || target.latched.Load() != step.latched {
 					t.Fatal(s)
 				}
-				t.Logf("%s elapsed=%s footprint=%d allocated=%d", step.label, time.Since(start), s.Bytes, len(pressure.pages)<<20)
+				t.Logf("%s elapsed=%s footprint=%d expected=%d drift=%d", step.label, time.Since(start), s.Bytes, expected, drift)
 				break
 			}
 			if time.Since(start) > 2*time.Second {
-				t.Fatal("Guard did not converge within 2s", s)
+				t.Fatal("Guard did not converge within 2s", s, expected)
 			}
 			time.Sleep(20 * time.Millisecond)
 		}

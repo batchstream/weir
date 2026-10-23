@@ -239,7 +239,11 @@ its own memory-limited container: the Guard sampler and CLI under pressure,
 reclaimable page cache, released Go heap, shared memory, automatic and
 `GOMEMLIMIT=off` runtime limits, and external tmpfs pressure. It needs a Linux
 cgroup-v2 Docker engine of the host architecture and the script's pinned MongoDB
-image present locally; it pulls and installs nothing:
+image present locally; it pulls and installs nothing. The Guard cases run first
+and need no database. Only the CLI case starts MongoDB, which refuses Docker
+engine kernels 6.19 and newer
+([SERVER-121912](https://jira.mongodb.org/browse/SERVER-121912)); on such an
+engine the script reports that after the Guard cases pass:
 
 ```sh
 docker pull mongo:8.0@sha256:4968f22d0c6c10ef29952f3e807f62872ba22b3312f25803564fbfc08255efc2

@@ -15,16 +15,19 @@ import uuid
 
 ROOT = Path(__file__).resolve().parent.parent
 # Official MongoDB 8.0.32 multi-architecture index. It runs the database and,
-# with the test binary as entrypoint, every test container.
+# with the test binary as entrypoint, every test container. MongoDB 8.0 refuses
+# to start on kernels 6.19 and newer (SERVER-121912), which blocks only the cli
+# case.
 IMAGE = "mongo:8.0@sha256:4968f22d0c6c10ef29952f3e807f62872ba22b3312f25803564fbfc08255efc2"
 OWNER = "weir-memory-" + uuid.uuid4().hex[:12]
 OUTPUT = ROOT / ".testdata" / OWNER
 
-# Each case runs in its own container so its cgroup and process are fresh.
+# Each case runs in its own container so its cgroup and process are fresh. Only
+# the cli case uses the database; it runs after every Guard case.
 CASES = [
     dict(name="guard", binary="overload.test", run="^TestLinuxMemoryNative$", memory=512, count=3,
          env=["WEIR_MEMORY_NATIVE=1"]),
-    dict(name="cli", binary="app.test", run="^TestLinuxMemoryCLI$", memory=512, count=3,
+    dict(name="cli", binary="app.test", run="^TestLinuxMemoryCLI$", memory=512, count=3, database=True,
          env=["WEIR_MEMORY_NATIVE=1", "WEIR_MEMORY_MONGO_ADDR=memory-mongo:27017"]),
     # Page cache must be disk-backed, so TMPDIR is an anonymous volume, not tmpfs.
     dict(name="page-cache", binary="overload.test", run="^TestLinuxReclaimablePageCacheDoesNotOverload$", memory=256,
@@ -122,6 +125,75 @@ def container_args(case, network):
         "-test.v",
     ]
     return args
+
+
+KERNEL_REFUSAL = "Linux kernel versions 6.19 and newer has a known incompatibility"
+
+
+def run_case(case, network, resources):
+    container = OWNER + "-" + case["name"]
+    resources["containers"].append(container)
+    run(container_args(case, network))
+    result = run(["docker", "start", "--attach", container], timeout=150, log=case["name"] + ".log")
+    state = inspect("container", container)
+    if result.returncode or state["ExitCode"] or state["OOMKilled"]:
+        raise RuntimeError(f"{case['name']} failed; preserve {OUTPUT / (case['name'] + '.log')}")
+    print(f"{case['name']}: ok", flush=True)
+
+
+def start_database(resources, network, database):
+    # Register owned names before commands which can partially succeed.
+    resources["network"] = network
+    run(["docker", "network", "create", "--internal", "--label", "weir.owner=" + OWNER, network])
+    resources["containers"].append(database)
+    run(
+        [
+            "docker",
+            "run",
+            "-d",
+            "--name",
+            database,
+            "--label",
+            "weir.owner=" + OWNER,
+            "--network",
+            network,
+            "--network-alias",
+            "memory-mongo",
+            "--memory=768m",
+            "--memory-swap=768m",
+            "--cpus=1",
+            "--pids-limit=128",
+            "--tmpfs",
+            "/data/db:rw,size=256m",
+            "--entrypoint",
+            "mongod",
+            IMAGE,
+            "--bind_ip_all",
+            "--replSet",
+            "weir_memory",
+            "--wiredTigerCacheSizeGB=0.25",
+            "--setParameter",
+            "enableTestCommands=1",
+        ]
+    )
+    bootstrap = '''for(let i=0;i<100;i++){try{db.adminCommand({ping:1});break}catch(e){sleep(100)}};
+    rs.initiate({_id:"weir_memory",members:[{_id:0,host:"memory-mongo:27017"}]});
+    for(let i=0;i<100;i++){if(db.hello().isWritablePrimary)break;sleep(100)};
+    if(!db.hello().isWritablePrimary)throw new Error("not primary"); print(db.version());'''
+    try:
+        run(
+            ["docker", "exec", database, "mongosh", "--quiet", "--norc", "--eval", bootstrap],
+            timeout=30,
+            log="mongo-bootstrap.log",
+        )
+    except subprocess.CalledProcessError as error:
+        logs = run(["docker", "logs", database], timeout=15, echo=False).stdout
+        if KERNEL_REFUSAL in logs:
+            raise RuntimeError(
+                "the cli case needs a Docker engine kernel below 6.19: MongoDB 8.0 refuses newer "
+                "kernels (SERVER-121912); the Guard cases above passed"
+            ) from error
+        raise
 
 
 def cleanup(resources):
@@ -264,58 +336,15 @@ def main():
         ]
         for args, log in commands:
             run(args, timeout=120, env=env, log=log)
-        # Register owned names before commands which can partially succeed.
-        resources["network"] = network
-        run(["docker", "network", "create", "--internal", "--label", "weir.owner=" + OWNER, network])
-        resources["containers"].append(database)
-        run(
-            [
-                "docker",
-                "run",
-                "-d",
-                "--name",
-                database,
-                "--label",
-                "weir.owner=" + OWNER,
-                "--network",
-                network,
-                "--network-alias",
-                "memory-mongo",
-                "--memory=768m",
-                "--memory-swap=768m",
-                "--cpus=1",
-                "--pids-limit=128",
-                "--tmpfs",
-                "/data/db:rw,size=256m",
-                "--entrypoint",
-                "mongod",
-                IMAGE,
-                "--bind_ip_all",
-                "--replSet",
-                "weir_memory",
-                "--wiredTigerCacheSizeGB=0.25",
-                "--setParameter",
-                "enableTestCommands=1",
-            ]
-        )
-        bootstrap = '''for(let i=0;i<100;i++){try{db.adminCommand({ping:1});break}catch(e){sleep(100)}};
-    rs.initiate({_id:"weir_memory",members:[{_id:0,host:"memory-mongo:27017"}]});
-    for(let i=0;i<100;i++){if(db.hello().isWritablePrimary)break;sleep(100)};
-    if(!db.hello().isWritablePrimary)throw new Error("not primary"); print(db.version());'''
-        run(
-            ["docker", "exec", database, "mongosh", "--quiet", "--norc", "--eval", bootstrap],
-            timeout=30,
-            log="mongo-bootstrap.log",
-        )
+        # Guard cases need no network or database, so a database failure
+        # cannot hide their results.
         for case in CASES:
-            container = OWNER + "-" + case["name"]
-            resources["containers"].append(container)
-            run(container_args(case, network))
-            result = run(["docker", "start", "--attach", container], timeout=150, log=case["name"] + ".log")
-            state = inspect("container", container)
-            if result.returncode or state["ExitCode"] or state["OOMKilled"]:
-                raise RuntimeError(f"{case['name']} failed; preserve {OUTPUT / (case['name'] + '.log')}")
-            print(f"{case['name']}: ok", flush=True)
+            if not case.get("database"):
+                run_case(case, "none", resources)
+        start_database(resources, network, database)
+        for case in CASES:
+            if case.get("database"):
+                run_case(case, network, resources)
     except BaseException:
         failed = True
         raise
