@@ -489,8 +489,11 @@ func executeLoadJob(ctx context.Context, client *weirclient.Client, dataset *loa
 				Source loadRecord `json:"_source"`
 			}
 			metadata, err := weirclient.ParseHTTPNativeResponse(result.Response)
-			if err != nil || metadata.StatusCode != http.StatusOK {
-				return fmt.Errorf("invalid native HTTP status: %v", err)
+			if err != nil {
+				return fmt.Errorf("invalid native HTTP metadata: %w", err)
+			}
+			if metadata.StatusCode != http.StatusOK {
+				return fmt.Errorf("native HTTP status %d: %.512s", metadata.StatusCode, body)
 			}
 			if err := json.Unmarshal(body, &response); err != nil || !response.Found {
 				return fmt.Errorf("invalid native Search reply: %v", err)

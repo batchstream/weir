@@ -166,7 +166,9 @@ Integration tests use the `integration` build tag and local fixtures:
   Elasticsearch 8.19.22 on `127.0.0.1:19200` or OpenSearch 3.3.0 on
   `127.0.0.1:19202` in Docker. Use `normal` capacity for ordinary runs; the
   default `overload` profile shrinks the write thread pool for the Search
-  capacity-rejection tests. Stop the fixture before changing profiles.
+  capacity-rejection tests. `start` waits until the cluster is green and the
+  write thread pool has stayed idle for 5 seconds, so startup system-index
+  writes do not compete with tests. Stop the fixture before changing profiles.
 
 ```sh
 scripts/mongo-local.sh start
