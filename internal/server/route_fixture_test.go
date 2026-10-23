@@ -194,10 +194,25 @@ func testMutation(value string) *pb.MutateRequest {
 	return request
 }
 
+// waitPeerIdle waits until every handler has returned and every Store holds
+// no queued or running work.
 func waitPeerIdle(t *testing.T, s *Server) {
 	t.Helper()
 	until := time.Now().Add(3 * time.Second)
-	for s.admission.activeRPCs.Load() != 0 {
+	for {
+		busy := s.admission.activeRPCs.Load() != 0
+		for name, runtime := range s.stores {
+			stats := runtime.Stats()
+			if stats.Queued != 0 || stats.Active != 0 || stats.Natives != 0 {
+				busy = true
+				if time.Now().After(until) {
+					t.Fatal("Store work did not retire", name, stats)
+				}
+			}
+		}
+		if !busy {
+			return
+		}
 		if time.Now().After(until) {
 			t.Fatal("RPC handlers did not return", s.admission.activeRPCs.Load())
 		}

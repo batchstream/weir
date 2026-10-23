@@ -14,6 +14,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 )
 
 type executeStream = grpc.BidiStreamingServer[pb.ExecuteRequest, pb.ExecuteResponse]
@@ -275,6 +276,23 @@ func (o *nativeOutput) close() {
 	o.mu.Unlock()
 }
 
+// oversized replaces a record result that does not fit one message with a
+// failure. A mutation keeps its outcome evidence.
+func oversized(event *pb.Event) *pb.Event {
+	failure := protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "result exceeds the message size limit")
+	fitted := &pb.Event{}
+	switch {
+	case event.GetReadResult() != nil:
+		fitted.Value = &pb.Event_ReadResult{ReadResult: protocol.ReadFailure(failure)}
+	case event.GetMutationResult() != nil:
+		outcome := event.GetMutationResult().GetOutcome()
+		fitted.Value = &pb.Event_MutationResult{MutationResult: protocol.Mutation(outcome, failure)}
+	default:
+		return event
+	}
+	return fitted
+}
+
 func nativeFailure(failure *pb.Failure) *pb.Event {
 	end := protocol.NativeFailure(false, failure)
 	value := &pb.Event_NativeEnd{NativeEnd: end}
@@ -285,6 +303,9 @@ func nativeFailure(failure *pb.Failure) *pb.Event {
 // send delivers one response; a peer that stops reading for Stall loses the RPC.
 func (s *Server) send(stream executeStream, index uint64, event *pb.Event) error {
 	response := &pb.ExecuteResponse{Index: index, Event: event}
+	if proto.Size(response) > MaxMessageBytes {
+		response.Event = oversized(event)
+	}
 	if err := protocol.ValidateExecuteResponse(response); err != nil {
 		return status.Error(codes.Internal, err.Error())
 	}

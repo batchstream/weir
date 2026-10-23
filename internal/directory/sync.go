@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/batchstream/weir-protocol/api/netlimit"
+	"github.com/batchstream/weir-protocol/api/protocol"
 	peerpb "github.com/batchstream/weir/internal/api/peer/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -105,7 +106,7 @@ func (d *Directory) syncPeer(parent context.Context, address string) error {
 		}),
 		grpc.WithReadBufferSize(16 << 10), grpc.WithWriteBufferSize(16 << 10), grpc.WithStaticStreamWindowSize(65535), grpc.WithStaticConnWindowSize(65535),
 		grpc.WithMaxHeaderListSize(^uint32(0)),
-		grpc.WithDefaultCallOptions(grpc.MaxRetryRPCBufferSize(0)),
+		grpc.WithDefaultCallOptions(grpc.MaxRetryRPCBufferSize(0), grpc.MaxCallRecvMsgSize(protocol.MaxTransportMessageBytes)),
 	}
 	connection, err := grpc.NewClient("passthrough:///"+address, options...)
 	if err != nil {

@@ -13,12 +13,14 @@ import (
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 	"github.com/batchstream/weir/internal/execution"
 	"github.com/batchstream/weir/internal/store"
+	"github.com/batchstream/weir/internal/testutil"
 	"github.com/batchstream/weir/internal/testutil/testmetrics"
 	dto "github.com/prometheus/client_model/go"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/connectivity"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/encoding/protowire"
 )
 
 func readFrame(index uint64, read *pb.ReadRequest) *pb.ExecuteRequest {
@@ -473,4 +475,51 @@ func TestRecordStreamCancellationKeepsOtherRPCOnSharedConnection(t *testing.T) {
 	if connection.GetState() != connectivity.Ready {
 		t.Fatal("completed or canceled stream closed a healthy shared connection", connection.GetState())
 	}
+}
+
+func TestRecordStreamOversizedResultFailsOnlyItsRecord(t *testing.T) {
+	adapter, local := peerLocal(t, "records")
+	large := &pb.Document{ContentType: "application/octet-stream", Data: make([]byte, MaxMessageBytes)}
+	adapter.documents["data/s:large"] = large
+	small := &pb.Document{ContentType: "application/octet-stream", Data: []byte("x")}
+	adapter.documents[testRequest().Resource] = small
+	opts := peerServerOptions{stores: map[string]*store.Runtime{"records": local}}
+	server, address := startPeerServer(t, opts)
+	_, client := peerClient(t, address)
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+	largeRead := &pb.ReadRequest{Resource: "data/s:large"}
+	reads := []*pb.ReadRequest{largeRead, testRequest()}
+	results, err := testutil.ReadRecords(ctx, client, "records", reads)
+	if err != nil {
+		t.Fatal("oversized result ended the stream", err)
+	}
+	if results[0].GetFailure().GetCode() != pb.FailureCode_RESOURCE_EXHAUSTED || !bytes.Equal(results[1].GetDocument().GetData(), small.Data) {
+		t.Fatal("oversized result was not confined to its own record", results[0].GetFailure(), results[1])
+	}
+	waitPeerIdle(t, server)
+}
+
+func TestExecuteRejectsUnknownFields(t *testing.T) {
+	_, local := peerLocal(t, "records")
+	opts := peerServerOptions{stores: map[string]*store.Runtime{"records": local}}
+	server, address := startPeerServer(t, opts)
+	_, client := peerClient(t, address)
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	stream, err := client.Execute(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := readFrame(1, testRequest())
+	tag := protowire.AppendTag(nil, 99, protowire.VarintType)
+	unknown := protowire.AppendVarint(tag, 1)
+	request.ProtoReflect().SetUnknown(unknown)
+	if err := stream.Send(request); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := stream.Recv(); status.Code(err) != codes.InvalidArgument {
+		t.Fatal("request with unknown fields was accepted", err)
+	}
+	waitPeerIdle(t, server)
 }
