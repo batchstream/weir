@@ -259,7 +259,7 @@ func TestMongoExpressionCancellationLedgerAndDrain(t *testing.T) {
 			a := testAdapter(t, opts)
 			limits := store.DefaultLimits()
 
-			runtime, err := store.New(a, limits, nil)
+			runtime, err := store.New(a, limits)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -273,7 +273,7 @@ func TestMongoExpressionCancellationLedgerAndDrain(t *testing.T) {
 			inc := bson.D{{Key: "$inc", Value: bson.D{{Key: "n", Value: int64(1)}}}}
 			p := mongoExpression(t, a, db, inc)
 			runtime.SetOverloaded(true)
-			if _, failure, _ := runtime.Submit(context.Background(), p, nil); failure.GetCode() != pb.FailureCode_RESOURCE_EXHAUSTED {
+			if _, failure := runtime.Submit(context.Background(), p, nil); failure.GetCode() != pb.FailureCode_RESOURCE_EXHAUSTED {
 				t.Fatal(failure)
 			}
 			runtime.SetOverloaded(false)
@@ -283,7 +283,7 @@ func TestMongoExpressionCancellationLedgerAndDrain(t *testing.T) {
 			}
 			ctx, cancel := context.WithTimeout(context.Background(), duration)
 			defer cancel()
-			first, failure, _ := runtime.Submit(ctx, p, nil)
+			first, failure := runtime.Submit(ctx, p, nil)
 			if failure != nil {
 				t.Fatal(failure)
 			}
@@ -302,7 +302,7 @@ func TestMongoExpressionCancellationLedgerAndDrain(t *testing.T) {
 				time.Sleep(time.Millisecond)
 			}
 			queuedCtx, stop := context.WithCancel(context.Background())
-			queued, failure, _ := runtime.Submit(queuedCtx, p, nil)
+			queued, failure := runtime.Submit(queuedCtx, p, nil)
 			if failure != nil {
 				t.Fatal(failure)
 			}
@@ -313,7 +313,6 @@ func TestMongoExpressionCancellationLedgerAndDrain(t *testing.T) {
 			if err != nil || result.GetMutationResult().GetOutcome() != pb.MutationOutcome_NOT_STARTED {
 				t.Fatal(result, err)
 			}
-			queued.Ack()
 			if mode == "cancel" {
 				cancel()
 			}
@@ -329,7 +328,6 @@ func TestMongoExpressionCancellationLedgerAndDrain(t *testing.T) {
 			if err != nil || result.GetMutationResult().GetOutcome() != pb.MutationOutcome_UNKNOWN {
 				t.Fatal(result, err)
 			}
-			first.Ack()
 			if mode == "drop" {
 				verifyReconnectRead(t, a, proxy, db+"/records/s:"+"counter")
 			}
@@ -341,10 +339,6 @@ func TestMongoExpressionCancellationLedgerAndDrain(t *testing.T) {
 			}
 			if writes != 1 {
 				t.Fatal("queued execution/replay", writes)
-			}
-			s := runtime.Snapshot()
-			if s.Pending != 0 || s.Active != 0 || s.Retained != 0 || s.ResultBytes != 0 {
-				t.Fatal("ledger leak", s)
 			}
 		})
 	}

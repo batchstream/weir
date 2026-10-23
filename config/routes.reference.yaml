@@ -74,12 +74,11 @@ stores:
       #   ca_file: /etc/weir/ca.pem
 
     # Bounds waiting inputs; dispatch releases capacity. Full queues wait for
-    # space or caller cancellation. Native output is charged to the Node's
-    # shared execution-memory account.
+    # space or caller cancellation.
     queue:
       # Waiting operations. Default: 1024; 0 selects 1024; positive integer.
       max_operations: 1024
-      # Waiting input plus scheduler metadata. Default: 32MiB; positive size.
+      # Waiting request bytes. Default: 32MiB; positive size.
       # Must fit the platform integer. A larger input occupies an empty queue alone.
       max_bytes: 32MiB
 
@@ -87,14 +86,14 @@ stores:
     batching:
       # Operations per scheduled batch. Default: 128; 0 selects 128; positive integer.
       max_operations: 128
-      # Input plus scheduler metadata per batch. Default: 4MiB; positive size.
+      # Request bytes per batch. Default: 4MiB; positive size.
       # A larger input executes alone; Native uses singleton plans.
       max_bytes: 4MiB
       # Simultaneous backend executions per Store. Default: 16.
       # Omit for the default; explicit 0 keeps executions unlimited.
       # Positive values retain waiting work for natural batching and backpressure.
-      # Includes Search visibility waits. Native output releases its slot while
-      # retaining Node memory ownership, then fairly regains a slot before more IO.
+      # Includes Search visibility waits. Native commands use a separate
+      # limit of 64 per Store.
       max_in_flight: 16
       # Maximum write collection wait from the oldest eligible admission.
       # Default: 20ms; nonnegative duration; 0s disables collection.

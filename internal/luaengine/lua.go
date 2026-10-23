@@ -6,10 +6,7 @@ import (
 	"fmt"
 	"time"
 	"unicode/utf8"
-	"unsafe"
 
-	"github.com/batchstream/weir/internal/execution"
-	"github.com/iceisfun/golua/budget"
 	"github.com/iceisfun/golua/compiler"
 	"github.com/iceisfun/golua/parser"
 	"github.com/iceisfun/golua/vm"
@@ -17,16 +14,7 @@ import (
 
 var errInvalidLuaResult = errors.New("Lua callback must return one object or explicit action")
 
-func Evaluate(ctx context.Context, program Program) (result Result, err error) {
-	defer func() {
-		if budget.IsExhausted(err) && !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
-			err = fmt.Errorf("%w: %w", execution.ErrExecutionMemory, err)
-		}
-		if err != nil {
-			result = Result{}
-		}
-	}()
-	defer budget.Recover(&err)
+func Evaluate(ctx context.Context, program Program) (Result, error) {
 	var empty Result
 	if ctx == nil {
 		return empty, errors.New("Lua execution context is required")
@@ -37,21 +25,20 @@ func Evaluate(ctx context.Context, program Program) (result Result, err error) {
 	if err := ctx.Err(); err != nil {
 		return empty, err
 	}
-	scope := newEvaluationBudget(ctx, program.Reserve)
-	if err := validateProgram(ctx, program, scope); err != nil {
+	if err := validateProgram(ctx, program); err != nil {
 		return empty, err
 	}
 	if err := ctx.Err(); err != nil {
 		return empty, err
 	}
-	block, err := parser.ParseWithBudget("transform.lua", program.Source, scope)
+	block, err := parser.Parse("transform.lua", program.Source)
 	if contextErr := ctx.Err(); contextErr != nil {
 		return empty, contextErr
 	}
 	if err != nil {
 		return empty, err
 	}
-	prototype, err := compiler.Compile("transform.lua", block, compiler.WithBudget(scope))
+	prototype, err := compiler.Compile("transform.lua", block)
 	if contextErr := ctx.Err(); contextErr != nil {
 		return empty, contextErr
 	}
@@ -68,7 +55,7 @@ func Evaluate(ctx context.Context, program Program) (result Result, err error) {
 		MaxInstructions: settings.MaxInstructions,
 		MinGCInterval:   -1,
 	}
-	state := vm.New(vm.WithContext(ctx), vm.WithLimits(limits), vm.WithBudget(scope))
+	state := vm.New(vm.WithContext(ctx), vm.WithLimits(limits))
 	defer state.Close(context.Background())
 	module := installEnvironment(state, program.ObservedAt)
 	conversion := newBridge(ctx, state)
@@ -94,8 +81,6 @@ func Evaluate(ctx context.Context, program Program) (result Result, err error) {
 	if err := ctx.Err(); err != nil {
 		return empty, err
 	}
-	var argument vm.Value
-	scope.RequireArray(unsafe.Sizeof(argument), 2)
 	arguments := []vm.Value{current, incoming}
 	outputs, err := state.ProtectedCall(functions[0], arguments)
 	if contextErr := ctx.Err(); contextErr != nil {
@@ -110,30 +95,25 @@ func Evaluate(ctx context.Context, program Program) (result Result, err error) {
 	if len(outputs) != 1 {
 		return empty, errInvalidLuaResult
 	}
-	result = Result{Action: Replace}
+	result := Result{Action: Replace}
 	if userdata := outputs[0].AsUserdata(); userdata != nil {
 		action, ok := userdata.Data.(Result)
 		if !ok {
 			return empty, errInvalidLuaResult
 		}
 		result = action
-		result.Message = cloneLuaText(scope, result.Message)
 	} else {
 		result.Value, err = conversion.fromLua(outputs[0])
 		if err != nil {
 			return empty, fmt.Errorf("invalid Lua result: %w", err)
 		}
 	}
-	if err := validateResult(ctx, result, scope); err != nil {
+	if err := validateResult(ctx, result); err != nil {
 		return empty, err
 	}
 	if err := ctx.Err(); err != nil {
 		return empty, err
 	}
-	if err := scope.Check(); err != nil {
-		return empty, err
-	}
-	result.Allocations = scope
 	return result, nil
 }
 
@@ -142,8 +122,7 @@ func luaKeep(state *vm.VM) int {
 		panic("weir.keep takes no arguments")
 	}
 	result := Result{Action: Keep}
-	state.Budget().RequireArray(unsafe.Sizeof(result), 1)
-	state.Set(0, state.NewUserdataValue(result, nil))
+	state.Set(0, vm.NewUserdataValue(result, nil))
 	return 1
 }
 
@@ -152,8 +131,7 @@ func luaDelete(state *vm.VM) int {
 		panic("weir.delete takes no arguments")
 	}
 	result := Result{Action: Delete}
-	state.Budget().RequireArray(unsafe.Sizeof(result), 1)
-	state.Set(0, state.NewUserdataValue(result, nil))
+	state.Set(0, vm.NewUserdataValue(result, nil))
 	return 1
 }
 
@@ -165,7 +143,6 @@ func luaReject(state *vm.VM) int {
 	if !utf8.ValidString(result.Message) {
 		panic("invalid rejection")
 	}
-	state.Budget().RequireArray(unsafe.Sizeof(result), 1)
-	state.Set(0, state.NewUserdataValue(result, nil))
+	state.Set(0, vm.NewUserdataValue(result, nil))
 	return 1
 }

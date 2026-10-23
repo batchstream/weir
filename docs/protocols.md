@@ -33,8 +33,7 @@ backpressure in both directions.
 Request envelopes reject unknown fields, enum values and operation variants,
 because ignoring an unrecognized write condition or command option could change
 its effects.
-The wire validator checks known field framing directly in the transport's buffer
-fragments before allocation, and shared validation checks the decoded values.
+Shared validation checks every decoded message, including unknown fields.
 Response readers reject unknown fields and undeclared failure codes, and check
 result evidence, event kinds and completion rules against the current schema.
 

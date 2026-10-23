@@ -105,13 +105,13 @@ func concurrentBackendReads(t *testing.T, node *Node, resource string, observati
 		case response := <-replies:
 			t.Fatal("request finished before concurrent backend barrier", active, response)
 		case <-ctx.Done():
-			t.Fatal("backend connections did not grow with demand", active, node.stores["records"].Snapshot())
+			t.Fatal("backend connections did not grow with demand", active, node.stores["records"].Stats())
 		case <-time.After(5 * time.Millisecond):
 		}
 	}
-	snapshot := node.stores["records"].Snapshot()
-	if snapshot.Active != count || snapshot.Pending != 0 || snapshot.PendingBytes != 0 {
-		t.Fatal("running requests retained queue capacity", snapshot)
+	stats := node.stores["records"].Stats()
+	if stats.Active != count || stats.Queued != 0 || stats.QueuedBytes != 0 {
+		t.Fatal("running requests retained queue capacity", stats)
 	}
 	close(gate)
 	for range count {
@@ -121,8 +121,8 @@ func concurrentBackendReads(t *testing.T, node *Node, resource string, observati
 		}
 	}
 	budgetWait(t, "concurrent calls released", func() bool {
-		snapshot := node.stores["records"].Snapshot()
-		return snapshot.Active == 0 && snapshot.Retained == 0 && snapshot.ResultBytes == 0 && snapshot.WorkingBytes == 0
+		stats := node.stores["records"].Stats()
+		return stats.Active == 0 && stats.Queued == 0
 	})
 	t.Log("64 RPCs held on 64 real backend connections; all completed without admission rejection")
 }

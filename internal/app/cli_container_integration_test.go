@@ -257,3 +257,9 @@ func (service *cliContainer) sample(t *testing.T) map[string]*dto.MetricFamily {
 	}
 	return metrics
 }
+
+// storeActive counts running record batches and Native commands.
+func storeActive(metrics map[string]*dto.MetricFamily) float64 {
+	active := testmetrics.Sum(metrics, "weir_store_active_executions") + testmetrics.Sum(metrics, "weir_store_active_natives")
+	return active
+}

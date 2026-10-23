@@ -17,7 +17,6 @@ import (
 
 	weirclient "github.com/batchstream/weir-go"
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
-	"github.com/batchstream/weir/internal/execution"
 	"github.com/batchstream/weir/internal/testutil"
 )
 
@@ -47,7 +46,7 @@ func (c *nativeCapture) Chunk(b []byte) error {
 	_, err := c.body.Write(b)
 	return err
 }
-func (c *nativeCapture) Emit(_ *execution.Plan, event *pb.Event) error {
+func (c *nativeCapture) Emit(event *pb.Event) error {
 	if head := event.GetHead(); head != nil {
 		return c.Head(head)
 	}
@@ -125,7 +124,7 @@ func TestNativeHTTPRequestPreservesNativeOperations(t *testing.T) {
 	}
 }
 
-func TestNativeEarlyCancellationReleasesMaximumWorkingReservation(t *testing.T) {
+func TestNativeEarlyCancellationIsNotStarted(t *testing.T) {
 	adapter := &Adapter{}
 	request := nativeRequest(t, "records", "GET", "/_search")
 	work, failure := adapter.prepareNative(request)
@@ -137,12 +136,12 @@ func TestNativeEarlyCancellationReleasesMaximumWorkingReservation(t *testing.T) 
 	cancel()
 	capture := &nativeCapture{}
 	end := adapter.executeNative(ctx, work, capture.Emit)
-	if end.Completion != pb.NativeCompletion_NATIVE_NOT_STARTED || end.Failure == nil || work.WorkingBytes != 8<<10 {
-		t.Fatal("early canceled Native retained a maximum reply reservation", end, work.WorkingBytes)
+	if end.Completion != pb.NativeCompletion_NATIVE_NOT_STARTED || end.Failure == nil {
+		t.Fatal("early canceled Native started", end)
 	}
 }
 
-func TestNativeRejectedResponseAccountsForActualParsedHeaders(t *testing.T) {
+func TestNativeAnnouncedTrailersEndBeforeOutput(t *testing.T) {
 	large := strings.Repeat("x", 128<<10)
 	handler := http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
 		w.Header().Set("X-Large", large)
@@ -163,9 +162,6 @@ func TestNativeRejectedResponseAccountsForActualParsedHeaders(t *testing.T) {
 	end := adapter.executeNative(t.Context(), work, capture.Emit)
 	if end.Completion != pb.NativeCompletion_RESPONSE_INCOMPLETE || end.GetFailure().GetCode() != pb.FailureCode_UNSUPPORTED || capture.head != nil {
 		t.Fatal("unsupported Native trailers did not terminate before output", end, capture.head)
-	}
-	if work.WorkingBytes < len(large)+(8<<10) || work.WorkingBytes >= nativeBudget {
-		t.Fatal("rejected Native response lost actual header accounting or retained maximum estimate", work.WorkingBytes)
 	}
 }
 

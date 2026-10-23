@@ -26,11 +26,7 @@ import (
 
 func directoryScaleServer(t *testing.T, config server.Config) string {
 	t.Helper()
-	admission, err := server.NewAdmission(config.Limits)
-	if err != nil {
-		t.Fatal(err)
-	}
-	config.Admission = admission
+	config.Admission = server.NewAdmission()
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)

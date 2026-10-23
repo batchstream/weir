@@ -139,9 +139,8 @@ replayed. MongoDB may retry confirmation of the same commit separately.
 Queue defaults are 1024 operations and 32 MiB. Batch defaults are 128 operations,
 4 MiB, `20ms` write collection and 16 active executions. Explicit `max_wait: 0s`
 disables collection; explicit `max_in_flight: 0` removes the execution limit.
-Byte settings are grouping targets: one legal larger item proceeds alone when
-its execution memory fits. Backend-advertised document and command limits still
-apply. See [batching](batching.md) for interaction between the controls.
+Byte settings are grouping targets: one legal larger item proceeds alone.
+Backend-advertised document and command limits still apply. See [batching](batching.md) for interaction between the controls.
 
 ## Authentication and memory
 
@@ -156,8 +155,9 @@ Backend identity and configuration stay local and never enter the peer directory
 Application and peer listeners require an isolated network.
 
 Memory capacity is discovered from physical host memory, finite process limits
-and visible container limits. The shared execution account covers typed, Native,
-Lua, ingress and output ownership. Actual memory pressure controls overload;
-container/OS limits remain the hard boundary. The CLI also manages the standard
+and visible container limits. Static queue, batch, stream and 64 MiB message
+limits bound memory use; [batching](batching.md) shows how to size for them.
+Actual memory pressure controls overload; container/OS limits remain the hard
+boundary. The CLI also manages the standard
 Go soft memory limit unless an explicit runtime policy takes precedence.
 See [operations](operations.md) for pressure, recovery and metrics.

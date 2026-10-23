@@ -41,37 +41,29 @@ func statusLabel(err error) string {
 }
 
 type transportMetrics struct {
-	rpcs, watchdogs, forced *prometheus.CounterVec
+	rpcs, watchdogs *prometheus.CounterVec
 }
 
 func newTransportMetrics() transportMetrics {
 	rpcOpts := prometheus.CounterOpts{
 		Name: "weir_rpc_completions_total",
-		Help: "gRPC handler/transport completion status; not client delivery acknowledgement.",
+		Help: "gRPC handler completion status; not client delivery acknowledgement.",
 	}
 	watchOpts := prometheus.CounterOpts{
 		Name: "weir_watchdog_expirations_total",
-		Help: "Explicit Execute watchdog expiry; input_or_result does not attribute blame to the client or backend.",
-	}
-	forcedOpts := prometheus.CounterOpts{
-		Name: "weir_transport_forced_closes_total",
-		Help: "Actual transport force-close actions, not inferred lost operations.",
+		Help: "RPCs canceled because input or output made no progress within the stall timeout.",
 	}
 	m := transportMetrics{
 		rpcs:      prometheus.NewCounterVec(rpcOpts, []string{"method", "status"}),
 		watchdogs: prometheus.NewCounterVec(watchOpts, []string{"phase"}),
-		forced:    prometheus.NewCounterVec(forcedOpts, []string{"reason"}),
 	}
 	for _, method := range metricMethods {
 		for _, label := range metricStatuses {
 			m.rpcs.WithLabelValues(method, label)
 		}
 	}
-	for _, phase := range []string{"open", "input_or_result", "output"} {
+	for _, phase := range []string{"input", "output"} {
 		m.watchdogs.WithLabelValues(phase)
-	}
-	for _, reason := range []string{"drain", "abort", "open"} {
-		m.forced.WithLabelValues(reason)
 	}
 	return m
 }
@@ -81,20 +73,4 @@ func (s *Server) Describe(ch chan<- *prometheus.Desc) { prometheus.DescribeByCol
 func (s *Server) Collect(ch chan<- prometheus.Metric) {
 	s.metrics.rpcs.Collect(ch)
 	s.metrics.watchdogs.Collect(ch)
-	s.metrics.forced.Collect(ch)
-}
-
-func (a *Admission) Describe(ch chan<- *prometheus.Desc) { prometheus.DescribeByCollect(a, ch) }
-
-func (a *Admission) Collect(ch chan<- prometheus.Metric) {
-	values := map[string]int{
-		"connections":           int(a.activeConnections.Load()),
-		"sessions":              int(a.activeRPCs.Load()),
-		"queued_response_bytes": int(a.wireBytes.Load()),
-	}
-	for name, value := range values {
-		desc := prometheus.NewDesc("weir_ingress_"+name, "Shared application/peer ingress occupancy.", nil, nil)
-		ch <- prometheus.MustNewConstMetric(desc, prometheus.GaugeValue, float64(value))
-	}
-	a.rejections.Collect(ch)
 }

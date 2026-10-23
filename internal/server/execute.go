@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"io"
 	"sync"
 	"time"
@@ -16,23 +17,15 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-type ExecutionSnapshot struct {
-	ActiveRPCs int64
-}
+type executeStream = grpc.BidiStreamingServer[pb.ExecuteRequest, pb.ExecuteResponse]
 
-func (s *Server) Snapshot() ExecutionSnapshot {
-	snapshot := ExecutionSnapshot{ActiveRPCs: s.admission.activeRPCs.Load()}
-	return snapshot
-}
+var errNativeOutputClosed = errors.New("Native response no longer deliverable")
 
-// RecordStreamItems bounds admitted and publishing records per stream. Store
-// queue capacity bounds waiting inputs; active results follow stream backpressure.
-const RecordStreamItems = execution.RecordStreamItems
-
-// Execute consumes single requests while the shared Store scheduler aggregates
-// database work. Results are published in input order without waiting for EOF.
-func (s *Server) Execute(stream grpc.BidiStreamingServer[pb.ExecuteRequest, pb.ExecuteResponse]) error {
-	request, err := s.receiveFrame(stream)
+// Execute serves one record stream or one Native command. Records are queued
+// as they arrive and their results are sent in input order without waiting
+// for the end of the stream.
+func (s *Server) Execute(stream executeStream) error {
+	request, err := s.receive(stream)
 	if err == io.EOF {
 		return status.Error(codes.InvalidArgument, "empty execution stream")
 	}
@@ -47,131 +40,100 @@ func (s *Server) Execute(stream grpc.BidiStreamingServer[pb.ExecuteRequest, pb.E
 		s.admission.rejections.WithLabelValues("execute").Inc()
 		return status.Error(codes.Unavailable, "Store is not hosted here; ResolveStore before sending business requests")
 	}
-	kind := commandKind(request.Command)
-	if kind == "native" {
-		_, err = s.receiveFrame(stream)
+	if commandKind(request.Command) == "native" {
+		_, err = s.receive(stream)
 		if err != io.EOF {
 			if err != nil {
 				return err
 			}
 			return status.Error(codes.InvalidArgument, "Native requires exactly one request")
 		}
-		return s.executeCommand(stream, runtime, request)
+		return s.executeNative(stream, runtime, request.Command)
 	}
+	return s.executeRecords(stream, runtime, request)
+}
+
+// receive reads one request; a peer that sends nothing within Stall loses the RPC.
+func (s *Server) receive(stream executeStream) (*pb.ExecuteRequest, error) {
+	timer := time.AfterFunc(s.limits.Stall, func() { s.cancelRPC(stream.Context(), "input") })
+	defer timer.Stop()
+	return stream.Recv()
+}
+
+func (s *Server) executeRecords(stream executeStream, runtime *store.Runtime, first *pb.ExecuteRequest) error {
 	ctx, cancel := context.WithCancel(stream.Context())
-	session := runtime.NewSession()
 	window := s.limits.MaxPendingRecords
-	tickets := make(chan *store.Ticket, window)
-	credits := make(chan struct{}, window)
-	for range window {
-		credits <- struct{}{}
+	records := &recordStream{
+		server:  s,
+		stream:  stream,
+		runtime: runtime,
+		session: runtime.NewSession(),
+		credits: make(chan struct{}, window),
+		tickets: make(chan *store.Ticket, window),
 	}
 	received := make(chan error, 1)
 	receiverDone := make(chan struct{})
-	input := &recordInput{stream: stream, runtime: runtime, session: session, first: request, tickets: tickets, credits: credits}
 	go func() {
-		defer close(tickets)
 		defer close(receiverDone)
-		received <- s.receiveRecords(ctx, input)
+		defer close(records.tickets)
+		received <- records.receive(ctx, first)
 	}()
 	defer func() {
 		cancel()
-		session.Close()
 		select {
 		case <-receiverDone:
-			// Preserve the receiver's terminal status for native WriteStatus.
-			// It no longer needs cancellation to unblock Recv.
-			return
 		default:
-			// gRPC uses the tap context for native Recv. Only an outstanding
-			// receiver needs that RPC context canceled before it can be joined.
-			if state, ok := stream.Context().Value(rpcKey).(*rpcState); ok {
-				state.cancel()
-			}
+			// Only the RPC's own cancellation ends a blocked Recv.
+			endRPC(stream.Context())
+			<-receiverDone
 		}
-		<-receiverDone
+		records.stopWatchdog()
 	}()
 	index := uint64(1)
-	for ticket := range tickets {
-		if err := s.publishRecord(stream, ticket, index); err != nil {
+	for ticket := range records.tickets {
+		event, err := ticket.Wait(stream.Context())
+		if err != nil {
+			return status.FromContextError(err).Err()
+		}
+		if err := s.send(stream, index, event); err != nil {
 			return err
 		}
-		input.acknowledge(s)
+		records.delivered()
 		index++
 	}
 	return <-received
 }
 
-type recordInput struct {
-	stream       grpc.BidiStreamingServer[pb.ExecuteRequest, pb.ExecuteResponse]
-	runtime      *store.Runtime
-	session      *store.Session
-	first        *pb.ExecuteRequest
-	tickets      chan<- *store.Ticket
-	credits      chan struct{}
-	mu           sync.Mutex
-	waiting      bool
-	idleDeadline time.Time
-	timer        *time.Timer
+// recordStream bounds the records one stream has queued or awaiting delivery.
+// A peer may take any time while results are pending, but an idle stream that
+// sends nothing for Stall is canceled.
+type recordStream struct {
+	server  *Server
+	stream  executeStream
+	runtime *store.Runtime
+	session *store.Session
+	credits chan struct{}
+	tickets chan *store.Ticket
+
+	mu         sync.Mutex
+	waiting    bool
+	pending    int
+	generation uint64
+	timer      *time.Timer
 }
 
-// Only idle input has a stall deadline: a caller may wait for the first
-// response before producing its next request, including slow database work.
-func (input *recordInput) armIdleLocked(server *Server) {
-	if !input.waiting || len(input.credits) != cap(input.credits)-1 {
-		return
-	}
-	input.idleDeadline = time.Now().Add(server.limits.Stall)
-	input.timer = time.AfterFunc(server.limits.Stall, func() {
-		input.mu.Lock()
-		stalled := input.waiting && len(input.credits) == cap(input.credits)-1 && !time.Now().Before(input.idleDeadline)
-		input.mu.Unlock()
-		if stalled {
-			if state, ok := input.stream.Context().Value(rpcKey).(*rpcState); ok && input.stream.Context().Err() == nil {
-				server.metrics.watchdogs.WithLabelValues("input_or_result").Inc()
-				state.cancel()
-			}
-		}
-	})
-}
-func (input *recordInput) receive(ctx context.Context, server *Server) (*pb.ExecuteRequest, error) {
-	input.mu.Lock()
-	if ctx.Err() != nil {
-		input.mu.Unlock()
-		return nil, status.FromContextError(ctx.Err()).Err()
-	}
-	input.waiting = true
-	input.armIdleLocked(server)
-	input.mu.Unlock()
-	request, err := input.stream.Recv()
-	input.mu.Lock()
-	input.waiting = false
-	if input.timer != nil {
-		input.timer.Stop()
-	}
-	input.mu.Unlock()
-	return request, err
-}
-func (input *recordInput) acknowledge(server *Server) {
-	input.mu.Lock()
-	input.credits <- struct{}{}
-	input.armIdleLocked(server)
-	input.mu.Unlock()
-}
-
-func (s *Server) receiveRecords(ctx context.Context, input *recordInput) error {
-	storeName, kind := input.first.StoreName, commandKind(input.first.Command)
-	request := input.first
-	input.first = nil
+func (r *recordStream) receive(ctx context.Context, first *pb.ExecuteRequest) error {
+	storeName, kind := first.StoreName, commandKind(first.Command)
+	request := first
 	for index := uint64(1); ; index++ {
 		select {
-		case <-input.credits:
+		case r.credits <- struct{}{}:
 		case <-ctx.Done():
 			return status.FromContextError(ctx.Err()).Err()
 		}
 		if request == nil {
 			var err error
-			request, err = input.receive(ctx, s)
+			request, err = r.next()
 			if err == io.EOF {
 				return nil
 			}
@@ -189,18 +151,20 @@ func (s *Server) receiveRecords(ctx context.Context, input *recordInput) error {
 		if err != nil {
 			return status.Error(codes.Internal, "validated resource could not be decoded")
 		}
-		plan, failure := input.runtime.PrepareRecord(ctx, record)
+		plan, failure := r.runtime.PrepareRecord(ctx, record)
 		if failure != nil {
 			return failureStatus(failure)
 		}
-		s.bindReceived(request, plan)
-		ticket, failure := s.submitPlan(ctx, input.runtime, plan, input.session)
+		ticket, failure := r.runtime.Submit(ctx, plan, r.session)
 		if failure != nil {
 			return failureStatus(failure)
 		}
-		s.releaseReceived(request)
+		r.mu.Lock()
+		r.pending++
+		r.watchLocked()
+		r.mu.Unlock()
 		select {
-		case input.tickets <- ticket:
+		case r.tickets <- ticket:
 		case <-ctx.Done():
 			return status.FromContextError(ctx.Err()).Err()
 		}
@@ -208,16 +172,54 @@ func (s *Server) receiveRecords(ctx context.Context, input *recordInput) error {
 	}
 }
 
-func (s *Server) publishRecord(stream grpc.BidiStreamingServer[pb.ExecuteRequest, pb.ExecuteResponse], ticket *store.Ticket, index uint64) error {
-	defer ticket.Ack()
-	event, err := ticket.Wait(stream.Context())
-	if err != nil {
-		return status.FromContextError(err).Err()
+func (r *recordStream) next() (*pb.ExecuteRequest, error) {
+	r.mu.Lock()
+	r.waiting = true
+	r.watchLocked()
+	r.mu.Unlock()
+	request, err := r.stream.Recv()
+	r.mu.Lock()
+	r.waiting = false
+	r.watchLocked()
+	r.mu.Unlock()
+	return request, err
+}
+
+func (r *recordStream) delivered() {
+	<-r.credits
+	r.mu.Lock()
+	r.pending--
+	r.watchLocked()
+	r.mu.Unlock()
+}
+
+// watchLocked restarts the idle watchdog after every state change; a timer
+// from an earlier state never fires.
+func (r *recordStream) watchLocked() {
+	r.generation++
+	if r.timer != nil {
+		r.timer.Stop()
+		r.timer = nil
 	}
-	if event == nil {
-		return status.Error(codes.Internal, "missing record result")
+	if !r.waiting || r.pending != 0 {
+		return
 	}
-	return s.sendEvent(stream, event, index, ticket)
+	generation := r.generation
+	r.timer = time.AfterFunc(r.server.limits.Stall, func() {
+		r.mu.Lock()
+		idle := r.generation == generation
+		r.mu.Unlock()
+		if idle {
+			r.server.cancelRPC(r.stream.Context(), "input")
+		}
+	})
+}
+
+func (r *recordStream) stopWatchdog() {
+	r.mu.Lock()
+	r.waiting = false
+	r.watchLocked()
+	r.mu.Unlock()
 }
 
 func commandKind(command *pb.Command) string {
@@ -231,124 +233,89 @@ func commandKind(command *pb.Command) string {
 	}
 }
 
-func (s *Server) receiveFrame(stream grpc.BidiStreamingServer[pb.ExecuteRequest, pb.ExecuteResponse]) (*pb.ExecuteRequest, error) {
-	timer := time.AfterFunc(s.limits.Stall, func() {
-		if state, ok := stream.Context().Value(rpcKey).(*rpcState); ok && stream.Context().Err() == nil {
-			s.metrics.watchdogs.WithLabelValues("input_or_result").Inc()
-			state.cancel()
-		}
-	})
-	defer timer.Stop()
-	return stream.Recv()
-}
-
-func (s *Server) executeCommand(stream grpc.BidiStreamingServer[pb.ExecuteRequest, pb.ExecuteResponse], runtime *store.Runtime, request *pb.ExecuteRequest) error {
-	command := request.Command
+func (s *Server) executeNative(stream executeStream, runtime *store.Runtime, command *pb.Command) error {
 	ctx := stream.Context()
-	plan, failure := runtime.PrepareCommand(ctx, 1, command)
+	plan, failure := runtime.PrepareNative(ctx, command)
 	if failure != nil {
-		return s.sendEvent(stream, failedCommand(failure), 1, nil)
+		return s.send(stream, 1, nativeFailure(failure))
 	}
-	session := runtime.NewSession()
-	defer session.Close()
-	s.bindReceived(request, plan)
-	ticket, failure := s.submitPlan(ctx, runtime, plan, session)
+	output := &nativeOutput{server: s, stream: stream}
+	ticket, failure := runtime.SubmitNative(ctx, plan, output.emit)
 	if failure != nil {
-		return s.sendEvent(stream, failedCommand(failure), 1, nil)
+		return s.send(stream, 1, nativeFailure(failure))
 	}
-	s.releaseReceived(request)
-	for {
-		select {
-		case <-ctx.Done():
-			return status.FromContextError(ctx.Err()).Err()
-		case emission := <-session.Events:
-			if emission == nil {
-				return status.Error(codes.Internal, "missing streaming emission")
-			}
-			if emission.Event == nil {
-				emission.Release()
-				ticket.Ack()
-				return nil
-			}
-			err := s.sendEvent(stream, emission.Event, 1, ticket)
-			emission.Release()
-			if err != nil {
-				return err
-			}
-		}
+	event, err := ticket.Wait(ctx)
+	output.close()
+	if err != nil {
+		return status.FromContextError(err).Err()
 	}
+	return s.send(stream, 1, event)
 }
 
-func failedCommand(failure *pb.Failure) *pb.Event {
+// nativeOutput lets the Store executor send response events until the handler
+// stops waiting; nothing may be sent after the handler returns.
+type nativeOutput struct {
+	server *Server
+	stream executeStream
+	mu     sync.Mutex
+	closed bool
+}
+
+func (o *nativeOutput) emit(event *pb.Event) error {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	if o.closed {
+		return errNativeOutputClosed
+	}
+	return o.server.send(o.stream, 1, event)
+}
+
+func (o *nativeOutput) close() {
+	o.mu.Lock()
+	o.closed = true
+	o.mu.Unlock()
+}
+
+// oversized replaces a record result that does not fit one message with a
+// failure. A mutation keeps its outcome evidence.
+func oversized(event *pb.Event) *pb.Event {
+	failure := protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "result exceeds the message size limit")
+	fitted := &pb.Event{}
+	switch {
+	case event.GetReadResult() != nil:
+		fitted.Value = &pb.Event_ReadResult{ReadResult: protocol.ReadFailure(failure)}
+	case event.GetMutationResult() != nil:
+		outcome := event.GetMutationResult().GetOutcome()
+		fitted.Value = &pb.Event_MutationResult{MutationResult: protocol.Mutation(outcome, failure)}
+	default:
+		return event
+	}
+	return fitted
+}
+
+func nativeFailure(failure *pb.Failure) *pb.Event {
 	end := protocol.NativeFailure(false, failure)
 	value := &pb.Event_NativeEnd{NativeEnd: end}
 	event := &pb.Event{Value: value}
 	return event
 }
 
-func (s *Server) sendEvent(stream grpc.BidiStreamingServer[pb.ExecuteRequest, pb.ExecuteResponse], event *pb.Event, index uint64, ticket *store.Ticket) error {
+// send delivers one response; a peer that stops reading for Stall loses the RPC.
+func (s *Server) send(stream executeStream, index uint64, event *pb.Event) error {
 	response := &pb.ExecuteResponse{Index: index, Event: event}
+	if proto.Size(response) > MaxMessageBytes {
+		response.Event = oversized(event)
+	}
 	if err := protocol.ValidateExecuteResponse(response); err != nil {
 		return status.Error(codes.Internal, err.Error())
 	}
-	capacity := max(proto.Size(response), execution.MinimumWireBytes)
-	var reservation *store.WireReservation
-	var err error
-	if ticket == nil {
-		reservation, err = s.admission.memory.ReserveWire(capacity)
-	} else {
-		reservation, err = ticket.ReserveWire(capacity)
-	}
-	if err != nil {
-		return status.Error(codes.ResourceExhausted, execution.ErrExecutionMemory.Error())
-	}
-	s.admission.reservations.Store(response, reservation)
-	defer func() {
-		if reserved, ok := s.admission.reservations.LoadAndDelete(response); ok {
-			reserved.(*store.WireReservation).Release()
-		}
-	}()
-	timer := time.AfterFunc(s.limits.Stall, func() {
-		s.metrics.watchdogs.WithLabelValues("output").Inc()
-		s.abortPeer(stream.Context())
-	})
+	timer := time.AfterFunc(s.limits.Stall, func() { s.cancelRPC(stream.Context(), "output") })
 	defer timer.Stop()
-	err = stream.Send(response)
-	timer.Stop()
-	if value, ok := s.admission.responses.Load(response); ok {
-		owner := value.(*responseBufferOwner)
-		if err != nil {
-			owner.detachMessage()
-			return err
-		}
-		select {
-		case <-owner.done:
-		case <-stream.Context().Done():
-			owner.detachMessage()
-			return status.FromContextError(stream.Context().Err()).Err()
-		}
+	if err := stream.Send(response); err != nil {
+		return err
 	}
-	if err == nil && stream.Context().Err() != nil {
-		return status.FromContextError(stream.Context().Err()).Err()
+	if err := stream.Context().Err(); err != nil {
+		return status.FromContextError(err).Err()
 	}
-	return err
-}
-
-func (s *Server) submitPlan(ctx context.Context, runtime *store.Runtime, plan *execution.Plan, session *store.Session) (*store.Ticket, *pb.Failure) {
-	for {
-		ticket, failure, changed := runtime.Submit(ctx, plan, session)
-		if failure == nil {
-			return ticket, nil
-		}
-		if failure.Code != pb.FailureCode_RESOURCE_EXHAUSTED || changed == nil || runtime.Snapshot().Overloaded {
-			return nil, failure
-		}
-		select {
-		case <-changed:
-		case <-ctx.Done():
-			return nil, protocol.ContextFailure(ctx)
-		case <-s.admission.draining:
-			return nil, protocol.Fail(pb.FailureCode_UNAVAILABLE, "draining")
-		}
-	}
+	return nil
 }

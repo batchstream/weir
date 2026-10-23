@@ -5,7 +5,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"runtime"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -14,12 +13,14 @@ import (
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 	"github.com/batchstream/weir/internal/execution"
 	"github.com/batchstream/weir/internal/store"
+	"github.com/batchstream/weir/internal/testutil"
 	"github.com/batchstream/weir/internal/testutil/testmetrics"
 	dto "github.com/prometheus/client_model/go"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/mem"
+	"google.golang.org/grpc/connectivity"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/encoding/protowire"
 )
 
 func readFrame(index uint64, read *pb.ReadRequest) *pb.ExecuteRequest {
@@ -27,7 +28,7 @@ func readFrame(index uint64, read *pb.ReadRequest) *pb.ExecuteRequest {
 	request := &pb.ExecuteRequest{StoreName: "records", Index: index, Command: command}
 	return request
 }
-func TestRecordStreamLongInputAndLargeResultsStayBounded(t *testing.T) {
+func TestRecordStreamLongInputWithLargeResults(t *testing.T) {
 	adapter, local := peerLocal(t, "records")
 	document := &pb.Document{ContentType: "application/octet-stream", Data: bytes.Repeat([]byte("x"), (2 << 20))}
 	adapter.documents[testRequest().Resource] = document
@@ -49,10 +50,6 @@ func TestRecordStreamLongInputAndLargeResultsStayBounded(t *testing.T) {
 		response, err := stream.Recv()
 		if err != nil || response.Index != index || len(response.Event.GetReadResult().GetDocument().GetData()) != (2<<20) {
 			t.Fatal("lost indexed large result", index, response, err)
-		}
-		snapshot := local.Snapshot()
-		if snapshot.ResultBytes > 2*(2<<20)+1024 || snapshot.Retained > 2 || snapshot.Publishers != 0 {
-			t.Fatal("logical stream accumulated result owners", snapshot)
 		}
 		if index < count {
 			request := readFrame(index+1, testRequest())
@@ -118,66 +115,6 @@ func TestRecordStreamInvalidLaterFramePreservesPublishedResults(t *testing.T) {
 	}
 }
 
-type ownedOutputStream struct {
-	grpc.ServerStream
-	ctx     context.Context
-	codec   *responseCodec
-	encoded chan mem.BufferSlice
-}
-
-func (stream *ownedOutputStream) Context() context.Context   { return stream.ctx }
-func (*ownedOutputStream) Recv() (*pb.ExecuteRequest, error) { return nil, io.EOF }
-func (stream *ownedOutputStream) Send(response *pb.ExecuteResponse) error {
-	encoded, err := stream.codec.Marshal(response)
-	if err != nil {
-		return err
-	}
-	stream.encoded <- encoded
-	return nil
-}
-
-func TestRecordPublicationWaitsForFinalEncodedOwnership(t *testing.T) {
-	_, local := peerLocal(t, "records")
-	opts := peerServerOptions{stores: map[string]*store.Runtime{"records": local}}
-	server, _ := startPeerServer(t, opts)
-	request := readFrame(1, testRequest())
-	record, err := execution.NewRecord("records", 1, request.Command)
-	if err != nil {
-		t.Fatal(err)
-	}
-	prepared, failure := local.PrepareRecord(context.Background(), record)
-	if failure != nil {
-		t.Fatal(failure)
-	}
-	ticket, failure, _ := local.Submit(t.Context(), prepared, nil)
-	if failure != nil {
-		t.Fatal(failure)
-	}
-	codec := &responseCodec{admission: server.admission}
-	stream := &ownedOutputStream{ctx: t.Context(), codec: codec, encoded: make(chan mem.BufferSlice, 1)}
-	completed := make(chan error, 1)
-	go func() { completed <- server.publishRecord(stream, ticket, 1) }()
-	encoded := <-stream.encoded
-	defer func() { encoded.Free() }()
-	encoded.Ref()
-	encoded.Free()
-	snapshot := local.Snapshot()
-	if snapshot.Retained != 1 || snapshot.ResultBytes == 0 || server.admission.wireBytes.Load() == 0 {
-		t.Fatal("window released before final transport owner", snapshot)
-	}
-	select {
-	case err := <-completed:
-		t.Fatal("publication returned while transport still owns bytes", err)
-	default:
-	}
-	encoded.Free()
-	encoded = nil
-	if err := <-completed; err != nil {
-		t.Fatal(err)
-	}
-	waitPeerIdle(t, server)
-}
-
 func TestRecordStreamIndexedOperationFailureDoesNotStopLaterResults(t *testing.T) {
 	adapter, local := peerLocal(t, "records")
 	adapter.ackFailureKey = testRequest().Resource
@@ -228,131 +165,23 @@ func TestRecordStreamIndexedOperationFailureDoesNotStopLaterResults(t *testing.T
 	}
 }
 
-func TestRecordPublicationCancellationReleasesSourceButKeepsEncodedCredits(t *testing.T) {
-	_, local := peerLocal(t, "records")
-	opts := peerServerOptions{stores: map[string]*store.Runtime{"records": local}}
-	server, _ := startPeerServer(t, opts)
-	request := readFrame(1, testRequest())
-	record, err := execution.NewRecord("records", 1, request.Command)
-	if err != nil {
-		t.Fatal(err)
-	}
-	prepared, failure := local.PrepareRecord(context.Background(), record)
-	if failure != nil {
-		t.Fatal(failure)
-	}
-	ticket, failure, _ := local.Submit(t.Context(), prepared, nil)
-	if failure != nil {
-		t.Fatal(failure)
-	}
-	ctx, cancel := context.WithCancel(t.Context())
-	defer cancel()
-	codec := &responseCodec{admission: server.admission}
-	stream := &ownedOutputStream{ctx: ctx, codec: codec, encoded: make(chan mem.BufferSlice, 1)}
-	completed := make(chan error, 1)
-	go func() { completed <- server.publishRecord(stream, ticket, 1) }()
-	encoded := <-stream.encoded
-	defer func() { encoded.Free() }()
-	cancel()
-	if err := <-completed; status.Code(err) != codes.Canceled {
-		t.Fatal("output cancellation lost its status", err)
-	}
-	if snapshot := local.Snapshot(); snapshot.Retained != 0 || snapshot.ResultBytes != 0 {
-		t.Fatal("canceled stream retained source documents", snapshot)
-	}
-	if server.admission.wireBytes.Load() == 0 {
-		t.Fatal("cancellation returned still-owned encoded credits")
-	}
-	if snapshot := local.ExecutionMemory().Snapshot(); snapshot.Count != 1 || snapshot.WireCount != 1 || snapshot.WireBytes != uint64(server.admission.wireBytes.Load()) || snapshot.UsedBytes < snapshot.WireBytes {
-		t.Fatal("Ack/cancellation returned live wire to the shared execution budget", snapshot)
-	}
-	server.admission.responses.Range(func(key, value any) bool {
-		t.Error("canceled publication retained a source message", key)
-		return true
-	})
-	encoded.Free()
-	encoded = nil
-	waitPeerIdle(t, server)
-	if snapshot := local.ExecutionMemory().Snapshot(); snapshot.Count != 0 || snapshot.WireCount != 0 || snapshot.WireBytes != 0 || snapshot.InputUsedBytes != 0 || snapshot.UsedBytes != 0 {
-		t.Fatal("actual native Free retained shared execution credits", snapshot)
-	}
-}
-
-func TestOutputWatchdogTransfersToEncodedBufferAfterSend(t *testing.T) {
-	_, local := peerLocal(t, "records")
-	opts := peerServerOptions{stores: map[string]*store.Runtime{"records": local}}
-	server, _ := startPeerServer(t, opts)
-	server.limits.Stall = 50 * time.Millisecond
-	codec := &responseCodec{admission: server.admission}
-	stream := &ownedOutputStream{ctx: t.Context(), codec: codec, encoded: make(chan mem.BufferSlice)}
-	read := protocol.Missing()
-	value := &pb.Event_ReadResult{ReadResult: read}
-	event := &pb.Event{Value: value}
-	completed := make(chan error, 1)
-	go func() { completed <- server.sendEvent(stream, event, 1, nil) }()
-	encoded := <-stream.encoded
-	defer func() { encoded.Free() }()
-	var owner *responseBufferOwner
-	server.admission.responses.Range(func(key, value any) bool {
-		owner = value.(*responseBufferOwner)
-		return false
-	})
-	if owner == nil {
-		t.Fatal("mock transport did not retain encoded ownership")
-	}
-	// No OutPayload stats notification has started the buffer watchdog yet.
-	// A completed Send must not leave its earlier watchdog running.
-	time.Sleep(2 * server.limits.Stall)
-	metric := &dto.Metric{}
-	counter := server.metrics.watchdogs.WithLabelValues("output")
-	if err := counter.Write(metric); err != nil {
-		t.Fatal(err)
-	}
-	if metric.GetCounter().GetValue() != 0 {
-		t.Fatal("Send watchdog remained active after Send returned", metric)
-	}
-	owner.watch(t.Context(), server)
-	deadline := time.Now().Add(time.Second)
-	for {
-		if err := counter.Write(metric); err != nil {
-			t.Fatal(err)
-		}
-		if metric.GetCounter().GetValue() > 0 {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatal("encoded ownership watchdog did not run")
-		}
-		time.Sleep(time.Millisecond)
-	}
-	encoded.Free()
-	encoded = nil
-	if err := <-completed; err != nil {
-		t.Fatal(err)
-	}
-	if metric.GetCounter().GetValue() != 1 {
-		t.Fatal("one stalled encoded owner produced duplicate expirations", metric)
-	}
-	waitPeerIdle(t, server)
-}
-
 type orderedRecordAdapter struct {
 	*peerAdapter
 	first  <-chan struct{}
 	second chan struct{}
 }
 
-func (adapter *orderedRecordAdapter) Execute(ctx context.Context, plans []*execution.Plan, emit execution.Emit) {
+func (adapter *orderedRecordAdapter) ExecuteRecords(ctx context.Context, plans []*execution.Plan) []*pb.Event {
 	if plans[0].Key == "records/s:first" {
 		select {
 		case <-adapter.first:
 		case <-ctx.Done():
-			return
+			return nil
 		}
 	} else {
 		close(adapter.second)
 	}
-	adapter.peerAdapter.Execute(ctx, plans, emit)
+	return adapter.peerAdapter.ExecuteRecords(ctx, plans)
 }
 func TestRecordStreamPublishesFIFOAfterOutOfOrderBackendCompletion(t *testing.T) {
 	gate := make(chan struct{})
@@ -511,12 +340,10 @@ func TestRecordStreamInvalidQueuedTailPublishesAdmittedPrefix(t *testing.T) {
 	if err := stream.CloseSend(); err != nil {
 		t.Fatal(err)
 	}
-	deadline := time.Now().Add(time.Second)
-	for node.runtime.Snapshot().Retained != 2 {
-		if time.Now().After(deadline) {
-			t.Fatal("valid prefix was not admitted", node.runtime.Snapshot())
-		}
-		time.Sleep(time.Millisecond)
+	select {
+	case <-adapter.seen:
+	case <-ctx.Done():
+		t.Fatal("valid prefix was not admitted")
 	}
 	close(gate)
 	for index := uint64(1); index <= 2; index++ {
@@ -531,58 +358,57 @@ func TestRecordStreamInvalidQueuedTailPublishesAdmittedPrefix(t *testing.T) {
 	assertRouteAcceptanceIdle(t, []*routeAcceptanceNode{node})
 }
 
-type ownedRecordStream struct {
-	ownedOutputStream
+// blockedOutputStream supplies records forever while its first response
+// never finishes sending.
+type blockedOutputStream struct {
+	grpc.ServerStream
+	ctx      context.Context
 	received atomic.Uint64
 }
 
-func (stream *ownedRecordStream) Recv() (*pb.ExecuteRequest, error) {
+func (stream *blockedOutputStream) Context() context.Context { return stream.ctx }
+
+func (stream *blockedOutputStream) Recv() (*pb.ExecuteRequest, error) {
 	index := stream.received.Add(1)
 	if index > 100 {
 		return nil, io.EOF
 	}
 	return readFrame(index, testRequest()), nil
 }
+
+func (stream *blockedOutputStream) Send(*pb.ExecuteResponse) error {
+	<-stream.ctx.Done()
+	return status.FromContextError(stream.ctx.Err()).Err()
+}
+
 func TestRecordInputStopsAtCountBoundBehindSlowOutput(t *testing.T) {
 	for _, window := range []int{3, RecordStreamItems, 96} {
 		t.Run(fmt.Sprint(window), func(t *testing.T) {
-			adapter := newPeerAdapter("records")
-			limits := store.DefaultLimits()
-			local, err := store.New(adapter, limits, nil)
-			if err != nil {
-				t.Fatal(err)
-			}
-			t.Cleanup(func() { _ = local.Close(t.Context()) })
+			_, local := peerLocal(t, "records")
 			transport := DefaultLimits()
 			transport.MaxPendingRecords = window
 			opts := peerServerOptions{stores: map[string]*store.Runtime{"records": local}, limits: transport}
 			server, _ := startPeerServer(t, opts)
 			ctx, cancel := context.WithCancel(t.Context())
 			defer cancel()
-			codec := &responseCodec{admission: server.admission}
-			output := ownedOutputStream{ctx: ctx, codec: codec, encoded: make(chan mem.BufferSlice, 1)}
-			stream := &ownedRecordStream{ownedOutputStream: output}
+			stream := &blockedOutputStream{ctx: ctx}
 			done := make(chan error, 1)
 			go func() { done <- server.Execute(stream) }()
-			encoded := <-stream.encoded
-			defer func() { encoded.Free() }()
 			deadline := time.Now().Add(time.Second)
-			for local.Snapshot().Retained < window {
+			for stream.received.Load() < uint64(window) {
 				if time.Now().After(deadline) {
-					t.Fatal("pipeline did not fill its bounded count", local.Snapshot())
+					t.Fatal("pipeline did not fill its bounded count", stream.received.Load())
 				}
 				time.Sleep(time.Millisecond)
 			}
-			if snapshot := local.Snapshot(); snapshot.Retained != window || snapshot.Publishers != 0 || stream.received.Load() != uint64(window) {
-				t.Fatal("slow output did not pause request input independently of Store bytes", snapshot, stream.received.Load())
+			time.Sleep(50 * time.Millisecond)
+			if received := stream.received.Load(); received != uint64(window) {
+				t.Fatal("slow output did not pause request input", received)
 			}
 			cancel()
 			if err := <-done; status.Code(err) != codes.Canceled {
 				t.Fatal("canceled pipeline did not finish", err)
 			}
-			encoded.Free()
-			encoded = nil
-			waitPeerIdle(t, server)
 		})
 	}
 }
@@ -600,7 +426,7 @@ func TestRecordStreamCancellationKeepsOtherRPCOnSharedConnection(t *testing.T) {
 	adapter.block = gate
 	opts := routeAcceptanceNodeOptions{adapter: adapter}
 	node := startRouteAcceptanceNode(t, opts)
-	client := routeAcceptanceClient(t, node.address)
+	connection, client := routeAcceptanceConnection(t, node.address)
 	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
 	defer cancel()
 	firstCtx, stopFirst := context.WithCancel(ctx)
@@ -633,11 +459,6 @@ func TestRecordStreamCancellationKeepsOtherRPCOnSharedConnection(t *testing.T) {
 	case <-ctx.Done():
 		t.Fatal("peer RPC did not start")
 	}
-	var connection *limitedConn
-	node.server.connections.Range(func(_, value any) bool { connection = value.(*limitedConn); return false })
-	if connection == nil {
-		t.Fatal("shared connection missing")
-	}
 	stopFirst()
 	if _, err := first.Recv(); status.Code(err) != codes.Canceled {
 		t.Fatal("first RPC did not cancel", err)
@@ -650,12 +471,55 @@ func TestRecordStreamCancellationKeepsOtherRPCOnSharedConnection(t *testing.T) {
 	if _, err := second.Recv(); err != io.EOF {
 		t.Fatal(err)
 	}
-	// A canceled gRPC DATA buffer may be orphaned while its native reference
-	// count remains positive. Collection proves that encoded storage is no longer
-	// reachable; its credit must not be returned merely because the RPC ended.
-	runtime.GC()
 	assertRouteAcceptanceIdle(t, []*routeAcceptanceNode{node})
-	if connection.closed.Load() {
-		t.Fatal("completed or canceled stream closed a healthy shared connection")
+	if connection.GetState() != connectivity.Ready {
+		t.Fatal("completed or canceled stream closed a healthy shared connection", connection.GetState())
 	}
+}
+
+func TestRecordStreamOversizedResultFailsOnlyItsRecord(t *testing.T) {
+	adapter, local := peerLocal(t, "records")
+	large := &pb.Document{ContentType: "application/octet-stream", Data: make([]byte, MaxMessageBytes)}
+	adapter.documents["data/s:large"] = large
+	small := &pb.Document{ContentType: "application/octet-stream", Data: []byte("x")}
+	adapter.documents[testRequest().Resource] = small
+	opts := peerServerOptions{stores: map[string]*store.Runtime{"records": local}}
+	server, address := startPeerServer(t, opts)
+	_, client := peerClient(t, address)
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+	largeRead := &pb.ReadRequest{Resource: "data/s:large"}
+	reads := []*pb.ReadRequest{largeRead, testRequest()}
+	results, err := testutil.ReadRecords(ctx, client, "records", reads)
+	if err != nil {
+		t.Fatal("oversized result ended the stream", err)
+	}
+	if results[0].GetFailure().GetCode() != pb.FailureCode_RESOURCE_EXHAUSTED || !bytes.Equal(results[1].GetDocument().GetData(), small.Data) {
+		t.Fatal("oversized result was not confined to its own record", results[0].GetFailure(), results[1])
+	}
+	waitPeerIdle(t, server)
+}
+
+func TestExecuteRejectsUnknownFields(t *testing.T) {
+	_, local := peerLocal(t, "records")
+	opts := peerServerOptions{stores: map[string]*store.Runtime{"records": local}}
+	server, address := startPeerServer(t, opts)
+	_, client := peerClient(t, address)
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	stream, err := client.Execute(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := readFrame(1, testRequest())
+	tag := protowire.AppendTag(nil, 99, protowire.VarintType)
+	unknown := protowire.AppendVarint(tag, 1)
+	request.ProtoReflect().SetUnknown(unknown)
+	if err := stream.Send(request); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := stream.Recv(); status.Code(err) != codes.InvalidArgument {
+		t.Fatal("request with unknown fields was accepted", err)
+	}
+	waitPeerIdle(t, server)
 }

@@ -62,9 +62,6 @@ func TestSearchMixedBulk(t *testing.T) {
 	bad.Backend.(*plan).source = []byte(`{"n":"not a number"}`)
 	missing := searchPlan(t, a, "delete", searchResource(b.Index, "absent"))
 	works := []*execution.Plan{good, existing, bad, missing}
-	for i, work := range works {
-		work.ID = uint64(i)
-	}
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	results := a.executeRecords(ctx, works)

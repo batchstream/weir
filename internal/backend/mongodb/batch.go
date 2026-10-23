@@ -12,18 +12,12 @@ import (
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/x/bsonx/bsoncore"
 	"go.mongodb.org/mongo-driver/v2/x/mongo/driver/topology"
-	"google.golang.org/protobuf/proto"
 )
 
-// A large scheduled batch becomes multiple native exchanges. The exchange
-// budget controls retained framing, and does not reject the whole batch.
+// A large scheduled batch becomes multiple native exchanges of at most
+// ExchangeBytes; a single larger operation is sent alone.
 func (a *Adapter) executeRecords(ctx context.Context, plans []*execution.Plan) []*pb.Event {
 	results := make([]*pb.Event, len(plans))
-	memory := &recordMemory{base: recordWorking(plans)}
-	if len(plans) != 0 {
-		memory.owner = plans[0].Memory
-	}
-	ctx = context.WithValue(ctx, recordMemoryContextKey, memory)
 	active := make([]*execution.Plan, 0, len(plans))
 	positions := make([]int, 0, len(plans))
 	for i, work := range plans {
@@ -34,17 +28,11 @@ func (a *Adapter) executeRecords(ctx context.Context, plans []*execution.Plan) [
 		active = append(active, work)
 		positions = append(positions, i)
 	}
-	if err := reserveRecordWorking(ctx, active, 0); err != nil {
-		for i, work := range active {
-			results[positions[i]] = execution.FailedEvent(work.Command, pb.MutationOutcome_NOT_STARTED, execution.ReservationFailure(ctx, err))
-		}
-		return results
-	}
 	limit := a.options().ExchangeBytes
 	for start := 0; start < len(active); {
 		end, bytes := start, 0
 		for end < len(active) {
-			charge := proto.Size(active[end].Command) + execution.EntryOverheadBytes
+			charge := active[end].Bytes
 			if end > start && charge > limit-bytes {
 				break
 			}
@@ -214,11 +202,6 @@ func (a *Adapter) executeReads(ctx context.Context, plans []*execution.Plan) []*
 			if page != 0 {
 				attempt, release = nativeAttemptContext(ctx)
 			}
-			if budgetErr := reserveRecordWorking(ctx, plans, 0); budgetErr != nil {
-				err = budgetErr
-				valid = false
-				break
-			}
 			raw, readErr := a.client.Database(target.database).RunCommand(attempt, command).Raw()
 			if release != nil {
 				release()
@@ -248,18 +231,6 @@ func (a *Adapter) executeReads(ctx context.Context, plans []*execution.Plan) []*
 				valid = false
 				break
 			}
-			if state.cursorKnown && state.cursor == 0 {
-				// The uncompressed driver reply is now one retained backing
-				// allocation. cap includes trailing bytes; 36 also covers the
-				// wire prefix before the returned OP_MSG or OP_REPLY document.
-				// Known frame and parser metadata charges remain in the base.
-				extra := cap(raw) + 36 - a.nativeReplyBytes()
-				if budgetErr := reserveRecordWorking(ctx, plans, extra); budgetErr != nil {
-					err = budgetErr
-					valid = false
-					break
-				}
-			}
 			for _, raw := range documents {
 				id, validID := rawRecordID(raw.Lookup("_id"))
 				matches, found := positions[id]
@@ -273,14 +244,8 @@ func (a *Adapter) executeReads(ctx context.Context, plans []*execution.Plan) []*
 					break
 				}
 				var document *pb.ReadResult
+				// Duplicate reads share the same immutable document bytes.
 				for _, i := range matches {
-					// Duplicate reads share immutable bytes; every RPC reserves its own output.
-					if plans[i].Memory != nil {
-						if err := plans[i].Memory.ReserveResult(len(raw) + execution.ResultOverheadBytes); err != nil {
-							results[i] = execution.FailedEvent(plans[i].Command, pb.MutationOutcome_NOT_STARTED, recordMemoryFailure())
-							continue
-						}
-					}
 					if document == nil {
 						data := make([]byte, len(raw))
 						copy(data, raw)
@@ -333,8 +298,6 @@ func (a *Adapter) executeReads(ctx context.Context, plans []*execution.Plan) []*
 			failure := protocol.Fail(pb.FailureCode_UNAVAILABLE, "point read acknowledgement unavailable or incomplete")
 			if stopped && p.Context != nil && p.Context.Err() != nil {
 				failure = protocol.ContextFailure(p.Context)
-			} else if errors.Is(err, execution.ErrExecutionMemory) || errors.Is(err, errRecordReservation) {
-				failure = execution.ReservationFailure(ctx, err)
 			} else if err != nil {
 				failure = backendFailure(ctx, err)
 			}
@@ -364,15 +327,6 @@ func rawRecordID(raw bson.RawValue) (any, bool) {
 
 func (a *Adapter) executeWrites(ctx context.Context, plans []*execution.Plan) []*pb.Event {
 	results := make([]*pb.Event, len(plans))
-	if err := reserveRecordWorking(ctx, plans, 0); err != nil {
-		for i, work := range plans {
-			results[i] = unstarted(ctx, work)
-			if results[i] == nil {
-				results[i] = execution.FailedEvent(work.Command, pb.MutationOutcome_NOT_STARTED, execution.ReservationFailure(ctx, err))
-			}
-		}
-		return results
-	}
 	active := make([]*execution.Plan, 0, len(plans))
 	positions := make([]int, 0, len(plans))
 	ops := make(bson.A, 0, len(plans))

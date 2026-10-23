@@ -20,7 +20,7 @@ func TestMongoRecordPreflightBeforeAnyCommand(t *testing.T) {
 			monitor := &event.CommandMonitor{Started: func(context.Context, *event.CommandStartedEvent) { commands.Add(1) }}
 			adapter := batchMockAdapter(t, nil, monitor)
 			limits := store.DefaultLimits()
-			runtime, err := store.New(adapter, limits, nil)
+			runtime, err := store.New(adapter, limits)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -43,9 +43,6 @@ func TestMongoRecordPreflightBeforeAnyCommand(t *testing.T) {
 			prepared, failure := runtime.PrepareRecord(context.Background(), record)
 			if failure == nil || prepared != nil || commands.Load() != 0 {
 				t.Fatal("invalid backend input produced a plan or effects", prepared, failure, commands.Load())
-			}
-			if snapshot := runtime.Snapshot(); snapshot.Active != 0 || snapshot.Pending != 0 || snapshot.Retained != 0 || snapshot.WorkingBytes != 0 {
-				t.Fatal("failed preflight reserved runtime resources", snapshot)
 			}
 		})
 	}

@@ -69,26 +69,19 @@ func TestLuaRecordBatchIsolatesActionsAndPreservesBusinessSources(t *testing.T) 
 	for i, id := range ids {
 		work := batchTestPlan(t, adapter, "program", "records/s:"+id)
 		work.Backend.(*plan).program.Source = sources[i]
-		// Independent RPCs all begin at ordinal 1; ownership is by plan pointer.
-		work.ID = 1
 		if work.Command.GetNative() != nil {
 			t.Fatal("Lua plan excluded from record batching")
 		}
 		works = append(works, work)
 	}
-	results := make(map[*execution.Plan]*pb.Event)
-	emit := func(work *execution.Plan, event *pb.Event) error {
-		results[work] = event
-		return nil
-	}
-	adapter.Execute(t.Context(), works, emit)
+	results := adapter.ExecuteRecords(t.Context(), works)
 	if reads.Load() != 1 || writes.Load() != 1 || len(results) != len(works) {
-		t.Fatal("all-Lua native batch or ownership", reads.Load(), writes.Load(), len(results))
+		t.Fatal("all-Lua native batch", reads.Load(), writes.Load(), len(results))
 	}
-	for i, work := range works {
-		result := results[work]
+	for i := range works {
+		result := results[i]
 		mutation := result.GetMutationResult()
-		if work.Backend.(*plan).action != "program" || work.Backend.(*plan).source != nil {
+		if works[i].Backend.(*plan).action != "program" || works[i].Backend.(*plan).source != nil {
 			t.Fatal("original plan or RPC ordinal changed", result)
 		}
 		switch i {

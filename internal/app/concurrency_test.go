@@ -131,23 +131,23 @@ func TestConcurrentRPCExecutionPolicy(t *testing.T) {
 				case result := <-replies:
 					t.Fatal("request finished before the backend gate opened", result.event, result.err)
 				case <-ctx.Done():
-					t.Fatal("configured execution concurrency was not reached", node.stores["records"].Snapshot())
+					t.Fatal("configured execution concurrency was not reached")
 				}
 			}
 			tick := time.NewTicker(time.Millisecond)
 			defer tick.Stop()
 			for {
-				snapshot := node.stores["records"].Snapshot()
-				if snapshot.Active > test.wantActive {
-					t.Fatal("execution concurrency exceeded configured policy", snapshot)
+				stats := node.stores["records"].Stats()
+				if stats.Active > test.wantActive {
+					t.Fatal("execution concurrency exceeded configured policy", stats)
 				}
-				if snapshot.Active == test.wantActive && snapshot.Pending == count-test.wantActive {
+				if stats.Active == test.wantActive && stats.Queued == count-test.wantActive {
 					break
 				}
 				select {
 				case <-tick.C:
 				case <-ctx.Done():
-					t.Fatal("requests did not fill the configured execution and queue boundary", snapshot)
+					t.Fatal("requests did not fill the configured execution and queue boundary", stats)
 				}
 			}
 			mu.Lock()
@@ -168,15 +168,19 @@ func TestConcurrentRPCExecutionPolicy(t *testing.T) {
 					t.Fatal("queued reads failed to drain after backend release")
 				}
 			}
+			// The backend handler decrements active after its reply is written.
 			for {
-				snapshot := node.stores["records"].Snapshot()
-				if snapshot.Active == 0 && snapshot.Pending == 0 && snapshot.PendingBytes == 0 && snapshot.Retained == 0 && snapshot.ResultBytes == 0 && snapshot.WorkingBytes == 0 {
+				mu.Lock()
+				idle := active == 0
+				mu.Unlock()
+				stats := node.stores["records"].Stats()
+				if idle && stats.Active == 0 && stats.Queued == 0 {
 					break
 				}
 				select {
 				case <-tick.C:
 				case <-ctx.Done():
-					t.Fatal("completed reads retained execution or result ownership", snapshot)
+					t.Fatal("completed reads retained backend or Store execution", stats)
 				}
 			}
 			mu.Lock()

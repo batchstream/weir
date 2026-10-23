@@ -191,9 +191,6 @@ func TestMongoLuaEvaluationCancellationWithCallerDeadlineKeepsPeer(t *testing.T)
 	config := Config{Store: "mongo"}
 	adapter := &Adapter{config: config}
 	initializeTestLifetime(adapter)
-	// Exercise caller cancellation independently of the standalone allocation
-	// limit: this loop deliberately creates strings until cancellation arrives.
-	memory := &recordMemoryProbe{limit: 1 << 30}
 	var plans []*execution.Plan
 	var documents []bson.Raw
 	for _, id := range []string{"a", "b"} {
@@ -219,7 +216,6 @@ func TestMongoLuaEvaluationCancellationWithCallerDeadlineKeepsPeer(t *testing.T)
 	caller, cancel := context.WithTimeout(t.Context(), 2*time.Second)
 	defer cancel()
 	plans[0].Context = caller
-	plans[0].Memory = memory
 	timer := time.AfterFunc(100*time.Millisecond, cancel)
 	defer timer.Stop()
 	positions := []int{0, 1}

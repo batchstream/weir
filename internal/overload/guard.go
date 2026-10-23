@@ -26,10 +26,6 @@ func (limits Limits) Validate() error {
 	return nil
 }
 
-type MemoryObserver interface {
-	ObserveMemory(Snapshot)
-}
-
 type Target interface {
 	SetOverloaded(bool)
 }
@@ -43,7 +39,6 @@ type Guard struct {
 	profile       memoryProfile
 	processBudget uint64
 	runtimeMemory *runtimeMemoryLimit
-	observers     []MemoryObserver
 }
 
 type Snapshot struct {
@@ -89,14 +84,6 @@ func New(targets []Target, limits Limits) *Guard {
 	// Publish the first observation before listeners can admit any work.
 	guard.sample(guard.profile.observe(limits))
 	return guard
-}
-
-// ObserveMemory attaches a process-owned resource budget to this existing sampler.
-func (g *Guard) ObserveMemory(observer MemoryObserver) {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-	g.observers = append(g.observers, observer)
-	observer.ObserveMemory(g.state)
 }
 
 func (g *Guard) Snapshot() Snapshot {
@@ -151,9 +138,6 @@ func (g *Guard) sample(o observation) {
 		g.state.Latched = true
 	} else if !g.state.Unknown && o.processValid && !o.high && (!o.cgroup.Valid || o.low) && (g.processBudget == 0 || o.bytes <= watermark(g.processBudget, limits.LowWatermark, false)) {
 		g.state.Latched = false
-	}
-	for _, observer := range g.observers {
-		observer.ObserveMemory(g.state)
 	}
 	for _, target := range g.targets {
 		target.SetOverloaded(g.state.Latched)

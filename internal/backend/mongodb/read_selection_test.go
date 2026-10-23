@@ -13,7 +13,6 @@ import (
 
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 	"github.com/batchstream/weir/internal/execution"
-	"github.com/batchstream/weir/internal/overload"
 	"github.com/batchstream/weir/internal/store"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/event"
@@ -284,11 +283,8 @@ func TestMongoRuntimeDrainCancelsUnsentReadWithoutRemoteCleanup(t *testing.T) {
 		started(ctx, e)
 	}
 	sessionsAtDisconnect.Store(-1)
-	memory := store.NewExecutionMemory()
-	sample := overload.Snapshot{RecoveryAllowance: 1 << 30, RecoveryAllowanceKnown: true}
-	memory.ObserveMemory(sample)
 	limits := store.DefaultLimits()
-	runtime, err := store.New(adapter, limits, memory)
+	runtime, err := store.New(adapter, limits)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -312,18 +308,17 @@ func TestMongoRuntimeDrainCancelsUnsentReadWithoutRemoteCleanup(t *testing.T) {
 	if failure != nil {
 		t.Fatal(failure)
 	}
-	ticket, failure, _ := runtime.Submit(caller, work, nil)
+	ticket, failure := runtime.Submit(caller, work, nil)
 	if failure != nil {
 		t.Fatal(failure)
 	}
-	defer ticket.Ack()
 	select {
 	case <-entered:
 	case <-time.After(5 * time.Second):
 		t.Fatal("normal Runtime qualification/Execute never reached read selection")
 	}
-	if adapter.client.NumberSessionsInProgress() != 1 || runtime.Snapshot().Active != 1 {
-		t.Error("blocked runtime read lacks actual execution/session ownership", runtime.Snapshot(), adapter.client.NumberSessionsInProgress())
+	if adapter.client.NumberSessionsInProgress() != 1 {
+		t.Error("blocked runtime read lacks actual session ownership", adapter.client.NumberSessionsInProgress())
 	}
 	drain, expireDrain := context.WithCancel(t.Context())
 	runtime.BeginDrain()
@@ -334,23 +329,16 @@ func TestMongoRuntimeDrainCancelsUnsentReadWithoutRemoteCleanup(t *testing.T) {
 	if caller.Err() != nil {
 		t.Fatal("runtime shutdown depended on caller cancellation", caller.Err())
 	}
-	snapshot := runtime.Snapshot()
-	if snapshot.Active != 0 || snapshot.Pending != 0 || snapshot.PendingBytes != 0 || snapshot.WorkingBytes != 0 || snapshot.Publishers != 0 || snapshot.Paused != 0 || !snapshot.Closed {
-		t.Fatal("Close retained actual execution owners", snapshot)
-	}
 	if sessionsAtDisconnect.Load() != 0 || adapter.client.NumberSessionsInProgress() != 0 {
 		t.Fatal("session was not retired before Disconnect", sessionsAtDisconnect.Load(), adapter.client.NumberSessionsInProgress())
 	}
 	names, _ := commands.snapshot()
-	t.Logf("after Close: selections=%d commands=%v runtime=%+v memory=%+v", deployment.selections.Load(), names, snapshot, memory.Snapshot())
+	t.Logf("after Close: selections=%d commands=%v", deployment.selections.Load(), names)
 	if !reflect.DeepEqual(names, []string{"listCollections", "endSessions"}) {
 		t.Fatal("runtime issued forbidden record cleanup or replay", names)
 	}
-	// Result retention is a separate ticket lifetime, not an active backend.
-	ticket.Ack()
-	snapshot = runtime.Snapshot()
-	owned := memory.Snapshot()
-	if snapshot.Retained != 0 || snapshot.ResultBytes != 0 || owned.Count != 0 || owned.UsedBytes != 0 || owned.InputReservedBytes != 0 || owned.InputUsedBytes != 0 || owned.WireCount != 0 {
-		t.Fatal("Ack retained result/input ownership", snapshot, owned)
+	result, err := ticket.Wait(t.Context())
+	if err != nil || result.GetReadResult().GetFailure() == nil {
+		t.Fatal("retired read lost its failure evidence", result, err)
 	}
 }

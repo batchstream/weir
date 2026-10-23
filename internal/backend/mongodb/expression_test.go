@@ -9,7 +9,6 @@ import (
 	"testing"
 
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
-	"github.com/batchstream/weir/internal/execution"
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
@@ -71,7 +70,7 @@ func TestMongoExpressionValidation(t *testing.T) {
 			if (f == nil) != tc.valid {
 				t.Fatal(f)
 			}
-			if p != nil && (p.ResultBytes != execution.ResultOverheadBytes || !bytes.Equal(p.Backend.(*plan).document, raw)) {
+			if p != nil && !bytes.Equal(p.Backend.(*plan).document, raw) {
 				t.Fatal("plan/byte fidelity", p)
 			}
 		})

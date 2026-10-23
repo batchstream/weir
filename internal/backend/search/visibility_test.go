@@ -137,7 +137,7 @@ func visibilityPlan(t *testing.T, adapter *Adapter, opts visibilityPlanOptions) 
 	if opts.program != "" {
 		work.Command.GetMutate().GetAtomicTransform().GetLua().Source = []byte(opts.program)
 	}
-	request := &pb.ExecuteRequest{Index: work.ID, Command: work.Command}
+	request := &pb.ExecuteRequest{Index: 1, Command: work.Command}
 	prepared, failure := prepareTestRecord(adapter, request)
 	if failure != nil {
 		t.Fatal(failure)
@@ -196,7 +196,7 @@ func TestMutationOptionsDefaultVisibilityKeepsApplicationAcknowledgement(t *test
 			adapter := visibilityAdapter(t, fixture)
 			work := batchTestPlan(t, adapter, "put", "records/s:"+test.name)
 			work.Command.GetMutate().Options = test.options
-			request := &pb.ExecuteRequest{Index: work.ID, Command: work.Command}
+			request := &pb.ExecuteRequest{Index: 1, Command: work.Command}
 			prepared, failure := prepareTestRecord(adapter, request)
 			if failure != nil {
 				t.Fatal(failure)

@@ -23,7 +23,7 @@ import (
 
 type sdkIngressReadAdapter struct{}
 
-func (a *sdkIngressReadAdapter) PrepareCommand(context.Context, uint64, *pb.Command) (*execution.Plan, *pb.Failure) {
+func (a *sdkIngressReadAdapter) PrepareNative(context.Context, *pb.Command) (*execution.Plan, *pb.Failure) {
 	return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "read fixture")
 }
 
@@ -33,20 +33,23 @@ func (a *sdkIngressReadAdapter) PrepareRecord(ctx context.Context, record *execu
 	if request == nil {
 		return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "read fixture")
 	}
-	plan := &execution.Plan{ID: record.Index(), Command: command, Key: request.Resource, BatchKey: "reads", Bytes: record.Bytes() + execution.EntryOverheadBytes, ResultBytes: execution.ResultOverheadBytes, WorkingBytes: execution.ResultOverheadBytes}
+	plan := &execution.Plan{Command: command, Key: request.Resource, BatchKey: "reads", Bytes: record.Bytes()}
 	return plan, nil
 }
 
-func (a *sdkIngressReadAdapter) Execute(_ context.Context, plans []*execution.Plan, emit execution.Emit) {
-	for _, plan := range plans {
+func (a *sdkIngressReadAdapter) ExecuteRecords(_ context.Context, plans []*execution.Plan) []*pb.Event {
+	events := make([]*pb.Event, len(plans))
+	for i := range plans {
 		read := protocol.Missing()
-		result := &pb.Event{Value: &pb.Event_ReadResult{ReadResult: read}}
-		output := result
-		if err := emit(plan, output); err != nil {
-			return
-		}
+		value := &pb.Event_ReadResult{ReadResult: read}
+		events[i] = &pb.Event{Value: value}
 	}
-	return
+	return events
+}
+
+func (a *sdkIngressReadAdapter) ExecuteNative(context.Context, *execution.Plan, execution.Emit) *pb.NativeEnd {
+	failure := protocol.Fail(pb.FailureCode_UNSUPPORTED, "read fixture")
+	return protocol.NativeFailure(false, failure)
 }
 
 func (a *sdkIngressReadAdapter) Close(context.Context) error { return nil }
@@ -92,7 +95,7 @@ func TestOpenAndRefreshAtApplicationConnectionLimit(t *testing.T) {
 				names[i] = name
 				adapter := &sdkIngressReadAdapter{}
 				limits := store.DefaultLimits()
-				runtime, err := store.New(adapter, limits, nil)
+				runtime, err := store.New(adapter, limits)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -168,11 +171,7 @@ func TestOpenAndRefreshAtApplicationConnectionLimit(t *testing.T) {
 				}
 			})
 			limits := server.DefaultLimits()
-
-			admission, err := server.NewAdmission(limits)
-			if err != nil {
-				t.Fatal(err)
-			}
+			admission := server.NewAdmission()
 			serverConfig := server.Config{Stores: runtimes, Directory: d, Limits: limits, Admission: admission}
 			application, err := server.New(serverConfig)
 			if err != nil {

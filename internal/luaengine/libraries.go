@@ -58,8 +58,8 @@ func selectLibrary(table *vm.Table, names []string) []libraryEntry {
 	return entries
 }
 
-func copyLibrary(state *vm.VM, entries []libraryEntry) *vm.Table {
-	table := state.NewTableWithSize(0, len(entries))
+func copyLibrary(entries []libraryEntry) *vm.Table {
+	table := vm.NewTableWithSize(0, len(entries))
 	for _, entry := range entries {
 		table.SetString(entry.name, entry.value)
 	}

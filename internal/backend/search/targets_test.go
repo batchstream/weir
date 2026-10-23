@@ -128,7 +128,6 @@ func TestSearchMixedRequestTargets(t *testing.T) {
 	for i, target := range cases {
 		resource := target.index + "/s:" + target.id
 		works[i] = batchTestPlan(t, a, target.action, resource)
-		works[i].ID = uint64(i)
 	}
 	results := a.executeRecords(context.Background(), works)
 	if len(results) != len(works) || inspections.Load() != 2 || reads.Load() != 1 || writes.Load() != 1 {
@@ -315,9 +314,6 @@ func TestSearchQualificationRechecksCancelledCallers(t *testing.T) {
 			if test.liveRight {
 				live := batchTestPlan(t, a, "put", "right/s:live")
 				works = append(works, live)
-			}
-			for i, work := range works {
-				work.ID = uint64(i)
 			}
 			ctx, stop := context.WithTimeout(context.Background(), 250*time.Millisecond)
 			defer stop()

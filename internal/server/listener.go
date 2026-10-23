@@ -4,98 +4,35 @@ import (
 	"context"
 	"errors"
 	"net"
-	"sync/atomic"
-	"time"
 
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/peer"
 )
 
 func (s *Server) Serving() <-chan struct{} { return s.serving }
+
 func (s *Server) Serve(listener net.Listener) error {
 	close(s.serving)
-	bounded := &limitedListener{Listener: listener, server: s}
-	err := s.grpc.Serve(bounded)
+	err := s.grpc.Serve(listener)
 	if errors.Is(err, grpc.ErrServerStopped) {
 		return nil
 	}
 	return err
 }
+
+// Shutdown stops admitting RPCs and waits for running handlers until ctx ends,
+// then cancels them.
 func (s *Server) Shutdown(ctx context.Context) error {
-	s.once.Do(func() {
-		s.admission.BeginDrain()
-		stopped := make(chan struct{})
-		go func() {
-			s.grpc.GracefulStop()
-			close(stopped)
-		}()
-		select {
-		case <-stopped:
-		case <-ctx.Done():
-			s.metrics.forced.WithLabelValues("drain").Inc()
-			s.grpc.Stop()
-			<-stopped
-		}
-
-	})
-	return nil
-}
-
-type limitedListener struct {
-	server *Server
-	net.Listener
-}
-type limitedConn struct {
-	server *Server
-	net.Conn
-	closed  atomic.Bool
-	opening atomic.Pointer[time.Timer]
-}
-
-func (l *limitedListener) Accept() (net.Conn, error) {
-	conn, err := l.Listener.Accept()
-	if err != nil {
-		return nil, err
-	}
-	l.server.admission.activeConnections.Add(1)
-	c := &limitedConn{Conn: conn, server: l.server}
-	l.server.connections.Store(conn.RemoteAddr().String(), c)
-	timer := time.AfterFunc(l.server.limits.Handshake, func() { _ = c.close("open") })
-	c.opening.Store(timer)
-	return c, nil
-}
-func (c *limitedConn) Write(data []byte) (int, error) {
-	if err := c.Conn.SetWriteDeadline(time.Now().Add(c.server.limits.Stall)); err != nil {
-		return 0, err
-	}
-	return c.Conn.Write(data)
-}
-
-func (c *limitedConn) Close() error { return c.close("") }
-func (c *limitedConn) close(reason string) error {
-	if c.closed.CompareAndSwap(false, true) {
-		if timer := c.opening.Load(); timer != nil {
-			timer.Stop()
-		}
-		if reason != "" {
-			c.server.metrics.forced.WithLabelValues(reason).Inc()
-		}
-		c.server.admission.activeConnections.Add(-1)
-		c.server.connections.CompareAndDelete(c.RemoteAddr().String(), c)
-		return c.Conn.Close()
+	s.admission.BeginDrain()
+	stopped := make(chan struct{})
+	go func() {
+		s.grpc.GracefulStop()
+		close(stopped)
+	}()
+	select {
+	case <-stopped:
+	case <-ctx.Done():
+		s.grpc.Stop()
+		<-stopped
 	}
 	return nil
-}
-
-// gRPC queues trailers behind already-buffered DATA. A peer that never reads can
-// prevent even an error trailer/RST from progressing. Close that bounded connection
-// on an output stall; co-resident RPCs lose their responses, never their evidence.
-func (s *Server) abortPeer(ctx context.Context) {
-	p, ok := peer.FromContext(ctx)
-	if !ok {
-		return
-	}
-	if conn, ok := s.connections.Load(p.Addr.String()); ok {
-		_ = conn.(*limitedConn).close("abort")
-	}
 }

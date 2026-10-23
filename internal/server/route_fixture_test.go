@@ -35,27 +35,22 @@ func newPeerAdapter(name string) *peerAdapter {
 	return adapter
 }
 
-func (*peerAdapter) PrepareCommand(context.Context, uint64, *pb.Command) (*execution.Plan, *pb.Failure) {
+func (*peerAdapter) PrepareNative(context.Context, *pb.Command) (*execution.Plan, *pb.Failure) {
 	return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "record fixture")
 }
 
+func (*peerAdapter) ExecuteNative(context.Context, *execution.Plan, execution.Emit) *pb.NativeEnd {
+	failure := protocol.Fail(pb.FailureCode_UNSUPPORTED, "record fixture")
+	return protocol.NativeFailure(false, failure)
+}
+
 func (a *peerAdapter) PrepareRecord(ctx context.Context, record *execution.Record) (*execution.Plan, *pb.Failure) {
-	command := record.Command()
-	key := record.Key()
-	plan := &execution.Plan{ID: record.Index(), Command: command, Key: key, BatchKey: "records", Bytes: record.Bytes() + execution.EntryOverheadBytes, ResultBytes: execution.ResultOverheadBytes, WorkingBytes: 1024}
-	if command.GetRead() != nil {
-		a.mu.Lock()
-		readBytes := (2 << 20)
-		for _, document := range a.documents {
-			readBytes = max(readBytes, len(document.Data))
-		}
-		a.mu.Unlock()
-		plan.ResultBytes += readBytes
-	}
+	plan := &execution.Plan{Command: record.Command(), Key: record.Key(), BatchKey: "records", Bytes: record.Bytes()}
 	return plan, nil
 }
 
-func (a *peerAdapter) Execute(ctx context.Context, plans []*execution.Plan, emit execution.Emit) {
+func (a *peerAdapter) ExecuteRecords(ctx context.Context, plans []*execution.Plan) []*pb.Event {
+	events := make([]*pb.Event, len(plans))
 	a.mu.Lock()
 	a.batchSizes = append(a.batchSizes, len(plans))
 	a.mu.Unlock()
@@ -67,20 +62,19 @@ func (a *peerAdapter) Execute(ctx context.Context, plans []*execution.Plan, emit
 		select {
 		case <-a.block:
 		case <-ctx.Done():
-			return
+			for i, plan := range plans {
+				events[i] = execution.FailedEvent(plan.Command, pb.MutationOutcome_UNKNOWN, protocol.ContextFailure(ctx))
+			}
+			return events
 		}
 	}
-	for _, plan := range plans {
+	for i, plan := range plans {
 		a.mu.Lock()
 		event := &pb.Event{}
 		if plan.Command.GetRead() != nil {
 			read := protocol.Missing()
 			if document := a.documents[plan.Key]; document != nil {
-				if len(document.Data) <= plan.ResultBytes-execution.ResultOverheadBytes {
-					read = protocol.ReadDocument(document)
-				} else {
-					read = protocol.ReadFailure(protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "record result budget exhausted"))
-				}
+				read = protocol.ReadDocument(document)
 			}
 			event.Value = &pb.Event_ReadResult{ReadResult: read}
 		} else {
@@ -105,10 +99,9 @@ func (a *peerAdapter) Execute(ctx context.Context, plans []*execution.Plan, emit
 			event.Value = &pb.Event_MutationResult{MutationResult: protocol.Mutation(pb.MutationOutcome_APPLIED, failure)}
 		}
 		a.mu.Unlock()
-		output := event
-		_ = emit(plan, output)
+		events[i] = event
 	}
-	return
+	return events
 }
 
 func (a *peerAdapter) Close(context.Context) error { a.closed.Add(1); return nil }
@@ -117,7 +110,7 @@ func peerLocal(t *testing.T, name string) (*peerAdapter, *store.Runtime) {
 	t.Helper()
 	adapter := newPeerAdapter(name)
 	limits := store.DefaultLimits()
-	local, err := store.New(adapter, limits, nil)
+	local, err := store.New(adapter, limits)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -150,11 +143,7 @@ func startPeerServer(t *testing.T, opts peerServerOptions) (*Server, string) {
 		opts.limits.Stall = time.Second
 	}
 	if opts.admission == nil {
-		var err error
-		opts.admission, err = NewAdmission(opts.limits)
-		if err != nil {
-			t.Fatal(err)
-		}
+		opts.admission = NewAdmission()
 	}
 	cfg := Config{Stores: opts.stores, Directory: opts.directory, Limits: opts.limits, Admission: opts.admission, Peer: opts.peer}
 	srv, err := New(cfg)
@@ -205,22 +194,27 @@ func testMutation(value string) *pb.MutateRequest {
 	return request
 }
 
+// waitPeerIdle waits until every handler has returned and every Store holds
+// no queued or running work.
 func waitPeerIdle(t *testing.T, s *Server) {
 	t.Helper()
 	until := time.Now().Add(3 * time.Second)
 	for {
-		idle := s.admission.activeRPCs.Load() == 0 && s.admission.wireBytes.Load() == 0
-		stores := make(map[string]store.Snapshot, len(s.stores))
-		for name, local := range s.stores {
-			snapshot := local.Snapshot()
-			stores[name] = snapshot
-			idle = idle && snapshot.Pending == 0 && snapshot.PendingBytes == 0 && snapshot.Active == 0 && snapshot.Retained == 0 && snapshot.ResultBytes == 0 && snapshot.WorkingBytes == 0 && snapshot.Publishers == 0
+		busy := s.admission.activeRPCs.Load() != 0
+		for name, runtime := range s.stores {
+			stats := runtime.Stats()
+			if stats.Queued != 0 || stats.Active != 0 || stats.Natives != 0 {
+				busy = true
+				if time.Now().After(until) {
+					t.Fatal("Store work did not retire", name, stats)
+				}
+			}
 		}
-		if idle {
+		if !busy {
 			return
 		}
 		if time.Now().After(until) {
-			t.Fatal("RPC transport or Store credits did not release", s.Snapshot(), s.admission.wireBytes.Load(), stores)
+			t.Fatal("RPC handlers did not return", s.admission.activeRPCs.Load())
 		}
 		time.Sleep(time.Millisecond)
 	}

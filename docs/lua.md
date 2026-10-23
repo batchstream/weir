@@ -124,21 +124,11 @@ evaluation. Evaluations run concurrently inside the main Weir process within the
 Store's execution slots; each creates its own VM, globals, library tables and
 string metatable.
 
-The parser, compiler, restricted VM and bridge share one allocation budget on
-the Node execution-memory account. New object storage, string buffers, table
-growth, compiler structures and output conversion reserve memory before creating
-it, including expansion of shared Lua subtrees into a document. Existing backing
-capacity can be reused without another charge. This conservatively counts
-allocations retained for the evaluation's lifetime, including temporary objects
-that Go might already have collected; it does not claim to measure the VM's live
-heap.
-
-If the shared account cannot admit an allocation, evaluation ends before a
-backend write with NOT_APPLIED/RESOURCE_EXHAUSTED. A Lua `pcall` or `xpcall`
-cannot turn that failure into a successful mutation or invoke an allocating
-error handler. The reservation also covers results that survive the VM while the
-backend validates and encodes them. Deployment memory limits remain the final
-process boundary.
+Lua has no per-evaluation memory limit. A transform can allocate as much as
+its instruction budget and deadline allow, so only deploy trusted transforms
+and set `max_instructions` when sources are not fully controlled. Process-wide
+memory pressure still rejects new work, and deployment memory limits remain the
+final process boundary.
 
 Confirmed MongoDB transaction and Search compare-and-swap conflicts can trigger
 a bounded fresh read and reevaluation. Ambiguous write or commit outcomes never

@@ -269,11 +269,11 @@ func secureReplyFault(t *testing.T, fixture *testsearch.SecureFixture, operation
 		var replies []*pb.Event
 		if fault == "drain" {
 			limits := store.DefaultLimits()
-			owner, err := store.New(a, limits, nil)
+			owner, err := store.New(a, limits)
 			if err != nil {
 				t.Fatal(err)
 			}
-			ticket, failure, _ := owner.Submit(context.Background(), works[0], nil)
+			ticket, failure := owner.Submit(context.Background(), works[0], nil)
 			if failure != nil {
 				t.Fatal(failure)
 			}
@@ -281,10 +281,6 @@ func secureReplyFault(t *testing.T, fixture *testsearch.SecureFixture, operation
 			case <-committed:
 			case <-time.After(time.Second):
 				t.Fatal("write was not independently acknowledged")
-			}
-			snap := owner.Snapshot()
-			if snap.Active != 1 || snap.Retained != 1 || snap.ResultBytes > 32<<20 {
-				t.Fatal("pre-drain ledger", snap)
 			}
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
 			start := time.Now()
@@ -294,13 +290,10 @@ func secureReplyFault(t *testing.T, fixture *testsearch.SecureFixture, operation
 			if waitErr != nil {
 				t.Fatal(waitErr)
 			}
-			ticket.Ack()
 			replies = []*pb.Event{reply}
-			snap = owner.Snapshot()
-			if snap.Active != 0 || snap.Retained != 0 || snap.Pending != 0 || searchOwned(a.dialer) != 0 || time.Since(start) > time.Second {
-				t.Fatal("drain leaked ledger/socket", snap)
+			if searchOwned(a.dialer) != 0 || time.Since(start) > time.Second {
+				t.Fatal("drain leaked a socket", searchOwned(a.dialer), time.Since(start))
 			}
-			t.Logf("confirmed commit then drain=%s; all ledger/socket counts zero", time.Since(start))
 		} else {
 			replies = a.executeRecords(context.Background(), works)
 		}

@@ -46,12 +46,6 @@ jobs:
         run: |
           CGO_ENABLED=1 timeout 2m go test -p=1 -parallel=1 -tags=integration -count=1 -timeout=90s -run '^(TestProcessStop(TerminalMeasurements|OnceConcurrent)|TestOfflineRetirement(NodeJoinsDefaultOwners|SIGTERMActualNode))$' -v ./internal/app
           CGO_ENABLED=1 timeout 2m go test -race -p=1 -parallel=1 -tags=integration -count=1 -timeout=90s -run '^(TestProcessStop(TerminalMeasurements|OnceConcurrent)|TestOfflineRetirement(NodeJoinsDefaultOwners|SIGTERMActualNode))$' -v ./internal/app
-      - name: Native receive ownership patch race tests
-        working-directory: third_party/grpc
-        run: CGO_ENABLED=1 timeout 3m go test -race -count=1 -timeout=120s -run '^TestReceive' ./ ./mem ./internal/transport
-      - name: Lua allocation patch race tests
-        working-directory: third_party/golua
-        run: CGO_ENABLED=1 timeout 3m go test -race -count=1 -timeout=120s ./budget ./lexer ./parser ./compiler ./vm ./stdlib
       - name: Static vet and script tests
         run: |
           CGO_ENABLED=0 go vet ./...

@@ -55,7 +55,7 @@ func TestBulkAcknowledgementExceedsExchangeWindowWithoutRejection(t *testing.T) 
 		operation := &pb.Command_Mutate{Mutate: mutation}
 		command := &pb.Command{Operation: operation}
 		native := &plan{index: "records", id: id, action: "delete"}
-		work := &execution.Plan{ID: uint64(i + 1), Command: command, Backend: native}
+		work := &execution.Plan{Command: command, Backend: native}
 		works[i] = work
 		if i != 0 {
 			output.WriteByte(',')

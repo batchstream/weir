@@ -1,8 +1,7 @@
-// Package server provides bounded application and peer transports for a deployment-isolated intranet.
+// Package server provides the application and peer gRPC transports for a deployment-isolated intranet.
 package server
 
 import (
-	"sync"
 	"time"
 
 	"github.com/batchstream/weir-protocol/api/protocol"
@@ -15,6 +14,12 @@ import (
 	"google.golang.org/grpc/keepalive"
 	"google.golang.org/grpc/status"
 )
+
+// MaxMessageBytes bounds every request and response message.
+const MaxMessageBytes = 64 << 20
+
+// RecordStreamItems bounds the records one stream has queued or awaiting delivery.
+const RecordStreamItems = 32
 
 type Limits struct {
 	MaxPendingRecords int
@@ -30,6 +35,13 @@ func DefaultLimits() Limits {
 	return limits
 }
 
+func (l Limits) Validate() error {
+	if l.Stall <= 0 || l.Handshake < 0 || l.Idle < 0 || l.MaxPendingRecords < 0 || l.KeepaliveInterval < 0 || l.KeepaliveInterval > 0 && l.KeepaliveInterval < time.Second || l.KeepaliveTimeout < 0 {
+		return status.Error(codes.InvalidArgument, "invalid transport configuration")
+	}
+	return nil
+}
+
 type Config struct {
 	Stores    map[string]*store.Runtime
 	Directory *directory.Directory
@@ -40,31 +52,22 @@ type Config struct {
 }
 
 type Server struct {
-	stores      map[string]*store.Runtime
-	directory   *directory.Directory
-	admission   *Admission
-	peer        bool
-	limits      Limits
-	grpc        *grpc.Server
-	once        sync.Once
-	connections sync.Map
-	metrics     transportMetrics
-	serving     chan struct{}
-}
-
-func (l Limits) Validate() error {
-	if l.Stall <= 0 || l.Handshake < 0 || l.Idle < 0 || l.MaxPendingRecords < 0 || l.KeepaliveInterval < 0 || l.KeepaliveInterval > 0 && l.KeepaliveInterval < time.Second || l.KeepaliveTimeout < 0 {
-		return status.Error(codes.InvalidArgument, "invalid transport configuration")
-	}
-	return nil
+	stores    map[string]*store.Runtime
+	directory *directory.Directory
+	admission *Admission
+	peer      bool
+	limits    Limits
+	grpc      *grpc.Server
+	metrics   transportMetrics
+	serving   chan struct{}
 }
 
 func New(cfg Config) (*Server, error) {
 	l := cfg.Limits
-	if l.Handshake == 0 {
-		l.Handshake = 5 * time.Second
-	}
 	defaults := DefaultLimits()
+	if l.Handshake == 0 {
+		l.Handshake = defaults.Handshake
+	}
 	if l.MaxPendingRecords == 0 {
 		l.MaxPendingRecords = defaults.MaxPendingRecords
 	}
@@ -78,7 +81,7 @@ func New(cfg Config) (*Server, error) {
 		return nil, err
 	}
 	if cfg.Admission == nil {
-		return nil, status.Error(codes.InvalidArgument, "invalid Stores or ingress bounds")
+		return nil, status.Error(codes.InvalidArgument, "missing admission")
 	}
 	stores := make(map[string]*store.Runtime, len(cfg.Stores))
 	seen := make(map[*store.Runtime]bool)
@@ -95,22 +98,17 @@ func New(cfg Config) (*Server, error) {
 		admission: cfg.Admission,
 		peer:      cfg.Peer,
 		limits:    l,
+		metrics:   newTransportMetrics(),
+		serving:   make(chan struct{}),
 	}
-	s.metrics = newTransportMetrics()
-	s.serving = make(chan struct{})
-	statistics := transportStats{}
-	codec := &responseCodec{admission: s.admission}
 	keepaliveParameters := keepalive.ServerParameters{Time: l.KeepaliveInterval, Timeout: l.KeepaliveTimeout, MaxConnectionIdle: l.Idle}
-	receiveBytes, sendBytes := protocol.MaxTransportMessageBytes, protocol.MaxTransportMessageBytes
-	receiveBudget := receiveMemory{admission: s.admission}
 	options := []grpc.ServerOption{
-		grpc.MaxRecvMsgSize(receiveBytes),
-		grpc.MaxSendMsgSize(sendBytes),
+		grpc.MaxRecvMsgSize(MaxMessageBytes),
+		grpc.MaxSendMsgSize(MaxMessageBytes),
 		grpc.MaxHeaderListSize(64 << 10),
-		grpc.ReceiveMemory(receiveBudget),
 		grpc.InTapHandle(s.admitRPC),
-		grpc.StatsHandler(statistics),
-		grpc.ForceServerCodecV2(codec),
+		grpc.ChainUnaryInterceptor(s.observeUnary),
+		grpc.ChainStreamInterceptor(s.observeStream),
 		grpc.KeepaliveParams(keepaliveParameters),
 		grpc.WaitForHandlers(true),
 		grpc.ConnectionTimeout(l.Handshake),

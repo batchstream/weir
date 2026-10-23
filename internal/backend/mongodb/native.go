@@ -10,20 +10,7 @@ import (
 	"go.mongodb.org/mongo-driver/v2/x/bsonx/bsoncore"
 	"go.mongodb.org/mongo-driver/v2/x/mongo/driver"
 	"go.mongodb.org/mongo-driver/v2/x/mongo/driver/description"
-	"google.golang.org/protobuf/proto"
 )
-
-// Native retains the driver wire response while publishing copied output chunks.
-const nativeWorkingBytes = 48_000_000
-
-// The driver allocates one complete, uncompressed wire message. Compression is
-// disabled at Open. Its negotiated MaxMessageSize is checked before business I/O.
-func (a *Adapter) nativeReplyBytes() int {
-	if a.maxMessageBytes > 0 {
-		return a.maxMessageBytes
-	}
-	return nativeWorkingBytes
-}
 
 func (a *Adapter) prepareNative(request *pb.NativeRequest) (*execution.Plan, *pb.Failure) {
 	if f := protocol.ValidateNative(request); f != nil {
@@ -41,14 +28,7 @@ func (a *Adapter) prepareNative(request *pb.NativeRequest) (*execution.Plan, *pb
 	if len(parts) == 1 {
 		database = parts[0]
 	}
-	p := &execution.Plan{
-		Backend:      database,
-		Key:          request.Resource,
-		Bytes:        proto.Size(request) + execution.EntryOverheadBytes,
-		ResultBytes:  protocol.NativeChunk + execution.ResultOverheadBytes,
-		WorkingBytes: a.nativeReplyBytes() + 2*len(request.Request.Data) + 8192,
-		IOReserve:    a.nativeReplyBytes() + 2*protocol.NativeChunk + 8192,
-	}
+	p := &execution.Plan{Backend: database, Key: request.Resource}
 	return p, nil
 }
 
@@ -64,9 +44,6 @@ func (a *Adapter) nativeCommand(raw []byte) *pb.Failure {
 }
 
 func (a *Adapter) executeNative(ctx context.Context, work *execution.Plan, emit execution.Emit) *pb.NativeEnd {
-	// Early validation failures retain only the admitted request and bookkeeping.
-	// The initial preparation estimate remains charged until the first Emit.
-	work.WorkingBytes = execution.EntryOverheadBytes
 	raw := work.Command.GetNative().Request.Data
 	database := work.Backend.(string)
 	if f := a.nativeCommand(raw); f != nil {
@@ -96,7 +73,6 @@ func (a *Adapter) executeNative(ctx context.Context, work *execution.Plan, emit 
 		return protocol.NativeFailure(false, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "Native requires a resource database or $db"))
 	}
 	var reply bsoncore.Document
-	beforeSendBudget := false
 	retry := driver.RetryNone
 	operation := driver.Operation{
 		Database:       database,
@@ -107,19 +83,7 @@ func (a *Adapter) executeNative(ctx context.Context, work *execution.Plan, emit 
 		Type:          driver.Write,
 		RetryMode:     &retry,
 		OmitMaxTimeMS: true,
-		CommandFn: func(dst []byte, server description.SelectedServer) ([]byte, error) {
-			if work.NativeIO != nil {
-				maximum := int(server.MaxMessageSize)
-				if maximum == 0 {
-					maximum = nativeWorkingBytes
-				}
-				work.IOReserve = maximum + 2*protocol.NativeChunk + 8192
-				working := maximum + 2*len(raw) + 8192
-				if err := work.NativeIO.GrowIO(working); err != nil {
-					beforeSendBudget = true
-					return nil, err
-				}
-			}
+		CommandFn: func(dst []byte, _ description.SelectedServer) ([]byte, error) {
 			dst = append(dst, prefix...)
 			return append(dst, suffix...), nil
 		},
@@ -131,17 +95,6 @@ func (a *Adapter) executeNative(ctx context.Context, work *execution.Plan, emit 
 	attempt, release := nativeAttemptContext(ctx)
 	defer release()
 	err := operation.Execute(attempt)
-	// The response is now finite and retained locally. Small replies must not
-	// reserve the largest legal MongoDB reply while waiting on a slow caller.
-	work.WorkingBytes = cap(reply) + execution.EntryOverheadBytes
-	if beforeSendBudget {
-		return protocol.NativeFailure(false, protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "Native working memory capacity exhausted"))
-	}
-	if work.NativeIO != nil {
-		if err := work.NativeIO.EndIO(work.WorkingBytes, 0); err != nil {
-			return protocol.NativeFailure(true, protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "Native working memory capacity exhausted"))
-		}
-	}
 	failure := backendFailure(ctx, err)
 	// Raw is the actual driver-retained wire response, including ok:0 and write
 	// errors. Never reconstruct BSON from the Go error or normalize write effects.
@@ -154,14 +107,14 @@ func (a *Adapter) executeNative(ctx context.Context, work *execution.Plan, emit 
 	head := &pb.NativeHead{BodyContentType: "application/bson"}
 	value := &pb.Event_Head{Head: head}
 	event := &pb.Event{Value: value}
-	if err := emit(work, event); err != nil {
+	if err := emit(event); err != nil {
 		return protocol.NativeFailure(true, protocol.Fail(pb.FailureCode_UNAVAILABLE, "Native response delivery failed"))
 	}
 	for len(reply) > 0 {
 		n := min(len(reply), protocol.NativeChunk)
 		value := &pb.Event_Chunk{Chunk: append([]byte(nil), reply[:n]...)}
 		event := &pb.Event{Value: value}
-		if err := emit(work, event); err != nil {
+		if err := emit(event); err != nil {
 			return protocol.NativeFailure(true, protocol.Fail(pb.FailureCode_UNAVAILABLE, "Native response delivery failed"))
 		}
 		reply = reply[n:]

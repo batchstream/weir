@@ -23,6 +23,7 @@ import (
 	"github.com/batchstream/weir/internal/testutil/testmetrics"
 	"github.com/batchstream/weir/internal/testutil/testmongo"
 	"github.com/batchstream/weir/internal/testutil/testsearch"
+	dto "github.com/prometheus/client_model/go"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -93,7 +94,7 @@ func TestProcessLoad(t *testing.T) {
 	opts := cliContainerOptions{binary: binary, capacityMiB: 1024, config: cfg}
 	process := startCLIContainer(t, opts)
 	t.Logf("measurement=%s warmup=30s fixed_arrival=200RPC/s capacity=1073741824 CPUs=2 driver=%s/%s/%s", duration, runtime.Version(), runtime.GOOS, runtime.GOARCH)
-	t.Log("driver_inflight_limit=512; service MaxInFlight=16/store, queue=1024 entries/32MiB, Node Native invocations=1024/total leases=32768/shared observed byte budget, batching=128/4MiB/20ms, stall=30s unchanged")
+	t.Log("driver_inflight_limit=512; service MaxInFlight=16/store, Native=64/store, queue=1024 entries/32MiB, batching=128/4MiB/20ms, stall=30s unchanged")
 	runProcessLoad(t, process, datasets, duration)
 }
 
@@ -128,17 +129,14 @@ func verifyMongoVersion(t *testing.T, fixture *testmongo.Fixture) {
 func runProcessLoad(t *testing.T, process *cliContainer, datasets []*loadDataset, duration time.Duration) {
 	t.Helper()
 	initial := process.sample(t)
-	native := executionMemorySnapshot(t, initial, process.capacity)
 	if testmetrics.Sum(initial, "weir_memory_go_runtime_managed") != 1 {
 		t.Fatal("CLI automatic memory management was not installed")
 	}
 	for _, dataset := range datasets {
 		labels := map[string]string{"store": dataset.store}
-		for name, want := range map[string]float64{"weir_store_active_executions_limit": 16, "weir_store_pending_entries_limit": 1024, "weir_store_pending_reserved_bytes_limit": 32 << 20, "weir_store_batch_max_operations": 128, "weir_store_batch_max_bytes": 4 << 20, "weir_store_batch_max_wait_seconds": .02} {
-			actual := requireGauge(t, initial, name, labels)
-			if actual != want {
-				t.Fatal("load test changed a default Store policy", dataset.store, name, want)
-			}
+		limit := requireGauge(t, initial, "weir_store_active_executions_limit", labels)
+		if limit != 16 {
+			t.Fatal("load test changed the default Store execution limit", dataset.store, limit)
 		}
 	}
 	openContext, stop := context.WithTimeout(t.Context(), 3*time.Second)
@@ -149,7 +147,7 @@ func runProcessLoad(t *testing.T, process *cliContainer, datasets []*loadDataset
 		t.Fatal("real SDK Resolve initialization failed", err)
 	}
 	t.Cleanup(func() { _ = client.Close() })
-	workload := loadWorkload{process: process, client: client, datasets: datasets, duration: duration, executionRejections: native["budget_rejections_total"]}
+	workload := loadWorkload{process: process, client: client, datasets: datasets, duration: duration, rejections: loadRejections(initial)}
 	runLoadWorkload(t, workload)
 	for _, dataset := range datasets {
 		verifyLoadOracle(t, dataset)
@@ -229,16 +227,16 @@ func seedLoadDataset(t *testing.T, dataset *loadDataset) {
 }
 
 type loadWorkload struct {
-	process             *cliContainer
-	client              *weirclient.Client
-	datasets            []*loadDataset
-	duration            time.Duration
-	ctx                 context.Context
-	results             chan loadResult
-	tokens              chan struct{}
-	pending             *sync.WaitGroup
-	inFlight            *atomic.Int64
-	executionRejections float64
+	process    *cliContainer
+	client     *weirclient.Client
+	datasets   []*loadDataset
+	duration   time.Duration
+	ctx        context.Context
+	results    chan loadResult
+	tokens     chan struct{}
+	pending    *sync.WaitGroup
+	inFlight   *atomic.Int64
+	rejections float64
 }
 
 func runLoadWorkload(t *testing.T, work loadWorkload) {
@@ -343,22 +341,20 @@ func runLoadWorkload(t *testing.T, work loadWorkload) {
 			t.Logf("all 32 slow consumers canceled and joined at %s; %s", time.Since(measurement), result.message)
 		case <-ticker.C:
 			metrics := work.process.sample(t)
-			native := executionMemorySnapshot(t, metrics, work.process.capacity)
-			if native["budget_rejections_total"] != work.executionRejections {
-				t.Fatal("normal workload increased Execution memory budget rejections", native)
+			if rejections := loadRejections(metrics); rejections != work.rejections {
+				t.Fatal("normal workload was rejected", rejections-work.rejections)
 			}
 			for _, dataset := range work.datasets {
 				labels := map[string]string{"store": dataset.store}
 				active := requireGauge(t, metrics, "weir_store_active_executions", labels)
-				pendingEntries := requireGauge(t, metrics, "weir_store_pending_entries", labels)
-				pendingBytes := requireGauge(t, metrics, "weir_store_pending_reserved_bytes", labels)
-				if active > 16 || pendingEntries > 1024 || pendingBytes > 32<<20 {
-					t.Fatal("default Store resource bounds exceeded", dataset.store, active, pendingEntries, pendingBytes)
+				queued := requireGauge(t, metrics, "weir_store_queued_operations", labels)
+				queuedBytes := requireGauge(t, metrics, "weir_store_queued_bytes", labels)
+				if active > 16 || queued > 1024 || queuedBytes > 32<<20 {
+					t.Fatal("default Store resource bounds exceeded", dataset.store, active, queued, queuedBytes)
 				}
 			}
 			gc := metrics["go_gc_duration_seconds"].GetMetric()[0].GetSummary()
-			t.Logf("trend second=%d inflight=%d RSS=%.0f working=%.0f heap=%.0f CPU=%.4f GC=%d GC_pause=%.6f pending=%.0f active=%.0f paused=%.0f pause_bytes=%.0f working_bytes=%.0f wire_bytes=%.0f sessions=%.0f latch=%.0f", int(time.Since(measurement).Seconds()), inFlight.Load(), testmetrics.Sum(metrics, "process_resident_memory_bytes"), testmetrics.Sum(metrics, "weir_memory_cgroup_working_set_bytes"), testmetrics.Sum(metrics, "go_memstats_heap_alloc_bytes"), testmetrics.Sum(metrics, "process_cpu_seconds_total"), gc.GetSampleCount(), gc.GetSampleSum(), testmetrics.Sum(metrics, "weir_store_pending_entries"), testmetrics.Sum(metrics, "weir_store_active_executions"), testmetrics.Sum(metrics, "weir_store_paused_native_outputs"), testmetrics.Sum(metrics, "weir_store_paused_native_reserved_bytes"), testmetrics.Sum(metrics, "weir_store_working_reserved_bytes"), testmetrics.Sum(metrics, "weir_ingress_queued_response_bytes"), testmetrics.Sum(metrics, "weir_ingress_sessions"), testmetrics.Sum(metrics, "weir_memory_latched"))
-			t.Logf("ExecutionMemory second=%d snapshot=%v", int(time.Since(measurement).Seconds()), native)
+			t.Logf("trend second=%d inflight=%d RSS=%.0f working=%.0f heap=%.0f CPU=%.4f GC=%d GC_pause=%.6f queued=%.0f active=%.0f sessions=%.0f latch=%.0f", int(time.Since(measurement).Seconds()), inFlight.Load(), testmetrics.Sum(metrics, "process_resident_memory_bytes"), testmetrics.Sum(metrics, "weir_memory_cgroup_working_set_bytes"), testmetrics.Sum(metrics, "go_memstats_heap_alloc_bytes"), testmetrics.Sum(metrics, "process_cpu_seconds_total"), gc.GetSampleCount(), gc.GetSampleSum(), testmetrics.Sum(metrics, "weir_store_queued_operations"), testmetrics.Sum(metrics, "weir_store_active_executions"), testmetrics.Sum(metrics, "weir_ingress_sessions"), testmetrics.Sum(metrics, "weir_memory_latched"))
 			if !burst && !time.Now().Before(burstAt) {
 				burst = true
 				expected += 256
@@ -382,26 +378,38 @@ func runLoadWorkload(t *testing.T, work loadWorkload) {
 	deadline := time.Now().Add(5 * time.Second)
 	for {
 		metrics := work.process.sample(t)
-		native := executionMemorySnapshot(t, metrics, work.process.capacity)
-		if native["budget_rejections_total"] != work.executionRejections {
-			t.Fatal("Execution memory budget rejections changed during final recovery", native)
+		if rejections := loadRejections(metrics); rejections != work.rejections {
+			t.Fatal("work was rejected during final recovery", rejections-work.rejections)
 		}
 		idle := testmetrics.Sum(metrics, "weir_memory_latched") == 0 && testmetrics.Sum(metrics, "weir_memory_cgroup_working_set_bytes") <= work.process.capacity*.70
-		for _, name := range []string{"used_bytes", "leases", "native_leases", "resident_bytes", "input_reserved_bytes", "input_used_bytes", "wire_bytes", "wire_buffers", "starting", "settled", "borrowed", "waiting", "terminal", "ingress_bytes", "ingress_reserved_bytes", "ingress_buffers", "ingress_messages", "ingress_waiting", "ingress_connections", "ingress_connection_bytes"} {
-			idle = idle && native[name] == 0
-		}
-		for _, name := range []string{"weir_store_pending_entries", "weir_store_pending_reserved_bytes", "weir_store_active_executions", "weir_store_paused_native_outputs", "weir_store_paused_native_reserved_bytes", "weir_store_result_reserved_entries", "weir_store_result_reserved_bytes", "weir_store_retained_result_reserved_bytes", "weir_store_working_reserved_bytes", "weir_store_publishers", "weir_ingress_sessions", "weir_ingress_queued_response_bytes"} {
+		for _, name := range []string{"weir_store_queued_operations", "weir_store_queued_bytes", "weir_store_active_executions", "weir_store_active_natives", "weir_ingress_sessions"} {
 			idle = idle && metrics[name] != nil && testmetrics.Sum(metrics, name) == 0
 		}
 		if time.Now().After(deadline) {
 			t.Fatal("fixed 5s final resource recovery bound exceeded")
 		}
 		if idle {
-			t.Logf("final all queue/execution/publication/session/byte gauges=0; Node ExecutionMemory ownership=0; known memory recovered; ExecutionMemory=%v", native)
+			t.Log("final queue, execution and session gauges=0; memory recovered")
 			break
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
+}
+
+// loadRejections counts work refused before execution.
+func loadRejections(metrics map[string]*dto.MetricFamily) float64 {
+	rejections := testmetrics.Sum(metrics, "weir_store_rejections_total") + testmetrics.Sum(metrics, "weir_admission_rejections_total")
+	return rejections
+}
+
+func requireGauge(t *testing.T, metrics map[string]*dto.MetricFamily, name string, labels map[string]string) float64 {
+	t.Helper()
+	metric := testmetrics.Sample(metrics, name, labels)
+	if metric == nil || metric.Gauge == nil {
+		t.Fatal("required gauge is missing", name, labels)
+	}
+	value := metric.GetGauge().GetValue()
+	return value
 }
 
 func launchLoadJob(work loadWorkload, job loadJob) {

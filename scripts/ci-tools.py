@@ -10,10 +10,6 @@ import subprocess
 import tarfile
 import tempfile
 
-import check_dependencies as dependencies
-
-MODULE_DIRECTORIES = (Path('.'), *(Path(pin[1]) for pin in dependencies.LOCAL_PATCHES.values()))
-
 def download(pin, destination):
     subprocess.run(['curl', '-q', '--fail', '--location', '--max-time', '180',
                     '--max-filesize', '134217728', '--output', str(destination), pin['url']], check=True, timeout=190)
@@ -22,23 +18,15 @@ def download(pin, destination):
 
 
 def prepare_modules(source, work_root, env):
-    # Preparing the root graph in isolation requires the pinned replacement
-    # module files at the same relative paths.
-    directories = MODULE_DIRECTORIES
-    inputs = {directory / name: (source / directory / name).read_bytes()
-              for directory in directories for name in ('go.mod', 'go.sum')
-              if name == 'go.mod' or (source / directory / name).exists()}
+    inputs = {name: (source / name).read_bytes() for name in ('go.mod', 'go.sum')
+              if name == 'go.mod' or (source / name).exists()}
     with tempfile.TemporaryDirectory(prefix='module-prepare-', dir=work_root) as work:
-        for relative, raw in inputs.items():
-            target = Path(work) / relative
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_bytes(raw)
-        # Each module has its own selected test dependency versions. All must
-        # be cached before CI switches back to its network-disabled test mode.
-        for directory in directories:
-            subprocess.run(['go', 'mod', 'download', 'all'], cwd=Path(work) / directory,
-                           env=env, check=True, timeout=300)
-    if inputs != {relative: (source / relative).read_bytes() for relative in inputs}:
+        for name, raw in inputs.items():
+            (Path(work) / name).write_bytes(raw)
+        # Test dependency versions must be cached before CI switches back to
+        # its network-disabled test mode.
+        subprocess.run(['go', 'mod', 'download', 'all'], cwd=work, env=env, check=True, timeout=300)
+    if inputs != {name: (source / name).read_bytes() for name in inputs}:
         raise ValueError('module preparation changed fixed go.mod/go.sum')
 
 
@@ -108,8 +96,7 @@ def main():
         # Download in a temporary module copy: full downloads may add unused zip sums.
         prepare_modules(Path.cwd(), root, env)
         env.update(GOPROXY='off', GOSUMDB='off')
-        for directory in MODULE_DIRECTORIES:
-            subprocess.run(['go', 'mod', 'verify'], cwd=directory, env=env, check=True, timeout=60)
+        subprocess.run(['go', 'mod', 'verify'], env=env, check=True, timeout=60)
         subprocess.run(['go', 'list', '-m', '-json', 'all'], env=env, check=True, timeout=60, stdout=subprocess.DEVNULL)
     if args.mongo:
         mongo = prepare_mongo(pins['mongo']['linux-amd64'], root, bins)

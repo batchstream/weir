@@ -34,9 +34,6 @@ func TestSearchMultipleRequestTargets(t *testing.T) {
 	leftRead := batchTestPlan(t, a, "read", searchResource(indexes[0], "same"))
 	rightRead := batchTestPlan(t, a, "read", searchResource(indexes[1], "same"))
 	works := []*execution.Plan{leftRead, rightRead}
-	for i, work := range works {
-		work.ID = uint64(i)
-	}
 	results := a.executeRecords(context.Background(), works)
 	if len(results) != len(works) {
 		t.Fatal("mixed target cardinality", len(results))
@@ -59,13 +56,10 @@ func TestSearchMultipleRequestTargets(t *testing.T) {
 		{left: "create", right: "create", id: "create"},
 		{left: "delete", right: "delete", id: "delete"},
 	}
-	for phase, actions := range phases {
+	for _, actions := range phases {
 		left := batchTestPlan(t, a, actions.left, searchResource(indexes[0], actions.id))
 		right := batchTestPlan(t, a, actions.right, searchResource(indexes[1], actions.id))
 		works := []*execution.Plan{left, right}
-		for i, work := range works {
-			work.ID = uint64(100 + phase*2 + i)
-		}
 		results := a.executeRecords(context.Background(), works)
 		if len(results) != len(works) {
 			t.Fatal("cross-index mutation cardinality", actions, len(results))

@@ -198,7 +198,7 @@ func TestMongoMixedWriteLostReplyDoesNotReplayExpression(t *testing.T) {
 }
 
 func TestMongoIndependentRPCDuplicateReadsKeepCallerIsolationAndSharedResults(t *testing.T) {
-	for _, mode := range []string{"first smaller estimate", "both retained", "first canceled"} {
+	for _, mode := range []string{"both retained", "first canceled"} {
 		t.Run(mode, func(t *testing.T) {
 			fixture := testmongo.Open(t)
 			document := bson.D{{Key: "_id", Value: "same"}, {Key: "value", Value: 123}}
@@ -225,9 +225,6 @@ func TestMongoIndependentRPCDuplicateReadsKeepCallerIsolationAndSharedResults(t 
 				work.Context = t.Context()
 				if i == 0 {
 					work.Context = caller
-					if mode == "first smaller estimate" {
-						work.ResultBytes = 1
-					}
 				}
 				plans = append(plans, work)
 			}
@@ -241,7 +238,7 @@ func TestMongoIndependentRPCDuplicateReadsKeepCallerIsolationAndSharedResults(t 
 			}
 			if mode != "first canceled" {
 				if replies[0].GetReadResult().GetDocument() != replies[1].GetReadResult().GetDocument() {
-					t.Fatal("same-ID responses did not share immutable data with independent reservations", replies)
+					t.Fatal("same-ID responses did not share immutable data", replies)
 				}
 			} else {
 				code := pb.FailureCode_CANCELLED

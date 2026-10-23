@@ -1,4 +1,4 @@
-"""Exercise offline module bootstrap with the real local-replacement graph."""
+"""Exercise offline module bootstrap and pinned MongoDB extraction."""
 import importlib.util
 import hashlib
 import io
@@ -18,22 +18,12 @@ spec.loader.exec_module(ci_tools)
 
 class ModulePreparationTests(unittest.TestCase):
     @unittest.skipUnless(shutil.which('go'), 'requires the native Go driver')
-    def test_relative_replacement_and_nested_graph_are_prepared_without_source_changes(self):
+    def test_module_graph_is_prepared_without_source_changes(self):
         with tempfile.TemporaryDirectory() as temporary:
             source = Path(temporary) / 'source'
-            nested = source / 'third_party/grpc'
-            nested.mkdir(parents=True)
-            lua = source / 'third_party/golua'
-            lua.mkdir(parents=True)
-            (source / 'go.mod').write_text(
-                'module example.com/bootstrap\n\ngo 1.20\n\n'
-                'require (\n google.golang.org/grpc v1.83.2\n github.com/iceisfun/golua v1.1.1\n)\n\n'
-                'replace google.golang.org/grpc => ./third_party/grpc\n'
-                'replace github.com/iceisfun/golua => ./third_party/golua\n')
+            source.mkdir()
+            (source / 'go.mod').write_text('module example.com/bootstrap\n\ngo 1.20\n')
             (source / 'go.sum').write_text('')
-            (nested / 'go.mod').write_text('module google.golang.org/grpc\n\ngo 1.20\n')
-            (nested / 'go.sum').write_text('')
-            (lua / 'go.mod').write_text('module github.com/iceisfun/golua\n\ngo 1.20\n')
             inputs = {item.relative_to(source): item.read_bytes()
                       for item in source.rglob('go.*')}
             work_root = Path(temporary) / 'work'

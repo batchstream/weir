@@ -75,7 +75,7 @@ func testSearchCancellationAndDrain(t *testing.T, expression bool) {
 			}
 			limits := store.DefaultLimits()
 			limits.BatchOperations = 2
-			runtime, err := store.New(adapter, limits, nil)
+			runtime, err := store.New(adapter, limits)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -103,12 +103,11 @@ func testSearchCancellationAndDrain(t *testing.T, expression bool) {
 					t.Fatal(failure)
 				}
 			}
-			second.ID = 1
-			a, failure, _ := runtime.Submit(short, first, nil)
+			a, failure := runtime.Submit(short, first, nil)
 			if failure != nil {
 				t.Fatal(failure)
 			}
-			other, failure, _ := runtime.Submit(long, second, nil)
+			other, failure := runtime.Submit(long, second, nil)
 			if failure != nil {
 				t.Fatal(failure)
 			}
@@ -127,7 +126,6 @@ func testSearchCancellationAndDrain(t *testing.T, expression bool) {
 					t.Fatal(err)
 				}
 				assertOutcome(t, result, pb.MutationOutcome_APPLIED, 0)
-				other.Ack()
 			} else {
 				if mode == "cancel_all" {
 					stopShort()
@@ -140,8 +138,6 @@ func testSearchCancellationAndDrain(t *testing.T, expression bool) {
 					t.Fatal(err)
 				}
 				cancel()
-				a.Ack()
-				other.Ack()
 				close(release)
 			}
 			expectedCalls := int32(1)
@@ -159,14 +155,6 @@ func testSearchCancellationAndDrain(t *testing.T, expression bool) {
 				if status != 200 {
 					t.Fatal("real effect missing", id, status)
 				}
-			}
-			deadline := time.Now().Add(time.Second)
-			for time.Now().Before(deadline) && runtime.Snapshot().Retained != 0 {
-				time.Sleep(time.Millisecond)
-			}
-			snapshot := runtime.Snapshot()
-			if snapshot.Active != 0 || snapshot.Pending != 0 || snapshot.Retained != 0 || snapshot.ResultBytes != 0 {
-				t.Fatal("resources retained", snapshot)
 			}
 		})
 	}

@@ -80,10 +80,8 @@ func replicaCLILuaLifecycleStart(t *testing.T, lifetime *replyLossLifetime, phas
 	lifetime.proxy.CheckLuaLedger(t, ctx, watch, expected)
 	if phase != testmongo.LuaHealthyPeer {
 		metrics := testmetrics.Scrape(t, lifetime.service.diagnostic)
-		for _, name := range []string{"weir_store_active_executions", "weir_store_working_reserved_bytes", "weir_store_result_reserved_entries", "weir_execution_memory_input_used_bytes", "weir_execution_memory_leases"} {
-			if metrics[name] == nil || testmetrics.Sum(metrics, name) <= 0 {
-				t.Fatal("held Lua lifecycle actual positive credit", phase, name)
-			}
+		if metrics["weir_store_active_executions"] == nil || testmetrics.Sum(metrics, "weir_store_active_executions") <= 0 {
+			t.Fatal("held Lua lifecycle has no active execution", phase)
 		}
 	}
 	return call

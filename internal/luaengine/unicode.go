@@ -1,10 +1,10 @@
 package luaengine
 
 import (
+	"strings"
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/iceisfun/golua/budget"
 	"github.com/iceisfun/golua/vm"
 )
 
@@ -15,7 +15,7 @@ func luaUnicodeCase(state *vm.VM, upper bool) int {
 		panic("Unicode casing requires one UTF-8 string")
 	}
 	text := state.Get(1).AsString()
-	result := budget.NewBuilder(state.Budget())
+	var result strings.Builder
 	result.Grow(len(text))
 	checkpoint := 0
 	for offset := 0; offset < len(text); {

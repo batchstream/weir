@@ -13,7 +13,6 @@ import (
 	"time"
 
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
-	"github.com/batchstream/weir/internal/execution"
 	"github.com/batchstream/weir/internal/testutil"
 	"github.com/batchstream/weir/internal/testutil/testdns"
 )
@@ -80,7 +79,7 @@ func TestSearchTLSNativeSlowConsumerCloseJoins(t *testing.T) {
 	endpoint, c := tlsEndpoint(t, handler, false)
 	a := openTestTLS(t, endpoint.URL, c)
 	started := make(chan struct{})
-	emit := func(_ *execution.Plan, event *pb.Event) error {
+	emit := func(event *pb.Event) error {
 		if event.GetChunk() == nil {
 			return nil
 		}

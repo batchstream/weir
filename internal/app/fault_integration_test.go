@@ -102,7 +102,7 @@ func TestProcessFaults(t *testing.T) {
 		{store: "search", root: search.Index, media: "application/json", search: search, searchProxy: searchProxy},
 	}
 	t.Logf("backend=%s container=%s PID=%s capacity=512MiB CPUs=2 default_store_execution=16 default_stall=30s", search.Profile, process.name, suite.pid)
-	t.Log("gates: healthy Read/Native <=3s during one held IO; cancellation and all resource credits <=3s; proxy recovery and same-SDK CRUD/Native <=5s; ack-loss native=INCOMPLETE, typed=UNKNOWN, oracle increment/version exactly one; fault SIGTERM <=8s exit=0 no OOM; no forced GC or database failpoints")
+	t.Log("gates: healthy Read/Native <=3s during one held IO; cancellation and Store/session cleanup <=3s; proxy recovery and same-SDK CRUD/Native <=5s; ack-loss native=INCOMPLETE, typed=UNKNOWN, oracle increment/version exactly one; fault SIGTERM <=8s exit=0 no OOM; no forced GC or database failpoints")
 	for _, backend := range backends {
 		if !t.Run(backend.store, func(t *testing.T) {
 			processFaultHealthy(t, &suite, backend)
@@ -499,7 +499,7 @@ func processFaultCancelAfterAck(t *testing.T, suite *processFaultSuite, backend 
 	if n != 1 || backend.search != nil && actualVersion != version+1 || counts.writes != 1 || counts.acks != 1 || counts.drops != 1 {
 		t.Fatal("cancel-after-ack oracle or replay mismatch", n, actualVersion, counts)
 	}
-	t.Logf("cancel_after_ack backend=%s elapsed=%s caller=Canceled oracle_n=%d version=%d writes=%d acks=%d drops=%d all_credits=0", backend.store, time.Since(start), n, actualVersion, counts.writes, counts.acks, counts.drops)
+	t.Logf("cancel_after_ack backend=%s elapsed=%s caller=Canceled oracle_n=%d version=%d writes=%d acks=%d drops=%d cleanup=0", backend.store, time.Since(start), n, actualVersion, counts.writes, counts.acks, counts.drops)
 }
 
 func processFaultSlowIO(t *testing.T, suite *processFaultSuite, backend processFaultBackend) {
@@ -514,7 +514,7 @@ func processFaultSlowIO(t *testing.T, suite *processFaultSuite, backend processF
 	go func() { done <- processFaultNativeRead(ctx, suite.client, backend, id) }()
 	processFaultWait(t, gate.started, "single Native before forwarding to real backend")
 	metrics := suite.process.sample(t)
-	if testmetrics.Sum(metrics, "weir_store_active_executions") < 1 || testmetrics.Sum(metrics, "weir_memory_latched") != 0 {
+	if storeActive(metrics) < 1 || testmetrics.Sum(metrics, "weir_memory_latched") != 0 {
 		t.Fatal("one real blocked IO must have active credit without memory pressure")
 	}
 	for _, kind := range []string{"Read", "Native"} {
@@ -531,7 +531,7 @@ func processFaultSlowIO(t *testing.T, suite *processFaultSuite, backend processF
 		if err != nil || elapsed > 3*time.Second {
 			t.Fatal("single slow IO starved healthy work or exceeded 3s", backend.store, kind, elapsed, err)
 		}
-		t.Logf("one_held_IO backend=%s healthy_method=%s elapsed=%s active=%.0f RSS=%.0f WS=%.0f latch=0", backend.store, kind, elapsed, testmetrics.Sum(metrics, "weir_store_active_executions"), testmetrics.Sum(metrics, "process_resident_memory_bytes"), testmetrics.Sum(metrics, "weir_memory_cgroup_working_set_bytes"))
+		t.Logf("one_held_IO backend=%s healthy_method=%s elapsed=%s active=%.0f RSS=%.0f WS=%.0f latch=0", backend.store, kind, elapsed, storeActive(metrics), testmetrics.Sum(metrics, "process_resident_memory_bytes"), testmetrics.Sum(metrics, "weir_memory_cgroup_working_set_bytes"))
 	}
 	select {
 	case <-gate.ack:
@@ -665,7 +665,7 @@ func processFaultIdle(t *testing.T, process *cliContainer, bound time.Duration) 
 	for {
 		metrics := process.sample(t)
 		nonzero := make(map[string]float64)
-		for _, name := range []string{"weir_store_active_executions", "weir_store_paused_native_outputs", "weir_store_paused_native_reserved_bytes", "weir_store_pending_entries", "weir_store_pending_reserved_bytes", "weir_store_result_reserved_entries", "weir_store_result_reserved_bytes", "weir_store_retained_result_reserved_bytes", "weir_store_working_reserved_bytes", "weir_store_publishers", "weir_ingress_sessions", "weir_ingress_queued_response_bytes", "weir_memory_latched", "weir_execution_memory_input_reserved_bytes", "weir_execution_memory_input_used_bytes", "weir_execution_memory_wire_bytes", "weir_execution_memory_wire_buffers", "weir_execution_memory_leases", "weir_execution_memory_native_leases", "weir_execution_memory_starting", "weir_execution_memory_settled", "weir_execution_memory_borrowed", "weir_execution_memory_waiting", "weir_execution_memory_terminal", "weir_execution_memory_ingress_bytes", "weir_execution_memory_ingress_reserved_bytes", "weir_execution_memory_ingress_buffers", "weir_execution_memory_ingress_messages", "weir_execution_memory_ingress_waiting"} {
+		for _, name := range []string{"weir_store_active_executions", "weir_store_active_natives", "weir_store_queued_operations", "weir_store_queued_bytes", "weir_ingress_sessions", "weir_memory_latched"} {
 			if metrics[name] == nil {
 				t.Fatal("missing cleanup gauge", name)
 			}
@@ -673,23 +673,8 @@ func processFaultIdle(t *testing.T, process *cliContainer, bound time.Duration) 
 				nonzero[name] = value
 			}
 		}
-		// This suite keeps its two Store SDK channels alive across every fault.
-		connectionBytes := float64(2 * ingressConnectionBytes)
-		for name, want := range map[string]float64{
-			"weir_execution_memory_ingress_connections":      2,
-			"weir_execution_memory_ingress_connection_bytes": connectionBytes,
-			"weir_execution_memory_used_bytes":               connectionBytes,
-			"weir_execution_memory_resident_bytes":           connectionBytes,
-		} {
-			if metrics[name] == nil {
-				t.Fatal("missing retained-connection cleanup gauge", name)
-			}
-			if value := testmetrics.Sum(metrics, name); value != want {
-				nonzero[name] = value
-			}
-		}
 		if time.Since(start) >= bound {
-			t.Fatal("credits failed fixed cleanup bound without forced GC", time.Since(start), nonzero)
+			t.Fatal("work failed its fixed cleanup bound", time.Since(start), nonzero)
 		}
 		if len(nonzero) == 0 {
 			return

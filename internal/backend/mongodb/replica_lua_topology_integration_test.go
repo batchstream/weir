@@ -25,18 +25,16 @@ type replicaLuaTopology struct {
 	calls      [2]replicaLuaTopologyCall
 }
 type replicaLuaTopologyCall struct {
-	ctx     context.Context
-	cancel  context.CancelFunc
-	watch   *testmongo.LuaWatch
-	work    *execution.Plan
-	mirror  *replicaLuaMemory
-	session *store.Session
-	ticket  *store.Ticket
+	ctx    context.Context
+	cancel context.CancelFunc
+	watch  *testmongo.LuaWatch
+	work   *execution.Plan
+	ticket *store.Ticket
 }
 
 func replicaLuaTopologyBegin(t *testing.T, opts replicaLuaRuntimeOptions, transition string) *replicaLuaTopology {
 	t.Helper()
-	replicaLuaZero(t, opts)
+	replicaLuaIdle(t, opts)
 	state := &replicaLuaTopology{opts: opts, transition: transition, entered: opts.delegate.entered.Load()}
 	for i := range state.calls {
 		c := &state.calls[i]
@@ -82,17 +80,7 @@ func replicaLuaTopologyBegin(t *testing.T, opts replicaLuaRuntimeOptions, transi
 		if failure != nil {
 			t.Fatal(failure)
 		}
-		c.mirror = &replicaLuaMemory{command: c.work.Command, native: c.work.Backend.(*plan), operation: op}
-		opts.delegate.luaMu.Lock()
-		if opts.delegate.luaPlans == nil {
-			opts.delegate.luaPlans = make(map[uint64]*replicaLuaMemory)
-		}
-		opts.delegate.luaPlans[c.work.ID] = c.mirror
-		opts.delegate.luaMu.Unlock()
-		c.session = opts.runtime.NewSession()
-		t.Cleanup(c.session.Close)
-		c.session.Events = make(chan *store.Emission, 1)
-		c.ticket, failure, _ = opts.runtime.Submit(c.ctx, c.work, c.session)
+		c.ticket, failure = opts.runtime.Submit(c.ctx, c.work, opts.runtime.NewSession())
 		if failure != nil {
 			t.Fatal(failure)
 		}
@@ -142,7 +130,7 @@ func replicaLuaTopologyRecovery(t *testing.T, ctx context.Context, opts replicaL
 	if failure != nil {
 		t.Fatal(failure)
 	}
-	ticket, failure, _ := opts.runtime.Submit(ctx, work, nil)
+	ticket, failure := opts.runtime.Submit(ctx, work, nil)
 	if failure != nil {
 		t.Fatal(failure)
 	}
@@ -150,32 +138,22 @@ func replicaLuaTopologyRecovery(t *testing.T, ctx context.Context, opts replicaL
 	if err != nil || ctx.Err() != nil || event.GetMutationResult().GetOutcome() != pb.MutationOutcome_APPLIED || event.GetMutationResult().GetFailure() != nil {
 		t.Fatal("same Runtime topology recovery", err, event)
 	}
-	ticket.Ack()
-	for opts.runtime.Snapshot().Active != 0 || opts.delegate.entered.Load() != opts.delegate.returned.Load() {
-		if ctx.Err() != nil {
-			t.Fatal("topology recovery join", ctx.Err())
-		}
-		time.Sleep(time.Millisecond)
-	}
-	replicaLuaZero(t, opts)
+	replicaLuaJoined(t, ctx, opts, opts.delegate.entered.Load())
+	replicaLuaIdle(t, opts)
 	return id
 }
 
 func (s *replicaLuaTopology) held(t *testing.T) {
 	t.Helper()
-	snapshot := s.opts.runtime.Snapshot()
-	credit := s.opts.runtime.ExecutionMemory().Snapshot()
-	var working int64
 	for i := range s.calls {
-		c := &s.calls[i]
-		if c.ctx.Err() != nil || !c.mirror.actualTicket.Load() || c.mirror.working.Load() <= 0 || c.mirror.overflow.Load() {
-			t.Fatal("live original topology Ticket", c.ctx.Err())
+		if err := s.calls[i].ctx.Err(); err != nil {
+			t.Fatal("live original topology caller", err)
 		}
-		working += c.mirror.working.Load()
 	}
-	if s.opts.delegate.returned.Load() != s.entered || snapshot.Active != 2 || snapshot.Retained != 2 || snapshot.WorkingBytes != int(working) || credit.Count != 2 || credit.InputUsedBytes == 0 || credit.UsedBytes == 0 {
-		t.Fatal("two real held owners in one Runtime", snapshot, credit)
+	if s.opts.delegate.returned.Load() != s.entered {
+		t.Fatal("topology execution returned while its reply was held")
 	}
+	replicaLuaRunning(t, s.opts, 2)
 }
 
 func (s *replicaLuaTopology) finish(t *testing.T) (testmongo.LuaCase, testmongo.LuaCommitCase) {
@@ -205,40 +183,14 @@ func (s *replicaLuaTopology) finish(t *testing.T) (testmongo.LuaCase, testmongo.
 				t.Fatal("topology original commit confirmation", result, c.watch.Snapshot())
 			}
 		}
-		select {
-		case emission := <-c.session.Events:
-			emission.Release()
-		case <-c.ctx.Done():
-			t.Fatal("topology publisher join", c.ctx.Err())
-		}
 	}
-	ctx := s.calls[0].ctx
-	for s.opts.runtime.Snapshot().Active != 0 || s.opts.runtime.Snapshot().Publishers != 0 || s.opts.delegate.returned.Load() != s.entered+2 {
-		if ctx.Err() != nil {
-			t.Fatal("topology actual Execute/publisher join", ctx.Err())
-		}
-		time.Sleep(time.Millisecond)
-	}
-	snapshot := s.opts.runtime.Snapshot()
-	credit := s.opts.runtime.ExecutionMemory().Snapshot()
-	if snapshot.WorkingBytes != 0 || snapshot.Retained != 2 || snapshot.ResultBytes <= 0 || credit.Count != 2 || credit.InputUsedBytes == 0 || s.opts.delegate.client.NumberSessionsInProgress() != 0 {
-		t.Fatal("topology joined retained owners", snapshot, credit)
-	}
+	replicaLuaJoined(t, s.calls[0].ctx, s.opts, s.entered+2)
+	replicaLuaIdle(t, s.opts)
 	for i := range s.calls {
 		c := &s.calls[i]
-		if c.mirror.workingCalls.Load() == 0 || c.mirror.resultCalls.Load() != 0 || c.mirror.overflow.Load() || c.work.Backend.(*plan).program.ObservedAt.UTC().Format(time.RFC3339Nano) != c.watch.Snapshot().Attempt[0].Observed {
+		if c.work.Backend.(*plan).program.ObservedAt.UTC().Format(time.RFC3339Nano) != c.watch.Snapshot().Attempt[0].Observed {
 			t.Fatal("topology original execution witness")
 		}
-		c.ticket.Ack()
-	}
-	// Both real Acks, before either Session.Close, must alone release all credit.
-	replicaLuaZero(t, s.opts)
-	for i := range s.calls {
-		c := &s.calls[i]
-		c.session.Close()
-		s.opts.delegate.luaMu.Lock()
-		delete(s.opts.delegate.luaPlans, c.work.ID)
-		s.opts.delegate.luaMu.Unlock()
 		c.cancel()
 	}
 	if err := s.calls[0].watch.CompleteCommit(); err != nil {

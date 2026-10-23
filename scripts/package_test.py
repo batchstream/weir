@@ -99,82 +99,6 @@ class PackageTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'immutable full source SHA'):
                 package.source_files(root, 'HEAD')
 
-    def test_public_grpc_sources_require_a_pinned_manifest(self):
-        name = 'third_party/grpc/credentials/insecure/insecure.go'
-        self.assertTrue(package.allowed(name))
-        for refused in ('third_party/grpc/credentials/local.key',
-                        'third_party/grpc/credentials/.env.go',
-                        'third_party/grpc/credentials/source_test.go',
-                        'third_party/grpc/other/../credentials/source.go'):
-            self.assertFalse(package.allowed(refused), refused)
-        with tempfile.TemporaryDirectory() as temp:
-            root = Path(temp)
-
-            def git(*args):
-                return package.run(['git', *args], cwd=root)
-
-            git('init', '-q')
-            inputs = {'go.mod': 'fixture', 'go.sum': '', 'cmd/weir/main.go': 'fixture', name: '// public fixture Go source\n'}
-            for filename, content in inputs.items():
-                path = root / filename
-                path.parent.mkdir(parents=True, exist_ok=True)
-                path.write_text(content)
-            git('add', '.')
-            git('-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-qm', 'fixture')
-            revision = package.clean_head(root)
-            with self.assertRaisesRegex(ValueError, 'pinned upstream manifest'):
-                package.source_files(root, revision)
-            manifest = {'module': package.dependencies.GRPC, 'version': package.dependencies.GRPC_VERSION,
-                        'files': {'credentials/insecure/insecure.go': package.sha(inputs[name].encode())}}
-            manifest_path = root / 'third_party/grpc/WEIR_UPSTREAM.json'
-            manifest_path.write_text(json.dumps(manifest))
-            git('add', '.')
-            git('-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-qm', 'pinned manifest')
-            selected = dict(package.source_files(root, package.clean_head(root)))
-            self.assertIn(name, selected)
-            self.assertIn('third_party/grpc/WEIR_UPSTREAM.json', selected)
-            (root / name).write_text('// changed fixture Go source\n')
-            git('add', '.')
-            git('-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-qm', 'source changed')
-            with self.assertRaisesRegex(ValueError, 'differs from pinned upstream'):
-                package.source_files(root, package.clean_head(root))
-            manifest['files'] = {}
-            manifest_path.write_text(json.dumps(manifest))
-            git('add', '.')
-            git('-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-qm', 'unlisted source')
-            with self.assertRaisesRegex(ValueError, 'unlisted credentials'):
-                package.source_files(root, package.clean_head(root))
-
-    def test_exported_inputs_match_each_complete_patch_manifest(self):
-        for module, (version, relative) in package.dependencies.LOCAL_PATCHES.items():
-            with self.subTest(module=module), tempfile.TemporaryDirectory() as temp:
-                source = Path(temp)
-                relative = relative.removeprefix('./')
-                directory = source / relative
-                directory.mkdir(parents=True)
-                base = {'go.mod': package.sha(('module ' + module + '\n').encode()),
-                        'server.go': package.sha(b'upstream'), 'LICENSE': package.sha(b'license')}
-                patch = {'path': 'server.go', 'upstream_sha256': base['server.go'], 'sha256': package.sha(b'patched')}
-                addition = {'path': 'mem/receive_memory.go', 'sha256': package.sha(b'new source')}
-                manifest = {'module': module, 'version': version,
-                            'files': base, 'patchedFiles': [patch], 'newFiles': [addition]}
-                (directory / 'WEIR_UPSTREAM.json').write_text(json.dumps(manifest))
-                inputs = {relative + '/' + name: digest for name, digest in base.items()}
-                inputs[relative + '/server.go'] = patch['sha256']
-                inputs[relative + '/mem/receive_memory.go'] = addition['sha256']
-                inputs[relative + '/WEIR_UPSTREAM.json'] = package.sha(json.dumps(manifest).encode())
-                pin = (version, relative)
-                package.validate_patch(source, inputs, module, pin)
-                changed = dict(inputs)
-                changed[relative + '/server.go'] = base['server.go']
-                missing = dict(inputs)
-                del missing[relative + '/LICENSE']
-                extra = dict(inputs)
-                extra[relative + '/unrecorded.go'] = package.sha(b'unrecorded source')
-                for invalid in (changed, missing, extra):
-                    with self.assertRaisesRegex(ValueError, 'differ from the pinned patch manifest'):
-                        package.validate_patch(source, invalid, module, pin)
-
     def test_toolchain_drift_rejected(self):
         result = subprocess.CompletedProcess([], 0, b'go1.27.0\n', b'')
         with patch.object(subprocess, 'run', return_value=result):
@@ -198,20 +122,6 @@ class PackageTests(unittest.TestCase):
             }
             for license_name in package.PUREGO_LICENSES:
                 inputs['licenses/' + license_name] = license_name.encode()
-            patch_members = []
-            for module, (version, relative) in package.dependencies.LOCAL_PATCHES.items():
-                relative = relative.removeprefix('./')
-                upstream = {'go.mod': b'module ' + module.encode() + b'\n', 'LICENSE': b'license'}
-                if relative.endswith('/grpc'):
-                    upstream['AUTHORS'] = b'authors'
-                added = {'WEIR_PATCH.md': b'patch notes', 'WEIR_PATCH.diff': b'patch diff'}
-                manifest = {'module': module, 'version': version,
-                            'files': {name: package.sha(data) for name, data in upstream.items()},
-                            'newFiles': [{'path': name, 'sha256': package.sha(data)} for name, data in added.items()]}
-                for name, data in {**upstream, **added, 'WEIR_UPSTREAM.json': json.dumps(manifest).encode()}.items():
-                    inputs[relative + '/' + name] = data
-                    if name != 'go.mod':
-                        patch_members.append('licenses/' + relative.rsplit('/', 1)[-1] + '/' + name)
 
             def run(args, *, cwd=None, env=None):
                 if args[:3] == ['git', 'cat-file', 'blob']:
@@ -253,12 +163,11 @@ class PackageTests(unittest.TestCase):
                 for filename in configurations:
                     self.assertEqual(archive.extractfile(filename).read(), inputs[filename])
                 self.assertEqual(archive.extractfile('weir').read(), b'./cmd/weir linux/arm64')
-                licenses = {name for name in archive.getnames() if name.startswith('licenses/')}
-                self.assertEqual(licenses, set(patch_members))
+                self.assertFalse(any(name.startswith('licenses/') for name in archive.getnames()))
             with tarfile.open(output / 'weir-darwin-arm64.tar.gz') as archive:
                 licenses = {name for name in archive.getnames() if name.startswith('licenses/')}
                 purego = {'licenses/' + name for name in package.PUREGO_LICENSES}
-                self.assertEqual(licenses, set(patch_members) | purego)
+                self.assertEqual(licenses, purego)
             docker.assert_called_once()
 
     def test_oci_index_digest_requires_both_linux_platforms(self):

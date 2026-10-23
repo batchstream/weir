@@ -6,14 +6,12 @@ import (
 	"errors"
 	"fmt"
 	"time"
-	"unsafe"
 
 	"github.com/batchstream/weir-protocol/api/protocol"
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 	"github.com/batchstream/weir/internal/execution"
 	"github.com/batchstream/weir/internal/luaengine"
 	"github.com/batchstream/weir/internal/value"
-	"github.com/iceisfun/golua/budget"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
@@ -139,67 +137,29 @@ type programAttempt struct {
 	ambiguous *bool
 }
 
-// Each attempt retires its retained documents before another snapshot, split,
-// or group can reuse the shared record window. Results have separate owners.
-type programMemoryScope struct {
-	memory    *recordMemory
-	held      int
-	documents []bson.Raw
-	writes    []*execution.Plan
-}
-
-func newProgramMemoryScope(ctx context.Context) *programMemoryScope {
-	scope := &programMemoryScope{}
-	if memory, ok := ctx.Value(recordMemoryContextKey).(*recordMemory); ok {
-		scope.memory, scope.held = memory, memory.held
-	}
-	return scope
-}
-
-func (s *programMemoryScope) close() {
-	clear(s.documents[:cap(s.documents)])
-	s.documents = nil
-	clear(s.writes[:cap(s.writes)])
-	s.writes = nil
-	if s.memory != nil {
-		s.memory.held = s.held
-	}
-}
-
-func (s *programMemoryScope) filterCancelled(ctx context.Context, batch *programBatch, positions []int) []int {
-	kept, released := 0, 0
+// filterCancelled drops writes whose caller went away while another member
+// was evaluated. Nothing is retracted after the write starts.
+func filterCancelled(ctx context.Context, batch *programBatch, writes []*execution.Plan, positions []int) ([]*execution.Plan, []int) {
+	kept := 0
 	for i, position := range positions {
-		work := batch.plans[position]
-		if failure := programCallerFailure(ctx, work); failure != nil {
+		if failure := programCallerFailure(ctx, batch.plans[position]); failure != nil {
 			batch.results[position] = protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, failure)
-			released += cap(s.writes[i].Backend.(*plan).document)
 			continue
 		}
-		s.writes[kept], positions[kept] = s.writes[i], position
+		writes[kept], positions[kept] = writes[i], position
 		kept++
 	}
-	// Truncation alone leaves cancelled replacements reachable in the backing array.
-	clear(s.writes[kept:])
-	s.writes = s.writes[:kept]
-	// Only retire the charge after compaction and tail clearing remove every
-	// cancelled write reference. The next reservation retains all survivor bytes.
-	if s.memory != nil {
-		s.memory.held -= released
-	}
-	return positions[:kept]
+	return writes[:kept], positions[:kept]
 }
 
 func (a *Adapter) runProgramAttempt(ctx context.Context, state *programAttempt) programAttemptStatus {
-	scope := newProgramMemoryScope(ctx)
-	defer scope.close()
 	batch, session, active, attempt := state.batch, state.session, state.active, state.number
 	txctx := mongo.NewSessionContext(ctx, session)
 	readPlans := make([]*execution.Plan, len(active))
 	for i, position := range active {
 		readPlans[i] = batch.plans[position]
 	}
-	var readErr error
-	scope.documents, readErr = a.readPrograms(txctx, readPlans)
+	documents, readErr := a.readPrograms(txctx, readPlans)
 	if readErr != nil {
 		var commandError mongo.CommandError
 		settled := errors.As(readErr, &commandError) && len(commandError.Raw) != 0 || errors.Is(readErr, errProgramBatchBound)
@@ -214,23 +174,16 @@ func (a *Adapter) runProgramAttempt(ctx context.Context, state *programAttempt) 
 		if programHasLabel(readErr, "TransientTransactionError") && pauseProgram(ctx, a.options().RetryBackoff) {
 			return programAttemptRetry
 		}
-		failure := backendFailure(ctx, readErr)
-		if errors.Is(readErr, execution.ErrExecutionMemory) || errors.Is(readErr, errRecordReservation) {
-			failure = execution.ReservationFailure(ctx, readErr)
-		}
-		batch.fail(pb.MutationOutcome_NOT_APPLIED, failure)
+		batch.fail(pb.MutationOutcome_NOT_APPLIED, backendFailure(ctx, readErr))
 		return programAttemptFinished
 	}
-	var writePositions []int
-	scope.writes, writePositions = a.transformPrograms(txctx, batch, active, scope.documents)
-	// A cancellation during another member's Lua evaluation only excludes
-	// this caller's not-yet-sent write. Nothing is retracted after W starts.
-	writePositions = scope.filterCancelled(ctx, batch, writePositions)
-	if len(scope.writes) == 0 {
+	writes, writePositions := a.transformPrograms(txctx, batch, active, documents)
+	writes, writePositions = filterCancelled(ctx, batch, writes, writePositions)
+	if len(writes) == 0 {
 		a.abortProgramTransaction(session, true)
 		return programAttemptFinished
 	}
-	replies, settled, writeErr := a.writePrograms(txctx, scope.writes)
+	replies, settled, writeErr := a.writePrograms(txctx, writes)
 	if writeErr != nil {
 		var commandError mongo.CommandError
 		settled := errors.As(writeErr, &commandError) && len(commandError.Raw) != 0 || errors.Is(writeErr, errProgramBatchBound)
@@ -245,11 +198,7 @@ func (a *Adapter) runProgramAttempt(ctx context.Context, state *programAttempt) 
 		if programHasLabel(writeErr, "TransientTransactionError") && pauseProgram(ctx, a.options().RetryBackoff) {
 			return programAttemptRetry
 		}
-		failure := backendFailure(ctx, writeErr)
-		if errors.Is(writeErr, execution.ErrExecutionMemory) || errors.Is(writeErr, errRecordReservation) {
-			failure = execution.ReservationFailure(ctx, writeErr)
-		}
-		batch.fail(pb.MutationOutcome_NOT_APPLIED, failure)
+		batch.fail(pb.MutationOutcome_NOT_APPLIED, backendFailure(ctx, writeErr))
 		return programAttemptFinished
 	}
 	rejected, retry := false, false
@@ -262,7 +211,7 @@ func (a *Adapter) runProgramAttempt(ctx context.Context, state *programAttempt) 
 			rejected = true
 			// A missing insert can race an external writer. One fresh
 			// snapshot distinguishes that race from a stable constraint.
-			if reply.GetFailure().GetCode() == pb.FailureCode_CONFLICT || scope.writes[i].Backend.(*plan).action == "create" && attempt == 0 {
+			if reply.GetFailure().GetCode() == pb.FailureCode_CONFLICT || writes[i].Backend.(*plan).action == "create" && attempt == 0 {
 				retry = true
 			}
 		}
@@ -401,20 +350,9 @@ func (a *Adapter) readPrograms(ctx context.Context, plans []*execution.Plan) ([]
 	}
 	command = bson.Raw(encoded)
 	state := &recordCursor{target: target, items: len(ids)}
-	scope := newProgramMemoryScope(ctx)
-	complete := false
-	defer func() {
-		if !complete {
-			scope.close()
-		}
-	}()
 	documents := make([]bson.Raw, len(plans))
-	scope.documents = documents
 	received := 0
 	for page := 0; page <= len(plans); page++ {
-		if err := reserveRecordWorking(ctx, plans, 0); err != nil {
-			return nil, err
-		}
 		raw, err := a.client.Database(target.database).RunCommand(ctx, command).Raw()
 		if err != nil {
 			return nil, err
@@ -439,20 +377,12 @@ func (a *Adapter) readPrograms(ctx context.Context, plans []*execution.Plan) ([]
 			if !validID || !found || documents[position] != nil {
 				return nil, errProgramReadEvidence
 			}
-			if err := reserveRecordWorking(ctx, plans, len(raw)); err != nil {
-				return nil, err
-			}
-			if memory, ok := ctx.Value(recordMemoryContextKey).(*recordMemory); ok {
-				memory.held += len(raw)
-			}
 			document := make([]byte, len(raw))
 			copy(document, raw)
 			documents[position] = document
 			received++
 		}
 		if state.cursor == 0 {
-			// The attempt takes ownership only after complete read evidence.
-			complete = true
 			return documents, nil
 		}
 		command = bson.D{{Key: "getMore", Value: state.cursor}, {Key: "collection", Value: target.collection}, {Key: "batchSize", Value: a.programBatchSize(max(1, len(plans)-received))}}
@@ -465,14 +395,7 @@ func (a *Adapter) transformPrograms(ctx context.Context, batch *programBatch, po
 	writePositions := make([]int, 0, len(positions))
 	for i, position := range positions {
 		work := batch.plans[position]
-		raw := documents[i]
-		documents[i] = nil
-		write, result := transformProgram(ctx, work, raw)
-		bytes := len(raw)
-		raw = nil
-		if memory, ok := ctx.Value(recordMemoryContextKey).(*recordMemory); ok {
-			memory.held -= bytes
-		}
+		write, result := transformProgram(ctx, work, documents[i])
 		if result != nil {
 			batch.results[position] = result
 		} else {
@@ -483,7 +406,7 @@ func (a *Adapter) transformPrograms(ctx context.Context, batch *programBatch, po
 	return writes, writePositions
 }
 
-func transformProgram(ctx context.Context, work *execution.Plan, raw bson.Raw) (write *execution.Plan, result *pb.MutationResult) {
+func transformProgram(ctx context.Context, work *execution.Plan, raw bson.Raw) (*execution.Plan, *pb.MutationResult) {
 	if failure := programCallerFailure(ctx, work); failure != nil {
 		return nil, protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, failure)
 	}
@@ -512,28 +435,7 @@ func transformProgram(ctx context.Context, work *execution.Plan, raw bson.Raw) (
 		defer cancel()
 		ctx = programContext
 	}
-	var allocationErr error
-	defer func() {
-		if allocationErr != nil {
-			write = nil
-			failure := fmt.Errorf("%w: %w", execution.ErrExecutionMemory, allocationErr)
-			result = execution.LuaFailure(ctx, failure)
-		}
-	}()
-	defer budget.Recover(&allocationErr)
 	input := work.Command.GetMutate().GetAtomicTransform().GetLua().GetInput()
-	inputBytes := []byte(nil)
-	if input != nil {
-		inputBytes = input.Data
-	}
-	plans := []*execution.Plan{work}
-	decodedWorking, err := programWorking(bsonDecodeWorking(raw), bsonDecodeWorking(inputBytes))
-	if err != nil {
-		return nil, protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, recordMemoryFailure())
-	}
-	if err := reserveRecordWorking(ctx, plans, decodedWorking); err != nil {
-		return nil, protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, execution.ReservationFailure(ctx, err))
-	}
 	native := work.Backend.(*plan)
 	missing := raw == nil
 	current := value.Value{Kind: value.Missing}
@@ -553,21 +455,6 @@ func transformProgram(ctx context.Context, work *execution.Plan, raw bson.Raw) (
 	}
 	program := *native.program
 	program.Current = current
-	luaBytes, programScratch := 0, decodedWorking
-	memory, managed := ctx.Value(recordMemoryContextKey).(*recordMemory)
-	if managed && memory.owner != nil || !managed && work.Memory != nil {
-		program.Reserve = func(bytes int) error {
-			working, err := programWorking(programScratch, bytes)
-			if err != nil {
-				return err
-			}
-			if err := reserveRecordWorking(ctx, plans, working); err != nil {
-				return err
-			}
-			luaBytes = bytes
-			return nil
-		}
-	}
 	if input != nil {
 		decoded, err := Decode(ctx, input.Data)
 		if err != nil {
@@ -582,21 +469,11 @@ func transformProgram(ctx context.Context, work *execution.Plan, raw bson.Raw) (
 	if transformErr != nil {
 		return nil, execution.LuaFailure(ctx, transformErr)
 	}
-	luaBytes = transformed.Allocations.UsedBytes()
 	prepared := &plan{target: native.target, id: native.id}
 	switch transformed.Action {
 	case "keep":
 		return nil, protocol.Mutation(pb.MutationOutcome_APPLIED, nil)
 	case "reject":
-		if work.Memory != nil {
-			retained, err := programWorking(len(transformed.Message), execution.ResultOverheadBytes)
-			if err != nil {
-				return nil, protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, recordMemoryFailure())
-			}
-			if err := work.Memory.ReserveResult(retained); err != nil {
-				return nil, protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, recordMemoryFailure())
-			}
-		}
 		failure := protocol.Fail(pb.FailureCode_PRECONDITION_FAILED, transformed.Message)
 		return nil, protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, failure)
 	case "delete":
@@ -605,9 +482,6 @@ func transformProgram(ctx context.Context, work *execution.Plan, raw bson.Raw) (
 		}
 		prepared.action = "delete"
 	case "replace":
-		// The bounded identity codec and the replacement's field copy run
-		// before Encode. Their validation maps belong to the same Lua scope.
-		transformed.Allocations.RequireAllocation(4096)
 		identity, identityErr := mongoIdentity(ctx, native.id)
 		if !missing && identityErr == nil {
 			storedID, lookupErr := current.Lookup("_id")
@@ -617,15 +491,6 @@ func transformProgram(ctx context.Context, work *execution.Plan, raw bson.Raw) (
 				identity.Value = storedID
 			}
 		}
-		var field value.Field
-		transformed.Allocations.RequireArray(unsafe.Sizeof(field), len(transformed.Value.Fields)+1)
-		if err := luaengine.ReserveValueValidation(transformed.Allocations, transformed.Value); err != nil {
-			return nil, execution.LuaFailure(ctx, err)
-		}
-		if err := luaengine.ReserveValueValidation(transformed.Allocations, transformed.Value); err != nil {
-			return nil, execution.LuaFailure(ctx, err)
-		}
-		transformed.Allocations.RequireAllocation(1024)
 		replacement, valid := withMongoIdentity(ctx, transformed.Value, identity, native.id)
 		if identityErr != nil || !valid {
 			if failure := programCallerFailure(ctx, work); failure != nil {
@@ -633,21 +498,6 @@ func transformProgram(ctx context.Context, work *execution.Plan, raw bson.Raw) (
 			}
 			failure := protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "Lua replacement changes record identity")
 			return nil, protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, failure)
-		}
-		valueBytes, err := transformed.ValueBytes(ctx, replacement, false)
-		if err != nil {
-			return nil, execution.LuaFailure(ctx, err)
-		}
-		programScratch, err = programWorking(decodedWorking, valueBytes, valueBytes, valueBytes, valueBytes)
-		if err != nil {
-			return nil, protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, recordMemoryFailure())
-		}
-		working, err := programWorking(programScratch, luaBytes)
-		if err != nil {
-			return nil, protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, recordMemoryFailure())
-		}
-		if err := reserveRecordWorking(ctx, plans, working); err != nil {
-			return nil, protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, execution.ReservationFailure(ctx, err))
 		}
 		encoded, encodeErr := Encode(ctx, replacement)
 		if encodeErr != nil {
@@ -661,9 +511,6 @@ func transformProgram(ctx context.Context, work *execution.Plan, raw bson.Raw) (
 			return nil, protocol.Mutation(pb.MutationOutcome_APPLIED, nil)
 		}
 		prepared.document = encoded
-		if memory, ok := ctx.Value(recordMemoryContextKey).(*recordMemory); ok {
-			memory.held += cap(encoded)
-		}
 		prepared.action = "replace"
 		if missing {
 			prepared.action = "create"
@@ -675,20 +522,13 @@ func transformProgram(ctx context.Context, work *execution.Plan, raw bson.Raw) (
 	if failure := programCallerFailure(ctx, work); failure != nil {
 		return nil, protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, failure)
 	}
-	write = &execution.Plan{Command: work.Command, Backend: prepared, Memory: work.Memory}
+	write := &execution.Plan{Command: work.Command, Backend: prepared}
 	return write, nil
 }
 
 func (a *Adapter) writePrograms(ctx context.Context, plans []*execution.Plan) ([]*pb.MutationResult, bool, error) {
 	ctx, release := nativeAttemptContext(ctx)
 	defer release()
-	framing := 0
-	for _, work := range plans {
-		framing += 2*len(work.Backend.(*plan).document) + execution.EntryOverheadBytes
-	}
-	if err := reserveRecordWorking(ctx, plans, framing); err != nil {
-		return nil, true, err
-	}
 	target := plans[0].Backend.(*plan).target
 	ops := make(bson.A, len(plans))
 	for i, work := range plans {

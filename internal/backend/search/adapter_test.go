@@ -135,7 +135,7 @@ func TestNativeErrorStatusAndPositiveAcknowledgement(t *testing.T) {
 	opCommand := &pb.Command{Operation: opOperation}
 	op := &pb.ExecuteRequest{Index: 1, Command: opCommand}
 	native := &plan{index: "records", id: "a", action: "delete"}
-	work := &execution.Plan{ID: op.Index, Command: op.Command, Backend: native}
+	work := &execution.Plan{Command: op.Command, Backend: native}
 	raw := []byte(`{"errors":false,"took":1,"items":[{"delete":{"_index":"records","_id":"a","status":200,"result":"deleted","_seq_no":1,"_primary_term":1,"_shards":{"total":2,"successful":1,"failed":1}}}]}`)
 	bulkReply := bulkResponse{works: []*execution.Plan{work}, status: 200, raw: raw, err: nil}
 	results := a.bulkResults(context.Background(), bulkReply)

@@ -31,10 +31,7 @@ func Open(ctx context.Context, cfg Config) (*Node, error) {
 	}
 
 	limits := cfg.Basic.Transport.serverLimits()
-	admission, err := server.NewAdmission(limits)
-	if err != nil {
-		return nil, err
-	}
+	admission := server.NewAdmission()
 	node := &Node{
 		shutdownTimeout: time.Duration(cfg.Basic.Lifecycle.ShutdownTimeout),
 		admission:       admission,
@@ -44,8 +41,6 @@ func Open(ctx context.Context, cfg Config) (*Node, error) {
 		registry:        prometheus.NewRegistry(),
 	}
 	overloadTargets := []overload.Target{admission}
-	node.executionMemory = store.NewExecutionMemory()
-	admission.SetExecutionMemory(node.executionMemory)
 
 	drainOpts := prometheus.CounterOpts{
 		Name: "weir_node_drains_total",
@@ -72,7 +67,7 @@ func Open(ctx context.Context, cfg Config) (*Node, error) {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		options := localOptions{definition: definition, lua: cfg.Basic.Lua.limits(), cleanup: time.Duration(cfg.Basic.Lifecycle.CleanupTimeout), memory: node.executionMemory}
+		options := localOptions{definition: definition, lua: cfg.Basic.Lua.limits(), cleanup: time.Duration(cfg.Basic.Lifecycle.CleanupTimeout)}
 		runtime, err := openLocal(ctx, options)
 		if err != nil {
 			return nil, err
@@ -140,7 +135,6 @@ func Open(ctx context.Context, cfg Config) (*Node, error) {
 	}
 
 	node.guard = overload.New(overloadTargets, cfg.Basic.Overload.Memory.limits())
-	node.guard.ObserveMemory(node.executionMemory)
 	if err := node.registerMetrics(); err != nil {
 		return nil, err
 	}
@@ -161,7 +155,6 @@ type localOptions struct {
 	definition StoreConfig
 	lua        luaengine.Limits
 	cleanup    time.Duration
-	memory     *store.ExecutionMemory
 }
 
 func openLocal(ctx context.Context, options localOptions) (*store.Runtime, error) {
@@ -187,5 +180,5 @@ func openLocal(ctx context.Context, options localOptions) (*store.Runtime, error
 		return nil, fmt.Errorf("local Store %q startup qualification failed: %w", name, err)
 	}
 
-	return store.New(adapter, limits, options.memory)
+	return store.New(adapter, limits)
 }

@@ -9,99 +9,29 @@ import (
 )
 
 func TestConnectionOpeningUsesConfiguredHandshakeTimeout(t *testing.T) {
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer listener.Close()
 	limits := DefaultLimits()
 	limits.Handshake = 500 * time.Millisecond
 	limits.Stall = 20 * time.Millisecond
-	admission, err := NewAdmission(limits)
-	if err != nil {
-		t.Fatal(err)
-	}
-	config := Config{Admission: admission, Limits: limits}
-	server, err := New(config)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer server.grpc.Stop()
-	client, err := net.Dial("tcp", listener.Addr().String())
+	opts := peerServerOptions{limits: limits}
+	_, address := startPeerServer(t, opts)
+	client, err := net.Dial("tcp", address)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer client.Close()
-	wrapper := &limitedListener{Listener: listener, server: server}
-	connection, err := wrapper.Accept()
-	if err != nil {
+	started := time.Now()
+	if err := client.SetReadDeadline(started.Add(2 * time.Second)); err != nil {
 		t.Fatal(err)
 	}
-	defer connection.Close()
-	if err := client.SetReadDeadline(time.Now().Add(100 * time.Millisecond)); err != nil {
-		t.Fatal(err)
-	}
-	buffer := make([]byte, 1)
-	_, err = client.Read(buffer)
+	// The server's own SETTINGS may arrive first; a silent client is then
+	// disconnected by the handshake timeout, not by the stream stall timeout.
+	_, err = io.Copy(io.Discard, client)
+	elapsed := time.Since(started)
 	var timeout net.Error
-	if !errors.As(err, &timeout) || !timeout.Timeout() {
-		t.Fatal("stream stall setting ended the connection handshake", err)
-	}
-	if err := client.SetReadDeadline(time.Now().Add(time.Second)); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := client.Read(buffer); !errors.Is(err, io.EOF) {
+	if errors.As(err, &timeout) && timeout.Timeout() {
 		t.Fatal("configured handshake timeout did not close the connection", err)
 	}
-}
-
-func TestConnectionsHaveNoAdmissionCapAndCloseOnce(t *testing.T) {
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer listener.Close()
-	limits := DefaultLimits()
-	admission, err := NewAdmission(limits)
-	if err != nil {
-		t.Fatal(err)
-	}
-	config := Config{Admission: admission, Limits: limits}
-	server, err := New(config)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer server.grpc.Stop()
-	wrapper := &limitedListener{Listener: listener, server: server}
-	var clients, accepted []net.Conn
-	defer func() {
-		for _, conn := range clients {
-			_ = conn.Close()
-		}
-		for _, conn := range accepted {
-			_ = conn.Close()
-		}
-	}()
-	for range 32 {
-		client, err := net.Dial("tcp", listener.Addr().String())
-		if err != nil {
-			t.Fatal(err)
-		}
-		clients = append(clients, client)
-		conn, err := wrapper.Accept()
-		if err != nil {
-			t.Fatal(err)
-		}
-		accepted = append(accepted, conn)
-	}
-	if admission.activeConnections.Load() != 32 {
-		t.Fatal("connections were capped")
-	}
-	for _, conn := range accepted {
-		_ = conn.Close()
-		_ = conn.Close()
-	}
-	if admission.activeConnections.Load() != 0 {
-		t.Fatal("close was not idempotent")
+	if elapsed < 400*time.Millisecond || elapsed > 1500*time.Millisecond {
+		t.Fatal("connection closed outside the handshake timeout", elapsed)
 	}
 }
