@@ -24,7 +24,7 @@ func TestMongoReplicaCLIRecovery(t *testing.T) {
 	if os.Getenv("WEIR_MONGO_REPLICA_INTEGRATION") != "1" {
 		t.Skip("explicit owned replica integration opt-in")
 	}
-	binary := buildEndpointProcess(t)
+	binary := buildWeirBinary(t)
 	for _, secure := range []bool{false, true} {
 		name := "plain"
 		if secure {
@@ -54,10 +54,7 @@ func TestMongoReplicaCLIRecovery(t *testing.T) {
 			cfg.Routing.Stores = []StoreConfig{store}
 			service := startProcessWithLifetime(t, binary, cfg, 3*time.Minute)
 			pid := service.command.Process.Pid
-			openContext, cancel := context.WithTimeout(t.Context(), 3*time.Second)
-			openOptions := weirclient.OpenOptions{Seed: service.address, Stores: []string{"mongo"}}
-			client, err := weirclient.Open(openContext, openOptions)
-			cancel()
+			client, err := weirclient.New(service.address)
 			if err != nil {
 				t.Fatal(err)
 			}

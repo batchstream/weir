@@ -46,9 +46,9 @@ func (stream *receiverStatusStream) Send(*pb.ExecuteResponse) error {
 }
 
 func TestCompletedRecordReceiverPreservesNativeTerminalStatus(t *testing.T) {
-	_, runtime := peerLocal(t, "records")
-	opts := peerServerOptions{stores: map[string]*store.Runtime{"records": runtime}}
-	server, _ := startPeerServer(t, opts)
+	_, runtime := localStore(t, "records")
+	opts := testServerOptions{stores: map[string]*store.Runtime{"records": runtime}}
+	server, _ := startTestServer(t, opts)
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	key := rpcCancelKey{}
@@ -61,9 +61,9 @@ func TestCompletedRecordReceiverPreservesNativeTerminalStatus(t *testing.T) {
 }
 
 func TestFailedRecordOutputStillJoinsBlockedNativeReceiver(t *testing.T) {
-	_, runtime := peerLocal(t, "records")
-	opts := peerServerOptions{stores: map[string]*store.Runtime{"records": runtime}}
-	server, _ := startPeerServer(t, opts)
+	_, runtime := localStore(t, "records")
+	opts := testServerOptions{stores: map[string]*store.Runtime{"records": runtime}}
+	server, _ := startTestServer(t, opts)
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	key := rpcCancelKey{}

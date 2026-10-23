@@ -4,9 +4,9 @@ Weir combines concurrent database requests into bounded batches. It supports
 MongoDB, Elasticsearch and OpenSearch, with typed reads and mutations, Lua
 transforms and native backend commands.
 
-Clients resolve logical Stores through any Weir node, then send business requests
-directly to the owning nodes. Peers exchange an in-memory Store directory. Each
-node runs one process, including Lua evaluation.
+Clients connect to one Weir address and name the Store in each request. Every
+server behind the address hosts the same Stores, so servers share nothing and
+scale by adding replicas. Each server runs one process, including Lua evaluation.
 
 ## Build and run
 
@@ -29,8 +29,8 @@ bin/weir check --config weir.yaml --routes routes.yaml --effective
 bin/weir serve --config weir.yaml --routes routes.yaml
 ```
 
-`--config` defaults to `./weir.yaml`. Omit `--routes` to run a directory node
-without local Stores. Paths resolve from the working directory. Configuration
+`--config` defaults to `./weir.yaml`. Omit `--routes` to run without Stores.
+Paths resolve from the working directory. Configuration
 changes require a restart. The effective report shows defaults and automatic
 sources with authentication and trust paths redacted.
 
@@ -73,16 +73,12 @@ authentication and per-member TLS requirements.
 The SDK is an independent module, [weir-go](https://github.com/batchstream/weir-go).
 
 ```sh
-go get github.com/batchstream/weir-go@v0.16.0
+go get github.com/batchstream/weir-go@v0.17.0
 ```
 
 ```go
 // import weir "github.com/batchstream/weir-go"
-options := weir.OpenOptions{
-    Seed: "127.0.0.1:7447",
-    Stores: []string{"mongo"},
-}
-client, err := weir.Open(ctx, options)
+client, err := weir.New("127.0.0.1:7447")
 if err != nil {
     return err
 }
@@ -127,19 +123,18 @@ mutations. Actual process/container pressure
 controls overload admission. Container/OS limits
 provide the hard memory boundary.
 
-Application and peer listeners use plaintext gRPC on an isolated network. Backend
-authentication stays local. Each instance advertises reachable peer and business
-addresses; Kubernetes examples use a headless business Service per Store group
-and a shared bootstrap Service.
+The application listener uses plaintext gRPC on an isolated network. Backend
+authentication stays local. In Kubernetes, expose the replicas through a headless
+Service so the SDK spreads calls across every Pod; the
+[weir-charts](https://github.com/batchstream/weir-charts) Helm chart is the
+deployment reference.
 
 | Guide | Contents |
 | --- | --- |
 | [Architecture](docs/architecture.md) | Ownership, execution, memory and shutdown |
-| [Discovery](docs/discovery.md) | Store directory, leases and direct client connections |
 | [Batching](docs/batching.md) | Queue, batch, wait and concurrency tuning |
 | [Operations](docs/operations.md) | Health, metrics, memory pressure and failure handling |
-| [Protocols](docs/protocols.md) | Public and peer contracts and module boundaries |
-| [Kubernetes scaling](deploy/kubernetes/scaling.md) | Replica and backend connection demand |
+| [Protocols](docs/protocols.md) | Public contract and module boundaries |
 
 ## Development
 
@@ -265,7 +260,7 @@ The [weir-tests](https://github.com/batchstream/weir-tests) repository contains
 matched direct/Weir workloads and blackbox integration. Keep generated logs and
 profiles under ignored `.testdata/`.
 
-Peer bindings are generated with `scripts/generate.sh`; the public schema belongs to
+The public schema belongs to
 [weir-protocol](https://github.com/batchstream/weir-protocol).
 
 ## Releases

@@ -120,8 +120,8 @@ type cliContainer struct {
 }
 
 // startCLIContainer starts the CLI in a memory- and CPU-limited busybox
-// container, publishes its application listener on the advertised host
-// address and waits for readiness. Cleanup stops and removes only the container
+// container, publishes its application listener on a loopback host address
+// and waits for readiness. Cleanup stops and removes only the container
 // it created.
 func startCLIContainer(t *testing.T, opts cliContainerOptions) *cliContainer {
 	t.Helper()
@@ -142,7 +142,6 @@ func startCLIContainer(t *testing.T, opts cliContainerOptions) *cliContainer {
 	if err := reservation.Close(); err != nil {
 		t.Fatal(err)
 	}
-	cfg.Basic.Discovery.Advertise = []string{applicationAddress}
 	writeConfigFiles(t, filepath.Join(directory, "node.yaml"), cfg, 0644)
 	args := []string{"create", "--name", owner, "--label", "weir.owner=" + owner, "--platform=linux/" + runtime.GOARCH, "--pull=never",
 		"--read-only", "--cap-drop=ALL", "--security-opt=no-new-privileges", "--user=65532:65532",
@@ -226,7 +225,7 @@ func startCLIContainer(t *testing.T, opts cliContainerOptions) *cliContainer {
 	service := &cliContainer{name: containerID, owner: owner, capacity: float64(opts.capacityMiB << 20), stores: len(cfg.Routing.Stores)}
 	service.address = strings.TrimSpace(runDocker(t, "port", owner, "7447/tcp"))
 	if service.address != applicationAddress {
-		t.Fatal("Docker published address differs from the real advertised endpoint", service.address, applicationAddress)
+		t.Fatal("Docker published address differs from the reserved application address", service.address, applicationAddress)
 	}
 	service.diagnostic = strings.TrimSpace(runDocker(t, "port", owner, "7449/tcp"))
 	deadline := time.Now().Add(7 * time.Second)

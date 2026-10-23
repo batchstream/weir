@@ -65,7 +65,7 @@ func TestSearchConcurrentRPCsUseAvailableBackendConnections(t *testing.T) {
 func concurrentBackendReads(t *testing.T, node *Node, resource string, observation *budgetObservation) {
 	t.Helper()
 	const count = 64
-	client := endpointProcessClient(t, node.Addresses()[0])
+	client := processClient(t, node.Address())
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
 	read := &pb.ReadRequest{Resource: resource}

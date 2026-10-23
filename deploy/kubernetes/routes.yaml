@@ -1,7 +1,0 @@
-stores:
-  - name: records
-    backend:
-      search:
-        url: http://elasticsearch:9200
-    batching:
-      max_operations: 32

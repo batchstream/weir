@@ -39,7 +39,7 @@ func TestEffectiveConfigurationDefaultsAndRedaction(t *testing.T) {
 	if report.Basic.Lua.MaxCallDepth != vm.DefaultMaxCallDepth || report.Basic.Lua.MaxStackSlots != vm.DefaultMaxStackSlots {
 		t.Fatal("effective configuration hid native Lua defaults", report.Basic.Lua)
 	}
-	if report.Basic.Lua.MaxInstructions != 0 || report.Automatic["memory_capacity"] == "" || report.Automatic["discovery.group"] == "" || report.Automatic["discovery.advertise"] == "" {
+	if report.Basic.Lua.MaxInstructions != 0 || report.Automatic["memory_capacity"] == "" {
 		t.Fatal("effective configuration lost unbounded or automatic policy")
 	}
 	for _, store := range report.Routing.Stores {

@@ -27,7 +27,6 @@ func TestOpenAndFailedOpenLeaveHostRuntimeMemoryLimitUnchanged(t *testing.T) {
 		debug.SetMemoryLimit(current)
 		cfg := DefaultConfig()
 		cfg.Basic.Listeners.Application = "127.0.0.1:0"
-		cfg.Basic.Listeners.Peer = ""
 		cfg.Basic.Diagnostics.Address = ""
 		node, err := Open(t.Context(), cfg)
 		if err != nil {

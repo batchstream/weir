@@ -88,12 +88,9 @@ func TestProcessFaults(t *testing.T) {
 	cfg.Routing.Stores = []StoreConfig{mongoStore, searchStore}
 	opts := cliContainerOptions{binary: binary, capacityMiB: 512, config: cfg}
 	process := startCLIContainer(t, opts)
-	openContext, cancel := context.WithTimeout(t.Context(), 5*time.Second)
-	openOptions := weirclient.OpenOptions{Seed: process.address, Stores: []string{"mongo", "search"}}
-	client, err := weirclient.Open(openContext, openOptions)
-	cancel()
+	client, err := weirclient.New(process.address)
 	if err != nil {
-		t.Fatal("real SDK Resolve failed", err)
+		t.Fatal("SDK client", err)
 	}
 	t.Cleanup(func() { _ = client.Close() })
 	suite := processFaultSuite{process: process, client: client, pid: processFaultPID(t, process)}

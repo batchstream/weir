@@ -90,7 +90,7 @@ func TestProcessLuaAndStreamPolicyReachEveryStore(t *testing.T) {
 	if err := node.Start(t.Context()); err != nil {
 		t.Fatal(err)
 	}
-	conn, err := grpc.NewClient(node.Addresses()[0], grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithNoProxy())
+	conn, err := grpc.NewClient(node.Address(), grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithNoProxy())
 	if err != nil {
 		t.Fatal(err)
 	}

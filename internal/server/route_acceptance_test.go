@@ -104,10 +104,10 @@ func assertRouteAcceptanceIdle(t testing.TB, nodes []*routeAcceptanceNode) {
 }
 
 func TestReadStreamAccepts513Records(t *testing.T) {
-	_, local := peerLocal(t, "records")
-	opts := peerServerOptions{stores: map[string]*store.Runtime{"records": local}}
-	server, address := startPeerServer(t, opts)
-	_, client := peerClient(t, address)
+	_, local := localStore(t, "records")
+	opts := testServerOptions{stores: map[string]*store.Runtime{"records": local}}
+	server, address := startTestServer(t, opts)
+	_, client := testClient(t, address)
 	requests := make([]*pb.ReadRequest, 513)
 	for i := range requests {
 		requests[i] = &pb.ReadRequest{Resource: fmt.Sprintf("data/s:%d", i)}
@@ -116,11 +116,11 @@ func TestReadStreamAccepts513Records(t *testing.T) {
 	if err != nil || len(results) != len(requests) {
 		t.Fatal("long input lost records", len(results), err)
 	}
-	waitPeerIdle(t, server)
+	waitIdle(t, server)
 }
 
 func TestContinuousReadsAcrossConcurrentSessions(t *testing.T) {
-	adapter := newPeerAdapter("records")
+	adapter := newRecordAdapter("records")
 	gate := make(chan struct{})
 	adapter.block = gate
 	limits := DefaultLimits()
@@ -180,10 +180,10 @@ func TestContinuousReadsAcrossConcurrentSessions(t *testing.T) {
 }
 
 func TestMutationStreamOrdersDuplicateKeys(t *testing.T) {
-	_, local := peerLocal(t, "records")
-	opts := peerServerOptions{stores: map[string]*store.Runtime{"records": local}}
-	server, address := startPeerServer(t, opts)
-	_, client := peerClient(t, address)
+	_, local := localStore(t, "records")
+	opts := testServerOptions{stores: map[string]*store.Runtime{"records": local}}
+	server, address := startTestServer(t, opts)
+	_, client := testClient(t, address)
 	requests := []*pb.MutateRequest{testMutation("first"), testMutation("second"), testMutation("last")}
 	results, err := testutil.MutateRecords(t.Context(), client, "records", requests)
 	if err != nil || len(results) != 3 {
@@ -198,14 +198,14 @@ func TestMutationStreamOrdersDuplicateKeys(t *testing.T) {
 	if err != nil || !bytes.Equal(read.GetDocument().GetData(), []byte("last")) {
 		t.Fatal("duplicate writes executed out of order", read, err)
 	}
-	waitPeerIdle(t, server)
+	waitIdle(t, server)
 }
 
 func TestReadStreamLargeRelativeMetadataUsesBoundedWindows(t *testing.T) {
-	adapter, local := peerLocal(t, "records")
-	opts := peerServerOptions{stores: map[string]*store.Runtime{"records": local}}
-	srv, address := startPeerServer(t, opts)
-	_, client := peerClient(t, address)
+	adapter, local := localStore(t, "records")
+	opts := testServerOptions{stores: map[string]*store.Runtime{"records": local}}
+	srv, address := startTestServer(t, opts)
+	_, client := testClient(t, address)
 	read := &pb.ReadRequest{Resource: strings.Repeat("a/", 1500) + "a"}
 	items := make([]*pb.ReadRequest, 1200)
 	for i := range items {
@@ -223,16 +223,16 @@ func TestReadStreamLargeRelativeMetadataUsesBoundedWindows(t *testing.T) {
 			t.Fatal("metadata bypassed the database window", size)
 		}
 	}
-	waitPeerIdle(t, srv)
+	waitIdle(t, srv)
 }
 
 func TestLongReadStreamReturnsEveryLargeResult(t *testing.T) {
-	adapter, local := peerLocal(t, "records")
+	adapter, local := localStore(t, "records")
 	document := &pb.Document{ContentType: "application/octet-stream", Data: bytes.Repeat([]byte("x"), 1<<20)}
 	adapter.documents[testRequest().Resource] = document
-	opts := peerServerOptions{stores: map[string]*store.Runtime{"records": local}}
-	srv, address := startPeerServer(t, opts)
-	_, client := peerClient(t, address)
+	opts := testServerOptions{stores: map[string]*store.Runtime{"records": local}}
+	srv, address := startTestServer(t, opts)
+	_, client := testClient(t, address)
 	requests := make([]*pb.ReadRequest, 40)
 	for i := range requests {
 		requests[i] = testRequest()
@@ -246,7 +246,7 @@ func TestLongReadStreamReturnsEveryLargeResult(t *testing.T) {
 			t.Fatal("large result missing", result.GetFailure())
 		}
 	}
-	waitPeerIdle(t, srv)
+	waitIdle(t, srv)
 }
 
 func TestConcurrentClientRPCsKeepResponseOwnershipAndBatchBounds(t *testing.T) {
@@ -259,7 +259,7 @@ func TestConcurrentClientRPCsKeepResponseOwnershipAndBatchBounds(t *testing.T) {
 			close(gate)
 		}
 	}()
-	adapter := newPeerAdapter("records")
+	adapter := newRecordAdapter("records")
 	adapter.block = gate
 	for i := range count {
 		key := fmt.Sprintf("data/s:%d", i)

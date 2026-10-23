@@ -2,16 +2,14 @@ package app
 
 import (
 	"context"
-	"io"
+	"fmt"
 	"net"
-	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
-	peerpb "github.com/batchstream/weir/internal/api/peer/v1"
 	"github.com/batchstream/weir/internal/backend"
 	"github.com/batchstream/weir/internal/testutil"
 	"github.com/batchstream/weir/internal/testutil/testmetrics"
@@ -137,14 +135,14 @@ func TestMongoStartupRedactsDriverConnectionFailure(t *testing.T) {
 	}
 }
 
-func TestAssemblyDirectoryOnlyPartialListenerAndConcurrentClose(t *testing.T) {
+func TestAssemblyWithoutStoresPartialStartupAndConcurrentClose(t *testing.T) {
 	cfg := emptyConfig(t)
 	node, err := Open(context.Background(), cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(node.stores) != 0 || node.guard.Snapshot().Budget == 0 {
-		t.Fatal("directory-only created database state")
+		t.Fatal("Store-less node created database state")
 	}
 	node.Start(context.Background())
 	var group sync.WaitGroup
@@ -159,15 +157,13 @@ func TestAssemblyDirectoryOnlyPartialListenerAndConcurrentClose(t *testing.T) {
 	}
 	group.Wait()
 	node.Start(context.Background())
-	for _, address := range node.Addresses() {
-		conn, err := net.DialTimeout("tcp", address, 100*time.Millisecond)
-		if err == nil {
-			_ = conn.Close()
-			t.Fatal("listener remains live")
-		}
+	conn, err := net.DialTimeout("tcp", node.Address(), 100*time.Millisecond)
+	if err == nil {
+		_ = conn.Close()
+		t.Fatal("listener remains live")
 	}
-	// A valid graph with an occupied second listener unwinds the first listener
-	// without a database adapter.
+	// An occupied diagnostics address fails startup after the application
+	// listener is bound; the application listener must be released.
 	occupied, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -179,7 +175,7 @@ func TestAssemblyDirectoryOnlyPartialListenerAndConcurrentClose(t *testing.T) {
 	}
 	cfg.Basic.Listeners.Application = first.Addr().String()
 	_ = first.Close()
-	cfg.Basic.Listeners.Peer = occupied.Addr().String()
+	cfg.Basic.Diagnostics.Address = occupied.Addr().String()
 	for range 3 {
 		if node, err := Open(context.Background(), cfg); err == nil || node != nil {
 			t.Fatal("partial startup succeeded")
@@ -199,15 +195,9 @@ func TestIntranetListenerConfiguration(t *testing.T) {
 		if err := cfg.Validate(); err != nil {
 			t.Fatal(listener, err)
 		}
-		cfg.Basic.Listeners.Application, cfg.Basic.Listeners.Peer = "", listener
-		if strings.HasPrefix(listener, "0.0.0.0:") || strings.HasPrefix(listener, "[::]:") {
-			cfg.Basic.Discovery.PeerAddress = "peer.example:7448"
-		}
-		if err := cfg.Validate(); err != nil {
-			t.Fatal(listener, err)
-		}
 	}
 	for _, listener := range []string{
+		"",
 		":7447",
 		"localhost:7447",
 		"127.0.0.1:-1",
@@ -222,173 +212,84 @@ func TestIntranetListenerConfiguration(t *testing.T) {
 			t.Fatal("invalid listener accepted", listener)
 		}
 	}
-	for _, listeners := range [][3]string{
-		{"127.0.0.1:7447", "127.0.0.1:7447", ""},
-		{"[::1]:7447", "[0:0:0:0:0:0:0:1]:7447", ""},
-		{"127.0.0.1:7447", "", "127.0.0.1:07447"},
-		{"0.0.0.0:7447", "127.0.0.1:7447", ""},
+	for _, listeners := range [][2]string{
+		{"127.0.0.1:7447", "127.0.0.1:07447"},
+		{"[::1]:7447", "[0:0:0:0:0:0:0:1]:7447"},
+		{"0.0.0.0:7447", "127.0.0.1:7447"},
 	} {
 		cfg := emptyConfig(t)
-		cfg.Basic.Listeners.Application, cfg.Basic.Listeners.Peer, cfg.Basic.Diagnostics.Address = listeners[0], listeners[1], listeners[2]
+		cfg.Basic.Listeners.Application, cfg.Basic.Diagnostics.Address = listeners[0], listeners[1]
 		if err := cfg.Validate(); err == nil {
 			t.Fatal("duplicate/overlapping listeners accepted", listeners)
 		}
 	}
 	cfg := emptyConfig(t)
-	cfg.Basic.Listeners.Peer, cfg.Basic.Diagnostics.Address = cfg.Basic.Listeners.Application, cfg.Basic.Listeners.Application
+	cfg.Basic.Diagnostics.Address = cfg.Basic.Listeners.Application
 	if err := cfg.Validate(); err != nil {
 		t.Fatal("independent ephemeral ports rejected", err)
 	}
 }
 
-func TestEphemeralListenersSeparateBusinessAndDirectory(t *testing.T) {
+func TestUnhostedStoreIsNotFound(t *testing.T) {
 	cfg := emptyConfig(t)
-	cfg.Basic.Listeners.Peer = cfg.Basic.Listeners.Application
-	node, err := Open(context.Background(), cfg)
+	node, err := Open(t.Context(), cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer node.Close(context.Background())
-	if err := node.Start(context.Background()); err != nil {
+	if err := node.Start(t.Context()); err != nil {
 		t.Fatal(err)
 	}
-	addresses := node.Addresses()
-	if len(addresses) != 2 || addresses[0] == addresses[1] {
-		t.Fatal("ephemeral listeners not distinct", addresses)
+	options := []grpc.DialOption{grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithNoProxy(), grpc.WithDisableRetry()}
+	conn, err := grpc.NewClient("passthrough:///"+node.Address(), options...)
+	if err != nil {
+		t.Fatal(err)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer conn.Close()
+	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
 	defer cancel()
+	client := pb.NewStoreServiceClient(conn)
 	request := &pb.ReadRequest{Resource: "records/s:key"}
-	for i, address := range addresses {
-		conn, err := grpc.NewClient("passthrough:///"+address, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithNoProxy(), grpc.WithDisableRetry())
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer conn.Close()
-		client := pb.NewStoreServiceClient(conn)
-		result, err := testutil.ExecuteRecord(ctx, client, testutil.RecordRequest("missing", request))
-		want := codes.Unavailable
-		if i == 1 {
-			want = codes.Unimplemented
-		}
-		if status.Code(err) != want || result != nil {
-			t.Fatal("listener accepted unsupported business destination", i, result, err)
-		}
+	result, err := testutil.ExecuteRecord(ctx, client, testutil.RecordRequest("missing", request))
+	if status.Code(err) != codes.NotFound || result != nil {
+		t.Fatal("unhosted Store was not reported as not found", result, err)
+	}
+	// A method the server does not serve, such as an outdated client's
+	// ResolveStore, is refused before gRPC reads its request.
+	empty := &pb.Empty{}
+	reply := &pb.Empty{}
+	err = conn.Invoke(ctx, "/weir.v1.StoreService/ResolveStore", empty, reply)
+	if status.Code(err) != codes.Unimplemented {
+		t.Fatal("unserved method was not refused", err)
+	}
+	families := testmetrics.Registry(t, node.registry)
+	labels := map[string]string{"method": "execute", "status": "non_ok"}
+	if metric := testmetrics.Sample(families, "weir_rpc_completions_total", labels); metric.GetCounter().GetValue() != 1 {
+		t.Fatal("rejected RPC was not counted", metric)
+	}
+	reason := map[string]string{"reason": "method"}
+	if metric := testmetrics.Sample(families, "weir_admission_rejections_total", reason); metric.GetCounter().GetValue() != 1 {
+		t.Fatal("unserved method was not counted as a method rejection", metric)
 	}
 }
 
-func TestListenerRolesMatchAddressesAndMetricLabels(t *testing.T) {
-	for _, mode := range []string{"application", "peer", "both"} {
-		t.Run(mode, func(t *testing.T) {
-			cfg := emptyConfig(t)
-			if mode != "application" {
-				cfg.Basic.Listeners.Peer = "127.0.0.1:0"
-			}
-			if mode == "peer" {
-				cfg.Basic.Listeners.Application = ""
-			}
-			node, err := Open(t.Context(), cfg)
-			if err != nil {
-				t.Fatal(err)
-			}
-			t.Cleanup(func() { _ = node.Close(context.Background()) })
-			if err := node.Start(t.Context()); err != nil {
-				t.Fatal(err)
-			}
-			roles := []string{mode}
-			if mode == "both" {
-				roles = []string{"application", "peer"}
-			}
-			addresses := node.Addresses()
-			if len(addresses) != len(roles) {
-				t.Fatal("listener count changed", addresses)
-			}
-			ctx, cancel := context.WithTimeout(t.Context(), time.Second)
-			defer cancel()
-			for i, role := range roles {
-				options := []grpc.DialOption{grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithNoProxy(), grpc.WithDisableRetry()}
-				connection, err := grpc.NewClient("passthrough:///"+addresses[i], options...)
-				if err != nil {
-					t.Fatal(err)
-				}
-				t.Cleanup(func() { _ = connection.Close() })
-				client := pb.NewStoreServiceClient(connection)
-				request := &pb.ResolveStoreRequest{StoreName: "missing"}
-				_, err = client.ResolveStore(ctx, request)
-				want := codes.Unavailable
-				if role == "peer" {
-					want = codes.Unimplemented
-				}
-				if status.Code(err) != want {
-					t.Fatal("address serves the wrong listener role", role, err)
-				}
-				peer := peerpb.NewPeerDiscoveryServiceClient(connection)
-				exchange := &peerpb.SyncDirectoryRequest{}
-				stream, streamErr := peer.SyncDirectory(ctx)
-				err = streamErr
-				if err == nil {
-					err = stream.Send(exchange)
-				}
-				// A send EOF requires receiving the server's terminal status.
-				if err == nil || err == io.EOF {
-					_, err = stream.Recv()
-				}
-				if err == nil {
-					err = stream.Send(exchange)
-				}
-				if err == nil {
-					err = stream.CloseSend()
-				}
-				if err == nil || err == io.EOF {
-					_, err = stream.Recv()
-					if err == io.EOF {
-						err = nil
-					}
-				}
-				want = codes.Unimplemented
-				if role == "peer" {
-					want = codes.OK
-				}
-				if status.Code(err) != want {
-					t.Fatal("directory service does not match listener role", role, err)
-				}
-			}
-			families := testmetrics.Registry(t, node.registry)
-			for _, role := range []string{"application", "peer"} {
-				labels := map[string]string{"listener": role}
-				metric := testmetrics.Sample(families, "weir_rpc_completions_total", labels)
-				if (metric != nil) != (mode == "both" || mode == role) {
-					t.Fatal("listener metrics use the wrong role", role)
-				}
-			}
-		})
+func TestLargeRoutingConfiguration(t *testing.T) {
+	cfg := credentialTestConfig(t, "search")
+	base := cfg.Routing.Stores[0]
+	cfg.Routing.Stores = nil
+	for i := range 32 {
+		service := base
+		service.Name = fmt.Sprintf("store-%03d", i)
+		cfg.Routing.Stores = append(cfg.Routing.Stores, service)
 	}
-}
-
-func TestCurrentPeerExamples(t *testing.T) {
-	for _, name := range []string{"peer-a.yaml", "peer-b.yaml"} {
-		filename := filepath.Join(testutil.Root(t), "examples", name)
-		routingFilename := strings.TrimSuffix(filename, ".yaml") + ".routes.yaml"
-		if _, err := Load(filename, routingFilename); err != nil {
-			t.Fatal(name, err)
-		}
+	base.Local.Backend.Authentication.Username = strings.Repeat("u", 8192)
+	base.Local.Backend.Authentication.Password = strings.Repeat("p", 16384)
+	basicFile, routingFile := writeCredentialTestDocuments(t, cfg)
+	loaded, err := Load(basicFile, routingFile)
+	if err != nil {
+		t.Fatal("valid configuration retained an artificial scale threshold", err)
 	}
-}
-
-func TestGenericDiscoveryConfiguration(t *testing.T) {
-	cfg := emptyConfig(t)
-	cfg.Basic.Listeners.Peer = "127.0.0.1:0"
-	cfg.Basic.Discovery.Group = "catalog"
-	cfg.Basic.Discovery.PeerAddress = "peer.example:7448"
-	cfg.Basic.Discovery.Seeds = []string{"seed.example:7448", "[::1]:7448"}
-	cfg.Basic.Discovery.Advertise = []string{"catalog.example:7447", "192.0.2.1:7447"}
-	if err := cfg.Validate(); err != nil {
-		t.Fatal("generic DNS/IP discovery rejected", err)
-	}
-	for _, targets := range [][]string{{"dns:///peer:7447"}, {"peer:0"}, {"peer:7447", "PEER.:07447"}} {
-		cfg.Basic.Discovery.Advertise = targets
-		if err := cfg.Validate(); err == nil {
-			t.Fatal("invalid discovery addresses accepted", targets)
-		}
+	if len(loaded.Routing.Stores) != 32 || loaded.Routing.Stores[0].Backend.Authentication.Password != base.Local.Backend.Authentication.Password {
+		t.Fatal("large configuration was truncated")
 	}
 }

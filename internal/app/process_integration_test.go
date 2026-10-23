@@ -26,15 +26,12 @@ import (
 	"github.com/batchstream/weir/internal/testutil/testsearch"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
-	"google.golang.org/grpc/status"
 )
 
 type process struct {
 	command    *exec.Cmd
 	address    string
-	addresses  []string
 	diagnostic string
 	stderr     *bytes.Buffer
 	done       chan error
@@ -135,13 +132,12 @@ func watchProcess(t *testing.T, command *exec.Cmd, diagnostics bool) *process {
 	t.Cleanup(func() { p.stop(t) })
 	select {
 	case message := <-line:
-		start, end := strings.Index(message, "["), strings.Index(message, "]")
-		if start < 0 || end <= start {
+		address, found := strings.CutPrefix(strings.Split(message, "\n")[0], "Weir listening on ")
+		if !found || address == "" {
 			go func() { p.done <- command.Wait() }()
 			t.Fatal("no process readiness", message)
 		}
-		p.addresses = strings.Fields(message[start+1 : end])
-		p.address = p.addresses[0]
+		p.address = address
 		if diagnostics {
 			parts := strings.Split(message, "\n")
 			if len(parts) != 2 {
@@ -267,7 +263,7 @@ func processPublicSmoke(t *testing.T, opts processSmokeOptions) {
 			t.Fatal("owned search index refresh", status)
 		}
 	}
-	t.Logf("three independent Weir processes, %s: batch reads and mutations, Native completed", opts.store)
+	t.Logf("independent Weir process, %s: batch reads and mutations, Native completed", opts.store)
 }
 
 func processNativeSmoke(t *testing.T, ctx context.Context, opts processSmokeOptions) {
@@ -352,10 +348,10 @@ func processNativeSmoke(t *testing.T, ctx context.Context, opts processSmokeOpti
 	}
 }
 
-func TestIndependentWeirProcesses(t *testing.T) {
+func TestIndependentWeirProcess(t *testing.T) {
 	mongoFixture := testmongo.Open(t)
 	search := testsearch.Open(t)
-	binary := buildEndpointProcess(t)
+	binary := buildWeirBinary(t)
 	mongo := mongoFixtureConfig(t, mongoFixture.URI)
 	mongoLocal := &Local{Backend: mongo}
 	backend := &Search{URL: search.URL}
@@ -364,77 +360,89 @@ func TestIndependentWeirProcesses(t *testing.T) {
 	mongoStore := StoreConfig{Name: "mongo", Local: mongoLocal}
 	searchStore := StoreConfig{Name: "search", Local: searchLocal}
 	cfg := emptyConfig(t)
-	cfg.Basic.Diagnostics.Address, cfg.Basic.Listeners.Peer = "127.0.0.1:0", "127.0.0.1:0"
-	cfg.Basic.Discovery.Group = "data"
+	cfg.Basic.Diagnostics.Address = "127.0.0.1:0"
 	cfg.Routing.Stores = []StoreConfig{mongoStore, searchStore}
 	owner := startProcess(t, binary, cfg)
-	middleConfig := emptyConfig(t)
-	middleConfig.Basic.Diagnostics.Address, middleConfig.Basic.Listeners.Peer = "127.0.0.1:0", "127.0.0.1:0"
-	middleConfig.Basic.Discovery.Seeds = []string{owner.addresses[1]}
-	middle := startProcess(t, binary, middleConfig)
-	firstConfig := emptyConfig(t)
-	firstConfig.Basic.Diagnostics.Address, firstConfig.Basic.Listeners.Peer = "127.0.0.1:0", "127.0.0.1:0"
-	firstConfig.Basic.Discovery.Seeds = []string{middle.addresses[1]}
-	first := startProcess(t, binary, firstConfig)
-	discovered := openDiscoveredClient(t, first.address, []string{"mongo", "search"})
+	client := sdkClient(t, owner.address)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	rawSeed := endpointProcessClient(t, first.address)
 	for _, kind := range []string{"mongo", "search"} {
 		root := mongoFixture.DB + "/records"
 		if kind == "search" {
 			root = search.Index
 		}
-		resolveRequest := &pb.ResolveStoreRequest{StoreName: kind}
-		response, err := rawSeed.ResolveStore(ctx, resolveRequest)
-		if err != nil || len(response.Endpoints) != 1 || response.Endpoints[0] != owner.address {
-			t.Fatal("nonowner did not learn final business target", response, err)
-		}
 		doc := processDocument(t, kind, "initialized", 7)
-		put := &pb.MutateRequest_Put{Put: doc}
-		mutation := &pb.MutateRequest{Resource: root + "/s:initialized", Action: put}
-		relative := mutation.Resource
+		relative := root + "/s:initialized"
 		writeRequest := &weirclient.WriteRequest{Resource: relative, Document: doc}
 		writeOptions := weirclient.WriteOptions{StoreName: kind, Request: writeRequest}
-		applied, err := discovered.Put(ctx, writeOptions)
+		applied, err := client.Put(ctx, writeOptions)
 		if err != nil || applied.GetOutcome() != weirclient.MutationApplied {
-			t.Fatal("initialized client direct mutation", applied, err)
+			t.Fatal("SDK mutation", applied, err)
 		}
-		read := &pb.ReadRequest{Resource: mutation.Resource}
 		readRequest := &weirclient.ReadRequest{Resource: relative}
 		readOptions := weirclient.ReadOneOptions{StoreName: kind, Request: readRequest}
-		found, err := discovered.ReadOne(ctx, readOptions)
+		found, err := client.ReadOne(ctx, readOptions)
 		if err != nil || processRecordNumber(t, found.Document) != 7 {
-			t.Fatal("initialized client persisted read", found, err)
+			t.Fatal("SDK persisted read", found, err)
 		}
-		_, err = testutil.ExecuteRecord(ctx, rawSeed, testutil.RecordRequest(kind, read))
-		if status.Code(err) != codes.Unavailable {
-			t.Fatal("nonowner business request was not rejected", err)
-		}
-		direct := endpointProcessClient(t, owner.address)
+		direct := processClient(t, owner.address)
 		options := processSmokeOptions{client: direct, store: kind, root: root, search: search, initialized: true}
 		processPublicSmoke(t, options)
 	}
-	for _, p := range []*process{first, middle, owner} {
-		metrics := testmetrics.Scrape(t, p.diagnostic)
-		if testmetrics.Sum(metrics, "weir_node_ready") != 1 {
-			t.Fatal("process not ready")
-		}
-		if p != owner {
-			if metrics["weir_store_executions_total"] != nil {
-				t.Fatal("directory node executed business")
-			}
-		} else {
-			// Each of the two Stores completes 2 SDK records, 4 direct/read-batch
-			// records, 2 creates and 2 readbacks. Native is a command.
-			const expectedRecords = 20
-			records := testmetrics.Sum(metrics, "weir_store_records_total")
-			if records != expectedRecords {
-				t.Fatal("owner business record count changed", records)
-			}
-		}
+	metrics := testmetrics.Scrape(t, owner.diagnostic)
+	if testmetrics.Sum(metrics, "weir_node_ready") != 1 {
+		t.Fatal("process not ready")
 	}
-	t.Logf("independent processes A=%d B=%d C=%d: A learned both Store targets via B; initialized SDK persisted direct writes on C; nonowner rejects Route and has no business runtime", first.command.Process.Pid, middle.command.Process.Pid, owner.command.Process.Pid)
+	// Each of the two Stores completes 2 SDK records, 4 direct/read-batch
+	// records, 2 creates and 2 readbacks. Native is a command.
+	const expectedRecords = 20
+	if records := testmetrics.Sum(metrics, "weir_store_records_total"); records != expectedRecords {
+		t.Fatal("business record count changed", records)
+	}
+	t.Logf("independent process %d: SDK and direct clients persisted MongoDB and Search records", owner.command.Process.Pid)
+}
+
+func buildWeirBinary(t *testing.T) string {
+	t.Helper()
+	binary := filepath.Join(t.TempDir(), "weir")
+	// A cold race build cache can exceed half a minute on CI runners.
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "go", "build", "-race", "-o", binary, "./cmd/weir")
+	cmd.Dir = testutil.Root(t)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		t.Fatal(err, string(output))
+	}
+	return binary
+}
+
+// processClient returns a raw StoreService client without retries.
+func processClient(t *testing.T, address string) pb.StoreServiceClient {
+	t.Helper()
+	conn, err := grpc.NewClient(
+		"passthrough:///"+address,
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithNoProxy(),
+		grpc.WithDisableRetry(),
+		grpc.WithDisableServiceConfig(),
+		grpc.WithDefaultCallOptions(grpc.MaxRetryRPCBufferSize(0), grpc.WaitForReady(false)),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close() })
+	return pb.NewStoreServiceClient(conn)
+}
+
+// sdkClient returns an SDK client for a Weir application address.
+func sdkClient(t *testing.T, address string) *weirclient.Client {
+	t.Helper()
+	client, err := weirclient.New(address)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = client.Close() })
+	return client
 }
 
 func TestDiagnosticProcessSIGTERMReadinessBeforeExit(t *testing.T) {

@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/batchstream/weir-protocol/api/netlimit"
+	"github.com/batchstream/weir/internal/netlimit"
 )
 
 // One owner joins raw sockets and HTTP dial attempts during adapter shutdown.

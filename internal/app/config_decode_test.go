@@ -252,7 +252,7 @@ func TestLoadUnavailableDocumentsAreRedacted(t *testing.T) {
 	if err := os.WriteFile(filename, basic, 0600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Load(filename, routingFilename); err == nil || err.Error() != "invalid listener configuration" {
+	if _, err := Load(filename, routingFilename); err == nil || err.Error() != "listeners.application requires an explicit IP and port" {
 		t.Fatal("invalid basic configuration reached routing file or leaked value", err)
 	}
 }
@@ -320,7 +320,7 @@ func TestDecodeRoutingAllowsOptionalNullAdapters(t *testing.T) {
 func TestConfigurationScalarTypes(t *testing.T) {
 	basic := "listeners:\n  application: 127.0.0.1:0\n"
 	for _, fragment := range []string{
-		"listeners:\n  application: 127001\n", basic + "diagnostics:\n  allow_intranet: yes\n", basic + "diagnostics:\n  allow_intranet: 'true'\n", basic + "transport:\n  timeouts:\n    stall: true\n", basic + "discovery:\n  seeds: [123]\n",
+		"listeners:\n  application: 127001\n", basic + "diagnostics:\n  allow_intranet: yes\n", basic + "diagnostics:\n  allow_intranet: 'true'\n", basic + "transport:\n  timeouts:\n    stall: true\n", basic + "transport:\n  max_pending_records: '32'\n",
 	} {
 		_, err := DecodeBasic(strings.NewReader(fragment))
 		if err == nil || !strings.Contains(err.Error(), "invalid configuration scalar type") {

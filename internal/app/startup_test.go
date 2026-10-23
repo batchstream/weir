@@ -8,6 +8,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/batchstream/weir-protocol/api/protocol"
+	pb "github.com/batchstream/weir-protocol/api/weir/v1"
+	"github.com/batchstream/weir/internal/execution"
+	"github.com/batchstream/weir/internal/store"
 	"github.com/batchstream/weir/internal/testutil/testmetrics"
 )
 
@@ -28,7 +32,7 @@ func TestCanceledOpenAndValidationPrecedence(t *testing.T) {
 func TestCanceledStartNeverReadyAndClosesOnce(t *testing.T) {
 	for _, concurrent := range []bool{false, true} {
 		cfg := emptyConfig(t)
-		cfg.Basic.Listeners.Peer, cfg.Basic.Diagnostics.Address = "127.0.0.1:0", "127.0.0.1:0"
+		cfg.Basic.Diagnostics.Address = "127.0.0.1:0"
 		node, err := Open(context.Background(), cfg)
 		if err != nil {
 			t.Fatal(err)
@@ -63,7 +67,7 @@ func TestCanceledStartNeverReadyAndClosesOnce(t *testing.T) {
 		if testmetrics.Sum(families, "weir_node_drains_total") != 1 || node.state != "closed" {
 			t.Fatal("partial node not closed exactly once")
 		}
-		for _, address := range append(node.Addresses(), node.DiagnosticAddress()) {
+		for _, address := range []string{node.Address(), node.DiagnosticAddress()} {
 			listener, err := net.Listen("tcp", address)
 			if err != nil {
 				t.Fatal("partial listener retained", err)
@@ -75,7 +79,7 @@ func TestCanceledStartNeverReadyAndClosesOnce(t *testing.T) {
 
 func TestCloseBeforeStartNeverPublishesServingResources(t *testing.T) {
 	cfg := emptyConfig(t)
-	cfg.Basic.Listeners.Peer, cfg.Basic.Diagnostics.Address = "127.0.0.1:0", "127.0.0.1:0"
+	cfg.Basic.Diagnostics.Address = "127.0.0.1:0"
 	node, err := Open(t.Context(), cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -92,40 +96,58 @@ func TestCloseBeforeStartNeverPublishesServingResources(t *testing.T) {
 	}
 }
 
+// closeBlockingAdapter keeps its Store's Close pending until release closes.
+type closeBlockingAdapter struct {
+	release chan struct{}
+}
+
+func (*closeBlockingAdapter) PrepareNative(context.Context, *pb.Command) (*execution.Plan, *pb.Failure) {
+	return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "close fixture")
+}
+
+func (*closeBlockingAdapter) PrepareRecord(context.Context, *execution.Record) (*execution.Plan, *pb.Failure) {
+	return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "close fixture")
+}
+
+func (*closeBlockingAdapter) ExecuteRecords(context.Context, []*execution.Plan) []*pb.Event {
+	return nil
+}
+
+func (*closeBlockingAdapter) ExecuteNative(context.Context, *execution.Plan, execution.Emit) *pb.NativeEnd {
+	failure := protocol.Fail(pb.FailureCode_UNSUPPORTED, "close fixture")
+	return protocol.NativeFailure(false, failure)
+}
+
+func (a *closeBlockingAdapter) Close(context.Context) error {
+	<-a.release
+	return nil
+}
+
 func TestDrainingListenerReportsPreserveShutdownState(t *testing.T) {
-	seed, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = seed.Close() })
-	if err := seed.(*net.TCPListener).SetDeadline(time.Now().Add(3 * time.Second)); err != nil {
-		t.Fatal(err)
-	}
 	cfg := emptyConfig(t)
-	cfg.Basic.Listeners.Peer = "127.0.0.1:0"
-	cfg.Basic.Discovery.Seeds = []string{seed.Addr().String()}
 	node, err := Open(t.Context(), cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = node.Close(context.Background()) })
+	// A Store whose Close is pending keeps the node draining after the
+	// listener itself has stopped and reported.
+	adapter := &closeBlockingAdapter{release: make(chan struct{})}
+	limits := store.DefaultLimits()
+	runtime, err := store.New(adapter, limits)
+	if err != nil {
+		t.Fatal(err)
+	}
+	node.stores["records"] = runtime
+	var release sync.Once
+	t.Cleanup(func() {
+		release.Do(func() { close(adapter.release) })
+		_ = node.Close(context.Background())
+	})
 	if err := node.Start(t.Context()); err != nil {
 		t.Fatal(err)
 	}
-	initial, err := seed.Accept()
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = initial.Close() })
 	closed := make(chan error, 1)
 	go func() { closed <- node.Close(t.Context()) }()
-	// The seed withholds its HTTP/2 handshake, keeping withdrawal pending while
-	// the real data listeners finish and report their shutdown to the node.
-	withdrawal, err := seed.Accept()
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = withdrawal.Close() })
 	select {
 	case err := <-node.Errors:
 		if err != nil {
@@ -140,15 +162,14 @@ func TestDrainingListenerReportsPreserveShutdownState(t *testing.T) {
 	if state != "draining" || node.ready() {
 		t.Fatal("listener shutdown replaced the draining state", state)
 	}
-	_ = seed.Close()
-	_ = withdrawal.Close()
+	release.Do(func() { close(adapter.release) })
 	select {
 	case err := <-closed:
 		if err != nil {
 			t.Fatal(err)
 		}
 	case <-time.After(3 * time.Second):
-		t.Fatal("node did not finish shutdown after seed release")
+		t.Fatal("node did not finish shutdown after the Store closed")
 	}
 	if node.state != "closed" {
 		t.Fatal("node did not publish closed state", node.state)
@@ -157,7 +178,7 @@ func TestDrainingListenerReportsPreserveShutdownState(t *testing.T) {
 
 func TestCloseJoinsListenerReports(t *testing.T) {
 	cfg := emptyConfig(t)
-	cfg.Basic.Listeners.Peer, cfg.Basic.Diagnostics.Address = "127.0.0.1:0", "127.0.0.1:0"
+	cfg.Basic.Diagnostics.Address = "127.0.0.1:0"
 	node, err := Open(context.Background(), cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -169,10 +190,10 @@ func TestCloseJoinsListenerReports(t *testing.T) {
 	if err := node.Close(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if len(node.Errors) != 3 {
+	if len(node.Errors) != 2 {
 		t.Fatal("Close returned before all listener reports", len(node.Errors))
 	}
-	for range 3 {
+	for range 2 {
 		if err := <-node.Errors; err != nil {
 			t.Fatal("normal shutdown listener failed", err)
 		}

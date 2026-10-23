@@ -4,7 +4,6 @@ import (
 	"context"
 
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
-	peerpb "github.com/batchstream/weir/internal/api/peer/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -17,27 +16,14 @@ type rpcCancelKey struct{}
 // any request data. The returned context becomes the parent of the stream's
 // context, so canceling it also ends a blocked Recv or flow-controlled Send.
 func (s *Server) admitRPC(ctx context.Context, info *tap.Info) (context.Context, error) {
-	allowed := false
-	switch info.FullMethodName {
-	case pb.StoreService_Execute_FullMethodName, pb.StoreService_ResolveStore_FullMethodName:
-		allowed = !s.peer
-	case peerpb.PeerDiscoveryService_SyncDirectory_FullMethodName:
-		allowed = s.peer && s.directory != nil
-	}
-	if !allowed {
+	if info.FullMethodName != pb.StoreService_Execute_FullMethodName {
 		s.admission.rejections.WithLabelValues("method").Inc()
-		return nil, status.Error(codes.Unimplemented, "method is not served on this listener")
+		return nil, status.Error(codes.Unimplemented, "method is not served")
 	}
 	if err := s.admission.check(); err != nil {
 		return nil, err
 	}
-	var rpc context.Context
-	var cancel context.CancelFunc
-	if s.peer {
-		rpc, cancel = context.WithTimeout(ctx, s.directory.ExchangeTimeout())
-	} else {
-		rpc, cancel = context.WithCancel(ctx)
-	}
+	rpc, cancel := context.WithCancel(ctx)
 	key := rpcCancelKey{}
 	tagged := context.WithValue(rpc, key, cancel)
 	return tagged, nil
@@ -61,18 +47,11 @@ func (s *Server) cancelRPC(ctx context.Context, phase string) {
 	}
 }
 
-func (s *Server) observeUnary(ctx context.Context, request any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
-	s.admission.activeRPCs.Add(1)
-	defer s.admission.activeRPCs.Add(-1)
-	response, err := handler(ctx, request)
-	s.metrics.rpcs.WithLabelValues(methodLabel(info.FullMethod), statusLabel(err)).Inc()
-	return response, err
-}
-
-func (s *Server) observeStream(service any, stream grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+// observeStream counts Execute, the only method admitRPC lets through.
+func (s *Server) observeStream(service any, stream grpc.ServerStream, _ *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
 	s.admission.activeRPCs.Add(1)
 	defer s.admission.activeRPCs.Add(-1)
 	err := handler(service, stream)
-	s.metrics.rpcs.WithLabelValues(methodLabel(info.FullMethod), statusLabel(err)).Inc()
+	s.metrics.rpcs.WithLabelValues("execute", statusLabel(err)).Inc()
 	return err
 }

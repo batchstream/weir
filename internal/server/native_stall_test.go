@@ -22,7 +22,7 @@ import (
 )
 
 type nativeStallAdapter struct {
-	peerAdapter
+	recordAdapter
 	nativeStarted atomic.Int32
 	chunks        int
 }
@@ -380,8 +380,8 @@ func TestNativeOutputStallsHoldOnlyNativeSlots(t *testing.T) {
 	})
 	limits := DefaultLimits()
 	limits.Stall = 500 * time.Millisecond
-	opts := peerServerOptions{stores: map[string]*store.Runtime{"records": local}, limits: limits}
-	server, address := startPeerServer(t, opts)
+	opts := testServerOptions{stores: map[string]*store.Runtime{"records": local}, limits: limits}
+	server, address := startTestServer(t, opts)
 	conn, err := net.DialTimeout("tcp", address, time.Second)
 	if err != nil {
 		t.Fatal(err)
@@ -429,7 +429,7 @@ func TestNativeOutputStallsHoldOnlyNativeSlots(t *testing.T) {
 	sharedNativeID := sharedReadID + 2
 	requestOpts.streamID, requestOpts.command = sharedNativeID, shortCommand
 	sendFlowControlledRequest(t, requestOpts)
-	_, independent := peerClient(t, address)
+	_, independent := testClient(t, address)
 	completed := make(chan error, 1)
 	go func() {
 		result, err := routeRead(independent, ctx, read)
@@ -498,7 +498,7 @@ func TestNativeOutputStallsHoldOnlyNativeSlots(t *testing.T) {
 	if err := conn.Close(); err != nil {
 		t.Fatal(err)
 	}
-	waitPeerIdle(t, server)
+	waitIdle(t, server)
 }
 
 func nativeHealthyReplyBytes(t *testing.T, messages []*pb.ExecuteResponse) []byte {

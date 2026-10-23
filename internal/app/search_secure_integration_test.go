@@ -6,13 +6,14 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	weirclient "github.com/batchstream/weir-go"
-	"github.com/batchstream/weir/internal/testutil"
 	"io"
 	"net/http"
 	"strings"
 	"testing"
 	"time"
+
+	weirclient "github.com/batchstream/weir-go"
+	"github.com/batchstream/weir/internal/testutil"
 
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 	"github.com/batchstream/weir/internal/backend/search"
@@ -65,21 +66,17 @@ func TestSearchTLSApplicationAssemblyAllOperations(t *testing.T) {
 
 	cfg := DefaultConfig()
 	cfg.Basic.Listeners.Application = "127.0.0.1:0"
-	cfg.Basic.Listeners.Peer = "127.0.0.1:0"
 	cfg.Routing.Stores = []StoreConfig{service}
 
 	node := secureNode(t, cfg)
-	for name, address := range map[string]string{"direct": node.Addresses()[0]} {
-		t.Run(name, func(t *testing.T) {
-			conn, err := grpc.NewClient(address, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithDisableRetry())
-			if err != nil {
-				t.Fatal(err)
-			}
-			defer conn.Close()
-			client := pb.NewStoreServiceClient(conn)
-			searchClientOperations(t, client, fixture, name)
-		})
+	const name = "direct"
+	conn, err := grpc.NewClient(node.Address(), grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithDisableRetry())
+	if err != nil {
+		t.Fatal(err)
 	}
+	defer conn.Close()
+	client := pb.NewStoreServiceClient(conn)
+	searchClientOperations(t, client, fixture, name)
 }
 
 func searchClientOperations(t *testing.T, client pb.StoreServiceClient, fixture *testsearch.SecureFixture, name string) {

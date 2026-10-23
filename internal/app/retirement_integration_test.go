@@ -93,12 +93,12 @@ func newRetirementNode(t *testing.T, failure error) retirementNodeFixture {
 		t.Fatal(err)
 	}
 	node.stores["records"] = runtime
-	serverCfg := server.Config{Stores: node.stores, Directory: node.directory, Limits: server.DefaultLimits(), Admission: node.admission}
+	serverCfg := server.Config{Stores: node.stores, Limits: server.DefaultLimits(), Admission: node.admission}
 	endpointServer, err := server.New(serverCfg)
 	if err != nil {
 		t.Fatal(err)
 	}
-	node.endpoints[0].server = endpointServer
+	node.server = endpointServer
 	t.Cleanup(func() {
 		if err := node.Close(context.Background()); !errors.Is(err, failure) {
 			t.Error(err)
@@ -107,7 +107,7 @@ func newRetirementNode(t *testing.T, failure error) retirementNodeFixture {
 	if err := node.Start(t.Context()); err != nil {
 		t.Fatal(err)
 	}
-	connection, err := grpc.NewClient("passthrough:///"+node.Addresses()[0], grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithNoProxy(), grpc.WithDisableRetry())
+	connection, err := grpc.NewClient("passthrough:///"+node.Address(), grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithNoProxy(), grpc.WithDisableRetry())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -161,13 +161,11 @@ func closeRetirementNode(t *testing.T, fixture retirementNodeFixture) {
 	if testmetrics.Sum(families, "weir_ingress_sessions") != 0 {
 		t.Fatal("Node returned before real handlers joined")
 	}
-	for _, address := range node.Addresses() {
-		listener, err := net.Listen("tcp", address)
-		if err != nil {
-			t.Fatal("Node did not release its listener", err)
-		}
-		_ = listener.Close()
+	listener, err := net.Listen("tcp", node.Address())
+	if err != nil {
+		t.Fatal("Node did not release its listener", err)
 	}
+	_ = listener.Close()
 	t.Logf("actual Node Close elapsed=%s error=%v runtime=%+v", elapsed, err, node.stores["records"].Stats())
 }
 

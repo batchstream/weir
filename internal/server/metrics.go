@@ -4,28 +4,12 @@ import (
 	"context"
 	"errors"
 
-	pb "github.com/batchstream/weir-protocol/api/weir/v1"
-	peerpb "github.com/batchstream/weir/internal/api/peer/v1"
 	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
 
-var metricMethods = []string{"execute", "resolve_store", "sync_directory", "other"}
 var metricStatuses = []string{"ok", "canceled", "deadline", "non_ok"}
-
-func methodLabel(method string) string {
-	switch method {
-	case pb.StoreService_Execute_FullMethodName:
-		return "execute"
-	case pb.StoreService_ResolveStore_FullMethodName:
-		return "resolve_store"
-	case peerpb.PeerDiscoveryService_SyncDirectory_FullMethodName:
-		return "sync_directory"
-	default:
-		return "other"
-	}
-}
 
 func statusLabel(err error) string {
 	if err == nil {
@@ -57,10 +41,8 @@ func newTransportMetrics() transportMetrics {
 		rpcs:      prometheus.NewCounterVec(rpcOpts, []string{"method", "status"}),
 		watchdogs: prometheus.NewCounterVec(watchOpts, []string{"phase"}),
 	}
-	for _, method := range metricMethods {
-		for _, label := range metricStatuses {
-			m.rpcs.WithLabelValues(method, label)
-		}
+	for _, label := range metricStatuses {
+		m.rpcs.WithLabelValues("execute", label)
 	}
 	for _, phase := range []string{"input", "output"} {
 		m.watchdogs.WithLabelValues(phase)

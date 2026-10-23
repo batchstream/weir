@@ -8,7 +8,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/batchstream/weir/internal/directory"
 	"github.com/batchstream/weir/internal/overload"
 	"github.com/batchstream/weir/internal/server"
 	"github.com/batchstream/weir/internal/store"
@@ -26,8 +25,8 @@ type Node struct {
 	drainDuration   prometheus.Histogram
 	admission       *server.Admission
 	stores          map[string]*store.Runtime
-	directory       *directory.Directory
-	endpoints       []endpoint
+	listener        net.Listener
+	server          *server.Server
 	stopGuard       context.CancelFunc
 	guardDone       chan struct{}
 	start           sync.Once
@@ -36,12 +35,6 @@ type Node struct {
 	once            sync.Once
 	closeErr        error
 	Errors          chan error
-}
-
-type endpoint struct {
-	listener net.Listener
-	server   *server.Server
-	peer     bool
 }
 
 // ManageRuntimeMemoryLimit is an explicit process-wide opt-in for the CLI.
@@ -70,12 +63,8 @@ func (n *Node) Start(startup context.Context) error {
 			n.guard.Run(ctx)
 		}()
 
-		for _, endpoint := range n.endpoints {
-			n.serving.Go(func() { n.listenerEnded(endpoint.server.Serve(endpoint.listener)) })
-			<-endpoint.server.Serving()
-		}
-
-		n.directory.Start(ctx)
+		n.serving.Go(func() { n.listenerEnded(n.server.Serve(n.listener)) })
+		<-n.server.Serving()
 
 		if n.diagnostics != nil {
 			n.serving.Go(func() { n.listenerEnded(n.diagnostics.serve()) })
@@ -90,12 +79,9 @@ func (n *Node) Start(startup context.Context) error {
 	return n.startErr
 }
 
-func (n *Node) Addresses() []string {
-	addresses := make([]string, len(n.endpoints))
-	for i, endpoint := range n.endpoints {
-		addresses[i] = endpoint.listener.Addr().String()
-	}
-	return addresses
+// Address returns the bound application listener address.
+func (n *Node) Address() string {
+	return n.listener.Addr().String()
 }
 
 func (n *Node) Close(ctx context.Context) error {
@@ -118,17 +104,11 @@ func (n *Node) Close(ctx context.Context) error {
 			runtime.BeginDrain()
 		}
 
-		finished := make(chan error, len(n.endpoints)+len(n.stores)+1)
+		finished := make(chan error, len(n.stores)+1)
 		remaining := 0
-		if n.directory != nil {
+		if n.server != nil {
 			remaining++
-			go func() { finished <- n.directory.Close(drain) }()
-		}
-		for _, endpoint := range n.endpoints {
-			if endpoint.server != nil {
-				remaining++
-				go func() { finished <- endpoint.server.Shutdown(drain) }()
-			}
+			go func() { finished <- n.server.Shutdown(drain) }()
 		}
 		for _, runtime := range n.stores {
 			remaining++
@@ -138,8 +118,8 @@ func (n *Node) Close(ctx context.Context) error {
 			n.closeErr = errors.Join(n.closeErr, <-finished)
 		}
 
-		for _, endpoint := range n.endpoints {
-			_ = endpoint.listener.Close()
+		if n.listener != nil {
+			_ = n.listener.Close()
 		}
 
 		n.drainDuration.Observe(time.Since(started).Seconds())

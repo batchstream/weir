@@ -49,7 +49,7 @@ func TestMongoReplicaCLIReplyLoss(t *testing.T) {
 		t.Skip("explicit owned replica integration opt-in")
 	}
 	// This is the ordinary CLI, not an in-process adapter or test-only server.
-	binary := buildEndpointProcess(t)
+	binary := buildWeirBinary(t)
 	for _, secure := range []bool{false, true} {
 		profile := "plain"
 		if secure {
@@ -84,10 +84,7 @@ func TestMongoReplicaCLIReplyLoss(t *testing.T) {
 					cfg.Basic.Diagnostics.Address = "127.0.0.1:0"
 					cfg.Routing.Stores = []StoreConfig{store}
 					service := startProcessWithLifetime(t, binary, cfg, 3*time.Minute)
-					open, cancel := context.WithTimeout(t.Context(), 3*time.Second)
-					openOptions := weirclient.OpenOptions{Seed: service.address, Stores: []string{"mongo"}}
-					client, err := weirclient.Open(open, openOptions)
-					cancel()
+					client, err := weirclient.New(service.address)
 					if err != nil {
 						t.Fatal(err)
 					}

@@ -68,9 +68,9 @@ func TestNativeCompletionMetricsAreIndependentOfRPCAndHTTPStatus(t *testing.T) {
 					t.Error(err)
 				}
 			})
-			opts := peerServerOptions{stores: map[string]*store.Runtime{"records": local}}
-			server, address := startPeerServer(t, opts)
-			_, client := peerClient(t, address)
+			opts := testServerOptions{stores: map[string]*store.Runtime{"records": local}}
+			server, address := startTestServer(t, opts)
+			_, client := testClient(t, address)
 			httpRequest, err := http.NewRequest(http.MethodGet, "http://ignored.invalid/_native", nil)
 			if err != nil {
 				t.Fatal(err)
@@ -119,7 +119,7 @@ func TestNativeCompletionMetricsAreIndependentOfRPCAndHTTPStatus(t *testing.T) {
 			if !test.truncated && !bytes.HasPrefix(head.Metadata.GetData(), []byte("HTTP/1.1 500 ")) {
 				t.Fatal("opaque HTTP 500 status was lost", head)
 			}
-			waitPeerIdle(t, server)
+			waitIdle(t, server)
 			for range 3 {
 				families := testmetrics.Gather(t, local)
 				family := families["weir_store_native_completions_total"]
@@ -144,10 +144,10 @@ func TestNativeCompletionMetricsAreIndependentOfRPCAndHTTPStatus(t *testing.T) {
 }
 
 func TestRPCMetricsReportInvalidStream(t *testing.T) {
-	_, local := peerLocal(t, "records")
-	opts := peerServerOptions{stores: map[string]*store.Runtime{"records": local}}
-	server, address := startPeerServer(t, opts)
-	_, client := peerClient(t, address)
+	_, local := localStore(t, "records")
+	opts := testServerOptions{stores: map[string]*store.Runtime{"records": local}}
+	server, address := startTestServer(t, opts)
+	_, client := testClient(t, address)
 	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
 	defer cancel()
 	stream, err := client.Execute(ctx)
@@ -171,7 +171,7 @@ func TestRPCMetricsReportInvalidStream(t *testing.T) {
 	if _, err := stream.Recv(); status.Code(err) != codes.InvalidArgument {
 		t.Fatal("invalid ordinal did not terminate the native RPC", err)
 	}
-	waitPeerIdle(t, server)
+	waitIdle(t, server)
 	registry := prometheus.NewPedanticRegistry()
 	if err := registry.Register(server); err != nil {
 		t.Fatal(err)

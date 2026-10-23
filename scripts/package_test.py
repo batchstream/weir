@@ -37,7 +37,7 @@ class PackageTests(unittest.TestCase):
     def test_inputs_exclude_tests_local_and_secrets(self):
         for name in ('secret/.env.production', '.ssh/config', 'keys/server.pem', 'server.key', 'credentials', 'keyfile'):
             self.assertTrue(package.secret_path(name), name)
-        for name in ('.tools/weir', '.testdata/test.go', '.git/config', 'examples/basic/main.go', 'examples/native/main.go', 'cmd/weir/main_test.go', 'internal/testutil/root.go', 'api/v1/store.go', 'deploy/kubernetes/weir.yaml', 'licenses/other.txt'):
+        for name in ('.tools/weir', '.testdata/test.go', '.git/config', 'examples/basic/main.go', 'examples/native/main.go', 'cmd/weir/main_test.go', 'internal/testutil/root.go', 'api/v1/store.go', 'licenses/other.txt'):
             self.assertFalse(package.allowed(name), name)
         self.assertFalse(package.allowed('cmd/other-product/main.go'))
         included = (

@@ -13,12 +13,12 @@ import (
 )
 
 func TestBatchDeadlineAndCancellation(t *testing.T) {
-	adapter, local := peerLocal(t, "records")
+	adapter, local := localStore(t, "records")
 	release := make(chan struct{})
 	adapter.block = release
-	opts := peerServerOptions{stores: map[string]*store.Runtime{"records": local}}
-	srv, address := startPeerServer(t, opts)
-	_, client := peerClient(t, address)
+	opts := testServerOptions{stores: map[string]*store.Runtime{"records": local}}
+	srv, address := startTestServer(t, opts)
+	_, client := testClient(t, address)
 	ctx, cancel := context.WithTimeout(t.Context(), 700*time.Millisecond)
 	deadline, _ := ctx.Deadline()
 	done := make(chan error, 1)
@@ -36,7 +36,7 @@ func TestBatchDeadlineAndCancellation(t *testing.T) {
 		t.Fatal("cancellation did not reach record stream caller", err)
 	}
 	close(release)
-	waitPeerIdle(t, srv)
+	waitIdle(t, srv)
 }
 
 func TestBatchGracefulDrainPreservesAdmittedMutation(t *testing.T) {
@@ -49,7 +49,7 @@ func TestBatchGracefulDrainPreservesAdmittedMutation(t *testing.T) {
 
 func testGracefulDrain(t *testing.T, delay time.Duration) {
 	t.Helper()
-	adapter, local := peerLocal(t, "records")
+	adapter, local := localStore(t, "records")
 	release := make(chan struct{})
 	t.Cleanup(func() {
 		select {
@@ -59,9 +59,9 @@ func testGracefulDrain(t *testing.T, delay time.Duration) {
 		}
 	})
 	adapter.block = release
-	opts := peerServerOptions{stores: map[string]*store.Runtime{"records": local}}
-	srv, address := startPeerServer(t, opts)
-	_, client := peerClient(t, address)
+	opts := testServerOptions{stores: map[string]*store.Runtime{"records": local}}
+	srv, address := startTestServer(t, opts)
+	_, client := testClient(t, address)
 	ctx, cancel := context.WithTimeout(t.Context(), 8*time.Second)
 	defer cancel()
 	resultDone := make(chan error, 1)
@@ -98,5 +98,5 @@ func testGracefulDrain(t *testing.T, delay time.Duration) {
 	if err := <-shutdown; err != nil {
 		t.Fatal(err)
 	}
-	waitPeerIdle(t, srv)
+	waitIdle(t, srv)
 }

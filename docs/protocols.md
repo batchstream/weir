@@ -1,13 +1,12 @@
-# Public and peer protocols
+# Protocol
 
-The public contract is [store.proto](https://github.com/batchstream/weir-protocol/blob/v0.14.0/api/weir/v1/store.proto),
-package weir.v1. Clients initialize through any application endpoint and send
-business requests directly to the returned Store endpoints. No Kubernetes types
-or peer membership appear in this schema.
+The public contract is [store.proto](https://github.com/batchstream/weir-protocol/blob/v0.15.0/api/weir/v1/store.proto),
+package weir.v1. Clients connect to a Weir application address and name the
+Store in each request. A server that does not host the named Store fails the RPC
+with NotFound.
 
-| Public RPC | Meaning |
+| RPC | Meaning |
 | --- | --- |
-| StoreService.ResolveStore | Discover IP/DNS endpoints and cache TTL for one named Store |
 | StoreService.Execute | Exchange typed requests and indexed results on a finite bidirectional stream |
 
 Execute accepts typed records, open Native forwarding and wait-until-visible
@@ -48,43 +47,12 @@ unknown and are never replayed automatically. MongoDB Lua record groups can shar
 an internal short transaction with group rollback on database write error; Search
 uses per-item version conditions. Neither path adds document metadata.
 
-The independent internal [peer.proto](../internal/api/peer/v1/peer.proto), package
-weir.peer.v1, exposes PeerDiscoveryService.SyncDirectory as a finite bidirectional
-stream. The initiator sends an empty request, receives one snapshot, sends its own
-snapshot and half-closes; final gRPC OK completes the exchange. Each receiver
-records a local anchor before the sender forms its snapshot and computes expiry
-as that anchor plus remaining lifetime. The receiver requires validated input
-half-close before installing the snapshot; the initiator requires exactly one
-response and final gRPC OK. It exchanges discovery metadata
-without depending on public business DTOs.
-
-| Internal field | Meaning |
-| --- | --- |
-| announcements | Node state offered to or learned from a peer |
-| incarnation_id | Fresh identity for each process lifetime |
-| revision | Monotonic heartbeat version advanced only by the origin |
-| peer_endpoint | Direct node-to-node synchronization endpoint |
-| replica_group | Replicas with equivalent logical Store ownership |
-| store_names | Complete locally served Store set |
-| store_endpoints | Business endpoints for those Stores |
-| lease_remaining_ms | Remaining origin lease; relays cannot extend it |
-| withdrawn | Explicit withdrawal of a process incarnation |
-| origin_lease_ms | Full origin lease, immutable for an incarnation; bounds replay watermark retention independently of receiver policy |
-
-Same-group endpoints merge; conflicting Store ownership fails ResolveStore.
-Replica groups stay internal and do not appear in its public response.
-Same or older revisions never extend expiry or watermark retention. A withdrawn
-incarnation cannot return to live state. Different origin lease policies are
-accepted. Only positive millisecond values representable by `time.Duration` and
-remaining lifetime no greater than the full origin lease are accepted.
-Application listeners expose only StoreService; peer listeners expose only
-PeerDiscoveryService.
+The application listener exposes only StoreService.
 
 [weir-protocol](https://github.com/batchstream/weir-protocol) owns canonical public
-schemas, generated Go bindings and shared validation/DNS helpers. Both Weir and
+schemas, generated Go bindings and shared validation. Both Weir and
 [weir-go](https://github.com/batchstream/weir-go) depend on it; it depends on neither.
 The SDK has no dependency on the server, and the server binary does not use the
-SDK; only server tests consume it. This repository generates only internal
-peer bindings with `scripts/generate.sh`. Clients in other languages can generate
-the public schema and implement discovery, endpoint refresh, load balancing and
-typed completion handling. Weir uses protocol v0.14.0 and Go SDK v0.16.0.
+SDK; only server tests consume it. Clients in other languages can generate the
+public schema and implement load balancing and typed completion handling. Weir
+uses protocol v0.15.0 and Go SDK v0.17.0.

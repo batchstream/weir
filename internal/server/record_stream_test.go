@@ -29,12 +29,12 @@ func readFrame(index uint64, read *pb.ReadRequest) *pb.ExecuteRequest {
 	return request
 }
 func TestRecordStreamLongInputWithLargeResults(t *testing.T) {
-	adapter, local := peerLocal(t, "records")
+	adapter, local := localStore(t, "records")
 	document := &pb.Document{ContentType: "application/octet-stream", Data: bytes.Repeat([]byte("x"), (2 << 20))}
 	adapter.documents[testRequest().Resource] = document
-	opts := peerServerOptions{stores: map[string]*store.Runtime{"records": local}}
-	server, address := startPeerServer(t, opts)
-	_, client := peerClient(t, address)
+	opts := testServerOptions{stores: map[string]*store.Runtime{"records": local}}
+	server, address := startTestServer(t, opts)
+	_, client := testClient(t, address)
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
 	stream, err := client.Execute(ctx)
@@ -64,16 +64,16 @@ func TestRecordStreamLongInputWithLargeResults(t *testing.T) {
 	if _, err := stream.Recv(); err != io.EOF {
 		t.Fatal("long stream did not complete", err)
 	}
-	waitPeerIdle(t, server)
+	waitIdle(t, server)
 }
 
 func TestRecordStreamInvalidLaterFramePreservesPublishedResults(t *testing.T) {
 	for _, scenario := range []string{"ordinal", "Store", "kind", "request"} {
 		t.Run(scenario, func(t *testing.T) {
-			adapter, local := peerLocal(t, "records")
-			opts := peerServerOptions{stores: map[string]*store.Runtime{"records": local}}
-			server, address := startPeerServer(t, opts)
-			_, client := peerClient(t, address)
+			adapter, local := localStore(t, "records")
+			opts := testServerOptions{stores: map[string]*store.Runtime{"records": local}}
+			server, address := startTestServer(t, opts)
+			_, client := testClient(t, address)
 			stream, err := client.Execute(t.Context())
 			if err != nil {
 				t.Fatal(err)
@@ -110,18 +110,18 @@ func TestRecordStreamInvalidLaterFramePreservesPublishedResults(t *testing.T) {
 			if adapter.commands.Load() != 0 {
 				t.Fatal("invalid later frame reached mutation execution")
 			}
-			waitPeerIdle(t, server)
+			waitIdle(t, server)
 		})
 	}
 }
 
 func TestRecordStreamIndexedOperationFailureDoesNotStopLaterResults(t *testing.T) {
-	adapter, local := peerLocal(t, "records")
+	adapter, local := localStore(t, "records")
 	adapter.ackFailureKey = testRequest().Resource
 	adapter.ackFailure = protocol.Fail(pb.FailureCode_UNAVAILABLE, "acknowledgement unavailable")
-	opts := peerServerOptions{stores: map[string]*store.Runtime{"records": local}}
-	server, address := startPeerServer(t, opts)
-	_, client := peerClient(t, address)
+	opts := testServerOptions{stores: map[string]*store.Runtime{"records": local}}
+	server, address := startTestServer(t, opts)
+	_, client := testClient(t, address)
 	stream, err := client.Execute(t.Context())
 	if err != nil {
 		t.Fatal(err)
@@ -151,7 +151,7 @@ func TestRecordStreamIndexedOperationFailureDoesNotStopLaterResults(t *testing.T
 	if _, err := stream.Recv(); err != io.EOF {
 		t.Fatal(err)
 	}
-	waitPeerIdle(t, server)
+	waitIdle(t, server)
 	for range 3 {
 		families := testmetrics.Gather(t, local)
 		applied := map[string]string{"operation": "mutate", "outcome": "applied"}
@@ -166,7 +166,7 @@ func TestRecordStreamIndexedOperationFailureDoesNotStopLaterResults(t *testing.T
 }
 
 type orderedRecordAdapter struct {
-	*peerAdapter
+	*recordAdapter
 	first  <-chan struct{}
 	second chan struct{}
 }
@@ -181,7 +181,7 @@ func (adapter *orderedRecordAdapter) ExecuteRecords(ctx context.Context, plans [
 	} else {
 		close(adapter.second)
 	}
-	return adapter.peerAdapter.ExecuteRecords(ctx, plans)
+	return adapter.recordAdapter.ExecuteRecords(ctx, plans)
 }
 func TestRecordStreamPublishesFIFOAfterOutOfOrderBackendCompletion(t *testing.T) {
 	gate := make(chan struct{})
@@ -192,7 +192,7 @@ func TestRecordStreamPublishesFIFOAfterOutOfOrderBackendCompletion(t *testing.T)
 			close(gate)
 		}
 	}()
-	adapter := &orderedRecordAdapter{peerAdapter: newPeerAdapter("records"), first: gate, second: make(chan struct{})}
+	adapter := &orderedRecordAdapter{recordAdapter: newRecordAdapter("records"), first: gate, second: make(chan struct{})}
 	limits := store.DefaultLimits()
 	limits.BatchOperations = 1
 
@@ -263,7 +263,7 @@ func TestRecordStreamSingleRequestDoesNotExpireWhileBackendWorks(t *testing.T) {
 			close(gate)
 		}
 	}()
-	adapter := newPeerAdapter("records")
+	adapter := newRecordAdapter("records")
 	adapter.block = gate
 	limits := DefaultLimits()
 	limits.Stall = 150 * time.Millisecond
@@ -316,7 +316,7 @@ func TestRecordStreamInvalidQueuedTailPublishesAdmittedPrefix(t *testing.T) {
 			close(gate)
 		}
 	}()
-	adapter := newPeerAdapter("records")
+	adapter := newRecordAdapter("records")
 	adapter.block = gate
 	opts := routeAcceptanceNodeOptions{adapter: adapter}
 	node := startRouteAcceptanceNode(t, opts)
@@ -384,11 +384,11 @@ func (stream *blockedOutputStream) Send(*pb.ExecuteResponse) error {
 func TestRecordInputStopsAtCountBoundBehindSlowOutput(t *testing.T) {
 	for _, window := range []int{3, RecordStreamItems, 96} {
 		t.Run(fmt.Sprint(window), func(t *testing.T) {
-			_, local := peerLocal(t, "records")
+			_, local := localStore(t, "records")
 			transport := DefaultLimits()
 			transport.MaxPendingRecords = window
-			opts := peerServerOptions{stores: map[string]*store.Runtime{"records": local}, limits: transport}
-			server, _ := startPeerServer(t, opts)
+			opts := testServerOptions{stores: map[string]*store.Runtime{"records": local}, limits: transport}
+			server, _ := startTestServer(t, opts)
 			ctx, cancel := context.WithCancel(t.Context())
 			defer cancel()
 			stream := &blockedOutputStream{ctx: ctx}
@@ -422,7 +422,7 @@ func TestRecordStreamCancellationKeepsOtherRPCOnSharedConnection(t *testing.T) {
 			close(gate)
 		}
 	}()
-	adapter := newPeerAdapter("records")
+	adapter := newRecordAdapter("records")
 	adapter.block = gate
 	opts := routeAcceptanceNodeOptions{adapter: adapter}
 	node := startRouteAcceptanceNode(t, opts)
@@ -457,7 +457,7 @@ func TestRecordStreamCancellationKeepsOtherRPCOnSharedConnection(t *testing.T) {
 	select {
 	case <-adapter.seen:
 	case <-ctx.Done():
-		t.Fatal("peer RPC did not start")
+		t.Fatal("concurrent RPC did not start")
 	}
 	stopFirst()
 	if _, err := first.Recv(); status.Code(err) != codes.Canceled {
@@ -466,7 +466,7 @@ func TestRecordStreamCancellationKeepsOtherRPCOnSharedConnection(t *testing.T) {
 	close(gate)
 	response, err := second.Recv()
 	if err != nil || response.Index != 1 {
-		t.Fatal("one canceled receiver aborted the peer RPC", response, err)
+		t.Fatal("one canceled receiver aborted the concurrent RPC", response, err)
 	}
 	if _, err := second.Recv(); err != io.EOF {
 		t.Fatal(err)
@@ -478,14 +478,14 @@ func TestRecordStreamCancellationKeepsOtherRPCOnSharedConnection(t *testing.T) {
 }
 
 func TestRecordStreamOversizedResultFailsOnlyItsRecord(t *testing.T) {
-	adapter, local := peerLocal(t, "records")
+	adapter, local := localStore(t, "records")
 	large := &pb.Document{ContentType: "application/octet-stream", Data: make([]byte, MaxMessageBytes)}
 	adapter.documents["data/s:large"] = large
 	small := &pb.Document{ContentType: "application/octet-stream", Data: []byte("x")}
 	adapter.documents[testRequest().Resource] = small
-	opts := peerServerOptions{stores: map[string]*store.Runtime{"records": local}}
-	server, address := startPeerServer(t, opts)
-	_, client := peerClient(t, address)
+	opts := testServerOptions{stores: map[string]*store.Runtime{"records": local}}
+	server, address := startTestServer(t, opts)
+	_, client := testClient(t, address)
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
 	largeRead := &pb.ReadRequest{Resource: "data/s:large"}
@@ -497,14 +497,14 @@ func TestRecordStreamOversizedResultFailsOnlyItsRecord(t *testing.T) {
 	if results[0].GetFailure().GetCode() != pb.FailureCode_RESOURCE_EXHAUSTED || !bytes.Equal(results[1].GetDocument().GetData(), small.Data) {
 		t.Fatal("oversized result was not confined to its own record", results[0].GetFailure(), results[1])
 	}
-	waitPeerIdle(t, server)
+	waitIdle(t, server)
 }
 
 func TestExecuteRejectsUnknownFields(t *testing.T) {
-	_, local := peerLocal(t, "records")
-	opts := peerServerOptions{stores: map[string]*store.Runtime{"records": local}}
-	server, address := startPeerServer(t, opts)
-	_, client := peerClient(t, address)
+	_, local := localStore(t, "records")
+	opts := testServerOptions{stores: map[string]*store.Runtime{"records": local}}
+	server, address := startTestServer(t, opts)
+	_, client := testClient(t, address)
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
 	stream, err := client.Execute(ctx)
@@ -521,5 +521,5 @@ func TestExecuteRejectsUnknownFields(t *testing.T) {
 	if _, err := stream.Recv(); status.Code(err) != codes.InvalidArgument {
 		t.Fatal("request with unknown fields was accepted", err)
 	}
-	waitPeerIdle(t, server)
+	waitIdle(t, server)
 }

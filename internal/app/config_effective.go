@@ -29,15 +29,6 @@ func (cfg Config) Effective() (EffectiveConfig, error) {
 		"memory_capacity": "detected at startup from visible container, host and finite process address-space limits; container/OS limits remain the hard boundary",
 	}
 	report.Automatic["lua.native_defaults"] = fmt.Sprintf("input 0 selects golua defaults: max_call_depth=%d, max_stack_slots=%d", vm.DefaultMaxCallDepth, vm.DefaultMaxStackSlots)
-	if cfg.Basic.Discovery.Group == "" {
-		report.Automatic["discovery.group"] = "random standalone group generated at startup; set group explicitly for equivalent replicas"
-	}
-	if len(cfg.Basic.Discovery.Advertise) == 0 && len(cfg.Routing.Stores) != 0 {
-		report.Automatic["discovery.advertise"] = "concrete application listener address after bind; port 0 is resolved at startup"
-	}
-	if cfg.Basic.Discovery.PeerAddress == "" && cfg.Basic.Listeners.Peer != "" {
-		report.Automatic["discovery.peer_address"] = "concrete peer listener address after bind; port 0 is resolved at startup"
-	}
 	for _, definition := range report.Routing.Stores {
 		local := definition.Local
 		if local.Backend.Authentication != nil {
