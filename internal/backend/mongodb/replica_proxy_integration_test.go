@@ -128,7 +128,7 @@ func TestMongoReplicaProxyDiscoveryRecovery(t *testing.T) {
 				}
 				replicaProxyCoverage(t, adapter, proxy, next)
 				replicaProxyOriginal(t, fixture)
-				t.Logf("TLS=%t transition=%s old_primary=%d new_primary=%d external_transition=%s Weir_new_work=%s same_adapter=true", secure, transition, primary, next, usable.Sub(started), completed.Sub(usable))
+				t.Logf("TLS=%t transition=%s old_primary=%d new_primary=%d external_transition=%s Weir_new_work=%s", secure, transition, primary, next, usable.Sub(started), completed.Sub(usable))
 				primary = next
 			}
 			if adapter.client.NumberSessionsInProgress() != 0 {
@@ -245,7 +245,7 @@ func replicaProxyWork(t *testing.T, ctx context.Context, opts replicaProxyWorkOp
 	if adapter.client.NumberSessionsInProgress() != 0 {
 		t.Fatal("finished frontend work retained a client session")
 	}
-	t.Logf("owned_id=%s typed_native_lua_success=true independent_primary_majority_n=%d checked_out_sessions=0", id, persisted.N)
+	t.Logf("id=%s primary_majority_n=%d", id, persisted.N)
 }
 
 func replicaProxyDiscovered(t *testing.T, adapter *Adapter) []string {
@@ -301,7 +301,7 @@ func replicaProxyOriginal(t *testing.T, fixture *testmongo.Replica) {
 	if err := fixture.CheckOriginalAddresses(ctx); err != nil {
 		t.Fatal("direct original hello/config changed", err)
 	}
-	t.Logf("independent_direct_hello_and_config_addresses_verified=true actual_members=%v", fixture.Addresses())
+	t.Logf("members=%v", fixture.Addresses())
 }
 
 func replicaProxyRecover(t *testing.T, ctx context.Context, adapter *Adapter, database string) {

@@ -70,7 +70,7 @@ func replicaReadFacts(t *testing.T, w *testmongo.ReadWatch, phase string) {
 	if s.FindRequests != 1 || s.FindWrites != 1 || s.FindReplies != 1 || s.FindForwarded != 0 || s.CleanupRequests != 1 || s.CleanupWrites != 1 || s.CleanupReplies != 1 || s.CleanupForwarded != 0 || !s.SessionPresent || !s.Held || !s.CleanupHeld || s.GetMore != 0 || s.KillCursors != 0 || s.Expired || s.Error != "" {
 		t.Fatal("persistent sent/unreceived read facts", phase, s)
 	}
-	t.Logf("sent_read phase=%s unknown_to_Weir_cursor_state=true observation=%+v", phase, s)
+	t.Logf("sent_read phase=%s observation=%+v", phase, s)
 }
 func replicaReadPeer(t *testing.T, a *Adapter, peer string) *mongoConn {
 	t.Helper()
@@ -199,7 +199,7 @@ func replicaReadRuntime(t *testing.T, opts replicaReadRuntimeOptions) ([]*testmo
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Logf("sent_read case=backend_cancel cleanup_and_raw_join_elapsed=%s original_3s_remaining=%s execute_join_observed=%s real_execute_join=true sessions_baseline=%d exact_raw_closed=2 adapter_close_calls=0 snapshot=%+v memory=%+v", elapsed, 3*time.Second-elapsed, executeJoinedElapsed, baseline, runtime.Snapshot(), runtime.ExecutionMemory().Snapshot())
+	t.Logf("sent_read case=backend_cancel cleanup_and_raw_join_elapsed=%s deadline_remaining=%s execute_join_observed=%s sessions_baseline=%d snapshot=%+v memory=%+v", elapsed, 3*time.Second-elapsed, executeJoinedElapsed, baseline, runtime.Snapshot(), runtime.ExecutionMemory().Snapshot())
 
 	// A genuine ready read has an actual blocked publisher and remains unacked.
 	// Events is the real public Session channel, not an injected product hook.
@@ -264,7 +264,7 @@ func replicaReadRuntime(t *testing.T, opts replicaReadRuntimeOptions) ([]*testmo
 	if activeCaller.Err() != nil || readyCaller.Err() != nil || lua.ctx.Err() != nil {
 		t.Fatal("retirement callers expired before close")
 	}
-	t.Logf("sent_read phase=backend_before_close snapshot=%+v memory=%+v sessions=%d emission_held=true", before, memory, a.client.NumberSessionsInProgress())
+	t.Logf("sent_read phase=backend_before_close snapshot=%+v memory=%+v sessions=%d", before, memory, a.client.NumberSessionsInProgress())
 	started := time.Now()
 	drain, stop := context.WithTimeout(context.Background(), 5*time.Second)
 	err = runtime.Close(drain)
@@ -296,7 +296,7 @@ func replicaReadRuntime(t *testing.T, opts replicaReadRuntimeOptions) ([]*testmo
 	if err != nil || event.GetReadResult() == nil || event.GetReadResult().GetDocument() != nil || event.GetReadResult().GetFailure() == nil {
 		t.Fatal("retired read evidence", event, err)
 	}
-	t.Logf("sent_read phase=backend_after_close elapsed=%s execution_adapter_publisher_join=true sessions_baseline=%d raw_owner=%+v snapshot=%+v memory=%+v", elapsed, baseline, a.dialer.snapshot(), after, credit)
+	t.Logf("sent_read phase=backend_after_close elapsed=%s sessions_baseline=%d raw_owner=%+v snapshot=%+v memory=%+v", elapsed, baseline, a.dialer.snapshot(), after, credit)
 	// Retire the additional Lua owner explicitly before preserving the original
 	// ready-read Ack 2->1 and owning Session.Close 1->0 assertions.
 	wait, stop = context.WithDeadline(t.Context(), started.Add(8*time.Second))
@@ -342,6 +342,6 @@ func replicaReadRuntime(t *testing.T, opts replicaReadRuntimeOptions) ([]*testmo
 		t.Fatal("real owning Session.Close 1->0", zero, zeroCredit)
 	}
 	emission.Release()
-	t.Logf("sent_read case=backend_retirement real_session_Close_1_to_0=true snapshot=%+v memory=%+v", zero, zeroCredit)
+	t.Logf("sent_read case=backend_retirement snapshot=%+v memory=%+v", zero, zeroCredit)
 	return watches, luaWatches
 }

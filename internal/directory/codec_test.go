@@ -101,9 +101,6 @@ func TestSyncPeerAcceptsLargeWatermarksAndRejectsMalformedAnnouncements(t *testi
 		announcements = append(announcements, node)
 	}
 	response := &peerpb.SyncDirectoryResponse{Announcements: announcements}
-	if proto.Size(response) <= 2<<20 {
-		t.Fatal("peer codec fixture did not cross the former byte limit")
-	}
 	raw, err := proto.Marshal(response)
 	if err != nil {
 		t.Fatal(err)

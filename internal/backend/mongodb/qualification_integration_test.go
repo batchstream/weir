@@ -10,7 +10,10 @@ import (
 	"github.com/batchstream/weir/internal/testutil/testmongo"
 )
 
-func TestMongoOpenDoesNotQueryServerVersion(t *testing.T) {
+// TestMongoOpenQualifiesTopologyWithHello checks that Open qualifies the
+// deployment from the handshake alone: the driver's initial isMaster and the
+// acknowledged hello.
+func TestMongoOpenQualifiesTopologyWithHello(t *testing.T) {
 	fixture := testmongo.Open(t)
 	proxy := testmongo.StartProxy(t, fixture)
 	cfg := Config{URI: proxy.URI(), Store: "mongo"}
@@ -25,14 +28,14 @@ func TestMongoOpenDoesNotQueryServerVersion(t *testing.T) {
 
 	hello := false
 	for _, wireEvent := range proxy.Events() {
-		if wireEvent.Command == "buildInfo" {
-			t.Fatal("production Open queried the server version")
+		if wireEvent.Command != "hello" && wireEvent.Command != "isMaster" {
+			t.Fatal("Open sent a command outside the handshake", wireEvent.Command)
 		}
 		if wireEvent.Command == "hello" && wireEvent.Acknowledged {
 			hello = true
 		}
 	}
 	if !hello {
-		t.Fatal("production Open did not qualify the replica-set topology")
+		t.Fatal("Open did not qualify the replica-set topology with an acknowledged hello")
 	}
 }

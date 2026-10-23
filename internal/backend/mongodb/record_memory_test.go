@@ -297,16 +297,16 @@ func TestMongoPlainPutRawValidationMatchesOriginalDecodeContract(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			// This is the original plain Put check from adapter.prepareRecord:
+			// This is a reference plain Put check equivalent to adapter.prepareRecord:
 			// Decode, then an unambiguous first _id equal to the resource.
 			decoded, decodeErr := Decode(t.Context(), raw)
-			originalValid := decodeErr == nil
-			if originalValid {
+			referenceValid := decodeErr == nil
+			if referenceValid {
 				got, lookupErr := decoded.Lookup("_id")
-				originalValid = lookupErr == nil && len(decoded.Fields) != 0 && decoded.Fields[0].Name == "_id" && equalID(got, id)
+				referenceValid = lookupErr == nil && len(decoded.Fields) != 0 && decoded.Fields[0].Name == "_id" && equalID(got, id)
 			}
-			if originalValid != tc.valid {
-				t.Fatal("fixture does not match the original plain Put contract", decodeErr)
+			if referenceValid != tc.valid {
+				t.Fatal("fixture does not match the reference plain Put contract", decodeErr)
 			}
 			opts := batchOperationOptions{resource: "db/records/" + tc.resource, action: "put", document: tc.document}
 			operation := batchOperation(t, opts)
@@ -320,10 +320,10 @@ func TestMongoPlainPutRawValidationMatchesOriginalDecodeContract(t *testing.T) {
 				work.Memory = probe
 				failure = adapter.validateRecord(t.Context(), work)
 			}
-			if (failure == nil) != originalValid {
+			if (failure == nil) != referenceValid {
 				t.Fatal("admitted raw validation changed plain Put acceptance", failure)
 			}
-			if originalValid && !bytes.Equal(work.Backend.(*plan).document, raw) {
+			if referenceValid && !bytes.Equal(work.Backend.(*plan).document, raw) {
 				t.Fatal("plain Put changed document bytes")
 			}
 		})

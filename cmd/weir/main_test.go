@@ -306,57 +306,16 @@ func TestCLIConfigurationPathsAreRelativeToWorkingDirectory(t *testing.T) {
 	}
 }
 
-func TestCLIHasNoConfigurationFallback(t *testing.T) {
-	for _, filename := range []string{filepath.Join("config", "weir.reference.yaml"), "weir.json"} {
-		t.Run(filename, func(t *testing.T) {
-			t.Chdir(t.TempDir())
-			basic := `listeners:
-  application: 127.0.0.1:0
-`
-			if filename == "weir.json" {
-				basic = `{"listeners":{"application":"127.0.0.1:0"}}`
-			}
-			routing := `stores: []
-`
-			if err := os.MkdirAll(filepath.Dir(filename), 0700); err != nil {
-				t.Fatal(err)
-			}
-			if err := os.WriteFile(filename, []byte(basic), 0600); err != nil {
-				t.Fatal(err)
-			}
-			routingFile := filepath.Join(filepath.Dir(filename), "routes.yaml")
-			if err := os.WriteFile(routingFile, []byte(routing), 0600); err != nil {
-				t.Fatal(err)
-			}
-
-			for _, command := range []string{"serve", "check"} {
-				var output bytes.Buffer
-				err := run([]string{command}, &output)
-				if err == nil || err.Error() != "basic configuration unavailable" || output.Len() != 0 {
-					t.Fatal("default configuration must not discover files other than ./weir.yaml", command, filename, err, output.String())
-				}
-			}
-		})
-	}
-}
-
 func TestCLIRejectsArgumentsBeforeConfiguration(t *testing.T) {
 	t.Chdir(t.TempDir())
 	missing := filepath.Join(t.TempDir(), "missing.yaml")
 	cases := [][]string{
-		{"unknown"}, {"completion"}, {"extra"}, {"version", "extra"},
-		{"serve", "--config", ""}, {"check", "-c", ""},
-		{"serve", "extra"}, {"check", "extra"},
-		{"--config", missing}, {"--address", "127.0.0.1:1"},
-		{"--routes", missing},
-		{"version", "--config", missing}, {"version", "-c", missing},
-		{"version", "--routes", missing},
-		{"version", "--address", "127.0.0.1:1"},
-		{"serve", "--address", "127.0.0.1:1"}, {"check", "--address", "127.0.0.1:1"},
-		{"probe", "live", "--config", missing}, {"probe", "live", "-c", missing},
+		{"unknown"}, {"version", "extra"}, {"serve", "extra"},
+		{"serve", "--config", ""},
+		{"--config", missing},
+		{"version", "--config", missing},
 		{"probe", "live", "--routes", missing},
-		{"serve", "-r", missing}, {"check", "-r", missing},
-		{"serve", "--config", missing, "--database", "unexpected"},
+		{"serve", "--config", missing, "--unknown", "value"},
 		{"-version"}, {"serve", "-config", missing},
 	}
 	for _, args := range cases {

@@ -1,4 +1,4 @@
--- Business-rule fixture translated from PSE main 283940ef442b479440e45b39c86988351b92d7b5.
+-- Catalog merge business-rule fixture.
 -- Helpers below are local policy; only Weir's public value/Unicode primitives are used.
 local function present(value)
     return value ~= nil and weir.kind(value) ~= "null"

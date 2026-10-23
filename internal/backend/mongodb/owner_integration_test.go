@@ -59,7 +59,7 @@ func TestMongoOwnerRemoteTail(t *testing.T) {
 	case <-ctx.Done():
 		t.Fatal("request not received")
 	}
-	t.Logf("%s command=bulkWrite ID=remote-tail observer received; real DB write still held", time.Now().UTC().Format(time.RFC3339Nano))
+	t.Log("command=bulkWrite ID=remote-tail observer received; DB write held")
 	stop()
 	r := <-result
 	if r[0].GetMutationResult().GetOutcome() != pb.MutationOutcome_UNKNOWN {
@@ -86,7 +86,7 @@ func TestMongoOwnerRemoteTail(t *testing.T) {
 	if cleanups != 1 {
 		t.Fatal("lost reply session was not cleaned exactly once", cleanups)
 	}
-	t.Logf("%s driver operation returned UNKNOWN, local raw closed: owner=%+v proxy=%d/%d", time.Now().UTC().Format(time.RFC3339Nano), a.dialer.snapshot(), current, peak)
+	t.Logf("driver operation returned UNKNOWN, local raw closed: owner=%+v proxy=%d/%d", a.dialer.snapshot(), current, peak)
 	r = a.executeRecords(ctx, []*execution.Plan{next})
 	if r[0].GetMutationResult().GetOutcome() != pb.MutationOutcome_APPLIED {
 		t.Fatal("new independent mutation failed", r)
@@ -95,7 +95,6 @@ func TestMongoOwnerRemoteTail(t *testing.T) {
 	if current != 3 || peak != 3 || a.dialer.snapshot().Owned != 2 || a.dialer.snapshot().Peak != 2 {
 		t.Fatal("local and observer layers not separated", current, peak, a.dialer.snapshot())
 	}
-	t.Logf("%s independent mutation ACK: local owned/peak=2/2, observer upstream=3/3; cancelled raw not charged as alive", time.Now().UTC().Format(time.RFC3339Nano))
 	tailStart := time.Now()
 	release.Do(func() { close(gate) })
 	ownerWait(t, func() bool { n, _ := proxy.Sockets(); return n == 2 })
@@ -115,7 +114,7 @@ func TestMongoOwnerRemoteTail(t *testing.T) {
 			t.Fatal("real database readback", id, count, err)
 		}
 	}
-	t.Logf("%s real DB ACK/readback after cancellation; observer tail retired in %s after gate release; bulkWrite commands=2, each distinct ID once", time.Now().UTC().Format(time.RFC3339Nano), time.Since(tailStart))
+	t.Logf("observer tail retired %s after gate release", time.Since(tailStart))
 	if err := a.Close(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -240,7 +239,7 @@ func TestMongoDriverRetirementOwnership(t *testing.T) {
 	if s.Owned != 3 || s.Closing != 1 || s.Acquired != 3 || s.Peak != 3 || closing.Before(removed.at) {
 		t.Fatal("driver retirement ownership/order", s)
 	}
-	t.Logf("pool removed ID=%d at=%s; raw Close entered=%s; replacement completed while raw Close pending, owner=%+v", removed.id, removed.at.UTC().Format(time.RFC3339Nano), closing.UTC().Format(time.RFC3339Nano), s)
+	t.Logf("pool removed ID=%d; raw Close entered %s later; owner=%+v", removed.id, closing.Sub(removed.at), s)
 	release.Do(func() { close(gate) })
 	ownerWait(t, func() bool { return d.snapshot().Closing == 0 })
 	d.stop()
@@ -252,5 +251,5 @@ func TestMongoDriverRetirementOwnership(t *testing.T) {
 	if overflow.Load() {
 		t.Fatal("driver event observation overflow")
 	}
-	t.Logf("%s replacement completed, final %+v", time.Now().UTC().Format(time.RFC3339Nano), d.snapshot())
+	t.Logf("replacement completed, final %+v", d.snapshot())
 }

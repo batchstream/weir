@@ -26,9 +26,9 @@ import (
 	"github.com/batchstream/weir/internal/store"
 )
 
-// Captured once from the manifest-verified owned Elasticsearch 8.19.22 fixture,
-// with the original burst's n-long index and synthetic n=1/pad1024 seed. The
-// complete filtered metadata response was chunked; its body SHA is preserved.
+// A filtered metadata response from the Elasticsearch 8.19.22 fixture for an
+// index with a long n field and an n=1/pad1024 document. The server sent it
+// chunked; the body is stored verbatim.
 //
 //go:embed testdata/read-memory-metadata-elasticsearch-8.19.22.json
 var readMemoryMetadata []byte

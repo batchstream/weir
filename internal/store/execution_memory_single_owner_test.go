@@ -122,7 +122,7 @@ func TestExecutionMemorySingleOwnerFirstResultReclaimsExactDiagnosticShortage(t 
 			const next = 33_553_279 + execution.ResultOverheadBytes
 			const requested = 16_777_664
 			if before.InputUsedBytes != 3296 || before.InputReservedBytes != (before.BudgetBytes-before.IOReserveBytes)/2 || before.ResidentBytes != before.InputReservedBytes {
-				t.Fatal("test no longer uses the observed Read input and current derived reserve", before)
+				t.Fatal("fixture precondition: unexpected Read input or derived reserve", before)
 			}
 			if err := lease.reserveResult(requested); err != nil {
 				t.Fatal("first result was denied solely by unused input promise", err, before, memory.Snapshot())

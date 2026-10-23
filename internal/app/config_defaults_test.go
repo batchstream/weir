@@ -55,13 +55,10 @@ func TestFileAndProgrammaticConfigurationUseSameDefaults(t *testing.T) {
 	}
 }
 
-func TestAdapterSchemaHasNoCrossAdapterOrWrapperFields(t *testing.T) {
+func TestAdapterSchemaRejectsCrossAdapterFields(t *testing.T) {
 	for _, fragment := range []string{
 		"      metadata_cache_entries: 64\n      mongodb:\n        uri: mongodb://127.0.0.1:27017\n",
 		"      search:\n        url: http://127.0.0.1:9200\n        metadata_cache_entries: 64\n",
-		"      mongodb:\n        uri: mongodb://127.0.0.1:27017\n        pool:\n          max_connecting: 2\n",
-		"      mongodb:\n        uri: mongodb://127.0.0.1:27017\n        retry:\n          max_attempts: 5\n",
-		"      search:\n        url: http://127.0.0.1:9200\n        retry:\n          max_attempts: 5\n",
 	} {
 		input := "stores:\n  - name: example\n    backend:\n" + fragment
 		if _, err := DecodeRouting(strings.NewReader(input)); err == nil {

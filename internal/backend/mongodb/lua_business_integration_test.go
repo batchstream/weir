@@ -181,7 +181,7 @@ func TestMongoLuaComplexProductKeepsBusinessRules(t *testing.T) {
 			case "offers50":
 				items, err := stored.Lookup("offers").Array().Values()
 				if err != nil || len(items) != 50 || items[0].Document().Lookup("uid").StringValue() != "new02" || items[49].Document().Lookup("uid").StringValue() != "old" {
-					t.Fatal("original incoming-first/keep-tail offer policy changed", stored, err)
+					t.Fatal("incoming-first/keep-tail offer policy violated", stored, err)
 				}
 			}
 		})

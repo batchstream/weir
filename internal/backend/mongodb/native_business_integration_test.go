@@ -213,9 +213,6 @@ func TestMongoNativeJobUniquenessValidationAndSignaturePatch(t *testing.T) {
 	ordered := bson.E{Key: "ordered", Value: false}
 	insert = append(insert, ordered)
 	reply = runMongoNativeCommand(t, adapter, fixture.DB, insert)
-	if len(reply) <= 64<<10 {
-		t.Fatal("diagnostic fixture did not exceed former wire guard", len(reply))
-	}
 	failures, err := reply.Lookup("writeErrors").Array().Values()
 	if err != nil || len(failures) != len(invalid) {
 		t.Fatal("large diagnostic reply lost item failures", len(failures), err)
@@ -324,6 +321,6 @@ func TestMongoLargeTypedRecordsBeyondByteWindow(t *testing.T) {
 	results = adapter.executeRecords(ctx, []*execution.Plan{work})
 	read := results[0].GetReadResult()
 	if read.GetFailure() != nil || len(read.GetDocument().Data) <= 4<<20 || bson.Raw(read.GetDocument().Data).Lookup("pad").StringValue() != document[1].Value {
-		t.Fatal("large typed read retained its former document quota", read.GetFailure())
+		t.Fatal("large typed read failed", read.GetFailure())
 	}
 }

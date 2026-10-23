@@ -8,11 +8,11 @@ import (
 	"testing"
 )
 
-func TestJSONValueDataHasNoFormerByteNodeOrDepthGates(t *testing.T) {
+func TestJSONRoundTripsLargeWideAndDeepValues(t *testing.T) {
 	raw := []byte(`{"large":"` + strings.Repeat("x", 3<<20) + `","items":[` + strings.Repeat("true,", 9999) + `true],"nested":` + strings.Repeat(`{"x":`, 2000) + `{}` + strings.Repeat(`}`, 2000) + `}`)
 	decoded, err := DecodeJSON(t.Context(), raw)
 	if err != nil {
-		t.Fatal("valid JSON retained a data admission gate", err)
+		t.Fatal("valid large, wide or deep JSON rejected", err)
 	}
 	encoded, err := EncodeJSON(t.Context(), decoded)
 	if err != nil || !bytes.Equal(encoded, raw) {

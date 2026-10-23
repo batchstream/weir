@@ -94,7 +94,7 @@ func TestMongoExpressionValidation(t *testing.T) {
 	doc = bson.D{{Key: "$set", Value: bson.D{{Key: "x", Value: strings.Repeat("x", (16 << 10))}}}}
 	op = expressionOperation("db/records/s:a", expressionBSON(t, doc))
 	if _, f := prepareTestRecord(a, op); f != nil {
-		t.Fatal("expression retained former byte cap", f)
+		t.Fatal("large expression rejected", f)
 	}
 	doc = bson.D{{Key: "$inc", Value: bson.D{{Key: "n", Value: 1}}}}
 	op = expressionOperation("db/records/s:a", expressionBSON(t, doc))
