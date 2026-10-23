@@ -53,10 +53,11 @@ type Runtime struct {
 	records, natives             int
 	keys                         map[resourceKey]*Ticket
 	draining, closed, overloaded bool
-	// space is closed and replaced whenever a waiting Submit may proceed.
-	space chan struct{}
-	wake  chan struct{}
-	done  chan struct{}
+	// space and nativeSpace are closed and replaced whenever a waiting record
+	// or Native submitter may proceed.
+	space, nativeSpace chan struct{}
+	wake               chan struct{}
+	done               chan struct{}
 
 	closeOnce sync.Once
 	closeErr  error
@@ -110,14 +111,15 @@ func New(adapter execution.Adapter, limits Limits) (*Runtime, error) {
 		limits.MaxNative = DefaultLimits().MaxNative
 	}
 	runtime := &Runtime{
-		adapter: adapter,
-		limits:  limits,
-		metrics: newRuntimeMetrics(),
-		batches: make(map[*batch]struct{}),
-		keys:    make(map[resourceKey]*Ticket),
-		space:   make(chan struct{}),
-		wake:    make(chan struct{}, 1),
-		done:    make(chan struct{}),
+		adapter:     adapter,
+		limits:      limits,
+		metrics:     newRuntimeMetrics(),
+		batches:     make(map[*batch]struct{}),
+		keys:        make(map[resourceKey]*Ticket),
+		space:       make(chan struct{}),
+		nativeSpace: make(chan struct{}),
+		wake:        make(chan struct{}, 1),
+		done:        make(chan struct{}),
 	}
 	go runtime.loop()
 	return runtime, nil
@@ -197,6 +199,9 @@ func (r *Runtime) enqueue(ctx context.Context, ticket *Ticket) (*Ticket, *pb.Fai
 			break
 		}
 		space := r.space
+		if native {
+			space = r.nativeSpace
+		}
 		r.mu.Unlock()
 		select {
 		case <-space:
@@ -244,6 +249,11 @@ func (r *Runtime) signal() {
 func (r *Runtime) notifySpaceLocked() {
 	close(r.space)
 	r.space = make(chan struct{})
+}
+
+func (r *Runtime) notifyNativeLocked() {
+	close(r.nativeSpace)
+	r.nativeSpace = make(chan struct{})
 }
 
 func (r *Runtime) loop() {
@@ -501,7 +511,7 @@ func (r *Runtime) execute(b *batch) {
 	delete(r.batches, b)
 	if b.native() {
 		r.natives--
-		r.notifySpaceLocked()
+		r.notifyNativeLocked()
 	} else {
 		r.records--
 	}
@@ -580,6 +590,7 @@ func (r *Runtime) SetOverloaded(value bool) {
 	if r.overloaded != value {
 		r.overloaded = value
 		r.notifySpaceLocked()
+		r.notifyNativeLocked()
 	}
 }
 
@@ -591,6 +602,7 @@ func (r *Runtime) BeginDrain() {
 	if !r.draining {
 		r.draining = true
 		r.notifySpaceLocked()
+		r.notifyNativeLocked()
 	}
 	r.signal()
 }
