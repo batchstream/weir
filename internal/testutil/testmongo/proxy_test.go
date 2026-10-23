@@ -72,7 +72,6 @@ func TestProxyRetainsUpstreamAfterDownstreamClose(t *testing.T) {
 	}
 	<-received
 	_ = first.Close()
-	t.Logf("%s downstream raw Close completed; observer request blocked before backend write", time.Now().UTC().Format(time.RFC3339Nano))
 	second, err := net.DialTimeout("tcp", p.listener.Addr().String(), time.Second)
 	if err != nil {
 		t.Fatal(err)
@@ -100,14 +99,13 @@ func TestProxyRetainsUpstreamAfterDownstreamClose(t *testing.T) {
 	if current != 2 || peak != 2 {
 		t.Fatal("retirement overlap missing", current, peak)
 	}
-	t.Logf("%s one downstream alive, observer upstream=%d peak=%d; no upstream gate/cap", time.Now().UTC().Format(time.RFC3339Nano), current, peak)
+	t.Logf("one downstream alive, observer upstream=%d peak=%d", current, peak)
 	release.Do(func() { close(gate) })
 	select {
 	case <-replied:
 	case <-time.After(time.Second):
 		t.Fatal("remote tail not completed")
 	}
-	t.Logf("%s backend reply observed after downstream Close", time.Now().UTC().Format(time.RFC3339Nano))
 	_ = second.Close()
 	until = time.Now().Add(time.Second)
 	for {

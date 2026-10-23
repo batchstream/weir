@@ -92,8 +92,9 @@ func TestSearchLowLoadBusinessReliability(t *testing.T) {
 	}
 }
 
-// This is a low-load regression probe, not a maximum-capacity benchmark. Each
-// call has its own budget; latency samples include SDK and final RPC completion.
+// runLowLoadReliability checks latency and recovery under low load; it is not
+// a capacity benchmark. Each call has its own budget; latency samples include
+// SDK and final RPC completion.
 func runLowLoadReliability(t *testing.T, probe reliabilityProbe) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)

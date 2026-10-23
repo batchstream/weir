@@ -177,5 +177,5 @@ func (s *replicaCLILuaTopology) finish(t *testing.T) {
 	commit := testmongo.LuaCommitCase{Watch: s.calls[0].watch}
 	s.lifetime.topologyAborts = append(s.lifetime.topologyAborts, abort)
 	s.lifetime.topologyCommits = append(s.lifetime.topologyCommits, commit)
-	t.Logf("CLI Lua topology=%s same_PID=%d original_callers_live=true actual_receipts_SDK_joins_idle=true", s.transition, s.lifetime.pid)
+	t.Logf("CLI Lua topology=%s same_PID=%d", s.transition, s.lifetime.pid)
 }

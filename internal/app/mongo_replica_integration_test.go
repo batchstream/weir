@@ -116,7 +116,7 @@ func TestMongoReplicaCLIRecovery(t *testing.T) {
 				if time.Since(usable) > 5*time.Second || service.command.Process.Pid != pid {
 					t.Fatal("recovery gate or process identity changed")
 				}
-				t.Logf("TLS=%t fault=%s old_primary=%d new_primary=%d DB_transition=%s Weir_first_success=%s Weir_full_focused_work=%s same_PID=%d same_SDK=true", secure, fault, primary, next, usable.Sub(started), firstSuccess.Sub(usable), time.Since(usable), pid)
+				t.Logf("TLS=%t fault=%s old_primary=%d new_primary=%d DB_transition=%s Weir_first_success=%s Weir_full_focused_work=%s PID=%d", secure, fault, primary, next, usable.Sub(started), firstSuccess.Sub(usable), time.Since(usable), pid)
 				primary = next
 			}
 			// One member is already lost. Losing the current primary removes quorum.
@@ -153,7 +153,7 @@ func TestMongoReplicaCLIRecovery(t *testing.T) {
 				t.Fatal("pending caller not live before SIGTERM", pending.Err())
 			}
 			deadline, _ := pending.Deadline()
-			t.Logf("TLS=%t same_PID=%d active_execution_barrier=true pending_caller_uncancelled=true remaining_deadline=%s", secure, pid, time.Until(deadline))
+			t.Logf("TLS=%t PID=%d remaining_deadline=%s", secure, pid, time.Until(deadline))
 			terminal := service.stop(t)
 			t.Logf("TLS=%t same_PID=%d SIGTERM_elapsed=%s exit_valid=%t exit_code=%d timed_out=%t wait_error=%v", secure, pid, terminal.Elapsed, terminal.ExitCodeValid, terminal.ExitCode, terminal.TimedOut, terminal.WaitErr)
 			if pending.Err() != nil {
@@ -164,7 +164,7 @@ func TestMongoReplicaCLIRecovery(t *testing.T) {
 			}
 			select {
 			case err := <-done:
-				t.Logf("TLS=%t pending_completion_after_CLI_observed=true caller_error=%t caller_context_uncancelled=%t", secure, err != nil, pending.Err() == nil)
+				t.Logf("TLS=%t pending_completion caller_error=%t caller_context_uncancelled=%t", secure, err != nil, pending.Err() == nil)
 			case <-time.After(time.Second):
 				t.Fatal("pending caller survived shutdown")
 			}

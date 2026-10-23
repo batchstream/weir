@@ -127,7 +127,7 @@ func TestMongoReplicaCLIReplyLoss(t *testing.T) {
 					} else {
 						terminal = service.stop(t)
 					}
-					t.Logf("reply_loss final_same_PID=%d SIGTERM_elapsed=%s wait_complete=true exit_valid=%t exit_code=%d timed_out=%t wait_error=%v", lifetime.pid, terminal.Elapsed, terminal.ExitCodeValid, terminal.ExitCode, terminal.TimedOut, terminal.WaitErr)
+					t.Logf("reply_loss final_same_PID=%d SIGTERM_elapsed=%s exit_valid=%t exit_code=%d timed_out=%t wait_error=%v", lifetime.pid, terminal.Elapsed, terminal.ExitCodeValid, terminal.ExitCode, terminal.TimedOut, terminal.WaitErr)
 					if !terminal.successful() {
 						t.Fatal("actual CLI exit gate failed")
 					}
@@ -156,7 +156,7 @@ func TestMongoReplicaCLIReplyLoss(t *testing.T) {
 						if snapshot.Active != 0 || snapshot.Rejections != 0 {
 							t.Fatal("relay retirement", i, snapshot)
 						}
-						t.Logf("reply_loss member=%d frontend=%s actual=%s real_relay_join=true active=%d connections=%d", i, snapshot.Frontend, snapshot.Upstream, snapshot.Active, len(snapshot.Connections))
+						t.Logf("reply_loss member=%d frontend=%s actual=%s active=%d connections=%d", i, snapshot.Frontend, snapshot.Upstream, snapshot.Active, len(snapshot.Connections))
 					}
 					replyLossOracles(t, lifetime, "after_relay_join")
 					proxy.CheckLuaLifecycleCases(t, lifecycleWatches, "CLI_actual_relay_join")
@@ -309,7 +309,7 @@ func replyLossCase(t *testing.T, lifetime *replyLossLifetime, transition string)
 	if ctx.Err() != nil {
 		t.Fatal("caller not alive", ctx.Err())
 	}
-	t.Logf("reply_loss held kind=%s transition=%s PID=%d primary=%d caller_alive=true independent_n=1 observation=%+v", lifetime.kind, transition, lifetime.pid, primary, s)
+	t.Logf("reply_loss held kind=%s transition=%s PID=%d primary=%d observation=%+v", lifetime.kind, transition, lifetime.pid, primary, s)
 	var luaTopology *replicaCLILuaTopology
 	if lifetime.kind == "bulkWrite" && transition != "stable" {
 		luaTopology = replicaCLILuaTopologyBegin(t, lifetime, transition)
@@ -349,7 +349,7 @@ func replyLossCase(t *testing.T, lifetime *replyLossLifetime, transition string)
 		if !receipt.valid || receipt.err != nil || ctx.Err() != nil {
 			t.Fatal("actual uncancelled caller lost-reply receipt", receipt, ctx.Err())
 		}
-		t.Logf("reply_loss actual_receipt kind=%s transition=%s PID=%d caller_context_uncancelled=true receipt=%s", lifetime.kind, transition, lifetime.pid, receipt.description)
+		t.Logf("reply_loss actual_receipt kind=%s transition=%s PID=%d receipt=%s", lifetime.kind, transition, lifetime.pid, receipt.description)
 	case <-ctx.Done():
 		t.Fatal("actual receipt missing", ctx.Err())
 	}
@@ -365,7 +365,7 @@ func replyLossCase(t *testing.T, lifetime *replyLossLifetime, transition string)
 			t.Fatal("after-drop persistent no-replay", old.id, snapshot)
 		}
 	}
-	t.Logf("reply_loss transition=%s action_completed_at=%s drop_performed_at=%s drop_after_action=%s", transition, actionCompleted.Format(time.RFC3339Nano), dropPerformed.Format(time.RFC3339Nano), dropPerformed.Sub(actionCompleted))
+	t.Logf("reply_loss transition=%s drop_after_action=%s", transition, dropPerformed.Sub(actionCompleted))
 	exclude := -1
 	if transition != "stable" {
 		exclude = primary
@@ -412,7 +412,7 @@ func replyLossCase(t *testing.T, lifetime *replyLossLifetime, transition string)
 	replicaCLIIdle(t, lifetime.service, time.Now().Add(3*time.Second))
 	replyLossGauges(t, lifetime, "returned_after_recovery", false)
 	replyLossOracles(t, lifetime, "after_new_ID_recovery")
-	t.Logf("reply_loss kind=%s transition=%s same_PID=%d same_SDK=true old_primary=%d new_primary=%d drop_after_action=%s external_majority_usable_at=%s external_transition=%s recovery_complete=%s", lifetime.kind, transition, lifetime.pid, primary, next, dropPerformed.Sub(actionCompleted), usable.Format(time.RFC3339Nano), usable.Sub(started), completed.Sub(usable))
+	t.Logf("reply_loss kind=%s transition=%s PID=%d old_primary=%d new_primary=%d drop_after_action=%s external_transition=%s recovery_complete=%s", lifetime.kind, transition, lifetime.pid, primary, next, dropPerformed.Sub(actionCompleted), usable.Sub(started), completed.Sub(usable))
 }
 
 func replyLossNativeCommand(id string, bad bool) bson.D {
@@ -564,7 +564,7 @@ func replyLossBusinessErrors(t *testing.T, lifetime *replyLossLifetime) {
 			t.Fatal("actual as-received business body digest", s)
 		}
 		replyLossEffect(t, lifetime, record)
-		t.Logf("Native_complete_business_error kind=%s completion=%v forwarding_failure=false observed_body_SHA256=%x consumer_body_SHA256=%x unchanged_effect=true", kind, result.Completion, s.ReplyDigest, digest)
+		t.Logf("Native_complete_business_error kind=%s completion=%v observed_body_SHA256=%x consumer_body_SHA256=%x", kind, result.Completion, s.ReplyDigest, digest)
 	}
 }
 
