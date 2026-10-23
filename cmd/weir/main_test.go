@@ -310,8 +310,9 @@ func TestCLIRejectsArgumentsBeforeConfiguration(t *testing.T) {
 	t.Chdir(t.TempDir())
 	missing := filepath.Join(t.TempDir(), "missing.yaml")
 	cases := [][]string{
-		{"unknown"}, {"version", "extra"}, {"serve", "extra"},
-		{"serve", "--config", ""},
+		{"unknown"}, {"completion"}, {"version", "extra"},
+		{"serve", "extra"}, {"check", "extra"},
+		{"serve", "--config", ""}, {"check", "--config", ""},
 		{"--config", missing},
 		{"version", "--config", missing},
 		{"probe", "live", "--routes", missing},

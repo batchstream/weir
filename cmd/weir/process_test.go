@@ -236,18 +236,11 @@ func startCLI(t *testing.T, cfg app.Config, mode string) *cliProcess {
 		}
 	}
 
-	binary := os.Getenv("WEIR_CLI_BINARY")
-	args := []string{"serve", "--config", config}
-	if routes != "" {
-		args = append(args, "--routes", routes)
+	binary, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
 	}
-	if binary == "" || mode != "cli" {
-		binary, err = os.Executable()
-		if err != nil {
-			t.Fatal(err)
-		}
-		args = []string{"-test.run=^TestCLIProcessChild$"}
-	}
+	args := []string{"-test.run=^TestCLIProcessChild$"}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 	t.Cleanup(cancel)
@@ -501,7 +494,6 @@ func TestCLISignalBeforeStart(t *testing.T) {
 // before-start mode exercises the app API at its caller-owned boundary. The
 // writer-error mode gives the shared production serving executor one explicit
 // signal context so its blocked writer can acknowledge actual cancellation.
-// Artifact runs use WEIR_CLI_BINARY for ordinary handshake and serving cases.
 func TestCLIProcessChild(t *testing.T) {
 	mode := os.Getenv("WEIR_PROCESS_CHILD")
 	if mode == "" {
