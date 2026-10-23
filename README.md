@@ -168,7 +168,9 @@ Integration tests use the `integration` build tag and local fixtures:
   default `overload` profile shrinks the write thread pool for the Search
   capacity-rejection tests. `start` waits until the cluster is green and the
   write thread pool has stayed idle for 5 seconds, so startup system-index
-  writes do not compete with tests. Stop the fixture before changing profiles.
+  writes do not compete with tests. Each fixture container runs a 1 GiB heap
+  and needs about 2 GiB of Docker memory. Stop the fixture before changing
+  profiles.
 
 ```sh
 scripts/mongo-local.sh start

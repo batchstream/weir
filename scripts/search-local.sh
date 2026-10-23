@@ -5,6 +5,7 @@ cd "$(dirname "$0")/.."
 action=${1:-start}
 product=${2:-elasticsearch}
 capacity=${3:-overload}
+# Overload tests use small native queues; positive batch smoke uses normal capacity.
 case "$capacity" in
  normal) set -- ;;
  overload) set -- -e thread_pool.write.size=1 -e thread_pool.write.queue_size=1 ;;
@@ -73,7 +74,6 @@ case "$action" in
     "$@" \
     -e 'OPENSEARCH_JAVA_OPTS=-Xms1g -Xmx1g' "$image"
   fi
-  # Overload tests use small native queues; positive batch smoke uses normal capacity.
   ready=false
   for attempt in $(seq 1 90); do
    if curl -fsS --max-time 2 "http://127.0.0.1:$port/" > /dev/null 2>&1; then
@@ -88,13 +88,25 @@ case "$action" in
    exit 1
   fi
   # Startup plugins (for example OpenSearch Security Analytics) bulk-load system
-  # indexes right after HTTP is up. Wait until the write pool has been idle with
-  # an unchanged completed count for 5 consecutive seconds.
-  curl -fsS --max-time 35 "http://127.0.0.1:$port/_cluster/health?wait_for_status=green&wait_for_no_initializing_shards=true&wait_for_events=languid&timeout=30s" > /dev/null
+  # indexes right after HTTP is up. Wait for a green cluster, then until the
+  # write pool has been idle with an unchanged completed count for 5 consecutive
+  # seconds. A timed-out or unreadable poll counts as not ready or not quiet.
+  green=false
+  for attempt in $(seq 1 30); do
+   if curl -fsS --max-time 3 "http://127.0.0.1:$port/_cluster/health?wait_for_status=green&wait_for_no_initializing_shards=true&timeout=1s" > /dev/null 2>&1; then
+    green=true
+    break
+   fi
+   sleep 1
+  done
+  if ! "$green"; then
+   echo 'backend cluster did not become green; inspect its container logs' >&2
+   exit 1
+  fi
   previous=
   quiet=0
   for attempt in $(seq 1 60); do
-   current=$(curl -fsS --max-time 2 "http://127.0.0.1:$port/_nodes/_local/stats/thread_pool" | python3 -c 'import json,sys; w=next(iter(json.load(sys.stdin)["nodes"].values()))["thread_pool"]["write"]; print("%d/%d/%d" % (w["active"], w["queue"], w["completed"]))')
+   current=$(curl -fsS --max-time 2 "http://127.0.0.1:$port/_nodes/_local/stats/thread_pool" 2>/dev/null | python3 -c 'import json,sys; w=next(iter(json.load(sys.stdin)["nodes"].values()))["thread_pool"]["write"]; print("%d/%d/%d" % (w["active"], w["queue"], w["completed"]))' 2>/dev/null) || current=
    case "$current" in
     0/0/*) if [ "$current" = "$previous" ]; then quiet=$((quiet + 1)); else quiet=0; fi ;;
     *) quiet=0 ;;
