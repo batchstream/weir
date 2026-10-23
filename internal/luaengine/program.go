@@ -91,12 +91,6 @@ func validateProgram(ctx context.Context, program Program, scope *budget.Budget)
 	return nil
 }
 
-func ValidateResult(ctx context.Context, result Result) (err error) {
-	defer budget.Recover(&err)
-	scope := newEvaluationBudget(ctx, nil)
-	return validateResult(ctx, result, scope)
-}
-
 func validateResult(ctx context.Context, result Result, scope *budget.Budget) error {
 	switch result.Action {
 	case Keep, Delete:

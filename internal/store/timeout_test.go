@@ -5,25 +5,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/batchstream/weir-protocol/api/protocol"
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 	"github.com/batchstream/weir/internal/execution"
 )
-
-type deadlineAdapter struct {
-	lifecycleAdapter
-}
-
-func (a *deadlineAdapter) Execute(ctx context.Context, plans []*execution.Plan, emit execution.Emit) {
-	<-ctx.Done()
-	for _, plan := range plans {
-		failure := protocol.ContextFailure(ctx)
-		result := execution.FailedEvent(plan.Command, pb.MutationOutcome_UNKNOWN, failure)
-		output := result
-		_ = emit(plan, output)
-	}
-	return
-}
 
 func TestRuntimePartiallyCanceledBatchPreservesEachCallOutcome(t *testing.T) {
 	limits := DefaultLimits()

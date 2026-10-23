@@ -1,14 +1,11 @@
 package server
 
 import (
-	"context"
 	"errors"
 	"io"
 	"net"
 	"testing"
 	"time"
-
-	"github.com/batchstream/weir/internal/store"
 )
 
 func TestConnectionOpeningUsesConfiguredHandshakeTimeout(t *testing.T) {
@@ -107,25 +104,4 @@ func TestConnectionsHaveNoAdmissionCapAndCloseOnce(t *testing.T) {
 	if admission.activeConnections.Load() != 0 {
 		t.Fatal("close was not idempotent")
 	}
-}
-
-// The fixture is the assembly owner. A listener never closes borrowed runtimes.
-func newLocalServer(t *testing.T, stores map[string]*store.Runtime, limits Limits) (*Server, error) {
-	t.Helper()
-	admission, err := NewAdmission(limits)
-	if err != nil {
-		return nil, err
-	}
-	config := Config{Stores: stores, Limits: limits, Admission: admission}
-	srv, err := New(config)
-	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-		defer cancel()
-		for _, runtime := range stores {
-			if err := runtime.Close(ctx); err != nil {
-				t.Error(err)
-			}
-		}
-	})
-	return srv, err
 }
