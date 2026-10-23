@@ -23,11 +23,12 @@ are invalid on the wire. Each Read/Mutate request is validated before its backen
 | Native target | `db`, or empty with explicit `$db` | optional canonical path prefix; empty selects the backend root |
 | Native request size | native MongoDB command boundary | native backend HTTP boundary |
 
-Weir imposes no size or count quotas on documents, expressions, Lua source,
-typed values, or Native requests, replies and response bodies. BSON follows
-MongoDB native nesting rules and JSON follows its parser's syntax rules. Caller
-cancellation, schema validity, the Node memory account and native backend limits
-apply. Lua is an in-process trusted-program facility with optional VM execution
+Every request and response message is at most 64 MiB; Native response bodies
+stream in chunks below that limit. Weir imposes no other size or count quotas on
+documents, expressions, Lua source, typed values, or Native requests, replies
+and response bodies. BSON follows MongoDB native nesting rules and JSON follows
+its parser's syntax rules. Caller cancellation, schema validity, process memory
+pressure and native backend limits apply. Lua is an in-process trusted-program facility with optional VM execution
 budgets; see [Lua transforms](lua.md).
 
 Database names follow MongoDB's native nonempty, less-than-64-byte limit and

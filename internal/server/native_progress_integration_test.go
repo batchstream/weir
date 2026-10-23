@@ -18,6 +18,7 @@ import (
 	"github.com/batchstream/weir/internal/backend/mongodb"
 	"github.com/batchstream/weir/internal/backend/search"
 	"github.com/batchstream/weir/internal/execution"
+	"github.com/batchstream/weir/internal/testutil/testmetrics"
 	"github.com/batchstream/weir/internal/testutil/testmongo"
 	"github.com/batchstream/weir/internal/testutil/testsearch"
 	"go.mongodb.org/mongo-driver/v2/bson"
@@ -125,9 +126,11 @@ func verifyNativeProgress(t *testing.T, fixture nativeProgressFixture) {
 	}
 	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
 	defer cancel()
-	for node.server.admission.wireBytes.Load() < stalled*1025 {
+	// Small replies fit in each stream's transport buffer, so the stalled
+	// Natives finish and release their execution slots.
+	for testmetrics.Sum(testmetrics.Gather(t, node.runtime), "weir_store_native_completions_total") < stalled {
 		if ctx.Err() != nil {
-			t.Fatal("slow Native replies retained execution capacity", node.runtime.Snapshot(), node.server.admission.wireBytes.Load())
+			t.Fatal("slow Native replies retained execution capacity", node.runtime.Stats())
 		}
 		time.Sleep(time.Millisecond)
 	}
@@ -186,8 +189,9 @@ func verifyNativeProgress(t *testing.T, fixture nativeProgressFixture) {
 			t.Fatal(err)
 		}
 	}
-	if node.server.admission.activeConnections.Load() != 2 || node.runtime.Snapshot().Retained < stalled {
-		t.Fatal("healthy queries depended on closing slow Native streams", node.runtime.Snapshot())
+	watchdogs := testmetrics.Sum(testmetrics.Gather(t, node.server.metrics.watchdogs), "weir_watchdog_expirations_total")
+	if watchdogs != 0 {
+		t.Fatal("healthy queries depended on closing slow Native streams", watchdogs)
 	}
 	t.Logf("backend=%s slow_Native=%d healthy_typed_and_Native=%s; default Stall=%s; no watchdog release", fixture.native.Request.ContentType, stalled, time.Since(started), DefaultLimits().Stall)
 	_ = conn.Close()

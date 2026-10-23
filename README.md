@@ -120,9 +120,10 @@ Each Store defaults to a waiting queue of 1024 operations / 32 MiB, batches of
 Reads combine already queued compatible reads without waiting for new arrivals.
 Full queues apply backpressure until dispatch or caller cancellation.
 
-The Node shares one execution-memory account across ingress, queued work, backend
-processing, Lua and transport output. Actual process/container pressure controls
-overload admission. Container/OS limits provide the hard memory boundary.
+Static queue, batch, stream and 64 MiB message limits bound memory use, and a
+Native command holds its execution slot until its response is delivered. Actual
+process/container pressure controls overload admission. Container/OS limits
+provide the hard memory boundary.
 
 Application and peer listeners use plaintext gRPC on an isolated network. Backend
 authentication stays local. Each instance advertises reachable peer and business
@@ -221,11 +222,6 @@ and its own opt-in:
 | --- | --- |
 | `WEIR_LOAD_INTEGRATION=1` | `TestProcessLoad`: fixed 200 RPC/s SDK traffic for a 30s warmup plus 600s (`WEIR_LOAD_MEASUREMENT` shortens it), with slow consumers and a burst; p99, resource-bound and recovery gates and an independent oracle |
 | `WEIR_FAULT_INTEGRATION=1` | `TestProcessFaults`: lost acknowledgements, cancellation, slow IO, unavailability and SIGTERM through owned proxies, with no replay |
-| `WEIR_NATIVE_BURST_INTEGRATION=1` | `TestCLINativeSmallBurstPreservesAdmission` (Elasticsearch) |
-| `WEIR_NATIVE_OUTPUT_BUDGET_INTEGRATION=1` | `TestCLILargeNativeOutputBudgetPreservesHealthyQueries` |
-| `WEIR_TYPED_MEMORY_BUDGET_INTEGRATION=1` | `TestCLITypedMemoryBudget` (Elasticsearch) |
-| `WEIR_INGRESS_MEMORY_INTEGRATION=1`, `WEIR_INGRESS_MEMORY_PARTIAL_INTEGRATION=1` | Ingress Put and partial-upload budgets |
-| `WEIR_LUA_MEMORY_INTEGRATION=1`, `WEIR_LUA_MEMORY_PATHS_INTEGRATION=1` | Lua memory budget and allocation paths (paths use Elasticsearch) |
 
 ```sh
 docker pull busybox:1.37.0
@@ -267,10 +263,7 @@ The [weir-tests](https://github.com/batchstream/weir-tests) repository contains
 matched direct/Weir workloads and blackbox integration. Keep generated logs and
 profiles under ignored `.testdata/`.
 
-The local gRPC and Lua patches are required for allocation ownership. Their
-upstream identities, patch diffs and focused regression tests live under
-[third_party](third_party/README.md). Peer bindings are generated with
-`scripts/generate.sh`; the public schema belongs to
+Peer bindings are generated with `scripts/generate.sh`; the public schema belongs to
 [weir-protocol](https://github.com/batchstream/weir-protocol).
 
 ## Releases

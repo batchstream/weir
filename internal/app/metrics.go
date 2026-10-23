@@ -1,7 +1,6 @@
 package app
 
 import (
-	"github.com/batchstream/weir/internal/store"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/collectors"
 )
@@ -82,55 +81,6 @@ func (n *Node) Collect(ch chan<- prometheus.Metric) {
 		nil,
 	)
 	ch <- prometheus.MustNewConstMetric(desc, prometheus.GaugeValue, ready)
-
-	reserved := store.ExecutionMemorySnapshot{}
-	if n.executionMemory != nil {
-		// Diagnostic collection is caller-owned, unlike dispatch, backend IO
-		// and runtime retirement. A slow log sink may delay this scrape only.
-		defer n.executionMemory.FlushObservations()
-		reserved = n.executionMemory.Snapshot()
-	}
-	executionKnown := 0.0
-	if reserved.Known {
-		executionKnown = 1
-	}
-	for name, value := range map[string]float64{
-		"ingress_connection_bytes": float64(reserved.IngressConnectionBytes),
-		"ingress_connections":      float64(reserved.IngressConnections),
-		"ingress_bytes":            float64(reserved.IngressBytes),
-		"ingress_reserved_bytes":   float64(reserved.IngressReservedBytes),
-		"ingress_buffers":          float64(reserved.IngressBuffers),
-		"ingress_messages":         float64(reserved.IngressMessages),
-		"ingress_waiting":          float64(reserved.IngressWaiting),
-		"budget_bytes":             float64(reserved.BudgetBytes),
-		"used_bytes":               float64(reserved.UsedBytes),
-		"resident_bytes":           float64(reserved.ResidentBytes),
-		"wire_bytes":               float64(reserved.WireBytes),
-		"wire_buffers":             float64(reserved.WireCount),
-		"input_reserved_bytes":     float64(reserved.InputReservedBytes),
-		"input_used_bytes":         float64(reserved.InputUsedBytes),
-		"io_reserve_bytes":         float64(reserved.IOReserveBytes),
-		"budget_known":             executionKnown,
-		"leases":                   float64(reserved.Count),
-		"leases_limit":             float64(reserved.CountLimit),
-		"native_leases":            float64(reserved.NativeCount),
-		"native_leases_limit":      float64(reserved.NativeCountLimit),
-		"starting":                 float64(reserved.Starting),
-		"settled":                  float64(reserved.Settled),
-		"borrowed":                 float64(reserved.Borrowed),
-		"waiting":                  float64(reserved.Waiting),
-		"terminal":                 float64(reserved.Terminal),
-	} {
-		desc := prometheus.NewDesc(
-			"weir_execution_memory_"+name,
-			"Node-shared bounded input, execution, retained-result, encoded-response and native ingress reservations. Connection bytes are conservative parser/workspace promises, not measured RSS; RSS remains independently observed.",
-			nil,
-			nil,
-		)
-		ch <- prometheus.MustNewConstMetric(desc, prometheus.GaugeValue, value)
-	}
-	executionRejections := prometheus.NewDesc("weir_execution_memory_budget_rejections_total", "Capacity denials at the shared execution memory boundary, including incomplete exchanges after dispatch; cancellations are excluded.", nil, nil)
-	ch <- prometheus.MustNewConstMetric(executionRejections, prometheus.CounterValue, float64(reserved.BudgetRejections))
 
 	memory := n.guard.Snapshot()
 	observed, latched := 0.0, 0.0

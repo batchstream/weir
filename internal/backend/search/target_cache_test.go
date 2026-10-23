@@ -40,7 +40,6 @@ func TestSearchRecordsResolveMetadataOncePerExecution(t *testing.T) {
 	for range 2 {
 		read := batchTestPlan(t, adapter, "read", "records/s:same")
 		put := batchTestPlan(t, adapter, "put", "records/s:same")
-		put.ID = 1
 		works := []*execution.Plan{read, put}
 		results := adapter.executeRecords(context.Background(), works)
 		if len(results) != 2 || results[0].GetReadResult().GetDocument() == nil || results[1].GetMutationResult().GetOutcome() != pb.MutationOutcome_APPLIED {

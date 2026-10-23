@@ -22,6 +22,7 @@ import (
 	"github.com/batchstream/weir/internal/execution"
 	"github.com/batchstream/weir/internal/store"
 	"github.com/batchstream/weir/internal/testutil"
+	"github.com/batchstream/weir/internal/testutil/testmetrics"
 	"github.com/batchstream/weir/internal/testutil/testmongo"
 	"github.com/batchstream/weir/internal/testutil/testsearch"
 	"go.mongodb.org/mongo-driver/v2/bson"
@@ -129,6 +130,14 @@ type luaRPCBatchOptions struct {
 	allowCapacity  bool
 }
 
+// luaRPCDispatched counts operations the Store has started executing.
+func luaRPCDispatched(t *testing.T, runtime *store.Runtime) uint64 {
+	t.Helper()
+	families := testmetrics.Gather(t, runtime)
+	count := families["weir_store_queue_wait_seconds"].GetMetric()[0].GetHistogram().GetSampleCount()
+	return count
+}
+
 type luaRPCCallResult struct {
 	response []*pb.MutationResult
 	err      error
@@ -143,6 +152,7 @@ func runLuaRPCBatch(t *testing.T, opts luaRPCBatchOptions) int {
 	for i := range clients {
 		clients[i] = routeAcceptanceClient(t, opts.node.address)
 	}
+	baseline := luaRPCDispatched(t, opts.node.runtime)
 	blockerDone := make(chan error, 1)
 	go func() {
 		read := &pb.ReadRequest{Resource: opts.prefix + "blocker"}
@@ -170,10 +180,10 @@ func runLuaRPCBatch(t *testing.T, opts luaRPCBatchOptions) int {
 			results[i] = luaRPCCallResult{response: response, err: err}
 		})
 	}
-	for opts.node.runtime.Snapshot().Retained != len(opts.cases)+1 || opts.node.runtime.Snapshot().Pending != 0 {
+	for luaRPCDispatched(t, opts.node.runtime)-baseline != uint64(len(opts.cases)+1) || opts.node.runtime.Stats().Queued != 0 {
 		select {
 		case <-ctx.Done():
-			t.Fatal("single-record Lua RPCs did not enter concurrent execution", opts.node.runtime.Snapshot())
+			t.Fatal("single-record Lua RPCs did not enter concurrent execution", opts.node.runtime.Stats())
 		case <-time.After(time.Millisecond):
 		}
 	}
@@ -192,7 +202,7 @@ func runLuaRPCBatch(t *testing.T, opts luaRPCBatchOptions) int {
 			}
 			// The client's cancellation return alone does not prove the server
 			// has received it. Other handlers remain held at the backend reply.
-			for opts.node.server.Snapshot().ActiveRPCs != int64(len(opts.cases)-1) {
+			for opts.node.server.admission.activeRPCs.Load() != int64(len(opts.cases)-1) {
 				select {
 				case <-ctx.Done():
 					t.Fatal("server did not observe the canceled Lua RPC")

@@ -21,8 +21,8 @@ request -> bounded Store queue -> compatible batch -> backend -> ordered result
 
 A full queue waits for dispatch or caller cancellation. Dispatch returns queue
 capacity immediately. One legal larger item can occupy an empty queue or batch
-alone when its execution peak fits the Node memory account. Byte targets do not
-replace native backend document and command boundaries.
+alone. Byte targets do not replace native backend document and command
+boundaries.
 
 Reads and mutations form separate batches. Reads use compatible reads already
 queued without waiting for future arrivals; they do not flush write collection.
@@ -33,14 +33,27 @@ Eligible groups can pass groups still collecting; ready groups retain oldest-fir
 selection.
 
 An execution includes metadata checks, pre-reads, Lua, writes and requested query
-visibility waits. Completion returns its slot independently of result consumption.
-Native output releases its execution slot while retained replies and publication
-remain charged to the Node's shared execution-memory account. Further backend
-reads fairly reacquire a slot through the same scheduler. The Node also bounds
-Native invocations to 1024. `weir_store_paused_native_outputs` and
-`weir_store_paused_native_reserved_bytes` report paused Native output. Memory
-exhaustion returns an explicit capacity failure rather than retaining an
-execution slot behind a slow consumer.
+visibility waits. A record batch returns its slot when the backend finishes,
+independently of result consumption. A Native command keeps its slot while it
+streams its response, so a slow Native consumer holds one slot until it reads
+or the output stall watchdog ends its RPC.
+
+## Memory sizing
+
+These limits, not a byte ledger, bound memory. A rough upper bound for one
+Store is:
+
+```text
+queue.max_bytes
+  + max_in_flight × (batching.max_bytes + batching.max_operations × largest result)
+```
+
+Every open record stream adds up to `max_pending_records` results awaiting
+delivery, and every message is at most 64 MiB. Real documents are usually much
+smaller than these limits, so size the container from observed document sizes
+and the peak number of open streams. When actual memory crosses the overload
+watermark, new work receives `RESOURCE_EXHAUSTED` until it recovers; see
+[operations](operations.md).
 
 ## Backend grouping
 

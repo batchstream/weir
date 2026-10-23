@@ -7,10 +7,8 @@ import (
 	"math"
 	"strconv"
 	"strings"
-	"unsafe"
 
 	"github.com/batchstream/weir/internal/value"
-	"github.com/iceisfun/golua/budget"
 	"github.com/iceisfun/golua/vm"
 )
 
@@ -32,10 +30,8 @@ type bridge struct {
 }
 
 func newBridge(ctx context.Context, state *vm.VM) *bridge {
-	scope := state.Budget()
-	scope.Require(512)
 	b := &bridge{ctx: ctx, state: state, tables: make(map[*vm.Table]tableInfo)}
-	b.leafMeta = state.NewEmptyTable()
+	b.leafMeta = vm.NewEmptyTable()
 	b.leafMeta.SetString(vm.MetaMetatable, vm.NewString("weir scalar"))
 	b.leafMeta.SetString(vm.MetaTostring, vm.NewNativeFunc(func(state *vm.VM) int {
 		userdata := state.Get(1).AsUserdata()
@@ -49,11 +45,8 @@ func newBridge(ctx context.Context, state *vm.VM) *bridge {
 		text := "null"
 		switch leaf.value.Kind {
 		case value.Bytes:
-			state.Budget().RequireArray(4, len(leaf.value.Data))
 			text = "bytes:" + base64.StdEncoding.EncodeToString(leaf.value.Data)
 		case value.Extended:
-			state.Budget().RequireArray(4, len(leaf.value.Data))
-			state.Budget().RequireArray(1, len(leaf.value.Type))
 			text = "extended:" + leaf.value.Type + ":" + base64.StdEncoding.EncodeToString(leaf.value.Data)
 		}
 		state.Set(0, vm.NewString(text))
@@ -66,7 +59,6 @@ func newBridge(ctx context.Context, state *vm.VM) *bridge {
 
 func (b *bridge) install(state *vm.VM, module *vm.Table) {
 	b.state = state
-	state.Budget().Require(8 * 128)
 	module.SetString("null", vm.NewNativeFunc(func(state *vm.VM) int {
 		if state.ArgCount() != 0 {
 			panic("weir.null expects no arguments")
@@ -85,7 +77,6 @@ func (b *bridge) install(state *vm.VM, module *vm.Table) {
 			panic("weir.bytes expects a byte string")
 		}
 		text := state.Get(1).AsString()
-		state.Budget().RequireArray(1, len(text))
 		leaf := value.Value{Kind: value.Bytes, Data: []byte(text)}
 		state.Set(0, b.wrapLeaf(leaf))
 		return 1
@@ -95,11 +86,7 @@ func (b *bridge) install(state *vm.VM, module *vm.Table) {
 			panic("weir.extended expects a type and byte string")
 		}
 		typeName, data := state.Get(1).AsString(), state.Get(2).AsString()
-		state.Budget().RequireArray(1, len(data))
 		leaf := value.Value{Kind: value.Extended, Type: typeName, Data: []byte(data)}
-		if err := ReserveValueValidation(state.Budget(), leaf); err != nil {
-			panic(err)
-		}
 		if err := value.Validate(b.ctx, leaf); err != nil {
 			panic(err)
 		}
@@ -130,11 +117,9 @@ func (b *bridge) install(state *vm.VM, module *vm.Table) {
 		}
 		switch leaf.value.Kind {
 		case value.Bytes:
-			state.Budget().RequireArray(1, len(leaf.value.Data))
 			state.Set(0, vm.NewString(string(leaf.value.Data)))
 			return 1
 		case value.Extended:
-			state.Budget().RequireArray(1, len(leaf.value.Data))
 			state.Set(0, vm.NewString(leaf.value.Type))
 			state.Set(1, vm.NewString(string(leaf.value.Data)))
 			return 2
@@ -148,9 +133,8 @@ func (b *bridge) container(state *vm.VM, kind value.Kind) int {
 	if state.ArgCount() != 0 {
 		panic("weir container constructors expect no arguments")
 	}
-	table := state.NewEmptyTable()
+	table := vm.NewEmptyTable()
 	info := tableInfo{kind: kind}
-	state.Budget().Require(384)
 	b.tables[table] = info
 	state.Set(0, vm.NewTable(table))
 	return 1
@@ -158,8 +142,7 @@ func (b *bridge) container(state *vm.VM, kind value.Kind) int {
 
 func (b *bridge) wrapLeaf(v value.Value) vm.Value {
 	leaf := scalarLeaf{value: v}
-	b.state.Budget().RequireArray(unsafe.Sizeof(leaf), 1)
-	return b.state.NewUserdataValue(leaf, b.leafMeta)
+	return vm.NewUserdataValue(leaf, b.leafMeta)
 }
 
 type encodeFrame struct {
@@ -183,20 +166,16 @@ func (b *bridge) toLua(v value.Value) (vm.Value, error) {
 		converted, _, err := b.encodeChild(v)
 		return converted, err
 	}
-	scope := b.state.Budget()
-	var keyValue vm.Value
-	var fieldValue value.Value
-	table := b.state.NewTableWithSize(len(v.Items), len(v.Fields))
+	table := vm.NewTableWithSize(len(v.Items), len(v.Fields))
 	info := tableInfo{kind: v.Kind}
 	first := encodeFrame{source: &v, table: table, info: info}
-	stack := budget.Append(scope, []encodeFrame(nil), first)
+	stack := []encodeFrame{first}
 	for len(stack) != 0 {
 		if err := b.checkpoint(); err != nil {
 			return vm.Nil, err
 		}
 		frame := &stack[len(stack)-1]
 		if frame.index == len(frame.source.Fields)+len(frame.source.Items) {
-			scope.Require(384)
 			b.tables[frame.table] = frame.info
 			stack = stack[:len(stack)-1]
 			continue
@@ -216,13 +195,13 @@ func (b *bridge) toLua(v value.Value) (vm.Value, error) {
 		}
 		frame.index++
 		if source.Kind == value.Object || source.Kind == value.Array {
-			child := b.state.NewTableWithSize(len(source.Items), len(source.Fields))
+			child := vm.NewTableWithSize(len(source.Items), len(source.Fields))
 			if err := frame.table.Set(key, vm.NewTable(child)); err != nil {
 				return vm.Nil, err
 			}
 			info := tableInfo{kind: source.Kind}
 			next := encodeFrame{source: source, table: child, info: info}
-			stack = budget.Append(scope, stack, next)
+			stack = append(stack, next)
 			continue
 		}
 		converted, hint, err := b.encodeChild(*source)
@@ -235,7 +214,6 @@ func (b *bridge) toLua(v value.Value) (vm.Value, error) {
 		if hint.Kind != value.Missing {
 			if frame.info.hints == nil {
 				capacity := len(frame.source.Fields) + len(frame.source.Items)
-				scope.RequireArray(2*(unsafe.Sizeof(keyValue)+unsafe.Sizeof(fieldValue)), capacity)
 				frame.info.hints = make(map[vm.Value]value.Value, capacity)
 			}
 			frame.info.hints[key] = hint
@@ -262,7 +240,6 @@ func (b *bridge) encodeScalar(v value.Value) (vm.Value, error) {
 	case value.String:
 		return vm.NewString(v.Text), nil
 	case value.Bytes, value.Extended:
-		b.state.Budget().RequireArray(1, len(v.Data))
 		v.Data = append([]byte(nil), v.Data...)
 		return b.wrapLeaf(v), nil
 	default:
@@ -278,7 +255,6 @@ func (b *bridge) encodeChild(v value.Value) (vm.Value, value.Value, error) {
 	if value.IsJSONNumber(v) {
 		// Decimal comparison builds normalized spellings before deciding
 		// whether to preserve this field's exact original number.
-		b.state.Budget().RequireArray(8, len(v.Data))
 		if number, ok := nativeJSONNumber(string(v.Data)); ok {
 			if b.state != nil {
 				if err := b.state.CheckInterrupt(); err != nil {
@@ -286,7 +262,6 @@ func (b *bridge) encodeChild(v value.Value) (vm.Value, value.Value, error) {
 				}
 			}
 			hint = v
-			b.state.Budget().RequireArray(1, len(v.Data))
 			hint.Data = append([]byte(nil), v.Data...)
 			return vm.NewFloat(number), hint, nil
 		}

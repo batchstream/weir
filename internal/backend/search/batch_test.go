@@ -103,16 +103,6 @@ func TestMixedRecordBatchMergesReadsAndEveryMutation(t *testing.T) {
 	works := make([]*execution.Plan, len(actions))
 	for i, action := range actions {
 		works[i] = batchTestPlan(t, a, action, "records/s:"+ids[i])
-		works[i].ID = uint64(100 + i)
-		if action == "replace" || action == "program" {
-			native := works[i].Backend.(*plan)
-			knownWorking := 2*works[i].Bytes + execution.EntryOverheadBytes
-			wantWorking := knownWorking + bulkAckWorking(native.id)
-			wantIO := (64 << 10) + bulkAckEnvelopeWorking
-			if works[i].ResultBytes != execution.ResultOverheadBytes || works[i].WorkingBytes != wantWorking || works[i].IOReserve != wantIO {
-				t.Fatal("mutation result credits or known input/ACK working memory incorrect", works[i].ResultBytes, works[i].WorkingBytes, wantWorking, works[i].IOReserve, wantIO)
-			}
-		}
 	}
 	results := a.executeRecords(context.Background(), works)
 	if len(results) != len(works) || qualifications.Load() != 1 || reads.Load() != 1 || writes.Load() != 1 {

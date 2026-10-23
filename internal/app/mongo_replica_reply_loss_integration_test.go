@@ -574,7 +574,7 @@ func replyLossGauges(t *testing.T, lifetime *replyLossLifetime, phase string, ac
 	t.Helper()
 	metrics := testmetrics.Scrape(t, lifetime.service.diagnostic)
 	values := make(map[string]float64)
-	for _, name := range []string{"weir_store_pending_entries", "weir_store_active_executions", "weir_store_working_reserved_bytes", "weir_store_publishers", "weir_store_result_reserved_entries", "weir_store_result_reserved_bytes", "weir_store_retained_result_reserved_bytes", "weir_store_paused_native_outputs"} {
+	for _, name := range []string{"weir_store_queued_operations", "weir_store_active_executions"} {
 		if metrics[name] == nil {
 			t.Fatal("missing reply-loss ownership gauge", name)
 		}

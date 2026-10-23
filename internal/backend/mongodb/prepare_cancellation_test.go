@@ -73,13 +73,9 @@ func TestMongoAdmittedPreparationCancellationKeepsCallerFailure(t *testing.T) {
 			if failure != nil || work == nil || ctx.Err() != nil {
 				t.Fatal("raw preparation materialized the payload", failure)
 			}
-			probe := &recordMemoryProbe{limit: 128 << 20}
-			work.Memory = probe
-			memory := &recordMemory{owner: probe, base: recordWorking([]*execution.Plan{work})}
-			admitted := context.WithValue(ctx, recordMemoryContextKey, memory)
-			failure = adapter.validateRecord(admitted, work)
-			if failure.GetCode() != pb.FailureCode_CANCELLED || ctx.Err() != context.Canceled || probe.peak == 0 {
-				t.Fatal("admitted conversion cancellation became invalid data or skipped memory", failure, probe.peak)
+			failure = adapter.validateRecord(ctx, work)
+			if failure.GetCode() != pb.FailureCode_CANCELLED || ctx.Err() != context.Canceled {
+				t.Fatal("admitted conversion cancellation became invalid data", failure)
 			}
 		})
 	}

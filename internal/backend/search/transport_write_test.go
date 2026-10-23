@@ -25,7 +25,7 @@ func unsentWritePlan() *execution.Plan {
 	operationOperation := &pb.Command_Mutate{Mutate: mutation}
 	operationCommand := &pb.Command{Operation: operationOperation}
 	operation := &pb.ExecuteRequest{Index: 1, Command: operationCommand}
-	work := &execution.Plan{ID: operation.Index, Command: operation.Command}
+	work := &execution.Plan{Command: operation.Command}
 	return work
 }
 

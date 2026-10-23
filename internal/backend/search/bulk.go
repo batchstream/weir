@@ -3,7 +3,6 @@ package search
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"strconv"
 
 	"github.com/batchstream/weir-protocol/api/protocol"
@@ -88,11 +87,6 @@ func (a *Adapter) bulkResults(ctx context.Context, response bulkResponse) []*pb.
 	// A timeout changes what we know about the reply, never whether a connected
 	// mutation might have committed. Keep causes fixed and omit native bodies.
 	switch {
-	case errors.Is(err, errWriteMemoryNotSent):
-		outcome = pb.MutationOutcome_NOT_APPLIED
-		failure = execution.ReservationFailure(ctx, err)
-	case errors.Is(err, errRecordReservation), errors.Is(err, execution.ErrExecutionMemory):
-		failure = execution.ReservationFailure(ctx, err)
 	case err == errWriteNotSent:
 		outcome = pb.MutationOutcome_NOT_APPLIED
 		failure = protocol.Fail(pb.FailureCode_UNAVAILABLE, "write request not sent to backend")

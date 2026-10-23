@@ -324,7 +324,7 @@ func TestMongoCanceledProgramBatchDoesNotStartWrites(t *testing.T) {
 	native := &plan{action: "program"}
 	opCommand := &pb.Command{}
 	op := &pb.ExecuteRequest{Index: 1, Command: opCommand}
-	p := &execution.Plan{ID: op.Index, Command: op.Command, Backend: native, Context: caller}
+	p := &execution.Plan{Command: op.Command, Backend: native, Context: caller}
 	a := &Adapter{}
 	initializeTestLifetime(a)
 	replies := a.executeRecords(context.Background(), []*execution.Plan{p})
@@ -347,24 +347,6 @@ func TestMongoBulkCursorRejectsDuplicateAndMissingIndexes(t *testing.T) {
 		if state.reply(expressionBSON(t, response), true) {
 			t.Fatal("invalid index correspondence was accepted")
 		}
-	}
-}
-
-func TestMongoBatchInputEstimateDoesNotRejectLegalRequest(t *testing.T) {
-	document := bson.D{{Key: "_id", Value: "a"}}
-	cursor := bson.D{{Key: "id", Value: int64(0)}, {Key: "ns", Value: "db.records"}, {Key: "firstBatch", Value: bson.A{document}}}
-	responses := []bson.D{collectionQualificationResponse("db", "records"), readCursorResponse(cursor)}
-	adapter := batchMockAdapter(t, responses, nil)
-	opts := batchOperationOptions{resource: "db/records/s:a", action: "read"}
-	work, failure := prepareTestRecord(adapter, batchOperation(t, opts))
-	if failure != nil {
-		t.Fatal(failure)
-	}
-	work.Bytes = execution.BackendBatchBytes + 1
-	plans := []*execution.Plan{work}
-	results := adapter.executeRecords(t.Context(), plans)
-	if len(results) != 1 || results[0].GetReadResult().GetDocument() == nil {
-		t.Fatal("legal input rejected by a memory estimate", results)
 	}
 }
 
@@ -403,8 +385,8 @@ func TestMongoReadAggregationAccepts513DistinctDocuments(t *testing.T) {
 	}
 }
 
-func TestMongoDuplicateReadSeparatesResultReservations(t *testing.T) {
-	for _, mode := range []string{"first smaller estimate", "both retained", "first canceled"} {
+func TestMongoDuplicateReadsShareOneObservation(t *testing.T) {
+	for _, mode := range []string{"both retained", "first canceled"} {
 		t.Run(mode, func(t *testing.T) {
 			document := bson.D{{Key: "_id", Value: "same"}, {Key: "value", Value: 123}}
 			cursor := bson.D{{Key: "id", Value: int64(0)}, {Key: "ns", Value: "db.records"}, {Key: "firstBatch", Value: bson.A{document}}}
@@ -421,9 +403,6 @@ func TestMongoDuplicateReadSeparatesResultReservations(t *testing.T) {
 				}
 				if i == 0 {
 					work.Context = firstContext
-					if mode == "first smaller estimate" {
-						work.ResultBytes = 1
-					}
 				}
 				plans = append(plans, work)
 			}
@@ -437,7 +416,7 @@ func TestMongoDuplicateReadSeparatesResultReservations(t *testing.T) {
 			}
 			if mode != "first canceled" {
 				if replies[0].GetReadResult().GetDocument() != replies[1].GetReadResult().GetDocument() {
-					t.Fatal("immutable data was not shared with independent reservations", replies)
+					t.Fatal("immutable data was not shared", replies)
 				}
 			} else {
 				code := pb.FailureCode_CANCELLED

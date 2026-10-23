@@ -40,7 +40,6 @@ type Config struct {
 
 type Adapter struct {
 	maxDocumentBytes int
-	maxMessageBytes  int
 	dialer           *connectionOwner
 	client           *mongo.Client
 	deployment       driver.Deployment
@@ -164,7 +163,6 @@ func (a *Adapter) qualify(ctx context.Context, replicaSet string) error {
 		SetName     string `bson:"setName"`
 		Msg         string `bson:"msg"`
 		MaxDocument int    `bson:"maxBsonObjectSize"`
-		MaxMessage  int    `bson:"maxMessageSizeBytes"`
 	}
 	if err := a.client.Database("admin").RunCommand(ctx, cmd).Decode(&hello); err != nil {
 		return mongoQualificationFailure("MongoDB replica-set qualification failed", err)
@@ -173,7 +171,6 @@ func (a *Adapter) qualify(ctx context.Context, replicaSet string) error {
 		return fmt.Errorf("MongoDB requires a replica set and no mongos")
 	}
 	a.maxDocumentBytes = hello.MaxDocument
-	a.maxMessageBytes = hello.MaxMessage
 	return nil
 }
 
@@ -231,7 +228,7 @@ func (a *Adapter) prepareRecord(ctx context.Context, record *execution.Record) (
 	}
 	target := namespace{database: s[0], collection: s[1]}
 	native := &plan{target: target, id: id}
-	p := &execution.Plan{Command: op, Key: record.Key(), Backend: native, ResultBytes: execution.ResultOverheadBytes}
+	p := &execution.Plan{Command: op, Key: record.Key(), Backend: native, Bytes: record.Bytes()}
 	if r := op.GetRead(); r != nil {
 		native.action = "read"
 	} else {

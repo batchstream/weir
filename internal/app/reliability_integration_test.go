@@ -203,19 +203,19 @@ func runLowLoadReliability(t *testing.T, probe reliabilityProbe) {
 		}
 	}
 	budgetWait(t, "low-load SDK resources drained", func() bool {
-		snapshot := probe.node.stores["records"].Snapshot()
+		stats := probe.node.stores["records"].Stats()
 		metrics := testmetrics.Gather(t, probe.node.admission)
-		return snapshot.Pending == 0 && snapshot.Active == 0 && snapshot.Retained == 0 && snapshot.ResultBytes == 0 && snapshot.WorkingBytes == 0 && snapshot.Publishers == 0 && testmetrics.Sum(metrics, "weir_ingress_queued_response_bytes") == 0 && testmetrics.Sum(metrics, "weir_ingress_sessions") == 0
+		return stats.Queued == 0 && stats.Active == 0 && testmetrics.Sum(metrics, "weir_ingress_sessions") == 0
 	})
 	metrics := testmetrics.Gather(t, probe.node.admission)
 	if rejected := testmetrics.Sum(metrics, "weir_admission_rejections_total"); rejected != 0 {
 		t.Fatal("low-load calls experienced admission rejection", rejected)
 	}
 	memory := probe.node.guard.Snapshot()
-	if memory.Latched || probe.node.stores["records"].Snapshot().Overloaded {
+	if memory.Latched || probe.node.stores["records"].Stats().Overloaded {
 		t.Fatal("low-load probe left admission overloaded", memory)
 	}
-	t.Logf("omitted batching defaults=%+v; memory=%+v; final store=%+v", store.DefaultLimits(), memory, probe.node.stores["records"].Snapshot())
+	t.Logf("omitted batching defaults=%+v; memory=%+v; final store=%+v", store.DefaultLimits(), memory, probe.node.stores["records"].Stats())
 }
 
 func reliabilityPutDocument(media string, n int64) (*pb.Document, error) {

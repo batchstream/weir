@@ -15,13 +15,10 @@ import (
 )
 
 type replicaLuaCall struct {
-	ctx     context.Context
-	cancel  context.CancelFunc
-	ticket  *store.Ticket
-	session *store.Session
-	mirror  *replicaLuaMemory
-	watch   *testmongo.LuaWatch
-	id      uint64
+	ctx    context.Context
+	cancel context.CancelFunc
+	ticket *store.Ticket
+	watch  *testmongo.LuaWatch
 }
 
 func replicaLuaLifecycleStart(t *testing.T, opts replicaLuaRuntimeOptions, phase testmongo.LuaLifecyclePhase) *replicaLuaCall {
@@ -61,18 +58,11 @@ func replicaLuaLifecycleStart(t *testing.T, opts replicaLuaRuntimeOptions, phase
 	if failure != nil {
 		t.Fatal(failure)
 	}
-	mirror := &replicaLuaMemory{command: work.Command, native: work.Backend.(*plan), operation: op}
-	opts.delegate.luaMu.Lock()
-	opts.delegate.luaPlans[work.ID] = mirror
-	opts.delegate.luaMu.Unlock()
-	session := opts.runtime.NewSession()
-	t.Cleanup(session.Close)
-	session.Events = make(chan *store.Emission, 1)
-	ticket, failure, _ := opts.runtime.Submit(ctx, work, session)
+	ticket, failure := opts.runtime.Submit(ctx, work, opts.runtime.NewSession())
 	if failure != nil {
 		t.Fatal(failure)
 	}
-	call := &replicaLuaCall{ctx: ctx, cancel: cancel, ticket: ticket, session: session, mirror: mirror, watch: watch, id: work.ID}
+	call := &replicaLuaCall{ctx: ctx, cancel: cancel, ticket: ticket, watch: watch}
 	if err := testmongo.WaitLuaPhase(ctx, watch.SnapshotHeld(0)); err != nil {
 		t.Fatal(err)
 	}
@@ -92,39 +82,20 @@ func replicaLuaLifecycleStart(t *testing.T, opts replicaLuaRuntimeOptions, phase
 	opts.proxy.CheckLuaLedger(t, ctx, watch, expected)
 	return call
 }
-func replicaLuaLifecycleReceipt(t *testing.T, ctx context.Context, call *replicaLuaCall, terminalOnly bool) *pb.MutationResult {
+func replicaLuaLifecycleReceipt(t *testing.T, ctx context.Context, call *replicaLuaCall) *pb.MutationResult {
 	t.Helper()
 	event, err := call.ticket.Wait(ctx)
 	if err != nil || event.GetMutationResult() == nil {
 		t.Fatal("real lifecycle Ticket.Wait", event, err)
 	}
-	// A canceled caller or Runtime.Close may cancel/join the real publisher
-	// without a Session emission. Its retained Ticket result remains readable;
-	// actual publisher joins are checked separately, never manufactured here.
-	if terminalOnly {
-		return event.GetMutationResult()
-	}
-	select {
-	case emission := <-call.session.Events:
-		emission.Release()
-	case <-ctx.Done():
-		t.Fatal("real lifecycle publisher handoff", ctx.Err())
-	}
 	return event.GetMutationResult()
-}
-func replicaLuaLifecycleForget(opts replicaLuaRuntimeOptions, call *replicaLuaCall) {
-	call.session.Close()
-	call.cancel()
-	opts.delegate.luaMu.Lock()
-	delete(opts.delegate.luaPlans, call.id)
-	opts.delegate.luaMu.Unlock()
 }
 func replicaLuaLifecycleCancel(t *testing.T, opts replicaLuaRuntimeOptions) []*testmongo.LuaWatch {
 	t.Helper()
-	replicaLuaZero(t, opts)
+	replicaLuaIdle(t, opts)
 	base := opts.delegate.returned.Load()
 	canceled := replicaLuaLifecycleStart(t, opts, testmongo.LuaCancelSnapshot)
-	replicaLuaWorking(t, opts, canceled.mirror)
+	replicaLuaRunning(t, opts, 1)
 	canceledRaw := replicaReadPeer(t, opts.delegate.Adapter, canceled.watch.Snapshot().FindPeer)
 	ownedRaw := []*mongoConn{canceledRaw}
 	peer := replicaLuaLifecycleStart(t, opts, testmongo.LuaHealthyPeer)
@@ -138,26 +109,20 @@ func replicaLuaLifecycleCancel(t *testing.T, opts replicaLuaRuntimeOptions) []*t
 	if err := peer.watch.ForwardSnapshot(0); err != nil {
 		t.Fatal(err)
 	}
-	result := replicaLuaLifecycleReceipt(t, wait, peer, false)
+	result := replicaLuaLifecycleReceipt(t, wait, peer)
 	if result.GetOutcome() != pb.MutationOutcome_APPLIED || result.GetFailure() != nil || peer.ctx.Err() != nil {
 		t.Fatal("independent concurrent Lua peer survived original cancellation", result, peer.ctx.Err())
 	}
-	peer.ticket.Ack()
-	replicaLuaLifecycleForget(opts, peer)
-	result = replicaLuaLifecycleReceipt(t, wait, canceled, true)
+	peer.cancel()
+	result = replicaLuaLifecycleReceipt(t, wait, canceled)
 	if result.GetOutcome() != pb.MutationOutcome_NOT_APPLIED || result.GetFailure().GetCode() != pb.FailureCode_CANCELLED {
 		t.Fatal("canceled snapshot truthful result", result)
 	}
-	for opts.runtime.Snapshot().Active != 0 || opts.runtime.Snapshot().Publishers != 0 || opts.delegate.returned.Load() != base+2 || opts.delegate.client.NumberSessionsInProgress() != 0 || !replicaReadRawClosed(opts.delegate.Adapter, ownedRaw) {
+	for opts.delegate.returned.Load() != base+2 || opts.delegate.client.NumberSessionsInProgress() != 0 || !replicaReadRawClosed(opts.delegate.Adapter, ownedRaw) {
 		if wait.Err() != nil {
 			t.Fatal("Lua cancellation actual execution/session join", wait.Err())
 		}
 		time.Sleep(time.Millisecond)
-	}
-	held := opts.runtime.Snapshot()
-	credit := opts.runtime.ExecutionMemory().Snapshot()
-	if held.Retained != 1 || held.Ready != 1 || held.WorkingBytes != 0 || held.ResultBytes <= 0 || credit.Count != 1 || credit.InputUsedBytes == 0 || !canceled.mirror.actualTicket.Load() {
-		t.Fatal("canceled Lua actual retained Ticket", held, credit)
 	}
 	if err := canceled.watch.WaitLifecycleEOF(wait); err != nil {
 		t.Fatal("canceled Lua EOF observation", err)
@@ -165,9 +130,7 @@ func replicaLuaLifecycleCancel(t *testing.T, opts replicaLuaRuntimeOptions) []*t
 	if err := canceled.watch.ValidateLifecycle(false); err != nil {
 		t.Fatal("natural cancellation EOF/no replay", err, canceled.watch.Snapshot())
 	}
-	canceled.ticket.Ack()
-	replicaLuaZero(t, opts)
-	replicaLuaLifecycleForget(opts, canceled)
+	replicaLuaIdle(t, opts)
 	if err := canceled.watch.CloseLifecycleTail(wait); err != nil {
 		t.Fatal(err)
 	}

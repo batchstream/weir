@@ -52,8 +52,6 @@ func NewRecord(store string, index uint64, command *pb.Command) (*Record, error)
 		}
 		remaining = rest
 	}
-	// Retained request, ordinal, decoded path, ticket and cancellation metadata.
-	bytes := proto.Size(command) + 16 + len(store) + 2*len(resource) + 1024 + 16*len(parts)
-	record := &Record{index: index, command: command, store: store, segments: parts, key: resource, bytes: bytes}
+	record := &Record{index: index, command: command, store: store, segments: parts, key: resource, bytes: proto.Size(command)}
 	return record, nil
 }

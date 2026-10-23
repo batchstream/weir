@@ -41,29 +41,9 @@ def secret_path(name):
                or p.lower().endswith(('.pem', '.key')) for p in parts)
 
 
-def public_grpc_source(name):
-    if not name.startswith('third_party/grpc/') or not name.endswith('.go') or name.endswith('_test.go'):
-        return False
-    parts = PurePosixPath(name).parts
-    # The pinned public library has packages named credentials; these are Go source.
-    return '..' not in parts and not secret_path('/'.join(part for part in parts if part != 'credentials'))
-
-
 def allowed(name):
     return (
         name in ('go.mod', 'go.sum', 'README.md', 'config/weir.reference.yaml', 'config/routes.reference.yaml')
-        or name in ('third_party/grpc/go.mod', 'third_party/grpc/go.sum', 'third_party/grpc/LICENSE',
-                    'third_party/grpc/AUTHORS', 'third_party/grpc/WEIR_UPSTREAM.json',
-                    'third_party/grpc/WEIR_PATCH.md', 'third_party/grpc/WEIR_PATCH.diff')
-        or public_grpc_source(name)
-        or (
-            name.startswith('third_party/golua/') and not secret_path(name)
-            and '..' not in PurePosixPath(name).parts
-            and ((name.endswith('.go') and not name.endswith('_test.go'))
-                 or name in ('third_party/golua/go.mod', 'third_party/golua/go.sum',
-                             'third_party/golua/LICENSE', 'third_party/golua/WEIR_UPSTREAM.json',
-                             'third_party/golua/WEIR_PATCH.md', 'third_party/golua/WEIR_PATCH.diff'))
-        )
         or name in ('deploy/docker/Dockerfile', 'deploy/docker/base.json')
         or name in ('licenses/' + license_name for license_name in PUREGO_LICENSES)
         or (
@@ -85,27 +65,12 @@ def source_files(root, revision):
         metadata, encoded = record.split(b'\t', 1)
         name = encoded.decode('utf-8')
         mode, kind, oid = metadata.decode().split()
-        if secret_path(name) and not public_grpc_source(name):
+        if secret_path(name):
             raise ValueError('tracked secret-style path refused: ' + name)
         if allowed(name):
             if mode not in ('100644', '100755') or kind != 'blob' or '..' in PurePosixPath(name).parts:
                 raise ValueError('non-regular build input refused: ' + name)
             files.append((name, oid))
-    public_packages = [name for name, _ in files if secret_path(name)]
-    if public_packages:
-        manifest_name = 'third_party/grpc/WEIR_UPSTREAM.json'
-        manifest_oid = dict(files).get(manifest_name)
-        if manifest_oid is None:
-            raise ValueError('public gRPC source requires its pinned upstream manifest')
-        manifest = json.loads(run(['git', 'cat-file', 'blob', manifest_oid], cwd=root))
-        if manifest.get('module') != dependencies.GRPC or manifest.get('version') != dependencies.GRPC_VERSION:
-            raise ValueError('unexpected public gRPC upstream manifest')
-        if any(name.removeprefix('third_party/grpc/') not in manifest.get('files', {}) for name in public_packages):
-            raise ValueError('unlisted credentials package source refused')
-        for name in public_packages:
-            expected = manifest['files'][name.removeprefix('third_party/grpc/')]
-            if sha(run(['git', 'cat-file', 'blob', dict(files)[name]], cwd=root)) != expected:
-                raise ValueError('public credentials source differs from pinned upstream: ' + name)
     if not {'go.mod', 'go.sum', 'cmd/weir/main.go'} <= {name for name, _ in files}:
         raise ValueError('missing required build inputs')
     return files
@@ -118,37 +83,6 @@ def clean_head(root):
     if not re.fullmatch('[0-9a-f]{40}', revision):
         raise ValueError('expected full source SHA')
     return revision
-
-
-def validate_patch_inputs(source, inputs):
-    for module, pin in dependencies.LOCAL_PATCHES.items():
-        validate_patch(source, inputs, module, pin)
-
-
-def validate_patch(source, inputs, module, pin):
-    version, relative = pin
-    relative = relative.removeprefix('./')
-    directory = source / relative
-    manifest = json.loads((directory / 'WEIR_UPSTREAM.json').read_text())
-    if manifest.get('module') != module or manifest.get('version') != version:
-        raise ValueError('unexpected public upstream manifest: ' + module)
-    expected = dict(manifest['files'])
-    for record in manifest.get('patchedFiles', []):
-        name = record['path']
-        if name not in expected or record['upstream_sha256'] != manifest['files'].get(name):
-            raise ValueError('patch does not match its recorded upstream source: ' + module)
-        expected[name] = record['sha256']
-    for record in manifest.get('newFiles', []):
-        name = record['path']
-        if name in expected:
-            raise ValueError('duplicate source in patch manifest: ' + module)
-        expected[name] = record['sha256']
-    selected = {relative + '/' + name: digest for name, digest in expected.items()
-                if allowed(relative + '/' + name)}
-    actual = {name: digest for name, digest in inputs.items()
-              if name.startswith(relative + '/') and name != relative + '/WEIR_UPSTREAM.json'}
-    if actual != selected:
-        raise ValueError('exported sources differ from the pinned patch manifest: ' + module)
 
 
 def go_environment():
@@ -221,13 +155,6 @@ def archive_members(source, system):
         'config/weir.reference.yaml': ((source / 'config/weir.reference.yaml').read_bytes(), 0o644),
         'config/routes.reference.yaml': ((source / 'config/routes.reference.yaml').read_bytes(), 0o644),
     }
-    for _, relative in dependencies.LOCAL_PATCHES.values():
-        patch_source = source / relative
-        names = ['LICENSE', 'WEIR_UPSTREAM.json', 'WEIR_PATCH.md', 'WEIR_PATCH.diff']
-        if patch_source.name == 'grpc':
-            names.append('AUTHORS')
-        for name in names:
-            members['licenses/' + patch_source.name + '/' + name] = ((patch_source / name).read_bytes(), 0o644)
     if system == 'darwin':
         # purego is linked only into Darwin binaries.
         for name in PUREGO_LICENSES:
@@ -271,11 +198,9 @@ def build_source(opts):
         dest = source / name
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_bytes(run(['git', 'cat-file', 'blob', oid]))
-    inputs = {name: sha((source / name).read_bytes()) for name, _ in opts['files']}
-    validate_patch_inputs(source, inputs)
     run(['go', 'mod', 'verify'], cwd=source, env=env)
     graph = json_stream(run(['go', 'list', '-m', '-json', 'all'], cwd=source, env=env))
-    dependencies.check_modules(graph, source)
+    dependencies.check_modules(graph)
     binaries = work / 'binaries'
     flags = ['-trimpath', '-buildvcs=false', '-mod=readonly', '-ldflags=-buildid= -X main.revision=' + opts['revision']]
     archives = []

@@ -57,7 +57,7 @@ func TestNativeCompletionMetricsAreIndependentOfRPCAndHTTPStatus(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			local, err := store.New(adapter, store.DefaultLimits(), nil)
+			local, err := store.New(adapter, store.DefaultLimits())
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -123,7 +123,7 @@ func TestNativeCompletionMetricsAreIndependentOfRPCAndHTTPStatus(t *testing.T) {
 			for range 3 {
 				families := testmetrics.Gather(t, local)
 				family := families["weir_store_native_completions_total"]
-				if len(family.GetMetric()) != 4 {
+				if len(family.GetMetric()) != 3 {
 					t.Fatal("Native completion added dynamic series", family)
 				}
 				labels := map[string]string{"completion": test.label}
@@ -143,7 +143,7 @@ func TestNativeCompletionMetricsAreIndependentOfRPCAndHTTPStatus(t *testing.T) {
 	}
 }
 
-func TestRPCMetricsReportInvalidStreamWithoutUnusedTransportFailures(t *testing.T) {
+func TestRPCMetricsReportInvalidStream(t *testing.T) {
 	_, local := peerLocal(t, "records")
 	opts := peerServerOptions{stores: map[string]*store.Runtime{"records": local}}
 	server, address := startPeerServer(t, opts)
@@ -181,12 +181,7 @@ func TestRPCMetricsReportInvalidStreamWithoutUnusedTransportFailures(t *testing.
 	if testmetrics.Sample(metrics, "weir_rpc_completions_total", labels).GetCounter().GetValue() != 1 {
 		t.Fatal("native RPC failure missing from completion status metrics")
 	}
-	if metrics["weir_transport_failures_total"] != nil {
-		t.Fatal("collector exposes an unobserved transport failure counter")
-	}
-	for _, name := range []string{"weir_watchdog_expirations_total", "weir_transport_forced_closes_total"} {
-		if metrics[name] == nil {
-			t.Fatal("collector lost observed transport metrics", name)
-		}
+	if metrics["weir_watchdog_expirations_total"] == nil {
+		t.Fatal("collector lost the watchdog metric")
 	}
 }

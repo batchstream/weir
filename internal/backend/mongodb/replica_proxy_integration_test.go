@@ -73,7 +73,7 @@ func TestMongoReplicaProxyDiscoveryRecovery(t *testing.T) {
 			watches := replicaStableReplyLoss(t, heldOptions)
 			// The same Runtime owns topology Lua, stable Lua and read retirement.
 			delegate := &replicaReadAdapter{Adapter: adapter}
-			runtime, err := store.New(delegate, store.DefaultLimits(), nil)
+			runtime, err := store.New(delegate, store.DefaultLimits())
 			if err != nil {
 				t.Fatal(err)
 			}

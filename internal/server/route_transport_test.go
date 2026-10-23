@@ -3,7 +3,6 @@ package server
 import (
 	"context"
 	"io"
-	"runtime"
 	"testing"
 	"time"
 
@@ -37,22 +36,7 @@ func TestBatchDeadlineAndCancellation(t *testing.T) {
 		t.Fatal("cancellation did not reach record stream caller", err)
 	}
 	close(release)
-	// Cancellation can orphan a native DATA buffer. Its cleanup returns byte
-	// credit only after the actual storage becomes unreachable, unlike the
-	// normal successful response path which releases it through BufferPool.Put.
-	until := time.Now().Add(3 * time.Second)
-	for (srv.Snapshot().ActiveRPCs != 0 || local.Snapshot().Retained != 0 || srv.admission.wireBytes.Load() != 0) && time.Now().Before(until) {
-		runtime.GC()
-		time.Sleep(time.Millisecond)
-	}
 	waitPeerIdle(t, srv)
-	until = time.Now().Add(time.Second)
-	for local.Snapshot().Retained != 0 && time.Now().Before(until) {
-		time.Sleep(time.Millisecond)
-	}
-	if local.Snapshot().Retained != 0 {
-		t.Fatal("cancelled batch retained results", local.Snapshot())
-	}
 }
 
 func TestBatchGracefulDrainPreservesAdmittedMutation(t *testing.T) {

@@ -196,9 +196,6 @@ func (a *Adapter) inspect(ctx context.Context, target string, native bool) (capa
 	if err == errTransport && ctx.Err() == nil {
 		return caps, protocol.Fail(pb.FailureCode_UNAVAILABLE, "index qualification transport failed")
 	}
-	if errors.Is(err, execution.ErrExecutionMemory) {
-		return caps, recordMemoryFailure()
-	}
 	if err != nil {
 		return caps, protocol.Fail(pb.FailureCode_UNAVAILABLE, "index qualification response unavailable")
 	}
@@ -278,11 +275,10 @@ func (a *Adapter) prepareRecord(ctx context.Context, record *execution.Record) (
 	}
 	native := &plan{index: segments[0], id: key[2:]}
 	work := &execution.Plan{
-		Command:     op,
-		Key:         record.Key(),
-		Backend:     native,
-		Bytes:       record.Bytes(),
-		ResultBytes: execution.ResultOverheadBytes,
+		Command: op,
+		Key:     record.Key(),
+		Backend: native,
+		Bytes:   record.Bytes(),
 	}
 	if read := op.GetRead(); read != nil {
 		native.action = "read"

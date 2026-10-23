@@ -84,7 +84,7 @@ func TestRealSearchCallerDeadlineAcknowledgements(t *testing.T) {
 			}
 			limits := store.DefaultLimits()
 
-			runtime, err := store.New(adapter, limits, nil)
+			runtime, err := store.New(adapter, limits)
 			if err != nil {
 				_ = adapter.Close(context.Background())
 				t.Fatal(err)
@@ -112,7 +112,7 @@ func TestRealSearchCallerDeadlineAcknowledgements(t *testing.T) {
 			caller, cancel := context.WithTimeout(t.Context(), test.timeout)
 			defer cancel()
 			started := time.Now()
-			ticket, failure, _ := runtime.Submit(caller, prepared, nil)
+			ticket, failure := runtime.Submit(caller, prepared, nil)
 			if failure != nil {
 				t.Fatal(failure)
 			}
@@ -134,8 +134,6 @@ func TestRealSearchCallerDeadlineAcknowledgements(t *testing.T) {
 			if writes.Load() != 1 {
 				t.Fatal("deadline or no-replay contract changed", elapsed, writes.Load())
 			}
-			ticket.Ack()
-			assertDeadlineReleased(t, runtime)
 			status, raw := backend.Do(t, "GET", "/"+backend.Index+"/_doc/write", "")
 			if status != http.StatusOK || !strings.Contains(string(raw), `"n":7`) {
 				t.Fatal("independent persisted result disagrees with acknowledgement", status, string(raw))

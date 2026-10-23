@@ -79,7 +79,7 @@ func TestSearchQueuedReadCompletesBeforeUnrelatedSlowWrite(t *testing.T) {
 	limits := store.DefaultLimits()
 	limits.MaxInFlight = 1
 	limits.BatchWait = 0
-	runtime, err := store.New(adapter, limits, nil)
+	runtime, err := store.New(adapter, limits)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -111,8 +111,7 @@ func TestSearchQueuedReadCompletesBeforeUnrelatedSlowWrite(t *testing.T) {
 			t.Fatal(failure)
 		}
 		session := runtime.NewSession()
-		t.Cleanup(session.Close)
-		ticket, failure, _ := runtime.Submit(caller, work, session)
+		ticket, failure := runtime.Submit(caller, work, session)
 		if failure != nil {
 			t.Fatal(failure)
 		}
@@ -128,14 +127,10 @@ func TestSearchQueuedReadCompletesBeforeUnrelatedSlowWrite(t *testing.T) {
 	defer stopRead()
 	read := submit(readContext, "records/s:read", true)
 	write := submit(ctx, "records/s:write", false)
-	if snapshot := runtime.Snapshot(); snapshot.Pending != 2 || snapshot.Active != 1 {
-		t.Fatal("test did not queue both operations behind the occupied slot", snapshot)
-	}
 	close(releaseOccupy)
 	if _, err := occupy.Wait(ctx); err != nil {
 		t.Fatal(err)
 	}
-	occupy.Ack()
 	select {
 	case <-readResponded:
 	case <-ctx.Done():
@@ -145,19 +140,14 @@ func TestSearchQueuedReadCompletesBeforeUnrelatedSlowWrite(t *testing.T) {
 	if err != nil || event.GetReadResult().GetDocument() == nil {
 		t.Fatal("successful read was held by an unrelated same-index write", event, err)
 	}
-	read.Ack()
 	select {
 	case <-bulkStarted:
 	case <-ctx.Done():
 		t.Fatal(ctx.Err())
-	}
-	if snapshot := runtime.Snapshot(); snapshot.Active != 1 || snapshot.Ready != 0 || snapshot.Retained != 1 {
-		t.Fatal("read completion retained write ownership or execution credit", snapshot)
 	}
 	close(releaseBulk)
 	event, err = write.Wait(ctx)
 	if err != nil || event.GetMutationResult().GetOutcome() != pb.MutationOutcome_APPLIED {
 		t.Fatal("independent write lost its confirmed outcome", event, err)
 	}
-	write.Ack()
 }

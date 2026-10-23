@@ -15,7 +15,6 @@ import (
 
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 	"github.com/batchstream/weir/internal/execution"
-	"github.com/batchstream/weir/internal/overload"
 	"github.com/batchstream/weir/internal/store"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/event"
@@ -180,11 +179,8 @@ func TestMongoDefaultRetirementSentUnknownCursor(t *testing.T) {
 		t.Run(fmt.Sprintf("blocked_endSessions=%t", slow), func(t *testing.T) {
 			fixture := newRetirementFixture(t, slow)
 			adapter, deployment := fixture.adapter, fixture.deployment
-			memory := store.NewExecutionMemory()
-			sample := overload.Snapshot{RecoveryAllowance: 1 << 30, RecoveryAllowanceKnown: true}
-			memory.ObserveMemory(sample)
 			limits := store.DefaultLimits()
-			runtime, err := store.New(adapter, limits, memory)
+			runtime, err := store.New(adapter, limits)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -201,26 +197,24 @@ func TestMongoDefaultRetirementSentUnknownCursor(t *testing.T) {
 			if failure != nil {
 				t.Fatal(failure)
 			}
-			ticket, failure, _ := runtime.Submit(caller, work, nil)
+			ticket, failure := runtime.Submit(caller, work, nil)
 			if failure != nil {
 				t.Fatal(failure)
 			}
-			defer ticket.Ack()
 			select {
 			case <-deployment.findSent:
 			case <-time.After(time.Second):
 				t.Fatal("find not actually sent")
 			}
-			if snapshot := runtime.Snapshot(); snapshot.Active != 1 || adapter.client.NumberSessionsInProgress() != 1 {
-				t.Fatal("missing actual execution/session ownership", snapshot)
+			if adapter.client.NumberSessionsInProgress() != 1 {
+				t.Fatal("missing actual session ownership")
 			}
 			started := time.Now()
 			drain, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 			err = runtime.Close(drain)
 			elapsed := time.Since(started)
-			snapshot := runtime.Snapshot()
-			t.Logf("elapsed=%s error=%v runtime=%+v memory=%+v sessions=%d", elapsed, err, snapshot, memory.Snapshot(), adapter.client.NumberSessionsInProgress())
+			t.Logf("elapsed=%s error=%v sessions=%d", elapsed, err, adapter.client.NumberSessionsInProgress())
 			if err != nil || elapsed < 6500*time.Millisecond || elapsed > 7500*time.Millisecond {
 				t.Fatal("default retirement failed or drain was shortened", err, elapsed)
 			}
@@ -238,11 +232,12 @@ func TestMongoDefaultRetirementSentUnknownCursor(t *testing.T) {
 				t.Fatal("adapter disconnect worker not joined")
 			}
 			ownerZero(t, adapter.dialer)
-			if snapshot.Active != 0 || snapshot.WorkingBytes != 0 || snapshot.Publishers != 0 || adapter.client.NumberSessionsInProgress() != 0 {
-				t.Fatal("successful Close left owners", snapshot)
+			if adapter.client.NumberSessionsInProgress() != 0 {
+				t.Fatal("successful Close left sessions")
 			}
-			if snapshot.Retained != 1 || memory.Snapshot().Count != 1 {
-				t.Fatal("shutdown released consumer-owned evidence", snapshot, memory.Snapshot())
+			result, err := ticket.Wait(t.Context())
+			if err != nil || result.GetReadResult().GetFailure() == nil {
+				t.Fatal("retired read lost its failure evidence", result, err)
 			}
 			names, raw := fixture.commands.snapshot()
 			offset := 0
@@ -259,14 +254,6 @@ func TestMongoDefaultRetirementSentUnknownCursor(t *testing.T) {
 			ids, err := raw[offset+2].Lookup("killSessions").Array().Values()
 			if err != nil || len(ids) != 1 || !bytes.Equal(ids[0].Document(), raw[offset+1].Lookup("lsid").Document()) {
 				t.Fatal("cleanup used the wrong explicit session identity", err)
-			}
-			ticket.Ack()
-			if snapshot := runtime.Snapshot(); snapshot.Retained != 0 || snapshot.ResultBytes != 0 {
-				t.Fatal("Ack did not retire retained evidence", snapshot)
-			}
-			owned := memory.Snapshot()
-			if owned.Count != 0 || owned.UsedBytes != 0 || owned.WireCount != 0 {
-				t.Fatal("genuine consumer Ack did not retire memory", owned)
 			}
 		})
 	}
@@ -309,8 +296,8 @@ func TestMongoLifetimePreservesOrdinaryCleanupAndClosesParallelLateCleanup(t *te
 			})
 		}
 		workers.Wait()
-		if _, failure := adapter.PrepareCommand(parent, 1, nil); failure == nil {
-			t.Fatal("closed PrepareCommand accepted work")
+		if _, failure := adapter.PrepareNative(parent, nil); failure == nil {
+			t.Fatal("closed PrepareNative accepted work")
 		}
 		if _, failure := adapter.PrepareRecord(parent, nil); failure == nil {
 			t.Fatal("closed PrepareRecord accepted work")
@@ -446,16 +433,16 @@ func TestMongoLifetimeJoinsActualTopologySelectionWithoutNetwork(t *testing.T) {
 		operation := &pb.Command_Native{Native: request}
 		input := &pb.Command{Operation: operation}
 		caller := t.Context()
-		work, failure := adapter.PrepareCommand(caller, 1, input)
+		work, failure := adapter.PrepareNative(caller, input)
 		if failure != nil {
 			t.Fatal(failure)
 		}
-		plans := []*execution.Plan{work}
 		events := make(chan *pb.Event, 1)
+		ends := make(chan *pb.NativeEnd, 1)
 		joined := make(chan struct{})
 		go func() {
 			defer close(joined)
-			adapter.Execute(caller, plans, func(_ *execution.Plan, event *pb.Event) error { events <- event; return nil })
+			ends <- adapter.ExecuteNative(caller, work, func(event *pb.Event) error { events <- event; return nil })
 		}()
 		synctest.Wait()
 		select {
@@ -467,12 +454,12 @@ func TestMongoLifetimeJoinsActualTopologySelectionWithoutNetwork(t *testing.T) {
 			t.Fatal(err)
 		}
 		<-joined
-		terminal := <-events
-		if terminal.GetNativeEnd().GetFailure() == nil || caller.Err() != nil {
+		terminal := <-ends
+		if terminal.GetFailure() == nil || caller.Err() != nil {
 			t.Fatal("selection cancellation lost evidence or canceled its caller", terminal)
 		}
 		if len(events) != 0 {
-			t.Fatal("selection waiter replayed or emitted duplicate terminal results")
+			t.Fatal("selection waiter emitted output before failing")
 		}
 	})
 }

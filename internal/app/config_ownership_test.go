@@ -156,9 +156,9 @@ func TestProcessLuaAndStreamPolicyReachEveryStore(t *testing.T) {
 	}
 	time.Sleep(20 * time.Millisecond)
 	for _, name := range []string{"first", "second"} {
-		snapshot := node.stores[name].Snapshot()
-		if snapshot.Retained != 3 || snapshot.Active != 3 {
-			t.Fatal("Store did not inherit process flow control", name, snapshot)
+		stats := node.stores[name].Stats()
+		if stats.Active != 3 || stats.Queued != 0 {
+			t.Fatal("Store did not inherit process flow control", name, stats)
 		}
 	}
 	if reads.Load()-baseline != 6 {

@@ -106,7 +106,6 @@ func TestSearchCommittedReplyLossAndIncompleteBulk(t *testing.T) {
 			// Startup establishes a reusable connection before the ambiguous POST.
 			first := searchPlan(t, a, "put", searchResource(b.Index, "first"))
 			second := searchPlan(t, a, "put", searchResource(b.Index, "second"))
-			second.ID = 1
 			works := []*execution.Plan{first, second}
 			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 			defer cancel()
@@ -241,7 +240,6 @@ func TestSearchIngestAndQualification(t *testing.T) {
 	defer cancel()
 	create := searchPlan(t, a, "create", searchResource(b.Index, "direct"))
 	put := searchPlan(t, a, "put", searchResource(b.Index, "other"))
-	put.ID = 1
 	works := []*execution.Plan{create, put}
 	results := a.executeRecords(ctx, works)
 	for _, result := range results {

@@ -54,13 +54,9 @@ func TestSearchAdmittedPreparationObservesInFlightCancellation(t *testing.T) {
 			if failure != nil || prepared == nil || ctx.Err() != nil {
 				t.Fatal("raw preparation materialized payload before admission", failure)
 			}
-			probe := &recordMemoryProbe{limit: 128 << 20}
-			prepared.Memory = probe
-			memory := &recordMemory{owner: probe, base: prepared.WorkingBytes + prepared.IOReserve}
-			admitted := context.WithValue(ctx, recordMemoryContextKey, memory)
-			failure = adapter.validateRecord(admitted, prepared)
-			if !errors.Is(ctx.Err(), context.Canceled) || failure.GetCode() != pb.FailureCode_CANCELLED || probe.peak == 0 {
-				t.Fatal("admitted cancellation became an argument error or skipped memory", failure, probe.peak)
+			failure = adapter.validateRecord(ctx, prepared)
+			if !errors.Is(ctx.Err(), context.Canceled) || failure.GetCode() != pb.FailureCode_CANCELLED {
+				t.Fatal("admitted cancellation became an argument error", failure)
 			}
 		})
 	}

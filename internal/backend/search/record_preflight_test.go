@@ -14,7 +14,7 @@ import (
 	"github.com/batchstream/weir/internal/store"
 )
 
-func TestSearchMutationPlansSeparateResultsFromPreReadWorkingMemory(t *testing.T) {
+func TestSearchMutationPreparationPerformsNoBackendIO(t *testing.T) {
 	for _, action := range []string{"replace", "program"} {
 		t.Run(action, func(t *testing.T) {
 			var commands atomic.Int32
@@ -26,49 +26,22 @@ func TestSearchMutationPlansSeparateResultsFromPreReadWorkingMemory(t *testing.T
 			t.Cleanup(server.Close)
 			config := Config{Store: "search", URL: server.URL}
 			lifetime, cancel := context.WithCancel(t.Context())
+			t.Cleanup(cancel)
 			client := server.Client()
 			transport := client.Transport.(*http.Transport)
 			adapter := &Adapter{config: config, dialect: ElasticsearchProduct, client: client, transport: transport, ctx: lifetime, cancel: cancel}
-			limits := store.DefaultLimits()
-
-			runtime, err := store.New(adapter, limits, nil)
-			if err != nil {
-				t.Fatal(err)
-			}
-			t.Cleanup(func() {
-				ctx, stop := context.WithTimeout(context.Background(), time.Second)
-				defer stop()
-				if err := runtime.Close(ctx); err != nil {
-					t.Error(err)
-				}
-			})
 			work := batchTestPlan(t, adapter, action, "records/s:record")
-			native := work.Backend.(*plan)
-			knownWorking := 2*work.Bytes + execution.EntryOverheadBytes
-			wantWorking := knownWorking + bulkAckWorking(native.id)
-			wantIO := (64 << 10) + bulkAckEnvelopeWorking
-			if work.ResultBytes != execution.ResultOverheadBytes || work.WorkingBytes != wantWorking || work.IOReserve != wantIO {
-				t.Fatal("mutation declarations misplaced known input/ACK scratch", work.ResultBytes, work.WorkingBytes, wantWorking, work.IOReserve, wantIO)
-			}
 			record, err := execution.NewRecord("search", 1, work.Command)
 			if err != nil {
 				t.Fatal(err)
 			}
-			prepared, failure := runtime.PrepareRecord(context.Background(), record)
-			if commands.Load() != 0 {
-				t.Fatal("preparing a mutation performed backend I/O")
-			}
+			prepared, failure := adapter.PrepareRecord(context.Background(), record)
 			if failure != nil || prepared == nil {
 				t.Fatal(failure)
 			}
-			ticket, failure, _ := runtime.Submit(t.Context(), prepared, nil)
-			if failure != nil {
-				t.Fatal(failure)
+			if commands.Load() != 0 {
+				t.Fatal("preparing a mutation performed backend I/O")
 			}
-			if snapshot := runtime.Snapshot(); snapshot.ResultBytes != execution.ResultOverheadBytes {
-				t.Fatal("mutation retained document-sized result credits", snapshot)
-			}
-			ticket.Abandon()
 		})
 	}
 }
@@ -86,7 +59,7 @@ func TestSearchRecordPreflightBeforeAnyCommand(t *testing.T) {
 			transport := client.Transport.(*http.Transport)
 			adapter := &Adapter{config: config, dialect: ElasticsearchProduct, client: client, transport: transport, ctx: lifetime, cancel: cancel}
 			limits := store.DefaultLimits()
-			runtime, err := store.New(adapter, limits, nil)
+			runtime, err := store.New(adapter, limits)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -109,9 +82,6 @@ func TestSearchRecordPreflightBeforeAnyCommand(t *testing.T) {
 			prepared, failure := runtime.PrepareRecord(context.Background(), record)
 			if failure == nil || prepared != nil || commands.Load() != 0 {
 				t.Fatal("invalid backend input produced a plan or effects", prepared, failure, commands.Load())
-			}
-			if snapshot := runtime.Snapshot(); snapshot.Active != 0 || snapshot.Pending != 0 || snapshot.Retained != 0 || snapshot.WorkingBytes != 0 {
-				t.Fatal("failed preflight reserved runtime resources", snapshot)
 			}
 		})
 	}

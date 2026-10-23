@@ -1,8 +1,8 @@
 # Architecture
 
 Weir has one process per node. A Node owns local Store runtimes, application and
-peer listeners, an in-memory directory, diagnostics and shared execution-memory
-accounting. Lua evaluates inside that same process.
+peer listeners, an in-memory directory, diagnostics and the memory-pressure
+guard. Lua evaluates inside that same process.
 
 ```text
 client -> any node: ResolveStore -> owning nodes: Execute -> local backend
@@ -22,12 +22,11 @@ authentication remain local. See [discovery](discovery.md) and
 | `internal/app` | Configuration, resource assembly, diagnostics and Node shutdown |
 | `internal/directory` | Store ownership, lease expiry and peer synchronization |
 | `internal/server` | Public/peer RPCs, transport admission and ordered publication |
-| `internal/store` | Queueing, batch selection, execution slots and memory ownership |
+| `internal/store` | Queueing, batch selection and execution slots |
 | `internal/execution` | Prepared plans and the MongoDB/Search adapter contract |
 | `internal/backend` | Native backend encoding, execution and completion evidence |
-| `internal/luaengine` | Restricted VM, value conversion and allocation ownership |
+| `internal/luaengine` | Restricted VM, value conversion and execution limits |
 | `internal/overload` | Actual memory observations, admission hysteresis and Go soft limit |
-| `internal/protowire` | Validation over existing protobuf buffer fragments |
 
 The independent `weir-protocol` module owns public schemas and shared validation.
 The independent `weir-go` SDK depends on it. Server acceptance tests consume the
@@ -50,13 +49,15 @@ Active execution slots return when backend execution finishes. See
 [batching](batching.md) for grouping and backpressure.
 
 Same-resource mutations within a stream execute in input order. Each plan keeps
-its caller context, ordinal and memory ownership. Results route by plan identity,
-so equal ordinals in different RPCs cannot collide. Canceling one caller leaves
+its caller context, and each result returns to the ticket that submitted it, so
+equal ordinals in different RPCs cannot collide. Canceling one caller leaves
 other batch members active. Shared execution uses the latest participating
 deadline; an unbounded caller keeps it unbounded. Canceling all callers stops
 shared backend work.
 
-Native is a singleton invocation on the same scheduler. The client sends one
+Native is a singleton invocation on the same scheduler. It holds its execution
+slot until its response is delivered, so a slow Native consumer occupies one
+slot until it reads or the output watchdog ends the RPC. The client sends one
 command, half-closes input and consumes metadata/body events plus NativeEnd.
 Success requires the terminal event and final gRPC OK. Native bypasses typed
 target qualification and forwards the backend's request/response formats.
@@ -88,40 +89,29 @@ explicitly and remains part of completion.
 
 ## Memory and transport
 
-The Node's execution account is shared across Stores and covers ingress, queued
-input, backend workspace, retained results, Lua allocations and encoded output.
-Its bound derives from two thirds of the trusted process recovery allowance.
-Unknown observations preserve the last trusted bound; shrinking capacity does not
-discard existing ownership. Cold unknown capacity cannot admit work that requires
-a trusted bound. Native has an additional count bound of 1024 invocations.
+Memory use is bounded by static limits rather than per-byte accounting. Every
+request and response message is at most 64 MiB. Each Store bounds its queue by
+operation count and request bytes, its batches by count and bytes, and its
+concurrent adapter invocations by `max_in_flight`. Each record stream holds at
+most `max_pending_records` outstanding records. Size the container for these
+limits and the largest documents you serve; [batching](batching.md) shows the
+calculation.
 
-Ingress reserves message and DATA buffer storage before allocation. Connection
-parser workspace has a conservative reservation. Decoded input transfers its
-reservation to execution. Encoded output
-keeps its charge until the transport frees the final buffer reference. An
-application acknowledgement cannot release memory still held by the transport.
-Actual memory exhaustion returns explicit capacity failures.
+Actual RSS/physical footprint and visible container working-set pressure latch
+overload admission: new work receives `RESOURCE_EXHAUSTED` until pressure falls
+below the recovery watermark. The CLI manages the Go soft limit below the
+recovery threshold, while an explicit runtime policy takes precedence.
+Container/OS memory limits remain the hard boundary.
 
-The gRPC and Lua allocation hooks are bounded local dependency patches. The
-[third-party guide](../third_party/README.md) records their purpose, upstream
-identities and verification. The transport is native gRPC/HTTP2.
-
-Lua parsing, compilation, VM objects, allowed library buffers and document
-conversion reserve allocations on the same account. Each evaluation gets fresh
-mutable state. The budget conservatively accumulates allocations until evaluation
-and result processing finish; it does not measure live Go heap. Allocation failure
-and cancellation cannot be suppressed with Lua protected calls. Programs must
-still be trusted. See [Lua](lua.md).
-
-Actual RSS/physical footprint and visible container working-set pressure control
-overload admission independently of reservation estimates. The CLI manages the Go
-soft limit below the recovery threshold, while explicit runtime policy takes
-precedence. Container/OS memory limits remain the hard boundary.
+Lua programs run with instruction, call-depth, stack and deadline limits. There
+is no per-evaluation memory limit, so transforms must be trusted. See
+[Lua](lua.md).
 
 Application listeners serve StoreService; peer listeners serve SyncDirectory.
-Both use plaintext gRPC on an isolated network. RPC cancellation and input stalls
-normally affect only that RPC. Connection framing/output stalls can close the
-connection and affect its other RPCs. Confirmed write evidence remains valid.
+Both use plaintext gRPC on an isolated network. A stalled input or output
+cancels only its RPC after the stall timeout. Keepalive pings and the idle and
+handshake timeouts close unresponsive connections. Confirmed write evidence
+remains valid.
 
 ## Lifecycle
 

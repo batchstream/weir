@@ -10,38 +10,12 @@ import (
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 )
 
-func TestReservationFailurePreservesContextCauseAndCapacityEvidence(t *testing.T) {
-	for _, test := range []struct {
-		name string
-		err  error
-		code pb.FailureCode
-	}{
-		{name: "canceled", err: context.Canceled, code: pb.FailureCode_CANCELLED},
-		{name: "deadline", err: context.DeadlineExceeded, code: pb.FailureCode_DEADLINE_EXCEEDED},
-		{name: "capacity", err: ErrExecutionMemory, code: pb.FailureCode_RESOURCE_EXHAUSTED},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			wrapped := fmt.Errorf("private source detail: %w", test.err)
-			failure := ReservationFailure(t.Context(), wrapped)
-			if failure.GetCode() != test.code || strings.Contains(failure.GetMessage(), "private source detail") {
-				t.Fatal("reservation lost actual cause or leaked source detail", failure)
-			}
-		})
-	}
-	ctx, cancel := context.WithCancel(t.Context())
-	cancel()
-	if failure := ReservationFailure(ctx, ErrExecutionMemory); failure.GetCode() != pb.FailureCode_CANCELLED {
-		t.Fatal("actual caller cancellation was replaced by capacity rejection", failure)
-	}
-}
-
 func TestLuaFailurePreservesCallerStatusAndSanitizesErrors(t *testing.T) {
 	canceled, cancel := context.WithCancel(t.Context())
 	cancel()
 	expired, release := context.WithDeadline(t.Context(), time.Unix(0, 0))
 	defer release()
 	private := fmt.Errorf("private source detail")
-	memory := fmt.Errorf("private source detail: %w", ErrExecutionMemory)
 	timeout := fmt.Errorf("private source detail: %w", context.DeadlineExceeded)
 	cases := []struct {
 		name string
@@ -51,8 +25,7 @@ func TestLuaFailurePreservesCallerStatusAndSanitizesErrors(t *testing.T) {
 	}{
 		{name: "evaluation error", ctx: t.Context(), err: private, code: pb.FailureCode_INVALID_ARGUMENT},
 		{name: "execution limit", ctx: t.Context(), err: timeout, code: pb.FailureCode_DEADLINE_EXCEEDED},
-		{name: "allocation limit", ctx: t.Context(), err: memory, code: pb.FailureCode_RESOURCE_EXHAUSTED},
-		{name: "caller cancellation overrides memory", ctx: canceled, err: memory, code: pb.FailureCode_CANCELLED},
+		{name: "caller cancellation overrides evaluation error", ctx: canceled, err: private, code: pb.FailureCode_CANCELLED},
 		{name: "caller cancellation overrides limit", ctx: canceled, err: timeout, code: pb.FailureCode_CANCELLED},
 		{name: "caller deadline overrides evaluation error", ctx: expired, err: private, code: pb.FailureCode_DEADLINE_EXCEEDED},
 	}

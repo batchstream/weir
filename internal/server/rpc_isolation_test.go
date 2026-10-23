@@ -9,6 +9,7 @@ import (
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 	"github.com/batchstream/weir/internal/store"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/connectivity"
 	"google.golang.org/grpc/status"
 )
 
@@ -38,7 +39,7 @@ func TestRPCExpiryKeepsSharedConnectionAndMutation(t *testing.T) {
 			}
 			opts := peerServerOptions{stores: map[string]*store.Runtime{"records": firstStore, "mutations": secondStore}, limits: limits}
 			server, address := startPeerServer(t, opts)
-			_, client := peerClient(t, address)
+			conn, client := peerClient(t, address)
 			ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
 			defer cancel()
 			firstContext := ctx
@@ -74,7 +75,7 @@ func TestRPCExpiryKeepsSharedConnectionAndMutation(t *testing.T) {
 				}
 			} else {
 				until := time.Now().Add(time.Second)
-				for server.Snapshot().ActiveRPCs != 1 {
+				for server.admission.activeRPCs.Load() != 1 {
 					if time.Now().After(until) {
 						t.Fatal("empty RPC was not admitted")
 					}
@@ -117,11 +118,6 @@ func TestRPCExpiryKeepsSharedConnectionAndMutation(t *testing.T) {
 			case <-ctx.Done():
 				t.Fatal("surviving mutation did not reach its backend")
 			}
-			var connection *limitedConn
-			server.connections.Range(func(_, value any) bool { connection = value.(*limitedConn); return false })
-			if connection == nil || server.admission.activeConnections.Load() != 1 {
-				t.Fatal("RPCs did not share one connection")
-			}
 			var expired expiryResult
 			select {
 			case expired = <-firstDone:
@@ -161,8 +157,8 @@ func TestRPCExpiryKeepsSharedConnectionAndMutation(t *testing.T) {
 			waitPeerIdle(t, server)
 			// A caller deadline can race an already admitted write. It must never
 			// replay that write, and the unrelated RPC keeps its confirmation.
-			if connection.closed.Load() || firstAdapter.commands.Load() > 1 || secondAdapter.commands.Load() != 1 {
-				t.Fatal("expiry closed the connection or repeated a mutation", connection.closed.Load(), firstAdapter.commands.Load(), secondAdapter.commands.Load())
+			if conn.GetState() != connectivity.Ready || firstAdapter.commands.Load() > 1 || secondAdapter.commands.Load() != 1 {
+				t.Fatal("expiry closed the shared connection or repeated a mutation", conn.GetState(), firstAdapter.commands.Load(), secondAdapter.commands.Load())
 			}
 		})
 	}

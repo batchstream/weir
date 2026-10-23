@@ -79,7 +79,7 @@ func deadlineRuntime(t *testing.T, backend *deadlineBackend) (*Adapter, *store.R
 	}
 	limits := store.DefaultLimits()
 
-	runtime, err := store.New(adapter, limits, nil)
+	runtime, err := store.New(adapter, limits)
 	if err != nil {
 		_ = adapter.Close(context.Background())
 		t.Fatal(err)
@@ -125,7 +125,7 @@ func TestCallerDeadlineAcceptsAcknowledgementAfterTwoSeconds(t *testing.T) {
 			caller, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 			defer cancel()
 			started := time.Now()
-			ticket, failure, _ := runtime.Submit(caller, prepared, nil)
+			ticket, failure := runtime.Submit(caller, prepared, nil)
 			if failure != nil {
 				t.Fatal(failure)
 			}
@@ -136,13 +136,11 @@ func TestCallerDeadlineAcceptsAcknowledgementAfterTwoSeconds(t *testing.T) {
 			if elapsed := time.Since(started); elapsed < 2*time.Second || elapsed >= 4*time.Second || backend.writes.Load() != 1 {
 				t.Fatal("deadline or no-replay contract changed", elapsed, backend.writes.Load())
 			}
-			ticket.Ack()
-			assertDeadlineReleased(t, runtime)
 		})
 	}
 }
 
-func TestConnectedBackendDeadlineIsUnknownAndReleasesOwnership(t *testing.T) {
+func TestConnectedBackendDeadlineIsUnknownAndReleasesConnection(t *testing.T) {
 	for _, body := range []bool{false, true} {
 		t.Run(map[bool]string{false: "headers", true: "body"}[body], func(t *testing.T) {
 			writeStarted := make(chan struct{})
@@ -151,7 +149,7 @@ func TestConnectedBackendDeadlineIsUnknownAndReleasesOwnership(t *testing.T) {
 			prepared := deadlineMutation(t, runtime, "put")
 			caller, stopCaller := context.WithTimeout(t.Context(), time.Second)
 			defer stopCaller()
-			ticket, failure, _ := runtime.Submit(caller, prepared, nil)
+			ticket, failure := runtime.Submit(caller, prepared, nil)
 			if failure != nil {
 				t.Fatal(failure)
 			}
@@ -175,8 +173,6 @@ func TestConnectedBackendDeadlineIsUnknownAndReleasesOwnership(t *testing.T) {
 			if caller.Err() != context.DeadlineExceeded || mutation.GetOutcome() != pb.MutationOutcome_UNKNOWN || mutation.GetFailure().GetCode() != pb.FailureCode_DEADLINE_EXCEEDED || mutation.GetFailure().GetMessage() != "backend write deadline exceeded; acknowledgement unavailable" || backend.writes.Load() != 1 {
 				t.Fatal("deadline lost the sent-write uncertainty or cause", mutation, backend.writes.Load())
 			}
-			ticket.Ack()
-			assertDeadlineReleased(t, runtime)
 			until := time.Now().Add(time.Second)
 			for searchOwned(adapter.dialer) != 0 && time.Now().Before(until) {
 				time.Sleep(time.Millisecond)
@@ -219,7 +215,7 @@ func TestCallerDeadlineCoversQualificationReadAndWrite(t *testing.T) {
 	prepared := deadlineMutation(t, runtime, "replace")
 	caller, stopCaller := context.WithTimeout(t.Context(), 5*time.Second)
 	defer stopCaller()
-	ticket, failure, _ := runtime.Submit(caller, prepared, nil)
+	ticket, failure := runtime.Submit(caller, prepared, nil)
 	if failure != nil {
 		t.Fatal(failure)
 	}
@@ -244,16 +240,6 @@ func TestCallerDeadlineCoversQualificationReadAndWrite(t *testing.T) {
 	}
 	if len(observations) != 0 {
 		t.Fatal("unexpected repeated backend stage", len(observations))
-	}
-	ticket.Ack()
-	assertDeadlineReleased(t, runtime)
-}
-
-func assertDeadlineReleased(t *testing.T, runtime *store.Runtime) {
-	t.Helper()
-	snapshot := runtime.Snapshot()
-	if snapshot.Active != 0 || snapshot.PendingBytes != 0 || snapshot.ResultBytes != 0 || snapshot.WorkingBytes != 0 || snapshot.Retained != 0 {
-		t.Fatal("terminal RPC retained ownership", snapshot)
 	}
 }
 

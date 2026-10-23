@@ -99,36 +99,19 @@ of improved capacity.
 | --- | --- |
 | `weir_node_state`, `weir_node_ready` | Lifecycle and readiness |
 | `weir_store_active_executions`, `weir_store_active_executions_limit` | Per-Store backend invocations; limit zero means unlimited |
-| `weir_store_batch_max_operations`, `weir_store_batch_max_bytes`, `weir_store_batch_max_wait_seconds` | Resolved aggregation policy |
-| `weir_store_records_total` | Final typed results: mutation effect (`applied`, `not_applied`, `not_started`, `unknown`, `invalid`) or read `success`/`failure` |
+| `weir_store_queued_operations`, `weir_store_queued_bytes` | Waiting work |
+| `weir_store_draining`, `weir_store_overloaded` | Store admission state |
+| `weir_store_records_total` | Final typed results: mutation effect (`applied`, `not_applied`, `not_started`, `unknown`) or read `success`/`failure` |
 | `weir_store_record_failures_total` | Final typed read/mutate results carrying `Failure`, including `APPLIED` with `Failure` |
-| `weir_store_native_completions_total` | Final Native forwarding terminal evidence (`not_started`, `response_complete`, `response_incomplete`, `invalid`), not backend business success, RPC status, or client receipt |
-| `weir_store_rejections_total` | Preparation/admission denials, not completed records |
-| Store queue and result metrics | Waiting work, dispatch and retained publication |
-| `weir_execution_memory_*` | Shared reservations, ownership, ingress and capacity denials |
+| `weir_store_native_completions_total` | Final Native forwarding terminal evidence (`not_started`, `response_complete`, `response_incomplete`), not backend business success, RPC status, or client receipt |
+| `weir_store_rejections_total` | Preparation, draining and overload denials, not completed records |
+| `weir_store_executions_total`, `weir_store_batch_operations`, `weir_store_queue_wait_seconds`, `weir_store_execution_seconds` | Adapter invocations, batch sizes, queue wait and execution time |
+| `weir_ingress_sessions`, `weir_admission_rejections_total` | Active RPCs and RPCs refused at admission |
+| `weir_watchdog_expirations_total` | RPCs ended by the input or output stall timeout |
 | `weir_memory_*` | Actual observations, capacity, overload latch and runtime policy |
 | `weir_search_http_*` | Record/startup exchange attempts, elapsed time, framed records and bytes |
 
-Execution memory reports `budget_bytes`, `used_bytes`, `resident_bytes`,
-`input_reserved_bytes`, `input_used_bytes`, `wire_bytes`, `wire_buffers`,
-`io_reserve_bytes` and lease states. `ingress_connection_bytes` is a
-conservative workspace promise; `ingress_bytes` and `ingress_reserved_bytes`
-describe receive ownership. These are reservation estimates, not RSS
-measurements. Compare them with actual memory metrics and
-`budget_rejections_total`.
-
-When the account is full, an admitted record that needs more working memory can
-wait, within its own deadline, for Native invocations that are still starting to
-release capacity. It takes precedence over new executions but never receives
-extra credit. If capacity does not become available, the record fails with a
-capacity error instead of waiting for a slow consumer; a record without a
-deadline fails promptly under pressure.
-
-Typed record counters are updated once at Store completion, after final result
-normalization (including result-budget failures). Result-budget normalization
-can replace `Failure` with `RESOURCE_EXHAUSTED`, but preserves an already
-reported legal mutation effect; missing or invalid effect evidence falls back to
-`UNKNOWN`, not an assertion that the mutation was never started.
+Typed record counters are updated once at Store completion.
 `weir_store_records_total` preserves mutation effect evidence:
 `outcome="applied"` does **not** mean business success. For example, a
 query-visibility barrier can fail after application, producing `APPLIED` with
@@ -152,16 +135,13 @@ interpreted as a generic business failure. These counters are not generic Native
 failure metrics.
 
 `weir_store_native_completions_total` counts each admitted Native call once at
-the same Store terminal point, after final result-budget normalization. Its only
-label is the fixed `completion` vocabulary: `not_started`
-(`NATIVE_NOT_STARTED`), `response_complete` (`RESPONSE_COMPLETE`),
-`response_incomplete` (`RESPONSE_INCOMPLETE`), or `invalid` (unspecified,
-unknown or illegal enum values). Exactly these four series are initialized to
-zero; no enum string, failure detail, HTTP status, resource or identity becomes
-a label. Queued cancellations count as `not_started`; preparation/admission
-rejections do not count as completions. Result-budget degradation counts the
-final normalized terminal evidence, not the adapter's original event.
-Publication acknowledgements and scrapes do not count again.
+the same Store terminal point. Its only label is the fixed `completion`
+vocabulary: `not_started` (`NATIVE_NOT_STARTED`), `response_complete`
+(`RESPONSE_COMPLETE`) or `response_incomplete` (`RESPONSE_INCOMPLETE`). Exactly
+these three series are initialized to zero; no enum string, failure detail, HTTP
+status, resource or identity becomes a label. Queued cancellations count as
+`not_started`; preparation/admission rejections do not count as completions.
+Scrapes do not count again.
 
 This is **Native forwarding terminal evidence**, not backend business success,
 RPC status or proof that the client received the response. An incomplete
@@ -169,7 +149,7 @@ response with `Failure` can be delivered in an RPC that finishes gRPC OK; it
 still increments `completion="response_incomplete"`. A complete opaque HTTP 500
 response increments `completion="response_complete"`, without inferring business
 failure or updating either typed record counter. Native completion adds exactly
-four series per Store.
+three series per Store.
 
 Search HTTP metrics include failed attempts and exclude Native relay. HTTP
 success does not prove every bulk item succeeded. Bulk elapsed time includes
@@ -211,11 +191,12 @@ admission closed. Use container/OS limits for the hard boundary.
 
 ## Slow consumers, failures and shutdown
 
-Store queues bound waiting input. Stream publication windows and the shared
-memory account bound retained output. A progressing Native stream can pause
-backend IO, release an execution slot and fairly regain it before reading more.
-A stalled connection can be closed by the transport watchdog; other RPCs on that
-connection then fail too. Consume output promptly and set application deadlines.
+Store queues bound waiting input, and per-stream publication windows bound
+retained output. A Native command keeps its execution slot while its consumer
+reads, so slow Native consumers can occupy every slot of a Store. The stall
+timeout ends an RPC whose input or output makes no progress; keepalive closes
+unresponsive connections. Consume output promptly and set application
+deadlines.
 
 A transport failure after a possible write leaves it UNKNOWN unless application
 was already confirmed. Preserve indexed results received before failure. Do not

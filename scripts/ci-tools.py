@@ -10,9 +10,7 @@ import subprocess
 import tarfile
 import tempfile
 
-import check_dependencies as dependencies
-
-MODULE_DIRECTORIES = (Path('.'), *(Path(pin[1]) for pin in dependencies.LOCAL_PATCHES.values()))
+MODULE_DIRECTORIES = (Path('.'),)
 
 def download(pin, destination):
     subprocess.run(['curl', '-q', '--fail', '--location', '--max-time', '180',
@@ -22,8 +20,6 @@ def download(pin, destination):
 
 
 def prepare_modules(source, work_root, env):
-    # Preparing the root graph in isolation requires the pinned replacement
-    # module files at the same relative paths.
     directories = MODULE_DIRECTORIES
     inputs = {directory / name: (source / directory / name).read_bytes()
               for directory in directories for name in ('go.mod', 'go.sum')

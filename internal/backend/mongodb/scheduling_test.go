@@ -52,7 +52,7 @@ func TestMongoQueuedReadCompletesBeforeUnrelatedSlowWrite(t *testing.T) {
 	limits := store.DefaultLimits()
 	limits.MaxInFlight = 1
 	limits.BatchWait = 0
-	runtime, err := store.New(adapter, limits, nil)
+	runtime, err := store.New(adapter, limits)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -75,8 +75,7 @@ func TestMongoQueuedReadCompletesBeforeUnrelatedSlowWrite(t *testing.T) {
 			t.Fatal(failure)
 		}
 		session := runtime.NewSession()
-		t.Cleanup(session.Close)
-		ticket, failure, _ := runtime.Submit(caller, work, session)
+		ticket, failure := runtime.Submit(caller, work, session)
 		if failure != nil {
 			t.Fatal(failure)
 		}
@@ -96,31 +95,22 @@ func TestMongoQueuedReadCompletesBeforeUnrelatedSlowWrite(t *testing.T) {
 	writeDocument := bson.D{{Key: "_id", Value: "write"}, {Key: "n", Value: 2}}
 	writeOptions := batchOperationOptions{resource: "db/records/s:write", action: "put", document: writeDocument}
 	write := submit(ctx, writeOptions)
-	if snapshot := runtime.Snapshot(); snapshot.Pending != 2 || snapshot.Active != 1 {
-		t.Fatal("test did not queue both operations behind the occupied slot", snapshot)
-	}
 	close(releaseOccupy)
 	if _, err := occupy.Wait(ctx); err != nil {
 		t.Fatal(err)
 	}
-	occupy.Ack()
 	result, err := read.Wait(readContext)
 	if err != nil || result.GetReadResult().GetDocument() == nil {
 		t.Fatal("successful read was held by an unrelated same-collection write", result, err)
 	}
-	read.Ack()
 	select {
 	case <-bulkStarted:
 	case <-ctx.Done():
 		t.Fatal(ctx.Err())
-	}
-	if snapshot := runtime.Snapshot(); snapshot.Active != 1 || snapshot.Ready != 0 || snapshot.Retained != 1 {
-		t.Fatal("read completion retained write ownership or execution credit", snapshot)
 	}
 	close(releaseBulk)
 	result, err = write.Wait(ctx)
 	if err != nil || result.GetMutationResult().GetOutcome() != pb.MutationOutcome_APPLIED {
 		t.Fatal("independent write lost its confirmed outcome", result, err)
 	}
-	write.Ack()
 }

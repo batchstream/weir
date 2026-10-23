@@ -6,22 +6,31 @@ import (
 )
 
 type runtimeMetrics struct {
-	executions, rejections, records, failures, nativeCompletions *prometheus.CounterVec
-	queue, duration                                              *prometheus.HistogramVec
-	batch                                                        prometheus.Histogram
+	records, failures, nativeCompletions, rejections *prometheus.CounterVec
+	executions                                       prometheus.Counter
+	queueWait, duration, batch                       prometheus.Histogram
 }
 
 func newRuntimeMetrics() runtimeMetrics {
-	recordOptions := prometheus.CounterOpts{Name: "weir_store_records_total", Help: "Final typed record results by mutation effect or read success/failure; applied does not imply business success. Not RPC completions, HTTP exchanges, or delivery acknowledgements."}
-	failureOptions := prometheus.CounterOpts{Name: "weir_store_record_failures_total", Help: "Final typed read/mutate results with Failure, including applied mutations; counted once after result normalization. Excludes Native, admission rejections, RPC status, and HTTP status."}
-	nativeOptions := prometheus.CounterOpts{Name: "weir_store_native_completions_total", Help: "Final Native forwarding terminal evidence after result normalization; not backend business success, RPC status, or client receipt. Unspecified or illegal completion values are invalid."}
-	execOptions := prometheus.CounterOpts{Name: "weir_store_executions_total", Help: "Physical unified adapter invocations."}
-	rejectOptions := prometheus.CounterOpts{Name: "weir_store_rejections_total", Help: "Preparation and admission denials."}
-	queueOptions := prometheus.HistogramOpts{Name: "weir_store_queue_wait_seconds", Help: "Time from admission to dispatch.", Buckets: []float64{.001, .01, .1, 1, 10}}
-	durationOptions := prometheus.HistogramOpts{Name: "weir_store_execution_seconds", Help: "Adapter invocation duration including bounded streaming output.", Buckets: []float64{.001, .01, .1, 1, 10}}
-	batchOptions := prometheus.HistogramOpts{Name: "weir_store_batch_operations", Help: "Operations per bounded invocation.", Buckets: []float64{1, 2, 4, 8, 16, 128}}
-	metrics := runtimeMetrics{nativeCompletions: prometheus.NewCounterVec(nativeOptions, []string{"completion"}), failures: prometheus.NewCounterVec(failureOptions, []string{"operation"}), records: prometheus.NewCounterVec(recordOptions, []string{"operation", "outcome"}), executions: prometheus.NewCounterVec(execOptions, []string{"kind"}), rejections: prometheus.NewCounterVec(rejectOptions, []string{"reason"}), queue: prometheus.NewHistogramVec(queueOptions, []string{"kind"}), duration: prometheus.NewHistogramVec(durationOptions, []string{"kind"}), batch: prometheus.NewHistogram(batchOptions)}
-	for _, outcome := range []string{"applied", "not_applied", "not_started", "unknown", "invalid"} {
+	recordOptions := prometheus.CounterOpts{Name: "weir_store_records_total", Help: "Final record results by mutation outcome or read success; applied does not imply business success."}
+	failureOptions := prometheus.CounterOpts{Name: "weir_store_record_failures_total", Help: "Final record results carrying a Failure, including applied mutations."}
+	nativeOptions := prometheus.CounterOpts{Name: "weir_store_native_completions_total", Help: "Final Native completion evidence; not backend business success or client receipt."}
+	rejectOptions := prometheus.CounterOpts{Name: "weir_store_rejections_total", Help: "Operations refused before queueing."}
+	execOptions := prometheus.CounterOpts{Name: "weir_store_executions_total", Help: "Adapter invocations."}
+	queueOptions := prometheus.HistogramOpts{Name: "weir_store_queue_wait_seconds", Help: "Time from queueing to dispatch.", Buckets: []float64{.001, .01, .1, 1, 10}}
+	durationOptions := prometheus.HistogramOpts{Name: "weir_store_execution_seconds", Help: "Adapter invocation duration, including Native response delivery.", Buckets: []float64{.001, .01, .1, 1, 10}}
+	batchOptions := prometheus.HistogramOpts{Name: "weir_store_batch_operations", Help: "Operations per adapter invocation.", Buckets: []float64{1, 2, 4, 8, 16, 128}}
+	metrics := runtimeMetrics{
+		records:           prometheus.NewCounterVec(recordOptions, []string{"operation", "outcome"}),
+		failures:          prometheus.NewCounterVec(failureOptions, []string{"operation"}),
+		nativeCompletions: prometheus.NewCounterVec(nativeOptions, []string{"completion"}),
+		rejections:        prometheus.NewCounterVec(rejectOptions, []string{"reason"}),
+		executions:        prometheus.NewCounter(execOptions),
+		queueWait:         prometheus.NewHistogram(queueOptions),
+		duration:          prometheus.NewHistogram(durationOptions),
+		batch:             prometheus.NewHistogram(batchOptions),
+	}
+	for _, outcome := range []string{"applied", "not_applied", "not_started", "unknown"} {
 		metrics.records.WithLabelValues("mutate", outcome)
 	}
 	for _, outcome := range []string{"success", "failure"} {
@@ -30,90 +39,91 @@ func newRuntimeMetrics() runtimeMetrics {
 	for _, operation := range []string{"read", "mutate"} {
 		metrics.failures.WithLabelValues(operation)
 	}
-	for _, completion := range []string{"not_started", "response_complete", "response_incomplete", "invalid"} {
+	for _, completion := range []string{"not_started", "response_complete", "response_incomplete"} {
 		metrics.nativeCompletions.WithLabelValues(completion)
 	}
-	metrics.executions.WithLabelValues("execution")
-	metrics.queue.WithLabelValues("execution")
-	metrics.duration.WithLabelValues("execution")
-	for _, reason := range []string{"prepare", "capacity"} {
+	for _, reason := range []string{"prepare", "draining", "overload"} {
 		metrics.rejections.WithLabelValues(reason)
 	}
 	return metrics
 }
-func (r *Runtime) Describe(ch chan<- *prometheus.Desc) { prometheus.DescribeByCollect(r, ch) }
-func (r *Runtime) Collect(ch chan<- prometheus.Metric) {
-	snapshot := r.Snapshot()
-	values := map[string]float64{
-		"pending_entries": float64(snapshot.Pending), "pending_reserved_bytes": float64(snapshot.PendingBytes),
-		"result_reserved_entries": float64(snapshot.Retained), "result_reserved_bytes": float64(snapshot.ResultBytes),
-		"working_reserved_bytes": float64(snapshot.WorkingBytes), "retained_results": float64(snapshot.Ready), "retained_result_reserved_bytes": float64(snapshot.ReadyBytes),
-		"active_executions": float64(snapshot.Active), "publishers": float64(snapshot.Publishers),
-		"paused_native_outputs": float64(snapshot.Paused), "paused_native_reserved_bytes": float64(snapshot.PausedBytes),
-		"active_executions_limit":      float64(r.limits.MaxInFlight),
-		"batch_max_operations":         float64(r.limits.BatchOperations),
-		"batch_max_bytes":              float64(r.limits.BatchBytes),
-		"batch_max_wait_seconds":       r.limits.BatchWait.Seconds(),
-		"pending_reserved_bytes_limit": float64(r.limits.QueueBytes),
-		"pending_entries_limit":        float64(r.limits.QueueOperations), "draining": boolValue(snapshot.Draining), "closed": boolValue(snapshot.Closed), "overloaded": boolValue(snapshot.Overloaded),
-	}
-	for name, value := range values {
-		description := prometheus.NewDesc("weir_store_"+name, "Queue capacity and execution/publication accounting; byte estimates do not represent heap or RSS.", nil, nil)
-		ch <- prometheus.MustNewConstMetric(description, prometheus.GaugeValue, value)
-	}
-	if collector, ok := r.adapter.(prometheus.Collector); ok {
-		collector.Collect(ch)
-	}
-	collectors := []prometheus.Collector{r.metrics.records, r.metrics.failures, r.metrics.nativeCompletions, r.metrics.executions, r.metrics.rejections, r.metrics.queue, r.metrics.duration, r.metrics.batch}
-	for _, collector := range collectors {
-		collector.Collect(ch)
-	}
-}
-func boolValue(value bool) float64 {
-	if value {
-		return 1
-	}
-	return 0
-}
-func (r *Runtime) terminalLocked(t *Ticket, event *pb.Event) {
-	if t.plan.Command.GetNative() != nil {
-		label := "invalid"
+
+func (m runtimeMetrics) observe(command *pb.Command, event *pb.Event) {
+	switch {
+	case command.GetNative() != nil:
+		label := "response_incomplete"
 		switch event.GetNativeEnd().GetCompletion() {
 		case pb.NativeCompletion_NATIVE_NOT_STARTED:
 			label = "not_started"
 		case pb.NativeCompletion_RESPONSE_COMPLETE:
 			label = "response_complete"
-		case pb.NativeCompletion_RESPONSE_INCOMPLETE:
-			label = "response_incomplete"
 		}
-		r.metrics.nativeCompletions.WithLabelValues(label).Inc()
-		return
-	}
-	if t.plan.Command.GetRead() != nil {
+		m.nativeCompletions.WithLabelValues(label).Inc()
+	case command.GetRead() != nil:
 		label := "success"
 		if event.GetReadResult().GetFailure() != nil {
 			label = "failure"
-			r.metrics.failures.WithLabelValues("read").Inc()
+			m.failures.WithLabelValues("read").Inc()
 		}
-		r.metrics.records.WithLabelValues("read", label).Inc()
-		return
+		m.records.WithLabelValues("read", label).Inc()
+	default:
+		if event.GetMutationResult().GetFailure() != nil {
+			m.failures.WithLabelValues("mutate").Inc()
+		}
+		label := "unknown"
+		switch event.GetMutationResult().GetOutcome() {
+		case pb.MutationOutcome_APPLIED:
+			label = "applied"
+		case pb.MutationOutcome_NOT_APPLIED:
+			label = "not_applied"
+		case pb.MutationOutcome_NOT_STARTED:
+			label = "not_started"
+		}
+		m.records.WithLabelValues("mutate", label).Inc()
 	}
-	if t.plan.Command.GetMutate() == nil {
-		return
+}
+
+func (r *Runtime) Describe(ch chan<- *prometheus.Desc) { prometheus.DescribeByCollect(r, ch) }
+
+// Stats is the Store's current queue and execution state.
+type Stats struct {
+	Queued, QueuedBytes, Active int
+	Draining, Overloaded        bool
+}
+
+func (r *Runtime) Stats() Stats {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	stats := Stats{Queued: len(r.queue), QueuedBytes: r.queueBytes, Active: len(r.batches), Draining: r.draining, Overloaded: r.overloaded}
+	return stats
+}
+
+func (r *Runtime) Collect(ch chan<- prometheus.Metric) {
+	stats := r.Stats()
+	values := map[string]float64{
+		"queued_operations":       float64(stats.Queued),
+		"queued_bytes":            float64(stats.QueuedBytes),
+		"active_executions":       float64(stats.Active),
+		"active_executions_limit": float64(r.limits.MaxInFlight),
+		"draining":                boolValue(stats.Draining),
+		"overloaded":              boolValue(stats.Overloaded),
 	}
-	if event.GetMutationResult().GetFailure() != nil {
-		r.metrics.failures.WithLabelValues("mutate").Inc()
+	for name, value := range values {
+		description := prometheus.NewDesc("weir_store_"+name, "Store queue and execution state.", nil, nil)
+		ch <- prometheus.MustNewConstMetric(description, prometheus.GaugeValue, value)
 	}
-	label := "invalid"
-	switch event.GetMutationResult().GetOutcome() {
-	case pb.MutationOutcome_APPLIED:
-		label = "applied"
-	case pb.MutationOutcome_NOT_APPLIED:
-		label = "not_applied"
-	case pb.MutationOutcome_NOT_STARTED:
-		label = "not_started"
-	case pb.MutationOutcome_UNKNOWN:
-		label = "unknown"
+	if collector, ok := r.adapter.(prometheus.Collector); ok {
+		collector.Collect(ch)
 	}
-	r.metrics.records.WithLabelValues("mutate", label).Inc()
+	collectors := []prometheus.Collector{r.metrics.records, r.metrics.failures, r.metrics.nativeCompletions, r.metrics.rejections, r.metrics.executions, r.metrics.queueWait, r.metrics.duration, r.metrics.batch}
+	for _, collector := range collectors {
+		collector.Collect(ch)
+	}
+}
+
+func boolValue(value bool) float64 {
+	if value {
+		return 1
+	}
+	return 0
 }

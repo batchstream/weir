@@ -118,9 +118,8 @@ func TestMongoResourceTargetsBulkLuaNative(t *testing.T) {
 		}
 	}
 	plans = nil
-	for i, target := range fixture.targets {
+	for _, target := range fixture.targets {
 		work := prepareCounter(t, adapter, targetResource(target)+"/s:shared")
-		work.ID = uint64(30 + i)
 		plans = append(plans, work)
 	}
 	results = adapter.executeRecords(ctx, plans)

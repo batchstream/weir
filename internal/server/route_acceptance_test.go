@@ -5,7 +5,6 @@ import (
 	"context"
 	"fmt"
 	"net"
-	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -41,15 +40,11 @@ func startRouteAcceptanceNode(t testing.TB, opts routeAcceptanceNodeOptions) *ro
 	if opts.store.BatchOperations == 0 {
 		opts.store = store.DefaultLimits()
 	}
-	local, err := store.New(opts.adapter, opts.store, nil)
+	local, err := store.New(opts.adapter, opts.store)
 	if err != nil {
 		t.Fatal(err)
 	}
-	admission, err := NewAdmission(opts.limits)
-	if err != nil {
-		t.Fatal(err)
-	}
-	admission.SetExecutionMemory(local.ExecutionMemory())
+	admission := NewAdmission()
 	config := Config{Stores: map[string]*store.Runtime{"records": local}, Limits: opts.limits, Admission: admission}
 	srv, err := New(config)
 	if err != nil {
@@ -80,6 +75,11 @@ func startRouteAcceptanceNode(t testing.TB, opts routeAcceptanceNodeOptions) *ro
 }
 
 func routeAcceptanceClient(t testing.TB, address string) pb.StoreServiceClient {
+	_, client := routeAcceptanceConnection(t, address)
+	return client
+}
+
+func routeAcceptanceConnection(t testing.TB, address string) (*grpc.ClientConn, pb.StoreServiceClient) {
 	t.Helper()
 	options := []grpc.DialOption{grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithNoProxy(), grpc.WithDisableRetry(), grpc.WithDisableServiceConfig(), grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(protocol.MaxTransportMessageBytes), grpc.MaxCallSendMsgSize(protocol.MaxTransportMessageBytes))}
 	connection, err := grpc.NewClient("passthrough:///"+address, options...)
@@ -87,40 +87,19 @@ func routeAcceptanceClient(t testing.TB, address string) pb.StoreServiceClient {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = connection.Close() })
-	return pb.NewStoreServiceClient(connection)
+	return connection, pb.NewStoreServiceClient(connection)
 }
 
 func assertRouteAcceptanceIdle(t testing.TB, nodes []*routeAcceptanceNode) {
 	t.Helper()
 	deadline := time.Now().Add(time.Second)
-	for {
-		idle := true
-		for _, node := range nodes {
-			snapshot := node.runtime.Snapshot()
-			idle = idle && node.server.Snapshot().ActiveRPCs == 0 && snapshot.Pending == 0 && snapshot.Active == 0 && snapshot.Retained == 0 && snapshot.ResultBytes == 0 && snapshot.WorkingBytes == 0 && snapshot.Publishers == 0 && node.server.admission.wireBytes.Load() == 0
-		}
-		if idle {
-			return
-		}
-		// Orphaned transport buffers are reclaimed after they become unreachable.
-		// Cancellation and the collection of their storage can occur separately.
-		for _, node := range nodes {
-			if node.server.admission.wireBytes.Load() != 0 {
-				runtime.GC()
-				break
+	for _, node := range nodes {
+		for node.server.admission.activeRPCs.Load() != 0 {
+			if time.Now().After(deadline) {
+				t.Fatal("RPC handlers did not return", node.server.admission.activeRPCs.Load())
 			}
+			time.Sleep(time.Millisecond)
 		}
-		if time.Now().After(deadline) {
-			var snapshots []store.Snapshot
-			var active, wire []int64
-			for _, node := range nodes {
-				snapshots = append(snapshots, node.runtime.Snapshot())
-				active = append(active, node.server.Snapshot().ActiveRPCs)
-				wire = append(wire, node.server.admission.wireBytes.Load())
-			}
-			t.Fatal("execution resources did not drain", snapshots, active, wire)
-		}
-		time.Sleep(time.Millisecond)
 	}
 }
 
@@ -181,12 +160,12 @@ func TestContinuousReadsAcrossConcurrentSessions(t *testing.T) {
 	}
 	// Hold the first results until all concurrent RPCs have returned a result. Each worker
 	// then verifies full record windows and repeated release and reacquisition.
-	for node.server.Snapshot().ActiveRPCs != int64(sessions) {
+	for node.server.admission.activeRPCs.Load() != int64(sessions) {
 		select {
 		case <-ctx.Done():
 			close(gate)
 			workers.Wait()
-			t.Fatal("concurrent reads did not occupy every session", ctx.Err(), node.server.Snapshot(), node.runtime.Snapshot())
+			t.Fatal("concurrent reads did not occupy every session", ctx.Err(), node.server.admission.activeRPCs.Load())
 		default:
 			time.Sleep(time.Millisecond)
 		}
@@ -245,12 +224,9 @@ func TestReadStreamLargeRelativeMetadataUsesBoundedWindows(t *testing.T) {
 		}
 	}
 	waitPeerIdle(t, srv)
-	if snapshot := local.Snapshot(); snapshot.Active != 0 || snapshot.Pending != 0 || snapshot.Retained != 0 || snapshot.ResultBytes != 0 || snapshot.WorkingBytes != 0 {
-		t.Fatal("rejected retained metadata reserved Store resources", snapshot)
-	}
 }
 
-func TestLongReadStreamReleasesResultCreditsIncrementally(t *testing.T) {
+func TestLongReadStreamReturnsEveryLargeResult(t *testing.T) {
 	adapter, local := peerLocal(t, "records")
 	document := &pb.Document{ContentType: "application/octet-stream", Data: bytes.Repeat([]byte("x"), 1<<20)}
 	adapter.documents[testRequest().Resource] = document
@@ -262,26 +238,15 @@ func TestLongReadStreamReleasesResultCreditsIncrementally(t *testing.T) {
 		requests[i] = testRequest()
 	}
 	response, err := testutil.ReadRecords(t.Context(), client, "records", requests)
-	if err != nil {
-		t.Fatal("one oversize member budget discarded the complete response", err)
+	if err != nil || len(response) != len(requests) {
+		t.Fatal("long stream lost large results", len(response), err)
 	}
-	succeeded, failed := 0, 0
 	for _, result := range response {
-		if result.GetDocument() != nil {
-			succeeded++
-		} else if result.GetFailure().GetCode() == pb.FailureCode_RESOURCE_EXHAUSTED {
-			failed++
-		} else {
-			t.Fatal("invalid budget exhaustion result", result)
+		if len(result.GetDocument().GetData()) != 1<<20 {
+			t.Fatal("large result missing", result.GetFailure())
 		}
 	}
-	if succeeded != 40 || failed != 0 {
-		t.Fatal("stream windows failed to release result credits", succeeded, failed)
-	}
 	waitPeerIdle(t, srv)
-	if local.Snapshot().ResultBytes != 0 {
-		t.Fatal("actual copied read bytes were not released")
-	}
 }
 
 func TestConcurrentClientRPCsKeepResponseOwnershipAndBatchBounds(t *testing.T) {
@@ -349,12 +314,12 @@ func TestConcurrentClientRPCsKeepResponseOwnershipAndBatchBounds(t *testing.T) {
 			}
 		})
 	}
-	for node.runtime.Snapshot().Retained != count+1 {
+	for node.server.admission.activeRPCs.Load() != count+1 {
 		select {
 		case <-ctx.Done():
 			close(gate)
 			workers.Wait()
-			t.Fatal("single-record RPCs did not reach queue", node.runtime.Snapshot())
+			t.Fatal("single-record RPCs did not reach queue", node.server.admission.activeRPCs.Load())
 		case <-time.After(time.Millisecond):
 		}
 	}

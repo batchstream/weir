@@ -5,7 +5,6 @@ import (
 
 	"github.com/batchstream/weir-protocol/api/protocol"
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
-	"github.com/batchstream/weir/internal/execution"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/x/bsonx/bsoncore"
@@ -37,9 +36,6 @@ func (a *Adapter) closeRecordCursorState(ctx context.Context, n *recordCursor) *
 	}
 	if n.cursorKnown && n.cursor == 0 {
 		return nil
-	}
-	if err := reserveRecordWorking(ctx, nil, 0); err != nil {
-		return execution.ReservationFailure(ctx, err)
 	}
 	if !n.cursorKnown {
 		// A lost find reply can hide a newly allocated cursor. The explicit

@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"runtime"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -28,38 +27,35 @@ type nativeStallAdapter struct {
 	chunks        int
 }
 
-func (*nativeStallAdapter) PrepareCommand(_ context.Context, id uint64, command *pb.Command) (*execution.Plan, *pb.Failure) {
-	plan := &execution.Plan{ID: id, Command: command, Bytes: execution.EntryOverheadBytes, ResultBytes: execution.ResultOverheadBytes}
+func (*nativeStallAdapter) PrepareNative(_ context.Context, command *pb.Command) (*execution.Plan, *pb.Failure) {
+	plan := &execution.Plan{Command: command}
 	return plan, nil
 }
 
-func (adapter *nativeStallAdapter) Execute(ctx context.Context, plans []*execution.Plan, emit execution.Emit) {
-	if plans[0].Command.GetNative() == nil {
-		adapter.peerAdapter.Execute(ctx, plans, emit)
-		return
-	}
+// ExecuteNative streams a head and, for the "slow" resource, chunks large
+// enough to exhaust the gRPC stream write quota when the client grants no window.
+func (adapter *nativeStallAdapter) ExecuteNative(_ context.Context, plan *execution.Plan, emit execution.Emit) *pb.NativeEnd {
 	adapter.nativeStarted.Add(1)
 	head := &pb.NativeHead{BodyContentType: "application/octet-stream"}
 	value := &pb.Event_Head{Head: head}
 	event := &pb.Event{Value: value}
-	if err := emit(plans[0], event); err != nil {
-		return
+	if err := emit(event); err != nil {
+		failure := protocol.Fail(pb.FailureCode_UNAVAILABLE, "output closed")
+		return protocol.NativeFailure(false, failure)
 	}
-	if plans[0].Command.GetNative().Resource == "slow" {
+	if plan.Command.GetNative().Resource == "slow" {
 		body := bytes.Repeat([]byte("s"), protocol.NativeChunk)
-		plans[0].WorkingBytes = cap(body) + execution.EntryOverheadBytes
 		for range adapter.chunks {
 			value := &pb.Event_Chunk{Chunk: body}
 			event := &pb.Event{Value: value}
-			if err := emit(plans[0], event); err != nil {
-				return
+			if err := emit(event); err != nil {
+				failure := protocol.Fail(pb.FailureCode_UNAVAILABLE, "output closed")
+				return protocol.NativeFailure(true, failure)
 			}
 		}
 	}
 	end := &pb.NativeEnd{Completion: pb.NativeCompletion_RESPONSE_COMPLETE}
-	endValue := &pb.Event_NativeEnd{NativeEnd: end}
-	endEvent := &pb.Event{Value: endValue}
-	_ = emit(plans[0], endEvent)
+	return end
 }
 
 // nativeHealthyResponse keeps only the two small probe replies. Slow Native
@@ -207,7 +203,9 @@ func TestNativeContinuousSlowProgressPreservesHealthySiblingQueries(t *testing.T
 	if err := framer.WriteSettings(setting); err != nil {
 		t.Fatal(err)
 	}
-	const slowStreams = 32
+	// Each slow Native holds one execution slot while its output progresses,
+	// so siblings stay healthy while slots remain.
+	const slowStreams = 8
 	readID, nativeID := uint32(slowStreams*2+1), uint32(slowStreams*2+3)
 	readReply, nativeReply := &nativeHealthyResponse{}, &nativeHealthyResponse{native: true}
 	healthy := map[uint32]*nativeHealthyResponse{readID: readReply, nativeID: nativeReply}
@@ -301,10 +299,6 @@ func TestNativeContinuousSlowProgressPreservesHealthySiblingQueries(t *testing.T
 				sendFlowControlledRequest(t, request)
 				probeSent = true
 			}
-			snapshot := node.runtime.Snapshot()
-			if snapshot.Active > store.DefaultLimits().MaxInFlight || snapshot.Paused > store.DefaultLimits().QueueOperations || snapshot.PausedBytes > store.DefaultLimits().QueueBytes {
-				t.Fatal("continuous Native progress exceeded bounded execution or output credit", snapshot)
-			}
 		}
 	}
 	if !readComplete || !nativeComplete || adapter.nativeStarted.Load() != slowStreams+1 {
@@ -368,12 +362,13 @@ func sendFlowControlledRequest(t *testing.T, opts flowControlledRequest) {
 	}
 }
 
-func TestNativeOutputStallsPreserveSiblingProgressBeforeWatchdogAbort(t *testing.T) {
-	adapter := &nativeStallAdapter{}
+// Stalled Native output holds execution slots, so siblings wait until the
+// output watchdog cancels the stalled streams.
+func TestNativeOutputStallsHoldSlotsUntilWatchdogAbort(t *testing.T) {
+	adapter := &nativeStallAdapter{chunks: 4}
 	adapter.documents = make(map[string]*pb.Document)
-	adapter.seen = make(chan context.Context, 64)
 	storeLimits := store.DefaultLimits()
-	local, err := store.New(adapter, storeLimits, nil)
+	local, err := store.New(adapter, storeLimits)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -407,24 +402,21 @@ func TestNativeOutputStallsPreserveSiblingProgressBeforeWatchdogAbort(t *testing
 		t.Fatal(err)
 	}
 	document := &pb.Document{ContentType: "application/octet-stream", Data: []byte("request")}
-	native := &pb.NativeRequest{Resource: "data", Request: document}
-	nativeValue := &pb.Command_Native{Native: native}
-	nativeCommand := &pb.Command{Operation: nativeValue}
+	slow := &pb.NativeRequest{Resource: "slow", Request: document}
+	slowValue := &pb.Command_Native{Native: slow}
+	slowCommand := &pb.Command{Operation: slowValue}
 	started := time.Now()
 	for index := range storeLimits.MaxInFlight {
-		requestOpts := flowControlledRequest{framer: framer, address: address, streamID: uint32(index*2 + 1), command: nativeCommand}
+		requestOpts := flowControlledRequest{framer: framer, address: address, streamID: uint32(index*2 + 1), command: slowCommand}
 		sendFlowControlledRequest(t, requestOpts)
 	}
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
-	for adapter.nativeStarted.Load() != int32(storeLimits.MaxInFlight) || local.Snapshot().Paused != storeLimits.MaxInFlight || server.admission.wireBytes.Load() == 0 {
+	for adapter.nativeStarted.Load() != int32(storeLimits.MaxInFlight) {
 		if ctx.Err() != nil {
-			t.Fatal("Native requests did not saturate Store execution", adapter.nativeStarted.Load(), local.Snapshot())
+			t.Fatal("Native requests did not saturate Store execution", adapter.nativeStarted.Load())
 		}
 		time.Sleep(time.Millisecond)
-	}
-	if snapshot := local.Snapshot(); snapshot.Active != 0 || snapshot.Paused != storeLimits.MaxInFlight || snapshot.Pending != 0 || server.admission.wireBytes.Load() == 0 {
-		t.Fatal("zero-window Native output did not return backend execution slots", snapshot, server.admission.wireBytes.Load())
 	}
 	read := testRequest()
 	readValue := &pb.Command_Read{Read: read}
@@ -432,8 +424,11 @@ func TestNativeOutputStallsPreserveSiblingProgressBeforeWatchdogAbort(t *testing
 	sharedReadID := uint32(storeLimits.MaxInFlight*2 + 1)
 	requestOpts := flowControlledRequest{framer: framer, address: address, streamID: sharedReadID, command: readCommand, responseWindow: 64 << 10}
 	sendFlowControlledRequest(t, requestOpts)
+	short := &pb.NativeRequest{Resource: "short", Request: document}
+	shortValue := &pb.Command_Native{Native: short}
+	shortCommand := &pb.Command{Operation: shortValue}
 	sharedNativeID := sharedReadID + 2
-	requestOpts.streamID, requestOpts.command = sharedNativeID, nativeCommand
+	requestOpts.streamID, requestOpts.command = sharedNativeID, shortCommand
 	sendFlowControlledRequest(t, requestOpts)
 	_, independent := peerClient(t, address)
 	completed := make(chan error, 1)
@@ -444,75 +439,64 @@ func TestNativeOutputStallsPreserveSiblingProgressBeforeWatchdogAbort(t *testing
 		}
 		completed <- err
 	}()
+	watchdogs := func() float64 {
+		metric := &dto.Metric{}
+		if err := server.metrics.watchdogs.WithLabelValues("output").Write(metric); err != nil {
+			t.Fatal(err)
+		}
+		return metric.GetCounter().GetValue()
+	}
 	readReply, nativeReply := &nativeHealthyResponse{}, &nativeHealthyResponse{native: true}
 	healthy := map[uint32]*nativeHealthyResponse{sharedReadID: readReply, sharedNativeID: nativeReply}
-	readComplete, nativeComplete := false, false
-	for {
+	for !readReply.ended || !nativeReply.ended {
 		frame, err := framer.ReadFrame()
 		if err != nil {
-			if timeout, ok := err.(net.Error); ok && timeout.Timeout() {
-				t.Fatal("only the client deadline closed stalled Native output", err)
-			}
-			break
+			t.Fatal("shared connection failed before healthy probes completed", err)
 		}
-		if !readComplete || !nativeComplete {
-			switch value := frame.(type) {
-			case *http2.RSTStreamFrame:
-				t.Fatal("stream reset before healthy probes completed", value.StreamID, value.ErrCode)
-			case *http2.GoAwayFrame:
-				t.Fatal("connection sent GOAWAY before healthy probes completed", value.ErrCode)
+		switch value := frame.(type) {
+		case *http2.SettingsFrame:
+			if !value.IsAck() {
+				if err := framer.WriteSettingsAck(); err != nil {
+					t.Fatal(err)
+				}
+			}
+		case *http2.GoAwayFrame:
+			t.Fatal("connection sent GOAWAY before healthy probes completed", value.ErrCode)
+		case *http2.DataFrame:
+			if value.StreamID != sharedReadID && value.StreamID != sharedNativeID {
+				t.Fatal("Native output bypassed zero-window flow control", value.StreamID)
 			}
 		}
 		if reply := healthy[frame.Header().StreamID]; reply != nil {
 			if err := reply.observe(frame); err != nil {
 				t.Fatal("healthy shared-connection probe failed", err)
 			}
+			if reply.ended && watchdogs() == 0 {
+				t.Fatal("healthy probe ran while stalled Natives held every execution slot")
+			}
 		}
-		if data, ok := frame.(*http2.DataFrame); ok && data.StreamID != sharedReadID && data.StreamID != sharedNativeID {
-			t.Fatal("Native output bypassed zero-window flow control", data.StreamID)
-		}
-		if trailers, ok := frame.(*http2.MetaHeadersFrame); ok && trailers.StreamEnded() {
-			readComplete = readComplete || trailers.StreamID == sharedReadID
-			nativeComplete = nativeComplete || trailers.StreamID == sharedNativeID
-		}
-	}
-	if !readComplete || !nativeComplete {
-		t.Fatal("healthy siblings did not finish on their shared connection before watchdog abort", readComplete, nativeComplete)
 	}
 	select {
 	case err := <-completed:
 		if err != nil {
-			t.Fatal("independent read failed beside stalled Native output", err)
+			t.Fatal("independent read failed after the output watchdog", err)
 		}
 	case <-ctx.Done():
-		t.Fatal("independent read remained blocked after watchdog", local.Snapshot())
+		t.Fatal("independent read remained blocked after the output watchdog")
 	}
-	metric := &dto.Metric{}
-	if err := server.metrics.watchdogs.WithLabelValues("output").Write(metric); err != nil {
-		t.Fatal(err)
+	if elapsed := time.Since(started); elapsed > 3*time.Second {
+		t.Fatal("output watchdog did not bound recovery", elapsed)
 	}
-	if metric.GetCounter().GetValue() == 0 || time.Since(started) > 3*time.Second {
-		t.Fatal("output watchdog did not bound recovery", metric, time.Since(started))
-	}
-	// The fixture records backend contexts. Release those observations before
-	// asking GC to prove the shared transport's orphaned DATA is unreachable.
-	for len(adapter.seen) != 0 {
-		<-adapter.seen
-	}
-	// An aborted gRPC connection may orphan DATA buffers. Credits return only
-	// when GC proves those native transport buffers are unreachable.
-	until := time.Now().Add(2 * time.Second)
-	for server.admission.wireBytes.Load() != 0 && time.Now().Before(until) {
-		runtime.GC()
+	for watchdogs() != float64(storeLimits.MaxInFlight) {
+		if ctx.Err() != nil {
+			t.Fatal("output watchdog did not end every stalled Native", watchdogs())
+		}
 		time.Sleep(time.Millisecond)
 	}
+	if err := conn.Close(); err != nil {
+		t.Fatal(err)
+	}
 	waitPeerIdle(t, server)
-	if connections := server.admission.activeConnections.Load(); connections != 1 {
-		t.Fatal("watchdog affected the independent connection or retained the stalled connection", connections)
-	}
-	if snapshot := local.Snapshot(); snapshot.Overloaded {
-		t.Fatal("flow control saturation was misreported as process overload", snapshot)
-	}
 }
 
 func nativeHealthyReplyBytes(t *testing.T, messages []*pb.ExecuteResponse) []byte {

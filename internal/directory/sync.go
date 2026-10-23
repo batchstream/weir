@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/batchstream/weir-protocol/api/netlimit"
-	"github.com/batchstream/weir-protocol/api/protocol"
 	peerpb "github.com/batchstream/weir/internal/api/peer/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -99,7 +98,6 @@ func (d *Directory) syncPeer(parent context.Context, address string) error {
 		address = net.JoinHostPort(ips[rand.IntN(len(ips))], port)
 	}
 	dialer := net.Dialer{Timeout: d.policy.SyncTimeout}
-	codec := peerCodec{}
 	options := []grpc.DialOption{
 		grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithNoProxy(), grpc.WithDisableRetry(), grpc.WithDisableServiceConfig(),
 		grpc.WithContextDialer(func(ctx context.Context, address string) (net.Conn, error) {
@@ -107,7 +105,7 @@ func (d *Directory) syncPeer(parent context.Context, address string) error {
 		}),
 		grpc.WithReadBufferSize(16 << 10), grpc.WithWriteBufferSize(16 << 10), grpc.WithStaticStreamWindowSize(65535), grpc.WithStaticConnWindowSize(65535),
 		grpc.WithMaxHeaderListSize(^uint32(0)),
-		grpc.WithDefaultCallOptions(grpc.ForceCodecV2(codec), grpc.MaxRetryRPCBufferSize(0), grpc.MaxCallSendMsgSize(protocol.MaxTransportMessageBytes), grpc.MaxCallRecvMsgSize(protocol.MaxTransportMessageBytes)),
+		grpc.WithDefaultCallOptions(grpc.MaxRetryRPCBufferSize(0)),
 	}
 	connection, err := grpc.NewClient("passthrough:///"+address, options...)
 	if err != nil {

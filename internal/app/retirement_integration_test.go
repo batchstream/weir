@@ -18,6 +18,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/batchstream/weir-protocol/api/protocol"
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 	"github.com/batchstream/weir/internal/execution"
 	"github.com/batchstream/weir/internal/server"
@@ -38,18 +39,30 @@ type retirementNodeAdapter struct {
 	failure     error
 }
 
-func (a *retirementNodeAdapter) PrepareCommand(context.Context, uint64, *pb.Command) (*execution.Plan, *pb.Failure) {
-	return nil, nil
+func (a *retirementNodeAdapter) PrepareNative(context.Context, *pb.Command) (*execution.Plan, *pb.Failure) {
+	return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "record fixture")
 }
 func (a *retirementNodeAdapter) PrepareRecord(_ context.Context, record *execution.Record) (*execution.Plan, *pb.Failure) {
-	work := &execution.Plan{ID: record.Index(), Command: record.Command(), Key: record.Key(), BatchKey: "records", Bytes: record.Bytes() + execution.EntryOverheadBytes, ResultBytes: execution.ResultOverheadBytes, WorkingBytes: 1024}
+	work := &execution.Plan{Command: record.Command(), Key: record.Key(), BatchKey: "records", Bytes: record.Bytes()}
 	return work, nil
 }
-func (a *retirementNodeAdapter) Execute(ctx context.Context, _ []*execution.Plan, _ execution.Emit) {
+func (a *retirementNodeAdapter) ExecuteRecords(ctx context.Context, plans []*execution.Plan) []*pb.Event {
 	defer close(a.joined)
 	close(a.started)
 	<-ctx.Done()
 	<-a.release
+	events := make([]*pb.Event, len(plans))
+	for i := range plans {
+		failure := protocol.ContextFailure(ctx)
+		read := protocol.ReadFailure(failure)
+		value := &pb.Event_ReadResult{ReadResult: read}
+		events[i] = &pb.Event{Value: value}
+	}
+	return events
+}
+func (a *retirementNodeAdapter) ExecuteNative(context.Context, *execution.Plan, execution.Emit) *pb.NativeEnd {
+	failure := protocol.Fail(pb.FailureCode_UNSUPPORTED, "record fixture")
+	return protocol.NativeFailure(false, failure)
 }
 func (a *retirementNodeAdapter) Close(context.Context) error {
 	defer close(a.closeJoined)
@@ -75,7 +88,7 @@ func newRetirementNode(t *testing.T, failure error) retirementNodeFixture {
 	}
 	adapter := &retirementNodeAdapter{started: make(chan struct{}), release: make(chan struct{}), joined: make(chan struct{}), closeJoined: make(chan struct{}), failure: failure}
 	limits := store.DefaultLimits()
-	runtime, err := store.New(adapter, limits, node.executionMemory)
+	runtime, err := store.New(adapter, limits)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -139,18 +152,14 @@ func closeRetirementNode(t *testing.T, fixture retirementNodeFixture) {
 	case <-time.After(time.Second):
 		t.Fatal("gRPC client call not terminal")
 	}
-	if snapshot := node.stores["records"].Snapshot(); snapshot.Active != 0 || snapshot.WorkingBytes != 0 || snapshot.Publishers != 0 || snapshot.Retained != 0 {
-		t.Fatal("Node retained execution/publication/session ownership", snapshot)
+	if stats := node.stores["records"].Stats(); stats.Active != 0 || stats.Queued != 0 {
+		t.Fatal("Node retained execution ownership", stats)
 	}
 	// Server.Shutdown uses WaitForHandlers, and its shared counters must reflect
 	// actual handler and transport retirement rather than a socket-only proxy.
 	families := testmetrics.Registry(t, node.registry)
-	if testmetrics.Sum(families, "weir_ingress_sessions") != 0 || testmetrics.Sum(families, "weir_ingress_connections") != 0 || testmetrics.Sum(families, "weir_ingress_queued_response_bytes") != 0 {
-		t.Fatal("Node returned before real handlers/transports joined")
-	}
-	memory := node.executionMemory.Snapshot()
-	if memory.Count != 0 || memory.UsedBytes != 0 || memory.WireCount != 0 || memory.IngressMessages != 0 || memory.IngressConnections != 0 {
-		t.Fatal("Node returned before genuine stream/consumer memory retirement", memory)
+	if testmetrics.Sum(families, "weir_ingress_sessions") != 0 {
+		t.Fatal("Node returned before real handlers joined")
 	}
 	for _, address := range node.Addresses() {
 		listener, err := net.Listen("tcp", address)
@@ -159,7 +168,7 @@ func closeRetirementNode(t *testing.T, fixture retirementNodeFixture) {
 		}
 		_ = listener.Close()
 	}
-	t.Logf("actual Node Close elapsed=%s error=%v runtime=%+v memory=%+v", elapsed, err, node.stores["records"].Snapshot(), memory)
+	t.Logf("actual Node Close elapsed=%s error=%v runtime=%+v", elapsed, err, node.stores["records"].Stats())
 }
 
 func TestOfflineRetirementNodeJoinsDefaultOwners(t *testing.T) {

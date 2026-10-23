@@ -94,9 +94,6 @@ func TestSearchEveryRecordActionSharesNativeBatch(t *testing.T) {
 		}
 		works = append(works, work)
 	}
-	for i, work := range works {
-		work.ID = uint64(100 + i)
-	}
 	results := a.executeRecords(context.Background(), works)
 	if inspections.Load() != 1 || reads.Load() != 1 || writes.Load() != 1 || len(results) != len(works) {
 		t.Fatal("aggregate backend call counts", inspections.Load(), reads.Load(), writes.Load(), len(results))

@@ -64,7 +64,7 @@ func TestSearchSourceFieldsUseBackendMappingAcrossMutations(t *testing.T) {
 		case "expression":
 			mutation.GetAtomicTransform().GetBackendExpression().Data = []byte(`{"doc":` + source + `}`)
 		}
-		request := &pb.ExecuteRequest{Index: work.ID, Command: work.Command}
+		request := &pb.ExecuteRequest{Index: 1, Command: work.Command}
 		return request
 	}
 	for position, action := range []string{"put", "program", "expression"} {

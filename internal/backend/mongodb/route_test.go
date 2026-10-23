@@ -35,19 +35,11 @@ func TestRouteCallRelativeTargetAndLargeRead(t *testing.T) {
 	if failure != nil {
 		t.Fatal(failure)
 	}
-	if request.Resource != "db/records/s:a" || work.ID != 9 || work.BatchKey != "db.records" {
-		t.Fatal("wire Command mutated or association lost", work)
+	if request.Resource != "db/records/s:a" || work.BatchKey != "db.records" {
+		t.Fatal("wire Command mutated", work)
 	}
-	events := 0
-	emit := func(plan *execution.Plan, event *pb.Event) error {
-		events++
-		if plan != work || len(event.GetReadResult().GetDocument().Data) != (2<<20) {
-			t.Fatal("large read/result framing failed", event)
-		}
-		return nil
-	}
-	adapter.Execute(context.Background(), []*execution.Plan{work}, emit)
-	if events != 1 {
+	events := adapter.ExecuteRecords(context.Background(), []*execution.Plan{work})
+	if len(events) != 1 || len(events[0].GetReadResult().GetDocument().Data) != (2<<20) {
 		t.Fatal("large legal record failed", events)
 	}
 	emptyRecord := &execution.Record{}
@@ -74,12 +66,12 @@ func TestRouteLuaPlanSharesBoundedTransaction(t *testing.T) {
 	if failure != nil {
 		t.Fatal(failure)
 	}
-	if work.Command.GetNative() != nil || work.Backend.(*plan).program == nil || work.BatchKey != "db.records/lua" || work.WorkingBytes < 2*work.Bytes || work.IOReserve != adapter.nativeReplyBytes() {
+	if work.Command.GetNative() != nil || work.Backend.(*plan).program == nil || work.BatchKey != "db.records/lua" {
 		t.Fatal("Lua plan did not declare bounded transaction batching")
 	}
 }
 
-func TestRouteNativeBackendBudgetExcludesOutputStall(t *testing.T) {
+func TestRouteNativeBackendDeadlineExcludesOutputStall(t *testing.T) {
 	response := bson.D{{Key: "ok", Value: 1}, {Key: "n", Value: 0}}
 	replies := []bson.D{response}
 	adapter := batchMockAdapter(t, replies, nil)
@@ -94,29 +86,23 @@ func TestRouteNativeBackendBudgetExcludesOutputStall(t *testing.T) {
 	native := open
 	variant := &pb.Command_Native{Native: native}
 	call := &pb.Command{Operation: variant}
-	work, failure := adapter.PrepareCommand(context.Background(), 1, call)
+	work, failure := adapter.PrepareNative(context.Background(), call)
 	if failure != nil {
 		t.Fatal(failure)
 	}
 
-	var end *pb.NativeEnd
-	emit := func(_ *execution.Plan, event *pb.Event) error {
-		if event.GetHead() != nil || event.GetChunk() != nil {
-			time.Sleep(75 * time.Millisecond)
-		}
-		if event.GetNativeEnd() != nil {
-			end = event.GetNativeEnd()
-		}
+	emit := func(event *pb.Event) error {
+		time.Sleep(75 * time.Millisecond)
 		return nil
 	}
 	started := time.Now()
-	adapter.Execute(context.Background(), []*execution.Plan{work}, emit)
+	end := adapter.ExecuteNative(context.Background(), work, emit)
 	if end.GetCompletion() != pb.NativeCompletion_RESPONSE_COMPLETE || end.GetFailure() != nil || time.Since(started) < 150*time.Millisecond {
-		t.Fatal("output stalls consumed backend I/O budget", end, time.Since(started))
+		t.Fatal("output stalls consumed backend deadline", end, time.Since(started))
 	}
 }
 
-func TestRouteNativeReleasesReplyWorkingSetBeforeTerminalOutput(t *testing.T) {
+func TestRouteNativeDeliveryFailureEndsIncomplete(t *testing.T) {
 	for _, failChunk := range []bool{false, true} {
 		name := "complete"
 		if failChunk {
@@ -124,10 +110,6 @@ func TestRouteNativeReleasesReplyWorkingSetBeforeTerminalOutput(t *testing.T) {
 		}
 		t.Run(name, func(t *testing.T) {
 			response := bson.D{{Key: "ok", Value: 1}, {Key: "pad", Value: strings.Repeat("x", 1<<20)}}
-			reply, err := bson.Marshal(response)
-			if err != nil {
-				t.Fatal(err)
-			}
 			replies := []bson.D{response}
 			adapter := batchMockAdapter(t, replies, nil)
 			command := bson.D{{Key: "ping", Value: 1}}
@@ -139,25 +121,12 @@ func TestRouteNativeReleasesReplyWorkingSetBeforeTerminalOutput(t *testing.T) {
 			request := &pb.NativeRequest{Resource: "db", Request: body}
 			variant := &pb.Command_Native{Native: request}
 			call := &pb.Command{Operation: variant}
-			work, failure := adapter.PrepareCommand(t.Context(), 1, call)
+			work, failure := adapter.PrepareNative(t.Context(), call)
 			if failure != nil {
 				t.Fatal(failure)
 			}
-			chunks, terminal := 0, false
-			emit := func(work *execution.Plan, event *pb.Event) error {
-				if end := event.GetNativeEnd(); end != nil {
-					terminal = true
-					if work.WorkingBytes != execution.EntryOverheadBytes {
-						t.Fatal("terminal output retained the released reply's working set", work.WorkingBytes)
-					}
-					if failChunk && end.Completion != pb.NativeCompletion_RESPONSE_INCOMPLETE || !failChunk && end.Completion != pb.NativeCompletion_RESPONSE_COMPLETE {
-						t.Fatal("working-set cleanup changed Native delivery evidence", end)
-					}
-					return nil
-				}
-				if work.WorkingBytes < len(reply) {
-					t.Fatal("streaming output discounted a still-held Mongo reply", work.WorkingBytes, len(reply))
-				}
+			chunks := 0
+			emit := func(event *pb.Event) error {
 				if event.GetChunk() != nil {
 					chunks++
 					if failChunk {
@@ -166,10 +135,12 @@ func TestRouteNativeReleasesReplyWorkingSetBeforeTerminalOutput(t *testing.T) {
 				}
 				return nil
 			}
-			works := []*execution.Plan{work}
-			adapter.Execute(t.Context(), works, emit)
-			if chunks == 0 || !terminal {
-				t.Fatal("Native reply did not exercise chunk and terminal ownership", chunks, terminal)
+			end := adapter.ExecuteNative(t.Context(), work, emit)
+			if chunks == 0 {
+				t.Fatal("Native reply sent no chunk")
+			}
+			if failChunk && end.Completion != pb.NativeCompletion_RESPONSE_INCOMPLETE || !failChunk && end.Completion != pb.NativeCompletion_RESPONSE_COMPLETE {
+				t.Fatal("delivery outcome changed Native completion evidence", end)
 			}
 		})
 	}

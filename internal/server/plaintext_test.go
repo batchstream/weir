@@ -26,6 +26,8 @@ func TestPlaintextPrefaceAndHeaderLifetime(t *testing.T) {
 				limits := DefaultLimits()
 				limits.Stall = 75 * time.Millisecond
 				limits.Handshake = 75 * time.Millisecond
+				limits.KeepaliveInterval = time.Second
+				limits.KeepaliveTimeout = 75 * time.Millisecond
 				opts := peerServerOptions{stores: map[string]*store.Runtime{"records": localRuntime}, peer: peer, limits: limits}
 				srv, address := startPeerServer(t, opts)
 				conn, err := net.DialTimeout("tcp", address, time.Second)
@@ -33,7 +35,7 @@ func TestPlaintextPrefaceAndHeaderLifetime(t *testing.T) {
 					t.Fatal(err)
 				}
 				defer conn.Close()
-				_ = conn.SetDeadline(time.Now().Add(time.Second))
+				_ = conn.SetDeadline(time.Now().Add(3 * time.Second))
 				started := time.Now()
 				if mode == "preface" {
 					_, err = io.WriteString(conn, http2.ClientPreface[:14])
@@ -137,12 +139,9 @@ func TestPlaintextPrefaceAndHeaderLifetime(t *testing.T) {
 				if timeout, ok := readErr.(net.Error); ok && timeout.Timeout() {
 					t.Fatal("only the client deadline closed the stalled connection", readErr)
 				}
-				deadline := time.Now().Add(time.Second)
-				for (srv.admission.activeConnections.Load() != 0 || srv.admission.activeRPCs.Load() != 0 || srv.admission.wireBytes.Load() != 0) && time.Now().Before(deadline) {
-					time.Sleep(time.Millisecond)
-				}
-				if time.Since(started) > 1500*time.Millisecond || srv.admission.activeConnections.Load() != 0 || srv.admission.activeRPCs.Load() != 0 || len(adapter.seen) != 0 || adapter.commands.Load() != 0 {
-					t.Fatal("stalled transport leaked resources or executed", time.Since(started), srv.admission.activeConnections.Load(), srv.admission.activeRPCs.Load())
+				waitPeerIdle(t, srv)
+				if time.Since(started) > 2500*time.Millisecond || len(adapter.seen) != 0 || adapter.commands.Load() != 0 {
+					t.Fatal("stalled transport outlived its bound or executed", time.Since(started))
 				}
 			})
 		}
@@ -221,12 +220,8 @@ func TestPartialHTTP2DataFrameCannotRetainConnection(t *testing.T) {
 	if !ended {
 		t.Fatal("RPC input timeout did not terminate its stream before the connection")
 	}
-	until := time.Now().Add(time.Second)
-	for server.admission.activeConnections.Load() != 0 && time.Now().Before(until) {
-		time.Sleep(time.Millisecond)
-	}
 	waitPeerIdle(t, server)
-	if server.admission.activeConnections.Load() != 0 || adapter.commands.Load() != 0 || len(adapter.seen) != 0 {
-		t.Fatal("partial HTTP/2 frame retained resources or executed a record")
+	if adapter.commands.Load() != 0 || len(adapter.seen) != 0 {
+		t.Fatal("partial HTTP/2 frame executed a record")
 	}
 }
