@@ -116,8 +116,8 @@ func runIngressMemoryCase(t *testing.T, binary string, capacity int, partial boo
 	if cfg.Basic.Transport.MaxPendingRecords != 32 || time.Duration(cfg.Basic.Transport.Timeouts.Stall) != 30*time.Second {
 		t.Fatal("default transport policy changed")
 	}
-	opts := memoryRecoveryOptions{binary: binary, capacityMiB: capacity, automatic: true, config: &cfg}
-	process := startMemoryRecoveryCLI(t, opts)
+	opts := cliContainerOptions{binary: binary, capacityMiB: capacity, config: cfg}
+	process := startCLIContainer(t, opts)
 	t.Logf("ingress partial=%t capacity=%dMiB CPUs=2 records=32 exact_BSON_bytes=%d common_caller=5s retries=0", partial, capacity, 12<<20)
 	initial, err := ingressMemoryMetrics(process)
 	if err != nil {
@@ -157,7 +157,7 @@ func runIngressMemoryCase(t *testing.T, binary string, capacity int, partial boo
 	results := make(chan ingressMemoryResult, 32)
 	started := time.Now()
 	deadline := started.Add(5 * time.Second)
-	t.Logf("ingress_launch profile=ordinary_full_write t0=%s common_deadline=%s", started.UTC().Format(time.RFC3339Nano), deadline.UTC().Format(time.RFC3339Nano))
+	t.Logf("ingress_launch profile=ordinary_full_write deadline=%s", deadline.Sub(started))
 	ctx, cancel := context.WithDeadline(t.Context(), deadline)
 	defer cancel()
 	barrier := make(chan struct{})
@@ -234,7 +234,7 @@ collect:
 			collected[result.Index] = result
 			received++
 			if result.RPCCode == "OK" && result.Finished.After(deadline) {
-				t.Error("ordinary successful RPC returned after the original common5s deadline", result.ID)
+				t.Error("ordinary successful RPC returned after the common 5s deadline", result.ID)
 			}
 		case <-joinTimer.C:
 			t.Error("bounded caller join lost results", received)
@@ -259,13 +259,13 @@ collect:
 	select {
 	case <-sameClientHealthDone:
 	case <-time.After(time.Until(deadline.Add(time.Second))):
-		t.Error("same-SDK health did not join within original common5s plus bounded1s")
+		t.Error("same-SDK health did not join within common 5s plus bounded1s")
 	}
 	ingressMemoryIdle(t, process, cancelledAt.Add(5*time.Second), 2)
 	ingressMemoryOracle(t, fixture, documents, collected)
 	for _, result := range collected {
 		raw, _ := json.Marshal(result)
-		t.Logf("ingress_result %s SDK_send_end_and_first_response_unknown=true", raw)
+		t.Logf("ingress_result %s", raw)
 	}
 	t.Logf("unconditional_same_SDK_recovery prior_failure=%t original_upload_client=%p TCP_connection_identity=not_observed", t.Failed(), client)
 	ingressMemoryRecovery(t, client, dataset)
@@ -300,7 +300,7 @@ func ingressMemoryDocuments(t *testing.T) []ingressMemoryDocument {
 	return documents
 }
 
-func openIngressMemoryClient(t *testing.T, process *memoryRecoveryCLI) *weirclient.Client {
+func openIngressMemoryClient(t *testing.T, process *cliContainer) *weirclient.Client {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
 	defer cancel()
@@ -349,7 +349,7 @@ func ingressMemoryHealth(t *testing.T, client *weirclient.Client, dataset *nativ
 		case job := <-results:
 			t.Logf("ingress_health SDK_client=%p kind=%d caller3s elapsed=%s error=%v", client, job.kind, job.elapsed, job.err)
 			if job.err != nil || job.elapsed > 3*time.Second {
-				t.Error("healthy small Read/Native failed or exceeded original3s caller deadline during uploads", job.kind, job.elapsed, job.err)
+				t.Error("healthy small Read/Native failed or exceeded 3s caller deadline during uploads", job.kind, job.elapsed, job.err)
 			}
 		case <-timer.C:
 			t.Error("health caller3s plus bounded1s join exhausted")
@@ -382,7 +382,7 @@ func ingressMemoryRecovery(t *testing.T, client *weirclient.Client, dataset *nat
 		t.Error("recovered process changed small recovery document", err)
 		return
 	}
-	t.Logf("same_running_process_and_SDK fresh small Put_APPLIED=%t Read_n_pad_valid=true caller3s TCP_connection_identity=not_observed", putErr == nil)
+	t.Logf("fresh small Put_APPLIED=%t", putErr == nil)
 }
 
 func ingressMemoryOracle(t *testing.T, fixture *testmongo.Fixture, documents []ingressMemoryDocument, results []ingressMemoryResult) {
@@ -441,10 +441,10 @@ func ingressMemoryOracle(t *testing.T, fixture *testmongo.Fixture, documents []i
 	if err != nil || count != int64(present) {
 		t.Error("independent cardinality differs from per-ID effects", count, present, err)
 	}
-	t.Logf("ingress_effect_summary offered=32 APPLIED=%d capacity_denied=%d ambiguous=%d independent_present=%d completed_RPC=%d all_ordinary_writes_APPLIED=%t capacity_survival_does_not_imply_business_completeness=true", applied, denied, ambiguous, present, completedRPCs, applied == 32 && completedRPCs == 32)
+	t.Logf("ingress_effect_summary offered=32 APPLIED=%d capacity_denied=%d ambiguous=%d independent_present=%d completed_RPC=%d all_ordinary_writes_APPLIED=%t", applied, denied, ambiguous, present, completedRPCs, applied == 32 && completedRPCs == 32)
 }
 
-func ingressMemoryMetrics(process *memoryRecoveryCLI) (map[string]*dto.MetricFamily, error) {
+func ingressMemoryMetrics(process *cliContainer) (map[string]*dto.MetricFamily, error) {
 	client := &http.Client{Timeout: 100 * time.Millisecond}
 	response, err := client.Get("http://" + process.diagnostic + "/metrics")
 	if err != nil {
@@ -458,7 +458,7 @@ func ingressMemoryMetrics(process *memoryRecoveryCLI) (map[string]*dto.MetricFam
 	return parser.TextToMetricFamilies(io.LimitReader(response.Body, 4<<20))
 }
 
-func ingressMemorySample(t *testing.T, ctx context.Context, process *memoryRecoveryCLI, docker bool) {
+func ingressMemorySample(t *testing.T, ctx context.Context, process *cliContainer, docker bool) {
 	ticker := time.NewTicker(25 * time.Millisecond)
 	if docker {
 		ticker.Reset(100 * time.Millisecond)
@@ -487,18 +487,18 @@ func ingressMemorySample(t *testing.T, ctx context.Context, process *memoryRecov
 				values["go_gc_pause_seconds"] = gc[0].GetSummary().GetSampleSum()
 			}
 			encoded, _ := json.Marshal(values)
-			t.Logf("ingress_sample at=%s lag=%s duration=%s error=%v metrics=%s", at.UTC().Format(time.RFC3339Nano), at.Sub(scheduled), time.Since(at), err, encoded)
+			t.Logf("ingress_sample lag=%s duration=%s error=%v metrics=%s", at.Sub(scheduled), time.Since(at), err, encoded)
 		}
 	}
 }
 
-func ingressMemoryDocker(t *testing.T, process *memoryRecoveryCLI) {
+func ingressMemoryDocker(t *testing.T, process *cliContainer) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
 	defer cancel()
 	raw, err := ingressMemoryDockerInspect(ctx, process.name)
 	fields := strings.Fields(raw)
-	t.Logf("ingress_Docker at=%s state=%s error=%v", time.Now().UTC().Format(time.RFC3339Nano), raw, err)
+	t.Logf("ingress_Docker state=%s error=%v", raw, err)
 	if err != nil || len(fields) != 4 || fields[0] != process.owner {
 		t.Error("independent Docker ownership/state unknown", err)
 	} else if fields[1] != "true" || fields[2] != "false" || fields[3] != "0" {
@@ -573,7 +573,7 @@ func ingressMemoryDockerInspect(ctx context.Context, name string) (string, error
 	return state, nil
 }
 
-func ingressMemoryEvents(t *testing.T, process *memoryRecoveryCLI, phase string) {
+func ingressMemoryEvents(t *testing.T, process *cliContainer, phase string) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
 	defer cancel()
@@ -581,7 +581,7 @@ func ingressMemoryEvents(t *testing.T, process *memoryRecoveryCLI, phase string)
 	t.Logf("cgroup_memory_events phase=%s value=%q error=%v", phase, strings.TrimSpace(string(raw)), err)
 }
 
-func ingressMemoryIdle(t *testing.T, process *memoryRecoveryCLI, deadline time.Time, connections int) {
+func ingressMemoryIdle(t *testing.T, process *cliContainer, deadline time.Time, connections int) {
 	t.Helper()
 	for {
 		metrics, err := ingressMemoryMetrics(process)
@@ -619,7 +619,7 @@ type ingressMemoryUpload struct {
 	frame      []byte
 }
 
-func newIngressMemoryUpload(t *testing.T, process *memoryRecoveryCLI, document ingressMemoryDocument, resource string) *ingressMemoryUpload {
+func newIngressMemoryUpload(t *testing.T, process *cliContainer, document ingressMemoryDocument, resource string) *ingressMemoryUpload {
 	t.Helper()
 	payload := &pb.Document{ContentType: "application/bson", Data: document.raw}
 	action := &pb.MutateRequest_Put{Put: payload}
@@ -636,7 +636,7 @@ func newIngressMemoryUpload(t *testing.T, process *memoryRecoveryCLI, document i
 	if err != nil || !proto.Equal(request, decoded) || protocol.ValidateExecuteRequest(decoded) != nil || decoded.StoreName != "mongo" || decoded.Index != 1 || len(encoded)-5 != int(binary.BigEndian.Uint32(encoded[1:5])) || decoded.Command.GetMutate().Resource != resource || sha256.Sum256(decoded.Command.GetMutate().GetPut().Data) != document.digest {
 		t.Fatal("gRPC frame did not round-trip the same SDK Put command/store/index/document", document.id, err)
 	}
-	t.Logf("partial_upload_local_protocol_valid id=%s Store=mongo index=1 Put=true message_bytes=%d BSON_bytes=%d sha256=%x END_STREAM=after_single_record_body_EOF", document.id, len(encoded)-5, len(document.raw), document.digest)
+	t.Logf("partial_upload id=%s message_bytes=%d BSON_bytes=%d sha256=%x", document.id, len(encoded)-5, len(document.raw), document.digest)
 	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
 	defer cancel()
 	dialer := &net.Dialer{}

@@ -24,7 +24,7 @@ func TestMongoConcurrentRPCsUseAvailableBackendConnections(t *testing.T) {
 	proxy := testmongo.StartProxy(t, fixture)
 	observation := &budgetObservation{}
 	proxy.Monitor = &event.CommandMonitor{Started: observation.start, Succeeded: observation.finish}
-	cfg := packagedConfig(t, proxy.URI())
+	cfg := recordsStoreConfig(t, proxy.URI())
 	// Isolate native connection growth from the Store execution budget.
 	unlimited := 0
 	cfg.Routing.Stores[0].Batching.MaxInFlight = &unlimited

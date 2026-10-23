@@ -27,7 +27,7 @@ import (
 
 type ingressMemoryPartialOptions struct {
 	fixture      *testmongo.Fixture
-	process      *memoryRecoveryCLI
+	process      *cliContainer
 	dataset      *nativeBurstDataset
 	documents    []ingressMemoryDocument
 	client       *weirclient.Client
@@ -51,7 +51,7 @@ func runIngressMemoryPartial(t *testing.T, options ingressMemoryPartialOptions) 
 	callerDeadline := started.Add(5 * time.Second)
 	ctx, cancel := context.WithDeadline(t.Context(), callerDeadline)
 	defer cancel()
-	t.Logf("ingress_launch profile=partial_cancel t0=%s common_caller_deadline=%s fixed_cancel=%s tails_never_released=true records=32", started.UTC().Format(time.RFC3339Nano), callerDeadline.UTC().Format(time.RFC3339Nano), cancelDeadline.UTC().Format(time.RFC3339Nano))
+	t.Logf("ingress_launch profile=partial_cancel caller_deadline=%s cancel_after=%s records=32", callerDeadline.Sub(started), cancelDeadline.Sub(started))
 	barrier := make(chan struct{})
 	results := make(chan ingressMemoryResult, len(uploads))
 	var calls sync.WaitGroup
@@ -99,7 +99,7 @@ func runIngressMemoryPartial(t *testing.T, options ingressMemoryPartialOptions) 
 		}()
 		health.Wait()
 		if !time.Now().Before(cancelDeadline) {
-			t.Error("partial-upload health did not finish within the fixed original3s missing-tail hold")
+			t.Error("partial-upload health did not finish within the 3s missing-tail hold")
 		}
 	}()
 	go func() {
@@ -137,7 +137,7 @@ collect:
 	cancel()
 	actualCancellation := time.Unix(0, cancelledAt.Load())
 	if cancelledAt.Load() == 0 || actualCancellation.Before(cancelDeadline) || actualCancellation.After(callerDeadline) {
-		t.Error("fixed3s partial cancellation did not occur within the original5s caller", actualCancellation)
+		t.Error("fixed3s partial cancellation did not occur within the 5s caller", actualCancellation)
 		actualCancellation = cancelDeadline
 	}
 	select {
@@ -148,7 +148,7 @@ collect:
 	select {
 	case <-healthDone:
 	case <-time.After(time.Until(callerDeadline.Add(time.Second))):
-		t.Error("partial health callers did not join within original5s plus bounded1s")
+		t.Error("partial health callers did not join within 5s plus bounded1s")
 	}
 	for index, result := range collected {
 		observer := uploads[index].observer
@@ -156,7 +156,7 @@ collect:
 			t.Error("partial Put lacked bounded explicit cancellation with no complete frame or mutation reply", result.ID, result.RPCCode, result.Error, result.Outcome, result.DataWritten, len(uploads[index].frame))
 		}
 		raw, _ := json.Marshal(result)
-		t.Logf("ingress_partial_result %s scheduled_cancel=%s actual_cancel=%s final_frame_bytes=%d incomplete_message_cancellation_is_not_mutation_acknowledgement=true", raw, cancelDeadline.UTC().Format(time.RFC3339Nano), actualCancellation.UTC().Format(time.RFC3339Nano), len(uploads[index].frame))
+		t.Logf("ingress_partial_result %s cancel_lag=%s final_frame_bytes=%d", raw, actualCancellation.Sub(cancelDeadline), len(uploads[index].frame))
 	}
 	// Keep connections open until every raw/wait owner has been released, so
 	// connection teardown cannot hide a cancellation ownership leak.
@@ -232,7 +232,7 @@ func ingressMemoryIncomplete(t *testing.T, ctx context.Context, condition ingres
 				return -1
 			}
 			upload := condition.uploads[selected]
-			t.Logf("incomplete_body launched=32 returned=0 active_server_RPC_at_least32=true selected_upload=%d selected_stream=1 local_prefix_written=true all32_prefixes_not_required=true selected_connection=%p local=%s remote=%s elapsed=%s remaining_hold=%s Node_used=%g resident=%g budget=%g ingress_bytes=%g ingress_reserved_bytes=%g connection_bytes=%g connections=%g ingress_buffers=%g ingress_messages=%g ingress_waiting=%g execution_input_wire0=true backend_large_effects=0 selected_stream_budget_assignment=not_observed", selected, upload.connection, upload.observer.LocalAddr(), upload.observer.RemoteAddr(), time.Since(condition.started), time.Until(holdDeadline), used, resident, budget, ingress, reserved, connectionBytes, connections, testmetrics.Sum(metrics, "weir_execution_memory_ingress_buffers"), testmetrics.Sum(metrics, "weir_execution_memory_ingress_messages"), testmetrics.Sum(metrics, "weir_execution_memory_ingress_waiting"))
+			t.Logf("incomplete_body launched=32 selected_upload=%d selected_connection=%p local=%s remote=%s elapsed=%s remaining_hold=%s Node_used=%g resident=%g budget=%g ingress_bytes=%g ingress_reserved_bytes=%g connection_bytes=%g connections=%g ingress_buffers=%g ingress_messages=%g ingress_waiting=%g", selected, upload.connection, upload.observer.LocalAddr(), upload.observer.RemoteAddr(), time.Since(condition.started), time.Until(holdDeadline), used, resident, budget, ingress, reserved, connectionBytes, connections, testmetrics.Sum(metrics, "weir_execution_memory_ingress_buffers"), testmetrics.Sum(metrics, "weir_execution_memory_ingress_messages"), testmetrics.Sum(metrics, "weir_execution_memory_ingress_waiting"))
 			return selected
 		}
 		select {
@@ -292,7 +292,7 @@ func ingressMemoryConnectionHealth(t *testing.T, upload *ingressMemoryUpload, da
 		case job := <-results:
 			t.Logf("ingress_same_TCP_health connection=%p local=%s remote=%s large_stream1_incomplete=%t kind=%d caller3s elapsed=%s error=%v", upload.connection, upload.observer.LocalAddr(), upload.observer.RemoteAddr(), upload.observer.allAt.Load() == 0, job.kind, job.elapsed, job.err)
 			if job.err != nil || job.elapsed > 3*time.Second || upload.observer.allAt.Load() != 0 {
-				t.Error("same-TCP small Read/Native failed or exceeded original3s during incomplete stream1", job.kind, job.elapsed, job.err)
+				t.Error("same-TCP small Read/Native failed or exceeded 3s during incomplete stream1", job.kind, job.elapsed, job.err)
 			}
 		case <-timer.C:
 			t.Error("same-TCP health caller3s plus bounded1s join exhausted")

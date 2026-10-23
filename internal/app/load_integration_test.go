@@ -90,8 +90,8 @@ func TestProcessLoad(t *testing.T) {
 	mongoStore, searchStore := StoreConfig{Name: "mongo", Local: mongoLocal}, StoreConfig{Name: "search", Local: searchLocal}
 	cfg := DefaultConfig()
 	cfg.Routing.Stores = []StoreConfig{mongoStore, searchStore}
-	opts := memoryRecoveryOptions{binary: binary, capacityMiB: 1024, automatic: true, config: &cfg}
-	process := startMemoryRecoveryCLI(t, opts)
+	opts := cliContainerOptions{binary: binary, capacityMiB: 1024, config: cfg}
+	process := startCLIContainer(t, opts)
 	t.Logf("measurement=%s warmup=30s fixed_arrival=200RPC/s capacity=1073741824 CPUs=2 driver=%s/%s/%s", duration, runtime.Version(), runtime.GOOS, runtime.GOARCH)
 	t.Log("driver_inflight_limit=512; service MaxInFlight=16/store, queue=1024 entries/32MiB, Node Native invocations=1024/total leases=32768/shared observed byte budget, batching=128/4MiB/20ms, stall=30s unchanged")
 	runProcessLoad(t, process, datasets, duration)
@@ -125,7 +125,7 @@ func verifyMongoVersion(t *testing.T, fixture *testmongo.Fixture) {
 	}
 }
 
-func runProcessLoad(t *testing.T, process *memoryRecoveryCLI, datasets []*loadDataset, duration time.Duration) {
+func runProcessLoad(t *testing.T, process *cliContainer, datasets []*loadDataset, duration time.Duration) {
 	t.Helper()
 	initial := process.sample(t)
 	native := executionMemorySnapshot(t, initial, process.capacity)
@@ -229,7 +229,7 @@ func seedLoadDataset(t *testing.T, dataset *loadDataset) {
 }
 
 type loadWorkload struct {
-	process             *memoryRecoveryCLI
+	process             *cliContainer
 	client              *weirclient.Client
 	datasets            []*loadDataset
 	duration            time.Duration
@@ -330,7 +330,7 @@ func runLoadWorkload(t *testing.T, work loadWorkload) {
 			minute := int(job.scheduled.Sub(measurement) / time.Minute)
 			appendLoadStats(minutes, fmt.Sprintf("minute=%d/%s", minute, key), result)
 			if result.err != nil {
-				t.Logf("failed sequence=%d backend=%s method=%s payload=%d phase=%s scheduled=%s service=%s e2e=%s driver_lag=%s", job.sequence, work.datasets[job.backend].store, loadMethod(job.kind), job.payload, job.phase, job.scheduled.UTC().Format(time.RFC3339Nano), result.service, result.latency, result.lag)
+				t.Logf("failed sequence=%d backend=%s method=%s payload=%d phase=%s service=%s e2e=%s driver_lag=%s", job.sequence, work.datasets[job.backend].store, loadMethod(job.kind), job.payload, job.phase, result.service, result.latency, result.lag)
 				reportLoadStats(t, stats, false)
 				t.Fatal(result.err)
 			}
@@ -639,7 +639,7 @@ func reportLoadStats(t *testing.T, stats map[string]*loadStats, gate bool) {
 			recordsPerRPC = 4
 		}
 		job := entry.maximum.job
-		t.Logf("distribution %s offered=%d completed=%d records_per_RPC=%d payload_counts_1KiB_256KiB_2MiB=%v p50=%s p95=%s p99=%s max=%s service_p99=%s driver_lag_p99=%s driver_lag_max=%s max_sequence=%d max_payload=%d max_scheduled=%s", key, entry.offered, entry.completed, recordsPerRPC, entry.payloads, entry.latencies[(n*50+99)/100-1], entry.latencies[(n*95+99)/100-1], p99, entry.latencies[n-1], entry.service[(n*99+99)/100-1], entry.lags[(n*99+99)/100-1], entry.lags[n-1], job.sequence, job.payload, job.scheduled.UTC().Format(time.RFC3339Nano))
+		t.Logf("distribution %s offered=%d completed=%d records_per_RPC=%d payload_counts_1KiB_256KiB_2MiB=%v p50=%s p95=%s p99=%s max=%s service_p99=%s driver_lag_p99=%s driver_lag_max=%s max_sequence=%d max_payload=%d", key, entry.offered, entry.completed, recordsPerRPC, entry.payloads, entry.latencies[(n*50+99)/100-1], entry.latencies[(n*95+99)/100-1], p99, entry.latencies[n-1], entry.service[(n*99+99)/100-1], entry.lags[(n*99+99)/100-1], entry.lags[n-1], job.sequence, job.payload)
 		limit := 250 * time.Millisecond
 		if strings.HasSuffix(key, "/Read") {
 			limit = 100 * time.Millisecond

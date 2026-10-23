@@ -28,7 +28,7 @@ type luaMemoryPath struct {
 	n                              int64
 }
 
-// This separate opt-in extends the original, unchanged tiny-source OOM probe.
+// This opt-in complements the tiny-source allocation probe in TestCLILuaMemoryBudget.
 // All Lua executes inside one 512MiB CLI, never in the host test driver.
 func TestCLILuaMemoryPaths(t *testing.T) {
 	if os.Getenv("WEIR_LUA_MEMORY_PATHS_INTEGRATION") != "1" {
@@ -60,9 +60,9 @@ func TestCLILuaMemoryPaths(t *testing.T) {
 	if cfg.Basic.Transport.MaxPendingRecords != 32 || time.Duration(cfg.Basic.Transport.Timeouts.Stall) != 30*time.Second {
 		t.Fatal("default transport policy changed")
 	}
-	opts := memoryRecoveryOptions{binary: binary, capacityMiB: 512, automatic: true, config: &cfg}
-	process := startMemoryRecoveryCLI(t, opts)
-	t.Logf("Lua_paths fixed512MiB/2CPU single_process=true backends=MongoDB,Elasticsearch cases_per_backend=%d caller3s retries=0 Search=%s", len(paths), searchURL)
+	opts := cliContainerOptions{binary: binary, capacityMiB: 512, config: cfg}
+	process := startCLIContainer(t, opts)
+	t.Logf("Lua_paths cases_per_backend=%d Search=%s", len(paths), searchURL)
 	nativeBurstSnapshot(t, process)
 	initial, err := ingressMemoryMetrics(process)
 	if err != nil || testmetrics.Sum(initial, "weir_memory_go_runtime_managed") != 1 {
@@ -131,7 +131,7 @@ func luaMemoryPaths() []luaMemoryPath {
 	return paths
 }
 
-func luaMemoryPathsClient(t *testing.T, process *memoryRecoveryCLI) *weirclient.Client {
+func luaMemoryPathsClient(t *testing.T, process *cliContainer) *weirclient.Client {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
 	defer cancel()
@@ -199,7 +199,7 @@ func luaMemoryPathsCall(t *testing.T, client *weirclient.Client, options weircli
 		return call
 	case <-time.After(time.Until(deadline.Add(time.Second))):
 		t.Error("Lua path caller3s plus bounded1s join exhausted")
-		call := luaMemoryCall{started: started, deadline: deadline, err: fmt.Errorf("no acknowledgement within original3s plus bounded1s join")}
+		call := luaMemoryCall{started: started, deadline: deadline, err: fmt.Errorf("no acknowledgement within 3s plus bounded1s join")}
 		return call
 	}
 }
@@ -214,7 +214,7 @@ func luaMemoryPathsOutcome(t *testing.T, label string, call luaMemoryCall, expec
 		}
 	}
 	timely := call.returned && !call.finished.IsZero() && !call.finished.After(call.deadline)
-	t.Logf("Lua_path_outcome case=%s outcome=%s failure=%s RPC=%s error=%v returned=%t within_original_deadline=%t started=%s finished=%s deadline=%s elapsed=%s failure_message_bytes=%d failure_message_SHA256=%x", label, outcome, failure, status.Code(call.err), call.err, call.returned, timely, call.started.UTC().Format(time.RFC3339Nano), call.finished.UTC().Format(time.RFC3339Nano), call.deadline.UTC().Format(time.RFC3339Nano), call.finished.Sub(call.started), len(message), sha256.Sum256([]byte(message)))
+	t.Logf("Lua_path_outcome case=%s outcome=%s failure=%s RPC=%s error=%v returned=%t within_deadline=%t elapsed=%s failure_message_bytes=%d failure_message_SHA256=%x", label, outcome, failure, status.Code(call.err), call.err, call.returned, timely, call.finished.Sub(call.started), len(message), sha256.Sum256([]byte(message)))
 	if !timely || call.err != nil || outcome != expected.outcome || failure != expected.failure || len(message) > 4<<10 {
 		t.Error("Lua path lacked exact bounded business outcome or bounded diagnostic", label, outcome, failure, call.err, timely, len(message))
 	}

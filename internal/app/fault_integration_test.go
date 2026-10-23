@@ -39,7 +39,7 @@ type processFaultBackend struct {
 }
 
 type processFaultSuite struct {
-	process *memoryRecoveryCLI
+	process *cliContainer
 	client  *weirclient.Client
 	pid     string
 }
@@ -86,8 +86,8 @@ func TestProcessFaults(t *testing.T) {
 	mongoStore, searchStore := StoreConfig{Name: "mongo", Local: mongoLocal}, StoreConfig{Name: "search", Local: searchLocal}
 	cfg := DefaultConfig()
 	cfg.Routing.Stores = []StoreConfig{mongoStore, searchStore}
-	opts := memoryRecoveryOptions{binary: binary, capacityMiB: 512, automatic: true, config: &cfg}
-	process := startMemoryRecoveryCLI(t, opts)
+	opts := cliContainerOptions{binary: binary, capacityMiB: 512, config: cfg}
+	process := startCLIContainer(t, opts)
 	openContext, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	openOptions := weirclient.OpenOptions{Seed: process.address, Stores: []string{"mongo", "search"}}
 	client, err := weirclient.Open(openContext, openOptions)
@@ -118,9 +118,9 @@ func TestProcessFaults(t *testing.T) {
 	processFaultShutdown(t, &suite, backends[0])
 }
 
-func processFaultPID(t *testing.T, process *memoryRecoveryCLI) string {
+func processFaultPID(t *testing.T, process *cliContainer) string {
 	t.Helper()
-	pid := strings.TrimSpace(packagedDocker(t, "inspect", "--type", "container", "--format", "{{.State.Pid}}", process.name))
+	pid := strings.TrimSpace(runDocker(t, "inspect", "--type", "container", "--format", "{{.State.Pid}}", process.name))
 	if pid == "" || pid == "0" {
 		t.Fatal("service process is not running", pid)
 	}
@@ -457,7 +457,7 @@ func processFaultLostAck(t *testing.T, suite *processFaultSuite, backend process
 		t.Fatal("non-idempotent mutation replay or missing ack-loss evidence", n, actualVersion, version, counts)
 	}
 	processFaultIdle(t, suite.process, 3*time.Second)
-	t.Logf("ack_loss backend=%s method=%s elapsed=%s oracle_n=%d version_before=%d version_after=%d writes=%d acks=%d drops=%d no_replay=true", backend.store, mode, time.Since(start), n, version, actualVersion, counts.writes, counts.acks, counts.drops)
+	t.Logf("ack_loss backend=%s method=%s elapsed=%s oracle_n=%d version_before=%d version_after=%d writes=%d acks=%d drops=%d", backend.store, mode, time.Since(start), n, version, actualVersion, counts.writes, counts.acks, counts.drops)
 }
 
 func processFaultCancelAfterAck(t *testing.T, suite *processFaultSuite, backend processFaultBackend) {
@@ -550,7 +550,7 @@ func processFaultSlowIO(t *testing.T, suite *processFaultSuite, backend processF
 	}
 	processFaultIdle(t, suite.process, max(0, 3*time.Second-time.Since(cancelled)))
 	gate.close()
-	t.Logf("held_IO_cancel backend=%s elapsed=%s all_credits=0 observer_gate_released=true", backend.store, time.Since(cancelled))
+	t.Logf("held_IO_cancel backend=%s elapsed=%s", backend.store, time.Since(cancelled))
 }
 
 func processFaultUnavailable(t *testing.T, suite *processFaultSuite, backend processFaultBackend) {
@@ -568,7 +568,7 @@ func processFaultUnavailable(t *testing.T, suite *processFaultSuite, backend pro
 	if err == nil {
 		t.Fatal("owned proxy unavailable phase unexpectedly reached the backend")
 	}
-	t.Logf("proxy_unavailable backend=%s caller_error=%s backend_continues=true", backend.store, err)
+	t.Logf("proxy_unavailable backend=%s caller_error=%s", backend.store, err)
 	if backend.mongo != nil {
 		backend.mongoProxy.SetUnavailable(false)
 	} else {
@@ -602,7 +602,7 @@ func processFaultUnavailable(t *testing.T, suite *processFaultSuite, backend pro
 		t.Fatal("recovery replaced the service process", suite.pid, actualPID)
 	}
 	processFaultIdle(t, suite.process, 3*time.Second)
-	t.Logf("proxy_recovered backend=%s elapsed=%s same_PID=%s same_SDK=true healthy_CRUD_and_Native=true", backend.store, time.Since(start), suite.pid)
+	t.Logf("proxy_recovered backend=%s elapsed=%s PID=%s", backend.store, time.Since(start), suite.pid)
 }
 
 func processFaultCRUD(t *testing.T, suite *processFaultSuite, backend processFaultBackend, id string) {
@@ -659,7 +659,7 @@ func processFaultCRUD(t *testing.T, suite *processFaultSuite, backend processFau
 	}
 }
 
-func processFaultIdle(t *testing.T, process *memoryRecoveryCLI, bound time.Duration) {
+func processFaultIdle(t *testing.T, process *cliContainer, bound time.Duration) {
 	t.Helper()
 	start := time.Now()
 	for {
@@ -724,7 +724,7 @@ func processFaultShutdown(t *testing.T, suite *processFaultSuite, backend proces
 	default:
 	}
 	start := time.Now()
-	packagedDocker(t, "kill", "--signal=TERM", suite.process.name)
+	runDocker(t, "kill", "--signal=TERM", suite.process.name)
 	// Release the observer after SIGTERM so the service drains a real failed IO
 	// rather than waiting for this test's own callback timeout.
 	gate.close()
@@ -735,7 +735,7 @@ func processFaultShutdown(t *testing.T, suite *processFaultSuite, backend proces
 	if waitErr != nil || len(state) != 1 || state[0] != "0" || time.Since(start) > 8*time.Second {
 		t.Fatal("fault shutdown exceeded 8s or failed", state, waitErr, time.Since(start))
 	}
-	oom := strings.TrimSpace(packagedDocker(t, "inspect", "--type", "container", "--format", "{{.State.OOMKilled}}", suite.process.name))
+	oom := strings.TrimSpace(runDocker(t, "inspect", "--type", "container", "--format", "{{.State.OOMKilled}}", suite.process.name))
 	if oom != "false" {
 		t.Fatal("fault shutdown OOM", oom)
 	}
