@@ -84,7 +84,8 @@ PeerDiscoveryService.
 [weir-protocol](https://github.com/batchstream/weir-protocol) owns canonical public
 schemas, generated Go bindings and shared validation/DNS helpers. Both Weir and
 [weir-go](https://github.com/batchstream/weir-go) depend on it; it depends on neither.
-The SDK has no dependency on the server. This repository generates only internal
+The SDK has no dependency on the server, and the server binary does not use the
+SDK; only server tests consume it. This repository generates only internal
 peer bindings with `scripts/generate.sh`. Clients in other languages can generate
 the public schema and implement discovery, endpoint refresh, load balancing and
 typed completion handling. Weir uses protocol v0.14.0 and Go SDK v0.16.0.

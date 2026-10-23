@@ -6,17 +6,24 @@ evaluation.
 
 ## Backend demand
 
-Each Store and replica has its own execution budget (`batching.max_in_flight`,
-default 16 simultaneous adapter invocations) and its own backend adapter.
-Aggregate database demand therefore grows with Stores and replicas; adding Weir
-replicas does not add database capacity. Separate Stores provide independent
-scheduling budgets at the cost of additional backend connections. See
+Each Store and replica has its own backend adapter. MongoDB pools and Search
+HTTP transports have no connection-count limit; connections grow with actual
+demand. `batching.max_in_flight` (default 16 simultaneous adapter invocations,
+shared by reads, mutations and Native streaming) is the only per-Store,
+per-replica concurrency cap, and explicit `0` removes it. Business connections
+and RPCs have no separate cap. Paused Native output releases its execution slot
+but can keep its backend socket open, so open connections can exceed
+`max_in_flight`.
+
+Size database connection limits for the sum over Stores and replicas, including
+rollout overlap. Adding Weir replicas raises aggregate database demand and does
+not add database capacity. Separate Stores provide independent scheduling
+budgets at the cost of additional backend connections. See
 [batching](../../docs/batching.md) for queue, batch and execution interaction.
 
 Observe backend connection ownership, active executions, queue count/bytes,
 paused Native output, completed throughput and latency together with backend
-CPU and memory. Paused HTTP responses can retain upstream sockets; consume
-responses promptly.
+CPU and memory. Consume Native responses promptly.
 
 After callers close, idle backend connections can remain for reuse. MongoDB pools
 close at adapter shutdown; Search idle connections expire after 30 seconds by
@@ -25,7 +32,7 @@ default.
 ## Memory
 
 Set a container memory limit; it is the hard memory boundary. Weir detects the
-visible capacity, excludes reclaimable cgroup file cache from admission and sets
+visible capacity, excludes reclaimable cgroup `inactive_file` from admission and sets
 the Go soft limit below the overload recovery watermark unless `GOMEMLIMIT` is
 set. Verify any override under allocation bursts. See
 [operations](../../docs/operations.md#memory-pressure-and-recovery) for the

@@ -67,7 +67,9 @@ transport progress and ordinary detached cleanup have independent deadlines.
 `lifecycle.shutdown_timeout` (default `5s`) is the full admitted drain. After it,
 `lifecycle.cleanup_timeout` (default `2s`) is one Store cleanup budget covering
 cancellation, session cleanup and disconnect, not a fresh timeout for each phase.
-Work that does not stop within it is reported as a shutdown failure. Lua's
+Work that does not stop within it is reported as a shutdown failure. The same
+timeout bounds detached MongoDB transaction abort and session cleanup after a
+caller cancels, so lowering it to speed shutdown also shortens that cleanup. Lua's
 default instruction count is unlimited; zero call-depth and stack-slot settings
 select the VM defaults. See [Lua](lua.md) for allocation ownership and supported functions.
 

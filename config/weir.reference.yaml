@@ -129,8 +129,9 @@ lifecycle:
   # Align Kubernetes terminationGracePeriodSeconds with this and preStop time.
   shutdown_timeout: 5s
   # Bound resource release after caller cancellation or forced process drain.
-  # Default: 2s; positive duration. Shared by Store and backend cleanup.
-  # Shutdown can require up to two cleanup phases after the drain deadline.
+  # Default: 2s; positive duration. After the drain deadline, each Store gets
+  # one cleanup budget shared by cancellation, session cleanup and disconnect.
+  # Also bounds detached MongoDB transaction/session cleanup after cancellation.
   cleanup_timeout: 2s
 
 overload:

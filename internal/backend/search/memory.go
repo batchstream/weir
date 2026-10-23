@@ -32,8 +32,8 @@ func programWorking(parts ...int) (int, error) {
 
 // Empty index/ID strings are expanded by their worst JSON escaping below. The
 // longest supported action/result and normal optional metadata cover both
-// typeless Elasticsearch and OpenSearch replies. Those replies omit "_type"; the
-// shape keeps it as conservative headroom for one more short metadata field.
+// typeless and typed Elasticsearch/OpenSearch replies: Elasticsearch 7.x and
+// OpenSearch 1.x pass the adapter's flavor check and include "_type":"_doc".
 // All per-item numeric evidence is nonnegative; elapsed times are decoded as
 // unconstrained int64 values.
 const bulkAckItemShape = `{"delete":{"_index":"","_id":"","_type":"_doc","status":404,"result":"not_found","_version":9223372036854775807,"_seq_no":9223372036854775807,"_primary_term":9223372036854775807,"forced_refresh":false,"_shards":{"total":9223372036854775807,"successful":9223372036854775807,"failed":9223372036854775807}}}`
