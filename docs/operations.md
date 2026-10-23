@@ -5,21 +5,18 @@
 Enable an independent diagnostics listener, usually on loopback:
 
 ```yaml
-diagnostics:
-  address: 127.0.0.1:7449
+listeners:
+  application: 127.0.0.1:7447
+  diagnostics: 127.0.0.1:7449
 ```
 
 `GET /livez` reports a running diagnostics handler. `GET /readyz` reports that
 the Node entered service and is not draining or failed. Neither endpoint tests
 backend health or workload capacity. `GET /metrics`
 exports a Node-owned Prometheus registry. Diagnostics accepts HTTP/1 GET
-requests without a body or query, with independent progress deadlines.
-
-```sh
-weir probe live --address 127.0.0.1:7449
-weir probe ready --address 127.0.0.1:7449 --timeout 750ms
-weir version
-```
+requests without a body or query, with independent progress deadlines. Point
+HTTP liveness and readiness probes at these paths; `weir version` prints the
+build identity.
 
 The application port requires isolated networking. Every replica behind one
 address uses the same Store definitions. In Kubernetes, put the replicas behind a
@@ -45,8 +42,8 @@ one member and cannot provide automatic failover.
 Seeds are bootstrap addresses, not a routing allowlist or global connection cap.
 Every advertised member address must be reachable from Weir. With TLS, each
 member's certificate must verify its actual hostname/IP; a seed's identity is
-not reused for other members. `max_connecting` limits creation per member pool,
-while monitors and pools can exist for multiple discovered members. Monitor
+not reused for other members. Each member pool creates at most two connections
+at a time, while monitors and pools can exist for multiple discovered members. Monitor
 aggregate backend demand, connection ownership and cancellation together.
 
 Keep database transition time separate from Weir's reaction: observe when the
@@ -65,35 +62,6 @@ abort/conflict evidence. Native remains opaque: the caller supplies
 command-level concerns and manages any backend-specific cursor/session
 semantics.
 
-## Bounded CPU investigation
-
-CPU profiling is disabled by default and exposes no HTTP pprof endpoint. For a
-matched performance investigation, start the actual CLI with both flags:
-
-```sh
-weir serve --config weir.yaml --routes routes.yaml \
-  --cpu-profile .testdata/weir-cpu.pprof --cpu-profile-duration 30s
-go tool pprof -top .testdata/weir-cpu.pprof
-```
-
-Prepare the private output directory first. The output must be a new file;
-creation is exclusive with mode `0600`, and existing files (including symlinks)
-are never overwritten. Both flags are required together; duration must be
-positive and at most `60s`. Capture begins before node assembly, not after
-warmup. The timer stops and flushes the runtime profiler and closes the file
-without stopping service; serve exit also stops capture and joins its worker
-without waiting out the capture duration. Profiler flush and file close add
-cleanup latency outside the node drain budgets. Abrupt termination can leave an
-incomplete file. Use a local regular-file destination on trusted storage;
-filesystem IO and runtime flushing are not hard wall-clock bounded. File-close
-errors fail serve; the Go profiler API does not report asynchronous write
-errors, so verify that the retained profile parses. Treat profiles as sensitive
-process information.
-
-Retain generated output only in ignored `.testdata/` or external artifacts.
-Match binary, workload, resource limits and observation windows across
-comparisons, and account for profiling overhead and startup samples.
-
 ## Metrics
 
 Observe completed work and actual backend demand together with queue and memory
@@ -103,7 +71,7 @@ of improved capacity.
 | Family | Interpretation |
 | --- | --- |
 | `weir_node_state`, `weir_node_ready` | Lifecycle and readiness |
-| `weir_store_active_executions`, `weir_store_active_executions_limit` | Per-Store record batches; limit zero means unlimited |
+| `weir_store_active_executions`, `weir_store_active_executions_limit` | Per-Store record batches and their limit |
 | `weir_store_active_natives`, `weir_store_active_natives_limit` | Per-Store running Native commands |
 | `weir_store_queued_operations`, `weir_store_queued_bytes` | Waiting work |
 | `weir_store_draining`, `weir_store_overloaded` | Store admission state |
@@ -168,8 +136,8 @@ labels without document or target identities.
 ## Memory pressure and recovery
 
 Capacity is the smallest trusted physical host, finite process address-space or
-visible container limit. Admission latches at the configured high watermark and
-recovers below the low watermark; defaults are 80% and 70%. Recovery needs
+visible container limit. Admission latches at 80% of capacity and recovers below
+70%. Recovery needs
 complete trusted observations. Unknown samples alone do not manufacture
 overload.
 
@@ -180,8 +148,8 @@ missing or inconsistent statistics retain raw usage. Metrics expose both
 Cgroup usage is not added to process RSS.
 
 The CLI owns an automatic Go soft limit of 80% of the remaining process recovery
-allowance after memory outside RSS is accounted for. With default watermarks its
-upper bound is 56% of capacity. Positive targets have a 16 MiB floor capped by
+allowance after memory outside RSS is accounted for. Its upper bound is 56% of
+capacity. Positive targets have a 16 MiB floor capped by
 that upper bound. This encourages release of idle Go heap after allocation
 bursts. It cannot reclaim a live working set or memory outside Go.
 
@@ -220,15 +188,14 @@ remote work can retain locks until MongoDB's own transaction timeout and
 cleanup. A lost commit acknowledgement remains UNKNOWN. Confirmed abort/conflict
 retries retain the original caller lifetime.
 
-Align termination grace with preStop, `lifecycle.shutdown_timeout` and
-`lifecycle.cleanup_timeout`. Each Store drains admitted work for up to the
-shutdown timeout (default `5s`), then gets one cleanup budget (default `2s`) to
-cancel remaining work, end MongoDB sessions and close backend connections. An
-expired best-effort session cleanup is neither confirmed remote cleanup nor
-permission to replay. Disconnect errors and work that does not stop within the
-budget are reported as shutdown failures, never as a clean stop. Results not yet
-acknowledged by the consumer stay charged until Ack or stream closure. During
-rolling updates, terminating Pods can retain connections while new Pods start;
+Align termination grace with preStop, `shutdown_timeout` and the 2s cleanup.
+Each Store drains admitted work for up to the shutdown timeout (default `5s`),
+then gets one fixed 2s cleanup budget to cancel remaining work, end MongoDB
+sessions and close backend connections. An expired best-effort session cleanup
+is neither confirmed remote cleanup nor permission to replay. Disconnect errors
+and work that does not stop within the budget are reported as shutdown failures,
+never as a clean stop. Results not yet acknowledged by the consumer stay charged
+until Ack or stream closure. During rolling updates, terminating Pods can retain connections while new Pods start;
 `maxSurge: 0` does not cap that overlap. Scaling replicas increases aggregate
 backend demand and does not add database capacity.
 

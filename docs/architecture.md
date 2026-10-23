@@ -94,7 +94,7 @@ Memory use is bounded by static limits rather than per-byte accounting. Every
 request and response message is at most 64 MiB. Each Store bounds its queue by
 operation count and request bytes, its batches by count and bytes, and its
 concurrent adapter invocations by `max_in_flight`. Each record stream holds at
-most `max_pending_records` outstanding records. Size the container for these
+most 32 outstanding records. Size the container for these
 limits and the largest documents you serve; [batching](batching.md) shows the
 calculation.
 
@@ -104,8 +104,9 @@ below the recovery watermark. The CLI manages the Go soft limit below the
 recovery threshold, while an explicit runtime policy takes precedence.
 Container/OS memory limits remain the hard boundary.
 
-Lua programs run with instruction, call-depth, stack and deadline limits. There
-is no per-evaluation memory limit, so transforms must be trusted. See
+Lua programs run within the caller's deadline and the VM's call-depth and stack
+limits. There is no per-evaluation memory or instruction limit, so transforms
+must be trusted. See
 [Lua](lua.md).
 
 The application listener serves only StoreService, over plaintext gRPC on an
@@ -119,7 +120,8 @@ Confirmed write evidence remains valid.
 
 ## Lifecycle
 
-Startup resolves configuration, qualifies local backends and binds listeners. Partial startup closes already owned resources.
+Startup loads the configuration file, qualifies local backends and binds
+listeners within 30s. Partial startup closes already owned resources.
 Diagnostics readiness tracks lifecycle rather than backend health or Store load.
 
 Shutdown stops new admission and drains admitted work to its deadline. Cancellation then stops owned work; bounded cleanup joins

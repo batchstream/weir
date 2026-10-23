@@ -25,9 +25,8 @@ func TestMongoConcurrentRPCsUseAvailableBackendConnections(t *testing.T) {
 	observation := &budgetObservation{}
 	proxy.Monitor = &event.CommandMonitor{Started: observation.start, Succeeded: observation.finish}
 	cfg := recordsStoreConfig(t, proxy.URI())
-	// Isolate native connection growth from the Store execution budget.
-	unlimited := 0
-	cfg.Routing.Stores[0].Batching.MaxInFlight = &unlimited
+	// A large execution budget isolates native connection growth.
+	cfg.Stores[0].Batching.MaxInFlight = 1 << 16
 	node := secureNode(t, cfg)
 	concurrentBackendReads(t, node, fixture.DB+"/records/s:missing", observation)
 }
@@ -50,14 +49,11 @@ func TestSearchConcurrentRPCsUseAvailableBackendConnections(t *testing.T) {
 	server := httptest.NewServer(handler)
 	t.Cleanup(server.Close)
 	backend := &Search{URL: server.URL}
-	// Isolate native connection growth from the Store execution budget.
-	unlimited := 0
-	batching := BatchingConfig{MaxOperations: 1, MaxInFlight: &unlimited}
-	local := &Local{Backend: BackendConfig{Search: backend}, Batching: batching}
-	definition := StoreConfig{Name: "records", Local: local}
-	cfg := DefaultConfig()
-	cfg.Basic.Listeners.Application = "127.0.0.1:0"
-	cfg.Routing.Stores = []StoreConfig{definition}
+	// A large execution budget isolates native connection growth.
+	batching := Batching{MaxOperations: 1, MaxInFlight: 1 << 16}
+	definition := StoreConfig{Name: "records", Search: backend, Batching: batching}
+	cfg := emptyConfig(t)
+	cfg.Stores = []StoreConfig{definition}
 	node := secureNode(t, cfg)
 	concurrentBackendReads(t, node, fixture.Index+"/s:missing", observation)
 }

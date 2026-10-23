@@ -1,80 +1,69 @@
 # Configuration
 
-Weir loads process settings and local Store definitions separately. Copy the
-[process reference](../config/weir.reference.yaml) to `weir.yaml` and the
-[Store reference](../config/routes.reference.yaml) to `routes.yaml`, then edit
-the addresses, backend identities and authentication sources.
+A Weir process reads one YAML file. Copy the
+[reference](../config/weir.reference.yaml) to `weir.yaml`, then edit the
+listeners, Stores and authentication sources.
 
 ```sh
-weir check --config weir.yaml --routes routes.yaml --effective
-weir serve --config weir.yaml --routes routes.yaml
+weir check --config weir.yaml
+weir serve --config weir.yaml
 ```
 
 ## Loading and validation
 
-The CLI defaults to `--config ./weir.yaml` and no Store document. Both CLI paths
-resolve from the process working directory. An omitted `--routes` opens no backend
-and serves no Store. Changes require a restart.
+`--config` defaults to `./weir.yaml` and resolves from the process working
+directory. Relative credential and CA paths inside the file resolve from the
+file's own directory. Changes require a restart.
 
-Each file contains one YAML mapping with exact lowercase keys. Unknown or
-duplicate keys, multiple documents, anchors, aliases, merge keys and explicit tags
-are rejected. Counts use integers, flags use booleans, and text, sizes and
-durations use strings. Null is not omission. Process fields and Store entries
-cannot be null; optional backend, authentication and TLS blocks can be null.
+The file is one YAML document. Unknown and duplicate keys are rejected. Durations
+require units such as `ms`, `s` or `m`; byte sizes use integer `B`, `KiB`, `MiB`
+or `GiB` units. Strings are literal; no field reads environment variables.
+Omitted fields and zero values select the defaults.
 
-Durations require units such as `ms`, `s`, `m` or `h` and must fit a signed 64-bit
-nanosecond count. Byte sizes use integer `B`, `KiB`, `MiB` or `GiB` units. Fields
-have their own zero-value rules, documented in the references. Strings are literal;
-no field reads environment variables.
-
-File loading, programmatic startup and effective inspection share one defaulting
-and validation path. `check` does not bind listeners, resolve DNS or connect to
-backends. It resolves explicit credential files but does not read CA files.
-`--effective` reports resolved `basic`, `routing` and `automatic` settings, with
-authentication and CA paths redacted. It is an inspection report, not a replacement
-configuration file.
+`check` runs the same validation as `serve` without binding listeners, resolving
+DNS or connecting to backends. It reads credential files but not CA files.
+Validation errors never include configuration values.
 
 ## Process settings
 
-| Group | Responsibility |
-| --- | --- |
-| `listeners` | Required application gRPC bind address |
-| `diagnostics` | Independent HTTP health and metrics listener |
-| `transport` | Handshake, idle, stall, keepalive and stream publication policy |
-| `lifecycle` | Startup, graceful shutdown and cleanup deadlines |
-| `overload.memory` | Actual memory-pressure watermarks and sampling cadence |
-| `lua` | Instruction, call-depth and stack-slot policy for the in-process VM |
+| Field | Default | Behavior |
+| --- | --- | --- |
+| `listeners.application` | required | gRPC StoreService address |
+| `listeners.diagnostics` | disabled | HTTP `/livez`, `/readyz` and `/metrics` address |
+| `shutdown_timeout` | `5s` | Drain of admitted work after SIGTERM |
 
-Bind addresses use explicit IP:port. Port zero requests an ephemeral port. The
-application and diagnostic listeners must not overlap.
+Listener addresses are explicit `IP:port` values; port zero requests an
+ephemeral port. The two listeners must not overlap. Bind diagnostics to a
+non-loopback address only on a trusted network. Readiness describes Node
+lifecycle, independent of Store pressure or backend health.
 
-The diagnostics listener defaults to disabled. A non-loopback bind requires
-`diagnostics.allow_intranet: true`. Readiness describes Node lifecycle, independent
-of Store pressure or backend health.
-
-Business work inherits caller cancellation and deadlines. Connection setup,
-transport progress and ordinary detached cleanup have independent deadlines.
-`lifecycle.shutdown_timeout` (default `5s`) is the full admitted drain. After it,
-`lifecycle.cleanup_timeout` (default `2s`) is one Store cleanup budget covering
-cancellation, session cleanup and disconnect, not a fresh timeout for each phase.
-Work that does not stop within it is reported as a shutdown failure. The same
-timeout bounds detached MongoDB transaction abort and session cleanup after a
-caller cancels, so lowering it to speed shutdown also shortens that cleanup. Lua's
-default instruction count is unlimited; zero call-depth and stack-slot settings
-select the VM defaults. See [Lua](lua.md) for allocation ownership and supported functions.
+Business work inherits caller cancellation and deadlines. After
+`shutdown_timeout`, each Store gets a fixed 2s to cancel remaining work, end
+MongoDB sessions and close connections. Work that does not stop within it is
+reported as a shutdown failure. The same 2s bounds detached MongoDB transaction
+abort and session cleanup after a caller cancels. Startup, including backend
+qualification and listener binding, has 30s.
 
 ## Store settings
 
-Each Store has a unique name and exactly one `backend.mongodb` or `backend.search`.
-Hosting a Store requires an application listener.
+Each Store has a unique name of lowercase letters, digits and internal hyphens,
+and exactly one `mongodb` or `search` backend.
 
-| Group | Responsibility |
-| --- | --- |
-| `backend` | Connection establishment, exchange targets, authentication and trust roots |
-| `backend.mongodb` | URI, target metadata caching, connection creation and confirmed-abort retries |
-| `backend.search` | Origin URL, idle connection expiry and confirmed-conflict retries |
-| `queue` | Waiting input count and bytes; dispatch returns capacity |
-| `batching` | Aggregation count, bytes, write collection wait and active execution limit |
+| Field | Default | Behavior |
+| --- | --- | --- |
+| `mongodb.uri` / `search.url` | required | Backend address |
+| `authentication` | none | Username/password values or files |
+| `tls.ca_file` | system roots | Custom CA bundle |
+| `batching.max_operations` | 128 | Records per backend execution |
+| `batching.max_bytes` | 4 MiB | Request bytes per execution; one larger record runs alone |
+| `batching.max_wait` | `20ms` | Write collection window; explicit `0s` executes immediately |
+| `batching.max_in_flight` | 16 | Concurrent backend executions per Store |
+
+The waiting queue holds 1024 operations / 32 MiB, and Native commands run in
+their own pool of 64 per Store. See [batching](batching.md) for how these limits
+interact.
+
+### MongoDB
 
 MongoDB uses primary reads, majority-acknowledged typed writes and no automatic
 read/write replay. Configure an ordinary nonsharded replica set in either mode:
@@ -89,65 +78,46 @@ read/write replay. Configure an ordinary nonsharded replica set in either mode:
   provide failover. For example: `mongodb://127.0.0.1:27028/?directConnection=true`.
 
 The URI is limited to 4096 bytes. Set names contain 1–64 ASCII letters, digits,
-underscores or hyphens; this is Weir's accepted configuration grammar, not a
-MongoDB naming or membership limit. Seed order is retained; DNS case, IP literals
-(including mapped IPv4) and decimal ports are canonicalized before duplicate
-checks, without DNS access. IPv6 seeds use brackets, such as
+underscores or hyphens. Seed order is retained; DNS case, IP literals (including
+mapped IPv4) and decimal ports are canonicalized before duplicate checks, without
+DNS access. IPv6 seeds use brackets, such as
 `mongodb://[::1]:27017,127.0.0.1:27018/?replicaSet=orders`.
 
 URI userinfo, database paths, fragments, SRV, mongos/sharding, load balancing,
 secondary routing, unknown options and duplicate option names (case-insensitive)
 are unsupported. A query requires the `/` separator before `?`. Accepted options
 are `replicaSet`, `directConnection`, `serverMonitoringMode=poll`, `authSource`,
-`authMechanism=SCRAM-SHA-256` and `tls=true`. Authentication requires separately
-configured username/password, explicit SCRAM-SHA-256, `authSource` and TLS;
-TLS options require credentials. Custom CAs belong in `backend.tls.ca_file`, not
-in the URI. Verification uses each actual member's hostname/IP, not the seed's
-name. All discovered addresses must be reachable and covered by their member
-certificates when TLS is enabled.
+`authMechanism=SCRAM-SHA-256` and `tls=true`. Authentication requires the
+`authentication` block, explicit SCRAM-SHA-256, `authSource` and TLS; TLS options
+require credentials. Custom CAs belong in `tls.ca_file`, not in the URI.
+Verification uses each actual member's hostname/IP, not the seed's name. All
+discovered addresses must be reachable and covered by their member certificates
+when TLS is enabled.
 
-Completed target metadata checks default to 64 cached collections; zero disables
-retention while concurrent callers still share pending checks. `max_connecting`
-defaults to 2 and controls connection creation **per member pool**, not active
-connection count. The seed-list bound is not a global topology or socket cap:
-discovered members have their own monitor/data connections.
+Replica-set clients poll topology every second; direct mode keeps the driver
+default. Each member pool creates at most two connections at a time. Primary
+discovery restores selection for new operations; it does not transparently
+migrate Native cursors, sessions or transactions. Never infer that an
+interrupted operation was not applied or resubmit an uncertain mutation merely
+because a new primary is available.
 
-Primary discovery restores selection for new operations; it does not transparently
-migrate Native cursors, sessions or transactions. Caller contexts still bound
-selection and execution. Never infer that an interrupted operation was not applied
-or resubmit an uncertain mutation merely because a new primary is available.
+### Search
 
-Search uses one HTTP(S) origin with an explicit port. Its idle timeout defaults
-to `30s`; `0s` disables expiry. Each adapter invocation qualifies its distinct
-indexes without retaining metadata between invocations.
+Search uses one `http://` or `https://` origin with an explicit port and no
+userinfo, path, query or fragment. Authentication or a custom CA requires HTTPS.
+Idle backend connections close after 30s. Each adapter invocation qualifies its
+distinct indexes without retaining metadata between invocations.
 
-Both adapters default to five confirmed-conflict/abort attempts. Setting
-`retry_attempts: 1` prevents another attempt. MongoDB's `retry_backoff` defaults to
-`5ms`; `0s` skips the pause. Possible writes and ambiguous commits are never
-replayed. MongoDB may retry confirmation of the same commit separately.
+Both adapters make up to five attempts after a confirmed conflict or abort.
+Possible writes and ambiguous commits are never replayed. MongoDB may retry
+confirmation of the same commit separately.
 
-Queue defaults are 1024 operations and 32 MiB. Batch defaults are 128 operations,
-4 MiB, `20ms` write collection and 16 active executions. Explicit `max_wait: 0s`
-disables collection; explicit `max_in_flight: 0` removes the execution limit.
-Byte settings are grouping targets: one legal larger item proceeds alone.
-Backend-advertised document and command limits still apply. See [batching](batching.md) for interaction between the controls.
+## Authentication
 
-## Authentication and memory
-
-Authentication belongs under `backend.authentication`. Each username/password
-has exactly one explicit value or file source; URI userinfo is rejected. Relative
-credential paths resolve from the Store document directory. Files contain UTF-8
-text and allow one final LF/CRLF. Authentication requires native TLS. A custom
-`backend.tls.ca_file` replaces system roots while retaining hostname verification;
-relative CA paths resolve from the process working directory.
+Each username and password comes from exactly one explicit value or file; URI
+userinfo is rejected. Files contain UTF-8 text and allow one final LF/CRLF.
+Authentication requires TLS to the backend. A custom `tls.ca_file` replaces the
+system roots while retaining hostname verification.
 
 Backend identity and configuration stay local to each process. The application
 listener requires an isolated network.
-
-Memory capacity is discovered from physical host memory, finite process limits
-and visible container limits. Static queue, batch, stream and 64 MiB message
-limits bound memory use; [batching](batching.md) shows how to size for them.
-Actual memory pressure controls overload; container/OS limits remain the hard
-boundary. The CLI also manages the standard
-Go soft memory limit unless an explicit runtime policy takes precedence.
-See [operations](operations.md) for pressure, recovery and metrics.

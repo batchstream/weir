@@ -122,12 +122,11 @@ func (b *startupBackend) config() app.Config {
 	backend := &app.Search{
 		URL: b.server.URL,
 	}
-	local := &app.Local{Backend: app.BackendConfig{Search: backend}, Batching: app.BatchingConfig{MaxOperations: 1}}
-	service := app.StoreConfig{Name: "records", Local: local}
+	service := app.StoreConfig{Name: "records", Search: backend, Batching: app.Batching{MaxOperations: 1}}
 
-	cfg := app.DefaultConfig()
-	cfg.Basic.Listeners.Application, cfg.Basic.Diagnostics.Address = "127.0.0.1:0", "127.0.0.1:0"
-	cfg.Routing.Stores = []app.StoreConfig{service}
+	cfg := app.Config{}
+	cfg.Listeners.Application, cfg.Listeners.Diagnostics = "127.0.0.1:0", "127.0.0.1:0"
+	cfg.Stores = []app.StoreConfig{service}
 	return cfg
 }
 
@@ -215,24 +214,13 @@ type cliProcess struct {
 func startCLI(t *testing.T, cfg app.Config, mode string) *cliProcess {
 	t.Helper()
 	t.Logf("native test runtime=%s/%s go=%s euid=%d", runtime.GOOS, runtime.GOARCH, runtime.Version(), os.Geteuid())
-	raw, err := yaml.Marshal(cfg.Basic)
+	raw, err := yaml.Marshal(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
-	config := filepath.Join(t.TempDir(), "node.yaml")
+	config := filepath.Join(t.TempDir(), "weir.yaml")
 	if err := os.WriteFile(config, raw, 0600); err != nil {
 		t.Fatal(err)
-	}
-	routes := ""
-	if len(cfg.Routing.Stores) != 0 {
-		routing, err := yaml.Marshal(cfg.Routing)
-		if err != nil {
-			t.Fatal(err)
-		}
-		routes = filepath.Join(filepath.Dir(config), "routes.yaml")
-		if err := os.WriteFile(routes, routing, 0600); err != nil {
-			t.Fatal(err)
-		}
 	}
 
 	binary, err := os.Executable()
@@ -250,7 +238,6 @@ func startCLI(t *testing.T, cfg app.Config, mode string) *cliProcess {
 		os.Environ(),
 		"WEIR_PROCESS_CHILD="+mode,
 		"WEIR_PROCESS_CONFIG="+config,
-		"WEIR_PROCESS_ROUTES="+routes,
 	)
 	input, err := cmd.StdinPipe()
 	if err != nil {
@@ -374,6 +361,22 @@ func reserveReleasedAddresses(t *testing.T, addresses []string) {
 	t.Logf("listeners released, rebound and reserved through Wait: %v", addresses)
 }
 
+// healthy requires a 200 response from one diagnostics health endpoint.
+func healthy(t *testing.T, diagnostic, path string) {
+	t.Helper()
+	transport := &http.Transport{Proxy: nil, DisableKeepAlives: true}
+	defer transport.CloseIdleConnections()
+	client := &http.Client{Transport: transport, Timeout: time.Second}
+	response, err := client.Get("http://" + diagnostic + path)
+	if err != nil {
+		t.Fatal(path, err)
+	}
+	_ = response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		t.Fatal(path, response.StatusCode)
+	}
+}
+
 func listenerAddresses(t *testing.T, line string) []string {
 	t.Helper()
 	address, found := strings.CutPrefix(line, "Weir listening on ")
@@ -399,10 +402,9 @@ func TestCLISignalDuringHandshake(t *testing.T) {
 				backend := &app.Search{
 					URL: held.server.URL,
 				}
-				local := &app.Local{Backend: app.BackendConfig{Search: backend}}
-				second := app.StoreConfig{Name: "second", Local: local}
+				second := app.StoreConfig{Name: "second", Search: backend}
 
-				cfg.Routing.Stores = append(cfg.Routing.Stores, second)
+				cfg.Stores = append(cfg.Stores, second)
 			}
 			p := startCLI(t, cfg, "cli")
 			event(t, held.entered)
@@ -445,31 +447,22 @@ func TestCLISignalAtFirstListener(t *testing.T) {
 	b.idle(t)
 }
 
-func TestCLIBasicOnlyServe(t *testing.T) {
-	t.Chdir(t.TempDir())
-	if err := os.WriteFile("routes.yaml", []byte("unknown: ignored-sentinel\n"), 0600); err != nil {
-		t.Fatal(err)
-	}
-	cfg := app.DefaultConfig()
-	cfg.Basic.Listeners.Application = "127.0.0.1:0"
-	cfg.Basic.Diagnostics.Address = "127.0.0.1:0"
+func TestCLIStorelessServe(t *testing.T) {
+	cfg := app.Config{}
+	cfg.Listeners.Application = "127.0.0.1:0"
+	cfg.Listeners.Diagnostics = "127.0.0.1:0"
 	p := startCLI(t, cfg, "cli")
 	addresses := listenerAddresses(t, p.line(t))
 	diagnostic := strings.TrimPrefix(p.line(t), "Diagnostics listening on ")
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
-	for _, mode := range []string{"live", "ready"} {
-		err := runProbe(ctx, mode, diagnostic, probeTimeout)
-		if err != nil {
-			t.Fatal("a node without routes must start and report health", mode, err)
-		}
+	for _, path := range []string{"/livez", "/readyz"} {
+		healthy(t, diagnostic, path)
 	}
 
-	p.terminate(t, "basic-only node reached readiness without reading default routes.yaml")
+	p.terminate(t, "Store-less node reached readiness")
 	reserveReleasedAddresses(t, append(addresses, diagnostic))
 	p.wait(t, 0)
 	if p.stderr.text() != "" {
-		t.Fatal("basic-only shutdown output", p.stderr.text())
+		t.Fatal("Store-less shutdown output", p.stderr.text())
 	}
 }
 
@@ -499,19 +492,14 @@ func TestCLIProcessChild(t *testing.T) {
 		return
 	}
 	config := os.Getenv("WEIR_PROCESS_CONFIG")
-	routes := os.Getenv("WEIR_PROCESS_ROUTES")
-	args := []string{"serve", "--config", config}
-	if routes != "" {
-		args = append(args, "--routes", routes)
-	}
 
 	var err error
 	if mode == "before-start" {
-		err = beforeStartChild(config, routes)
+		err = beforeStartChild(config)
 	} else if mode == "writer-error" {
-		err = writerErrorChild(config, routes)
+		err = writerErrorChild(config)
 	} else {
-		err = run(args, os.Stdout)
+		err = run([]string{"serve", "--config", config}, os.Stdout)
 	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -520,8 +508,8 @@ func TestCLIProcessChild(t *testing.T) {
 	os.Exit(0)
 }
 
-func beforeStartChild(config, routes string) error {
-	cfg, err := app.Load(config, routes)
+func beforeStartChild(config string) error {
+	cfg, err := app.Load(config)
 	if err != nil {
 		return err
 	}
@@ -561,8 +549,8 @@ func TestCLIStartupFailure(t *testing.T) {
 
 const writerSignalAcknowledged = "serving signal cancellation observed"
 
-func writerErrorChild(config, routes string) error {
-	cfg, err := app.Load(config, routes)
+func writerErrorChild(config string) error {
+	cfg, err := app.Load(config)
 	if err != nil {
 		return err
 	}
@@ -767,10 +755,9 @@ func TestStartupCancellationReleasesOwners(t *testing.T) {
 	backend := &app.Search{
 		URL: held.server.URL,
 	}
-	local := &app.Local{Backend: app.BackendConfig{Search: backend}}
-	service := app.StoreConfig{Name: "second", Local: local}
+	service := app.StoreConfig{Name: "second", Search: backend}
 
-	cfg.Routing.Stores = append(cfg.Routing.Stores, service)
+	cfg.Stores = append(cfg.Stores, service)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	done := make(chan struct{})
@@ -815,10 +802,7 @@ func TestCLISignalDrainsInflight(t *testing.T) {
 	diagnostic := strings.TrimPrefix(p.line(t), "Diagnostics listening on ")
 	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 	defer cancel()
-	err := runProbe(ctx, "ready", diagnostic, probeTimeout)
-	if err != nil {
-		t.Fatal(err)
-	}
+	healthy(t, diagnostic, "/readyz")
 	conn, err := grpc.NewClient(
 		"passthrough:///"+addresses[0],
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
@@ -866,10 +850,7 @@ func TestCLISignalDrainsInflight(t *testing.T) {
 			t.Fatal("readiness did not enter draining")
 		}
 	}
-	err = runProbe(ctx, "live", diagnostic, probeTimeout)
-	if err != nil {
-		t.Fatal("drain liveness", err)
-	}
+	healthy(t, diagnostic, "/livez")
 	select {
 	case <-b.canceled:
 		t.Fatal("signal canceled the backend before its independent deadline")

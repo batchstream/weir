@@ -12,8 +12,10 @@ import (
 
 	"github.com/batchstream/weir/internal/app"
 	"github.com/spf13/cobra"
-	"go.yaml.in/yaml/v3"
 )
+
+// startupTimeout bounds assembly, backend qualification and listener startup.
+const startupTimeout = 30 * time.Second
 
 func main() {
 	if err := run(os.Args[1:], os.Stdout); err != nil {
@@ -37,99 +39,34 @@ func run(args []string, output io.Writer) error {
 	}
 
 	serveConfig := "weir.yaml"
-	serveRoutes := ""
-	profileOptions := cpuProfileOptions{}
 	serveCommand := &cobra.Command{
 		Use:   "serve",
-		Short: "Start the node using process configuration and optional local Stores",
+		Short: "Start the node and serve its configured Stores",
 		Args:  cobra.NoArgs,
 		RunE: func(command *cobra.Command, _ []string) error {
-			if serveConfig == "" {
-				return errors.New("--config requires a file")
-			}
-
-			if err := profileOptions.validate(); err != nil {
-				return err
-			}
-
-			cfg, err := app.Load(serveConfig, serveRoutes)
+			cfg, err := load(serveConfig)
 			if err != nil {
 				return err
 			}
-
-			return serve(command.Context(), cfg, command.OutOrStdout(), profileOptions)
+			return serve(command.Context(), cfg, command.OutOrStdout())
 		},
 	}
-	serveCommand.Flags().StringVarP(
-		&serveConfig,
-		"config",
-		"c",
-		"weir.yaml",
-		"basic YAML configuration file",
-	)
-	serveCommand.Flags().StringVar(
-		&serveRoutes,
-		"routes",
-		"",
-		"optional local Store YAML configuration file",
-	)
-
-	serveCommand.Flags().StringVar(&profileOptions.path, "cpu-profile", "", "new CPU profile output file (exclusive create, mode 0600)")
-	serveCommand.Flags().DurationVar(&profileOptions.duration, "cpu-profile-duration", 0, "CPU capture duration, required with --cpu-profile (positive, at most 60s)")
+	serveCommand.Flags().StringVarP(&serveConfig, "config", "c", "weir.yaml", "YAML configuration file")
 
 	checkConfig := "weir.yaml"
-	checkRoutes := ""
-	checkEffective := false
 	checkCommand := &cobra.Command{
 		Use:   "check",
 		Short: "Validate configuration without listeners, DNS or backend connections",
 		Args:  cobra.NoArgs,
 		RunE: func(command *cobra.Command, _ []string) error {
-			if checkConfig == "" {
-				return errors.New("--config requires a file")
-			}
-
-			cfg, err := app.Load(checkConfig, checkRoutes)
-			if err != nil {
+			if _, err := load(checkConfig); err != nil {
 				return err
 			}
-			if checkEffective {
-				effective, err := cfg.Effective()
-				if err != nil {
-					return err
-				}
-				encoded, err := yaml.Marshal(effective)
-				if err != nil {
-					return errors.New("effective configuration encoding failed")
-				}
-				_, err = command.OutOrStdout().Write(encoded)
-				return err
-			}
-
-			_, err = io.WriteString(command.OutOrStdout(), "configuration valid\n")
+			_, err := io.WriteString(command.OutOrStdout(), "configuration valid\n")
 			return err
 		},
 	}
-	checkCommand.Flags().StringVarP(
-		&checkConfig,
-		"config",
-		"c",
-		"weir.yaml",
-		"basic YAML configuration file",
-	)
-	checkCommand.Flags().StringVar(
-		&checkRoutes,
-		"routes",
-		"",
-		"optional local Store YAML configuration file",
-	)
-
-	checkCommand.Flags().BoolVar(
-		&checkEffective,
-		"effective",
-		false,
-		"print effective settings, defaults and automatic sources with secrets redacted",
-	)
+	checkCommand.Flags().StringVarP(&checkConfig, "config", "c", "weir.yaml", "YAML configuration file")
 
 	versionCommand := &cobra.Command{
 		Use:   "version",
@@ -140,30 +77,7 @@ func run(args []string, output io.Writer) error {
 		},
 	}
 
-	probeAddress := "127.0.0.1:7449"
-	probeDeadline := probeTimeout
-	probeCommand := &cobra.Command{
-		Use:   "probe live|ready",
-		Short: "Check loopback diagnostics",
-		Args:  cobra.ExactArgs(1),
-		RunE: func(command *cobra.Command, args []string) error {
-			return runProbe(command.Context(), args[0], probeAddress, probeDeadline)
-		},
-	}
-	probeCommand.Flags().StringVar(
-		&probeAddress,
-		"address",
-		"127.0.0.1:7449",
-		"loopback diagnostic IP:port",
-	)
-	probeCommand.Flags().DurationVar(
-		&probeDeadline,
-		"timeout",
-		probeTimeout,
-		"positive deadline for the complete diagnostic request",
-	)
-
-	root.AddCommand(serveCommand, checkCommand, versionCommand, probeCommand)
+	root.AddCommand(serveCommand, checkCommand, versionCommand)
 	root.SetOut(output)
 	root.SetErr(output)
 
@@ -174,28 +88,22 @@ func run(args []string, output io.Writer) error {
 	return root.ExecuteContext(context.Background())
 }
 
-func serve(ctx context.Context, cfg app.Config, output io.Writer, options cpuProfileOptions) (resultErr error) {
+func load(filename string) (app.Config, error) {
+	if filename == "" {
+		return app.Config{}, errors.New("--config requires a file")
+	}
+	return app.Load(filename)
+}
+
+func serve(ctx context.Context, cfg app.Config, output io.Writer) error {
 	// The CLI owns signals from before assembly until all owned resources close.
 	signals, cancelSignal := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
 	defer cancelSignal()
-
-	profile, err := startCPUProfile(options)
-	if err != nil {
-		return err
-	}
-	if profile != nil {
-		defer func() {
-			if err := profile.close(); err != nil {
-				resultErr = errors.Join(resultErr, err)
-			}
-		}()
-	}
-
 	return serveContext(signals, cfg, output)
 }
 
 func serveContext(ctx context.Context, cfg app.Config, output io.Writer) (resultErr error) {
-	startup, stop := context.WithTimeout(ctx, time.Duration(cfg.Basic.Lifecycle.StartupTimeout))
+	startup, stop := context.WithTimeout(ctx, startupTimeout)
 	defer stop()
 
 	node, err := app.Open(startup, cfg)
@@ -207,11 +115,9 @@ func serveContext(ctx context.Context, cfg app.Config, output io.Writer) (result
 	defer restoreMemoryLimit()
 
 	defer func() {
-		// A startup cancellation must not cancel the drain budget too.
-		drain, cancel := context.WithTimeout(context.Background(), time.Duration(cfg.Basic.Lifecycle.ShutdownTimeout))
-		defer cancel()
-
-		resultErr = errors.Join(resultErr, node.Close(drain))
+		// A startup cancellation must not cancel the drain; Close bounds it
+		// with the configured shutdown timeout.
+		resultErr = errors.Join(resultErr, node.Close(context.Background()))
 
 		// Close joins the listeners. Preserve their errors even if a signal won
 		// the select below; normal shutdown contributes only nil errors.

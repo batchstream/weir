@@ -116,17 +116,15 @@ It explicitly constructs empty arrays and recognizes typed leaves.
 
 Source, input and result sizes follow the [payload contracts](payloads.md);
 backend document-format limits apply, and cyclic values and invalid types are
-errors. Process `lua` exposes optional `max_instructions`, `max_call_depth` and
-`max_stack_slots` budgets. The default instruction budget is unlimited; zero
-call/stack settings use the VM native defaults. Compilation, top-level execution
-and the callback inherit the caller context, so the caller's deadline bounds
-evaluation. Evaluations run concurrently inside the main Weir process within the
+errors. Call depth and stack slots use the VM native limits; there is no
+instruction budget. Compilation, top-level execution and the callback inherit
+the caller context, so the caller's deadline bounds evaluation. Evaluations run concurrently inside the main Weir process within the
 Store's execution slots; each creates its own VM, globals, library tables and
 string metatable.
 
-Lua has no per-evaluation memory limit. A transform can allocate as much as
-its instruction budget and deadline allow, so only deploy trusted transforms
-and set `max_instructions` when sources are not fully controlled. Process-wide
+Lua has no per-evaluation memory limit. A transform can run and allocate as much
+as its caller's deadline allows, so only deploy trusted transforms and give
+callers deadlines. Process-wide
 memory pressure still rejects new work, and deployment memory limits remain the
 final process boundary.
 

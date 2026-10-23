@@ -21,36 +21,34 @@ func TestSearchConnectionFullGraphPreflight(t *testing.T) {
 	defer endpoint.Close()
 	credentials := Credentials{Username: "app", Password: "password-sentinel"}
 	c := &credentials
-	trust := &BackendTLS{CAFile: "/missing/ca-sentinel.pem"}
+	trust := &TLS{CAFile: "/missing/ca-sentinel.pem"}
 	backend := &Search{
 		URL: "https://unresolved.invalid:443",
 	}
-	local := &Local{Backend: BackendConfig{Search: backend, Authentication: c, TLS: trust}}
-	definition := StoreConfig{Name: "records", Local: local}
+	definition := StoreConfig{Name: "records", Search: backend, Authentication: c, TLS: trust}
 
-	cfg := DefaultConfig()
-	cfg.Basic.Listeners.Application = "127.0.0.1:0"
-	cfg.Routing.Stores = []StoreConfig{definition}
+	cfg := emptyConfig(t)
+	cfg.Stores = []StoreConfig{definition}
 
-	raw, err := yaml.Marshal(cfg.Routing)
+	raw, err := yaml.Marshal(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := DecodeRouting(bytes.NewReader(raw)); err != nil {
+	if _, err := Decode(bytes.NewReader(raw)); err != nil {
 		t.Fatal("Decode accessed CA/DNS", err)
 	}
 	// Even an invalid later service must be rejected before the first connection.
 	backend.URL = endpoint.URL
-	local.Backend.Authentication, local.Backend.TLS = nil, nil
+	cfg.Stores[0].Authentication, cfg.Stores[0].TLS = nil, nil
 	invalid := StoreConfig{Name: "bad"}
-	cfg.Routing.Stores = append(cfg.Routing.Stores, invalid)
+	cfg.Stores = append(cfg.Stores, invalid)
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
 	address := listener.Addr().String()
 	_ = listener.Close()
-	cfg.Basic.Listeners.Application = address
+	cfg.Listeners.Application = address
 	start := time.Now()
 	node, err := Open(context.Background(), cfg)
 	if node != nil || err == nil || contacts.Load() != 0 || time.Since(start) > time.Second {
@@ -61,21 +59,25 @@ func TestSearchConnectionFullGraphPreflight(t *testing.T) {
 		t.Fatal("preflight bound listener")
 	}
 	_ = listener.Close()
-	cfg.Routing.Stores = cfg.Routing.Stores[:1]
+	cfg.Stores = cfg.Stores[:1]
 	backend.URL = "http://host:80"
-	local.Backend.Authentication, local.Backend.TLS = c, trust
+	cfg.Stores[0].Authentication, cfg.Stores[0].TLS = c, trust
 	node, err = Open(context.Background(), cfg)
 	if node != nil || err == nil || strings.Contains(err.Error(), "sentinel") {
 		t.Fatal("HTTP credentials accepted/leaked")
 	}
 	backend.URL = "https://search.test:443"
-	raw, err = yaml.Marshal(cfg.Routing)
+	raw, err = yaml.Marshal(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
+	document := string(raw)
+	marker := "authentication:\n"
+	fields := document[strings.Index(document, marker)+len(marker):]
+	indent := fields[:len(fields)-len(strings.TrimLeft(fields, " "))]
 	for _, field := range []string{"server_name", "insecure_skip_verify", "auth_provider", "token", "resolver", "tls"} {
-		input := strings.Replace(string(raw), "authentication:\n", "authentication:\n                    "+field+": unknown\n", 1)
-		if _, err := DecodeRouting(strings.NewReader(input)); err == nil {
+		input := strings.Replace(document, marker, marker+indent+field+": unknown\n", 1)
+		if _, err := Decode(strings.NewReader(input)); err == nil {
 			t.Fatal("unknown connection/identity option accepted", field)
 		}
 	}
@@ -87,16 +89,14 @@ func TestStartupPreservesRedactedQualificationReason(t *testing.T) {
 		Password: "password-sentinel",
 	}
 	connection := &credentials
-	trust := &BackendTLS{CAFile: "/missing/ca-sentinel.pem"}
+	trust := &TLS{CAFile: "/missing/ca-sentinel.pem"}
 	backend := &Search{
 		URL: "https://unresolved.invalid:9200",
 	}
-	local := &Local{Backend: BackendConfig{Search: backend, Authentication: connection, TLS: trust}}
-	service := StoreConfig{Name: "records", Local: local}
+	service := StoreConfig{Name: "records", Search: backend, Authentication: connection, TLS: trust}
 
-	cfg := DefaultConfig()
-	cfg.Basic.Listeners.Application = "127.0.0.1:0"
-	cfg.Routing.Stores = []StoreConfig{service}
+	cfg := emptyConfig(t)
+	cfg.Stores = []StoreConfig{service}
 
 	node, err := Open(context.Background(), cfg)
 	if node != nil ||
@@ -116,7 +116,7 @@ func TestStartupPreservesRedactedQualificationReason(t *testing.T) {
 	endpoint := httptest.NewServer(handler)
 	defer endpoint.Close()
 	backend.URL = endpoint.URL
-	local.Backend.Authentication, local.Backend.TLS = nil, nil
+	cfg.Stores[0].Authentication, cfg.Stores[0].TLS = nil, nil
 	node, err = Open(context.Background(), cfg)
 	if node != nil ||
 		err == nil ||
@@ -157,16 +157,14 @@ func TestSearchStartupIdentifiesProductsWithoutVersionRestrictions(t *testing.T)
 			defer endpoint.Close()
 
 			backend := &Search{URL: endpoint.URL}
-			local := &Local{Backend: BackendConfig{Search: backend}}
-			service := StoreConfig{Name: "records", Local: local}
+			service := StoreConfig{Name: "records", Search: backend}
 
-			cfg := DefaultConfig()
-			cfg.Basic.Listeners.Application = "127.0.0.1:0"
-			cfg.Routing.Stores = []StoreConfig{service}
+			cfg := emptyConfig(t)
+			cfg.Stores = []StoreConfig{service}
 
 			if tc.rejection != "" {
 				// An occupied listener catches any assembly attempted after rejection.
-				cfg.Basic.Listeners.Application = strings.TrimPrefix(endpoint.URL, "http://")
+				cfg.Listeners.Application = strings.TrimPrefix(endpoint.URL, "http://")
 			}
 			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 			defer cancel()

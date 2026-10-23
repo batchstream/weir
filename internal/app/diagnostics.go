@@ -27,7 +27,7 @@ type diagnostics struct {
 
 const diagnosticTimeout = time.Second
 
-func (n *Node) openDiagnostics(address string, timeout time.Duration) error {
+func (n *Node) openDiagnostics(address string) error {
 	listener, err := net.Listen("tcp", address)
 	if err != nil {
 		return errors.New("diagnostic listener startup failed")
@@ -84,10 +84,10 @@ func (n *Node) openDiagnostics(address string, timeout time.Duration) error {
 	d.http = &http.Server{
 		Handler:           http.HandlerFunc(handler),
 		Protocols:         protocols,
-		ReadHeaderTimeout: timeout,
-		ReadTimeout:       timeout,
-		WriteTimeout:      timeout,
-		IdleTimeout:       timeout,
+		ReadHeaderTimeout: diagnosticTimeout,
+		ReadTimeout:       diagnosticTimeout,
+		WriteTimeout:      diagnosticTimeout,
+		IdleTimeout:       diagnosticTimeout,
 		MaxHeaderBytes:    4 << 10,
 	}
 	d.http.SetKeepAlivesEnabled(false)

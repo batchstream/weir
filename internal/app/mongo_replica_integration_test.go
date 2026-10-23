@@ -40,18 +40,16 @@ func TestMongoReplicaCLIRecovery(t *testing.T) {
 				t.Fatal(err)
 			}
 			seeds := []string{fixture.Addresses()[(primary+1)%3]}
-			mongo := &Mongo{URI: fixture.SeedURI(seeds)}
-			backend := BackendConfig{MongoDB: mongo}
+			mongo := &MongoDB{URI: fixture.SeedURI(seeds)}
+			store := StoreConfig{Name: "mongo", MongoDB: mongo}
 			if secure {
 				credential := &Credentials{Username: fixture.Username, Password: fixture.Password}
-				trust := &BackendTLS{CAFile: fixture.CAFile}
-				backend.Authentication, backend.TLS = credential, trust
+				trust := &TLS{CAFile: fixture.CAFile}
+				store.Authentication, store.TLS = credential, trust
 			}
-			local := &Local{Backend: backend}
-			store := StoreConfig{Name: "mongo", Local: local}
 			cfg := emptyConfig(t)
-			cfg.Basic.Diagnostics.Address = "127.0.0.1:0"
-			cfg.Routing.Stores = []StoreConfig{store}
+			cfg.Listeners.Diagnostics = "127.0.0.1:0"
+			cfg.Stores = []StoreConfig{store}
 			service := startProcessWithLifetime(t, binary, cfg, 3*time.Minute)
 			pid := service.command.Process.Pid
 			client, err := weirclient.New(service.address)

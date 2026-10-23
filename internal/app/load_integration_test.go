@@ -84,13 +84,12 @@ func TestProcessLoad(t *testing.T) {
 	binary := buildLinuxCLI(t)
 	t.Logf("Search service_transport=%s host_oracle=%s", searchURL, search.URL)
 	datasets := seedLoadDatasets(t, mongo, search)
-	mongoBackend := &Mongo{URI: containerMongoURI}
+	mongoBackend := &MongoDB{URI: containerMongoURI}
 	searchBackend := &Search{URL: searchURL}
-	mongoLocal := &Local{Backend: BackendConfig{MongoDB: mongoBackend}}
-	searchLocal := &Local{Backend: BackendConfig{Search: searchBackend}}
-	mongoStore, searchStore := StoreConfig{Name: "mongo", Local: mongoLocal}, StoreConfig{Name: "search", Local: searchLocal}
-	cfg := DefaultConfig()
-	cfg.Routing.Stores = []StoreConfig{mongoStore, searchStore}
+	mongoStore := StoreConfig{Name: "mongo", MongoDB: mongoBackend}
+	searchStore := StoreConfig{Name: "search", Search: searchBackend}
+	cfg := Config{}
+	cfg.Stores = []StoreConfig{mongoStore, searchStore}
 	opts := cliContainerOptions{binary: binary, capacityMiB: 1024, config: cfg}
 	process := startCLIContainer(t, opts)
 	t.Logf("measurement=%s warmup=30s fixed_arrival=200RPC/s capacity=1073741824 CPUs=2 driver=%s/%s/%s", duration, runtime.Version(), runtime.GOOS, runtime.GOARCH)

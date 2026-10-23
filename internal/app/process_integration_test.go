@@ -95,13 +95,13 @@ func startProcess(t *testing.T, binary string, cfg Config) *process {
 
 func startProcessWithLifetime(t *testing.T, binary string, cfg Config, lifetime time.Duration) *process {
 	t.Helper()
-	name := filepath.Join(t.TempDir(), "node.yaml")
-	routingFilename := writeConfigFiles(t, name, cfg, 0600)
+	name := filepath.Join(t.TempDir(), "weir.yaml")
+	writeConfigFile(t, name, cfg, 0600)
 	ctx, cancel := context.WithTimeout(context.Background(), lifetime)
 	t.Cleanup(cancel)
-	args := []string{"serve", "--config", name, "--routes", routingFilename}
+	args := []string{"serve", "--config", name}
 	command := exec.CommandContext(ctx, binary, args...)
-	return watchProcess(t, command, cfg.Basic.Diagnostics.Address != "")
+	return watchProcess(t, command, cfg.Listeners.Diagnostics != "")
 }
 
 func watchProcess(t *testing.T, command *exec.Cmd, diagnostics bool) *process {
@@ -352,16 +352,11 @@ func TestIndependentWeirProcess(t *testing.T) {
 	mongoFixture := testmongo.Open(t)
 	search := testsearch.Open(t)
 	binary := buildWeirBinary(t)
-	mongo := mongoFixtureConfig(t, mongoFixture.URI)
-	mongoLocal := &Local{Backend: mongo}
-	backend := &Search{URL: search.URL}
-	// Positive batch smoke requires a normally sized native write queue.
-	searchLocal := &Local{Backend: BackendConfig{Search: backend}}
-	mongoStore := StoreConfig{Name: "mongo", Local: mongoLocal}
-	searchStore := StoreConfig{Name: "search", Local: searchLocal}
+	mongoStore := mongoFixtureStore(t, "mongo", mongoFixture.URI)
+	searchStore := searchFixtureStore("search", search.URL)
 	cfg := emptyConfig(t)
-	cfg.Basic.Diagnostics.Address = "127.0.0.1:0"
-	cfg.Routing.Stores = []StoreConfig{mongoStore, searchStore}
+	cfg.Listeners.Diagnostics = "127.0.0.1:0"
+	cfg.Stores = []StoreConfig{mongoStore, searchStore}
 	owner := startProcess(t, binary, cfg)
 	client := sdkClient(t, owner.address)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -457,8 +452,9 @@ func TestDiagnosticProcessSIGTERMReadinessBeforeExit(t *testing.T) {
 		t.Fatal(err, string(output))
 	}
 	cfg := emptyConfig(t)
-	cfg.Basic.Diagnostics.Address = "127.0.0.1:0"
-	cfg.Basic.Transport.Timeouts.Stall = Duration(time.Second)
+	cfg.Listeners.Diagnostics = "127.0.0.1:0"
+	// The held stream never ends by itself; the drain deadline bounds exit.
+	cfg.ShutdownTimeout = Duration(time.Second)
 	p := startProcess(t, binary, cfg)
 	conn, err := grpc.NewClient("passthrough:///"+p.address, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithNoProxy())
 	if err != nil {

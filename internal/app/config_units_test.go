@@ -1,7 +1,6 @@
 package app
 
 import (
-	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -9,44 +8,24 @@ import (
 	"go.yaml.in/yaml/v3"
 )
 
-func TestDurationMarshalJSON(t *testing.T) {
-	for _, duration := range []time.Duration{
-		0,
-		time.Nanosecond,
-		1500 * time.Millisecond,
-		30 * time.Second,
-		5 * time.Minute,
-		time.Duration(1<<63 - 1),
-	} {
-		value := Duration(duration)
-		raw, err := json.Marshal(value)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if string(raw) != `"`+duration.String()+`"` {
-			t.Fatal("duration is not readable", string(raw))
-		}
-	}
-}
-
-func TestByteSizeMarshalJSON(t *testing.T) {
+func TestByteSizeYAMLUsesLargestIntegralUnit(t *testing.T) {
 	cases := []struct {
 		bytes     ByteSize
 		canonical string
 	}{
-		{0, `"0B"`},
-		{17, `"17B"`},
-		{1 << 10, `"1KiB"`},
-		{1536 << 10, `"1536KiB"`},
-		{512 << 20, `"512MiB"`},
-		{1 << 30, `"1GiB"`},
-		{64 << 30, `"64GiB"`},
-		{ByteSize(^uint64(0)), `"18446744073709551615B"`},
+		{0, "0B"},
+		{17, "17B"},
+		{1 << 10, "1KiB"},
+		{1536 << 10, "1536KiB"},
+		{512 << 20, "512MiB"},
+		{1 << 30, "1GiB"},
+		{64 << 30, "64GiB"},
+		{ByteSize(^uint64(0)), "18446744073709551615B"},
 	}
 	for _, tc := range cases {
-		raw, err := json.Marshal(tc.bytes)
-		if err != nil || string(raw) != tc.canonical {
-			t.Fatal("byte size output did not choose the largest integral unit", string(raw), err)
+		text, err := tc.bytes.MarshalYAML()
+		if err != nil || text != tc.canonical {
+			t.Fatal("byte size output did not choose the largest integral unit", text, err)
 		}
 	}
 }
@@ -151,34 +130,6 @@ func TestByteSizeYAML(t *testing.T) {
 		err := value.UnmarshalYAML(document.Content[0])
 		if err == nil || strings.Contains(err.Error(), "sentinel") || value != 512<<20 {
 			t.Fatal("invalid YAML byte size accepted, changed state or leaked input", err)
-		}
-	}
-}
-
-func TestGroupedConfigurationRejectsUnknownFieldsAndInvalidUnits(t *testing.T) {
-	prefix := "listeners:\n  application: 127.0.0.1:0\n"
-	for _, fragment := range []string{
-		"unexpected: true\n",
-		"transport:\n  unexpected: 16\n",
-		"transport:\n  timeouts:\n    unexpected: 1s\n",
-		"memory: 512\n", "memory: null\n",
-		"transport:\n  timeouts:\n    request: 30000\n",
-		"transport:\n  timeouts:\n    request: null\n",
-	} {
-		if _, err := DecodeBasic(strings.NewReader(prefix + fragment)); err == nil {
-			t.Fatal("unknown field or non-string unit accepted", fragment)
-		}
-	}
-	for _, local := range []string{
-		`    unexpected: {}
-`,
-		"    backend:\n      mongodb:\n        uri: mongodb://127.0.0.1:27017\n        unexpected: true\n",
-
-		"    backend:\n      mongodb:\n        uri: mongodb://127.0.0.1:27017\n    unexpected: 4\n",
-	} {
-		input := "stores:\n  - name: records\n" + local
-		if _, err := DecodeRouting(strings.NewReader(input)); err == nil {
-			t.Fatal("unknown Store or backend field accepted", local)
 		}
 	}
 }

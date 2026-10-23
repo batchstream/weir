@@ -1,7 +1,6 @@
 package app
 
 import (
-	"encoding/json"
 	"errors"
 	"strconv"
 	"time"
@@ -11,10 +10,6 @@ import (
 
 // Duration is a Go duration encoded as a string, including its unit.
 type Duration time.Duration
-
-func (value Duration) MarshalJSON() ([]byte, error) {
-	return json.Marshal(time.Duration(value).String())
-}
 
 func (value Duration) MarshalYAML() (any, error) {
 	return time.Duration(value).String(), nil
@@ -36,10 +31,6 @@ func (value *Duration) UnmarshalYAML(node *yaml.Node) error {
 
 // ByteSize is an integer byte count encoded with an explicit binary unit.
 type ByteSize uint64
-
-func (value ByteSize) MarshalJSON() ([]byte, error) {
-	return json.Marshal(value.text())
-}
 
 func (value ByteSize) MarshalYAML() (any, error) {
 	return value.text(), nil

@@ -43,7 +43,7 @@ def secret_path(name):
 
 def allowed(name):
     return (
-        name in ('go.mod', 'go.sum', 'README.md', 'config/weir.reference.yaml', 'config/routes.reference.yaml')
+        name in ('go.mod', 'go.sum', 'README.md', 'config/weir.reference.yaml')
         or name in ('deploy/docker/Dockerfile', 'deploy/docker/base.json')
         or name in ('licenses/' + license_name for license_name in PUREGO_LICENSES)
         or (
@@ -153,7 +153,6 @@ def archive_members(source, system):
     members = {
         'README.md': ((source / 'README.md').read_bytes(), 0o644),
         'config/weir.reference.yaml': ((source / 'config/weir.reference.yaml').read_bytes(), 0o644),
-        'config/routes.reference.yaml': ((source / 'config/routes.reference.yaml').read_bytes(), 0o644),
     }
     if system == 'darwin':
         # purego is linked only into Darwin binaries.

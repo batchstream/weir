@@ -9,15 +9,15 @@ request -> bounded Store queue -> compatible batch -> backend -> ordered result
 
 ## Defaults and boundaries
 
-| Setting | Default | Behavior |
+| Limit | Default | Behavior |
 | --- | --- | --- |
-| `queue.max_operations` | 1024 | Waiting prepared operations |
-| `queue.max_bytes` | 32 MiB | Waiting input and scheduler metadata |
+| Queue operations | 1024 (fixed) | Waiting prepared operations |
+| Queue bytes | 32 MiB (fixed) | Waiting input and scheduler metadata |
 | `batching.max_operations` | 128 | Selected records per batch |
 | `batching.max_bytes` | 4 MiB | Input estimate and final Search NDJSON aggregation target |
-| `batching.max_wait` | 20 ms | Maximum write collection age; explicit zero disables collection |
-| `batching.max_in_flight` | 16 | Simultaneous backend executions; explicit zero is unlimited |
-| `backend.max_exchange_bytes` | 32 MiB | Adapter request/response grouping target |
+| `batching.max_wait` | 20 ms | Maximum write collection age; explicit `0s` disables collection |
+| `batching.max_in_flight` | 16 | Simultaneous backend executions |
+| Exchange bytes | 32 MiB (fixed) | Adapter request/response grouping target |
 
 A full queue waits for dispatch or caller cancellation. Dispatch returns queue
 capacity immediately. One legal larger item can occupy an empty queue or batch
@@ -47,14 +47,14 @@ Native commands, but not typed reads and mutations.
 These limits bound memory. A rough upper bound for one Store is:
 
 ```text
-queue.max_bytes
-  + max_in_flight × (batching.max_bytes + batching.max_operations × largest result)
+32 MiB queue
+  + max_in_flight × (max_bytes + max_operations × largest result)
   + 64 × largest Native reply
 ```
 
 A MongoDB Native reply is held whole while it streams; Search Native bodies
 stream in chunks. Every open stream adds the request it is receiving, and every
-record stream adds up to `max_pending_records` results awaiting delivery. A
+record stream adds up to 32 results awaiting delivery. A
 stream ended by the output stall timeout keeps its last unsent message until the
 client reads it or disconnects. Every message is at most 64 MiB. Real documents
 are usually much smaller than these limits, so size the container from observed
@@ -75,8 +75,8 @@ responses can safely split into smaller reads; mutation pre-reads do not use
 that retry path.
 
 Search measures final NDJSON, including metadata, newlines and generated Lua
-output. It flushes at the smaller of `batching.max_bytes` and
-`backend.max_exchange_bytes`. One larger legal item proceeds alone. Full-source
+output. It flushes at the smaller of `batching.max_bytes` and the 32 MiB exchange
+target. One larger legal item proceeds alone. Full-source
 Lua replacements can generate much more traffic than small incoming patches.
 
 Same-resource mutations within a stream preserve input order. Different streams

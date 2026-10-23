@@ -10,7 +10,6 @@ import (
 	"time"
 
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
-	"github.com/batchstream/weir/internal/backend"
 	"github.com/batchstream/weir/internal/testutil"
 	"github.com/batchstream/weir/internal/testutil/testmetrics"
 	"google.golang.org/grpc"
@@ -21,8 +20,8 @@ import (
 
 func emptyConfig(t *testing.T) Config {
 	t.Helper()
-	cfg := DefaultConfig()
-	cfg.Basic.Listeners.Application = "127.0.0.1:0"
+	cfg := Config{}
+	cfg.Listeners.Application = "127.0.0.1:0"
 	return cfg
 }
 
@@ -32,9 +31,9 @@ func TestConfigurationValidation(t *testing.T) {
 			cfg := credentialTestConfig(t, "search")
 			switch mode {
 			case "duplicate-store":
-				cfg.Routing.Stores = append(cfg.Routing.Stores, cfg.Routing.Stores[0])
+				cfg.Stores = append(cfg.Stores, cfg.Stores[0])
 			case "missing-backend":
-				cfg.Routing.Stores[0].Local = nil
+				cfg.Stores[0].Search = nil
 			}
 			if err := cfg.Validate(); err == nil {
 				t.Fatal("invalid configuration accepted")
@@ -43,50 +42,17 @@ func TestConfigurationValidation(t *testing.T) {
 	}
 }
 
-func TestBatchByteConfigurationReachesSearchWithoutChangingReadBudget(t *testing.T) {
-	cases := []struct {
-		name, batching string
-		want           int
-	}{
-		{name: "default", want: 4 << 20},
-		{name: "smaller than exchange", batching: "    batching:\n      max_bytes: 1KiB\n", want: 1024},
-		{name: "larger than exchange", batching: "    batching:\n      max_bytes: 64MiB\n", want: 64 << 20},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			input := "stores:\n  - name: search\n    backend:\n      search:\n        url: http://127.0.0.1:9200\n      max_exchange_bytes: 16MiB\n" + tc.batching
-			routing, err := DecodeRouting(strings.NewReader(input))
-			if err != nil {
-				t.Fatal(err)
-			}
-			local := routing.Stores[0].Local
-			settings := local.backendOptions()
-			limits := local.runtimeLimits()
-			if settings.BatchBytes != tc.want || limits.BatchBytes != tc.want || settings.ExchangeBytes != 16<<20 {
-				t.Fatal("batch bytes did not reach both collection and framing independently of reads", settings, limits)
-			}
-			if tc.batching == "" && settings.BatchBytes != backend.DefaultOptions().BatchBytes {
-				t.Fatal("standalone adapter and resolved configuration have different defaults", settings)
-			}
-		})
-	}
-}
-
 func TestMongoTLSProfileStaticValidationBeforeSideEffects(t *testing.T) {
-	cfg := DefaultConfig()
-	cfg.Basic.Listeners.Application = "127.0.0.1:0"
+	cfg := emptyConfig(t)
 	uri := "mongodb://unresolved.invalid:27017/?authMechanism=SCRAM-SHA-256&authSource=admin&tls=true"
-	credentials := Credentials{
+	credentials := &Credentials{
 		Username: "user",
 		Password: "password-sentinel",
 	}
-	mongo := &Mongo{URI: uri}
-	local := &Local{Backend: BackendConfig{MongoDB: mongo, Authentication: &credentials}}
-	trust := &BackendTLS{CAFile: "/missing/ca.pem"}
-	local.Backend.TLS = trust
-	service := StoreConfig{Name: "records", Local: local}
-
-	cfg.Routing.Stores = []StoreConfig{service}
+	mongo := &MongoDB{URI: uri}
+	trust := &TLS{CAFile: "/missing/ca.pem"}
+	service := StoreConfig{Name: "records", MongoDB: mongo, Authentication: credentials, TLS: trust}
+	cfg.Stores = []StoreConfig{service}
 
 	err := cfg.Validate()
 	if err != nil {
@@ -110,17 +76,15 @@ func TestMongoStartupRedactsDriverConnectionFailure(t *testing.T) {
 	address := listener.Addr().String()
 	_ = listener.Close()
 	uri := "mongodb://" + address + "/?authMechanism=SCRAM-SHA-256&authSource=admin&tls=true"
-	credentials := Credentials{
+	credentials := &Credentials{
 		Username: "user-sentinel",
 		Password: "password-sentinel",
 	}
-	mongo := &Mongo{URI: uri}
-	local := &Local{Backend: BackendConfig{MongoDB: mongo, Authentication: &credentials}}
-	service := StoreConfig{Name: "records", Local: local}
+	mongo := &MongoDB{URI: uri}
+	service := StoreConfig{Name: "records", MongoDB: mongo, Authentication: credentials}
 
-	cfg := DefaultConfig()
-	cfg.Basic.Listeners.Application = "127.0.0.1:0"
-	cfg.Routing.Stores = []StoreConfig{service}
+	cfg := emptyConfig(t)
+	cfg.Stores = []StoreConfig{service}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
@@ -173,25 +137,25 @@ func TestAssemblyWithoutStoresPartialStartupAndConcurrentClose(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cfg.Basic.Listeners.Application = first.Addr().String()
+	cfg.Listeners.Application = first.Addr().String()
 	_ = first.Close()
-	cfg.Basic.Diagnostics.Address = occupied.Addr().String()
+	cfg.Listeners.Diagnostics = occupied.Addr().String()
 	for range 3 {
 		if node, err := Open(context.Background(), cfg); err == nil || node != nil {
 			t.Fatal("partial startup succeeded")
 		}
 	}
-	recovered, err := net.Listen("tcp", cfg.Basic.Listeners.Application)
+	recovered, err := net.Listen("tcp", cfg.Listeners.Application)
 	if err != nil {
 		t.Fatal("partial listener leaked", err)
 	}
 	_ = recovered.Close()
 }
 
-func TestIntranetListenerConfiguration(t *testing.T) {
+func TestListenerConfiguration(t *testing.T) {
 	for _, listener := range []string{"127.0.0.1:0", "[::1]:7447", "10.20.30.40:7447", "0.0.0.0:7447", "[::]:7447"} {
 		cfg := emptyConfig(t)
-		cfg.Basic.Listeners.Application = listener
+		cfg.Listeners.Application = listener
 		if err := cfg.Validate(); err != nil {
 			t.Fatal(listener, err)
 		}
@@ -207,7 +171,7 @@ func TestIntranetListenerConfiguration(t *testing.T) {
 		"[invalid]:7447",
 	} {
 		cfg := emptyConfig(t)
-		cfg.Basic.Listeners.Application = listener
+		cfg.Listeners.Application = listener
 		if err := cfg.Validate(); err == nil {
 			t.Fatal("invalid listener accepted", listener)
 		}
@@ -218,15 +182,25 @@ func TestIntranetListenerConfiguration(t *testing.T) {
 		{"0.0.0.0:7447", "127.0.0.1:7447"},
 	} {
 		cfg := emptyConfig(t)
-		cfg.Basic.Listeners.Application, cfg.Basic.Diagnostics.Address = listeners[0], listeners[1]
+		cfg.Listeners.Application, cfg.Listeners.Diagnostics = listeners[0], listeners[1]
 		if err := cfg.Validate(); err == nil {
 			t.Fatal("duplicate/overlapping listeners accepted", listeners)
 		}
 	}
 	cfg := emptyConfig(t)
-	cfg.Basic.Diagnostics.Address = cfg.Basic.Listeners.Application
+	cfg.Listeners.Diagnostics = cfg.Listeners.Application
 	if err := cfg.Validate(); err != nil {
 		t.Fatal("independent ephemeral ports rejected", err)
+	}
+	for _, diagnostics := range []string{"localhost:7449", ":7449", "invalid"} {
+		cfg.Listeners.Diagnostics = diagnostics
+		if err := cfg.Validate(); err == nil {
+			t.Fatal("invalid diagnostics listener accepted", diagnostics)
+		}
+	}
+	cfg.Listeners.Diagnostics = "0.0.0.0:7449"
+	if err := cfg.Validate(); err != nil {
+		t.Fatal("non-loopback diagnostics listener rejected", err)
 	}
 }
 
@@ -273,23 +247,22 @@ func TestUnhostedStoreIsNotFound(t *testing.T) {
 	}
 }
 
-func TestLargeRoutingConfiguration(t *testing.T) {
+func TestLargeConfiguration(t *testing.T) {
 	cfg := credentialTestConfig(t, "search")
-	base := cfg.Routing.Stores[0]
-	cfg.Routing.Stores = nil
+	base := cfg.Stores[0]
+	cfg.Stores = nil
 	for i := range 32 {
 		service := base
 		service.Name = fmt.Sprintf("store-%03d", i)
-		cfg.Routing.Stores = append(cfg.Routing.Stores, service)
+		cfg.Stores = append(cfg.Stores, service)
 	}
-	base.Local.Backend.Authentication.Username = strings.Repeat("u", 8192)
-	base.Local.Backend.Authentication.Password = strings.Repeat("p", 16384)
-	basicFile, routingFile := writeCredentialTestDocuments(t, cfg)
-	loaded, err := Load(basicFile, routingFile)
+	base.Authentication.Username = strings.Repeat("u", 8192)
+	base.Authentication.Password = strings.Repeat("p", 16384)
+	loaded, err := Load(writeCredentialTestDocument(t, cfg))
 	if err != nil {
 		t.Fatal("valid configuration retained an artificial scale threshold", err)
 	}
-	if len(loaded.Routing.Stores) != 32 || loaded.Routing.Stores[0].Backend.Authentication.Password != base.Local.Backend.Authentication.Password {
+	if len(loaded.Stores) != 32 || loaded.Stores[0].Authentication.Password != base.Authentication.Password {
 		t.Fatal("large configuration was truncated")
 	}
 }

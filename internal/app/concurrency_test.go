@@ -16,14 +16,13 @@ import (
 )
 
 func TestConcurrentRPCExecutionPolicy(t *testing.T) {
-	unlimited := 0
 	tests := []struct {
 		name        string
-		maxInFlight *int
+		maxInFlight int
 		wantActive  int
 	}{
 		{name: "default", wantActive: 16},
-		{name: "explicit unlimited", maxInFlight: &unlimited, wantActive: 64},
+		{name: "explicit", maxInFlight: 64, wantActive: 64},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -83,14 +82,10 @@ func TestConcurrentRPCExecutionPolicy(t *testing.T) {
 			})
 			endpoint := httptest.NewServer(handler)
 			t.Cleanup(endpoint.Close)
-			backend := &Search{URL: endpoint.URL}
-			backendConfig := BackendConfig{Search: backend}
-			batching := BatchingConfig{MaxOperations: 1, MaxInFlight: test.maxInFlight}
-			local := &Local{Backend: backendConfig, Batching: batching}
-			definition := StoreConfig{Name: "records", Local: local}
-			cfg := DefaultConfig()
-			cfg.Basic.Listeners.Application = "127.0.0.1:0"
-			cfg.Routing.Stores = []StoreConfig{definition}
+			definition := searchFixtureStore("records", endpoint.URL)
+			definition.Batching = Batching{MaxOperations: 1, MaxInFlight: test.maxInFlight}
+			cfg := emptyConfig(t)
+			cfg.Stores = []StoreConfig{definition}
 			ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 			defer cancel()
 			node, err := Open(ctx, cfg)

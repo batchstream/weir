@@ -274,14 +274,12 @@ func TestLinuxMemoryCLI(t *testing.T) {
 	observer := &budgetObservation{}
 	monitor := &event.CommandMonitor{Started: observer.start, Succeeded: observer.finish}
 	proxy.Monitor = monitor
-	backend := mongoFixtureConfig(t, proxy.URI())
-	local := &Local{Backend: backend, Batching: BatchingConfig{MaxOperations: 1}}
-	service := StoreConfig{Name: "records", Local: local}
+	service := mongoFixtureStore(t, "records", proxy.URI())
+	service.Batching.MaxOperations = 1
 
-	cfg := DefaultConfig()
-	cfg.Basic.Listeners.Application = "127.0.0.1:0"
-	cfg.Basic.Diagnostics.Address = "127.0.0.1:0"
-	cfg.Routing.Stores = []StoreConfig{service}
+	cfg := emptyConfig(t)
+	cfg.Listeners.Diagnostics = "127.0.0.1:0"
+	cfg.Stores = []StoreConfig{service}
 
 	p := startProcess(t, "/fixture/weir", cfg)
 	client := processClient(t, p.address)

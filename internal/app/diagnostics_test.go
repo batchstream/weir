@@ -15,6 +15,7 @@ import (
 	"time"
 
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
+	"github.com/batchstream/weir/internal/server"
 	"github.com/batchstream/weir/internal/testutil"
 	"github.com/batchstream/weir/internal/testutil/testmetrics"
 	"github.com/prometheus/client_golang/prometheus"
@@ -26,10 +27,10 @@ import (
 func diagnosticNode(t *testing.T) *Node {
 	t.Helper()
 	cfg := emptyConfig(t)
-	cfg.Basic.Diagnostics.Address = "127.0.0.1:0"
-
-	cfg.Basic.Transport.Timeouts.Stall = Duration(500 * time.Millisecond)
-	node, err := Open(context.Background(), cfg)
+	cfg.Listeners.Diagnostics = "127.0.0.1:0"
+	transport := server.DefaultLimits()
+	transport.Stall = 500 * time.Millisecond
+	node, err := open(context.Background(), cfg, transport)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -194,11 +195,11 @@ func TestDiagnosticsInputCardinalityAndNoSecrets(t *testing.T) {
 }
 
 func TestDiagnosticsConnectionLimitsDeadlinesAndStartupFailure(t *testing.T) {
-	for _, address := range []string{"localhost:1", ":0", "0.0.0.0:0", "[::]:0", "192.0.2.1:1"} {
+	for _, address := range []string{"localhost:1", ":0", "127.0.0.1"} {
 		cfg := emptyConfig(t)
-		cfg.Basic.Diagnostics.Address = address
+		cfg.Listeners.Diagnostics = address
 		if cfg.Validate() == nil {
-			t.Fatal("non-loopback", address)
+			t.Fatal("diagnostics listener without an explicit IP and port accepted", address)
 		}
 	}
 	n := diagnosticNode(t)
@@ -262,34 +263,24 @@ func TestDiagnosticsConnectionLimitsDeadlinesAndStartupFailure(t *testing.T) {
 		t.Fatal(err)
 	}
 	cfg := emptyConfig(t)
-	cfg.Basic.Listeners.Application = first.Addr().String()
-	cfg.Basic.Diagnostics.Address = occupied.Addr().String()
+	cfg.Listeners.Application = first.Addr().String()
+	cfg.Listeners.Diagnostics = occupied.Addr().String()
 	_ = first.Close()
 	for range 3 {
 		if node, err := Open(context.Background(), cfg); err == nil || node != nil {
 			t.Fatal("diagnostic port conflict ignored")
 		}
 	}
-	first, err = net.Listen("tcp", cfg.Basic.Listeners.Application)
+	first, err = net.Listen("tcp", cfg.Listeners.Application)
 	if err != nil {
 		t.Fatal("partial startup listener leaked", err)
 	}
 	_ = first.Close()
 }
 
-func TestIntranetDiagnosticsRequireExplicitOptIn(t *testing.T) {
+func TestWildcardDiagnosticsListener(t *testing.T) {
 	cfg := emptyConfig(t)
-	cfg.Basic.Diagnostics.AllowIntranet = true
-	if err := cfg.Validate(); err == nil {
-		t.Fatal("opt-in without diagnostic address accepted")
-	}
-	for _, address := range []string{"localhost:7449", ":7449", "invalid"} {
-		cfg.Basic.Diagnostics.Address = address
-		if err := cfg.Validate(); err == nil {
-			t.Fatal("invalid address accepted with opt-in", address)
-		}
-	}
-	cfg.Basic.Diagnostics.Address = "0.0.0.0:0"
+	cfg.Listeners.Diagnostics = "0.0.0.0:0"
 	node, err := Open(context.Background(), cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -347,7 +338,7 @@ func (l *smallSendListener) Accept() (net.Conn, error) {
 
 func TestDiagnosticsStoppedScrapesAndConcurrentHandlersBounded(t *testing.T) {
 	cfg := emptyConfig(t)
-	cfg.Basic.Diagnostics.Address = "127.0.0.1:0"
+	cfg.Listeners.Diagnostics = "127.0.0.1:0"
 	n, err := Open(context.Background(), cfg)
 	if err != nil {
 		t.Fatal(err)

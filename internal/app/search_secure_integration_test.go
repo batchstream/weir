@@ -27,21 +27,18 @@ func TestSearchTLSApplicationAssemblyAllOperations(t *testing.T) {
 	b := fixture.Backend
 	credentials := Credentials{Username: b.Username, Password: b.Password}
 	connection := &credentials
-	trust := &BackendTLS{CAFile: b.CAFile}
+	trust := &TLS{CAFile: b.CAFile}
 	backend := &Search{URL: b.URL}
 	t.Run("partial-startup-cleanup", func(t *testing.T) {
 		base := secureHTTPOpenCount(t, fixture.Admin)
-		first := &Local{Backend: BackendConfig{Search: backend, Authentication: connection, TLS: trust}}
 		otherBackend := *backend
 		otherConnection := *connection
 		otherConnection.Password = "wrong-owned-pair"
-		other := &Local{Backend: BackendConfig{Search: &otherBackend, Authentication: &otherConnection, TLS: trust}}
-		firstService := StoreConfig{Name: "first", Local: first}
-		otherService := StoreConfig{Name: "second", Local: other}
+		firstService := StoreConfig{Name: "first", Search: backend, Authentication: connection, TLS: trust}
+		otherService := StoreConfig{Name: "second", Search: &otherBackend, Authentication: &otherConnection, TLS: trust}
 
-		failed := DefaultConfig()
-		failed.Basic.Listeners.Application = "127.0.0.1:0"
-		failed.Routing.Stores = []StoreConfig{firstService, otherService}
+		failed := emptyConfig(t)
+		failed.Stores = []StoreConfig{firstService, otherService}
 
 		for i := 0; i < 3; i++ {
 			node, err := Open(context.Background(), failed)
@@ -61,12 +58,10 @@ func TestSearchTLSApplicationAssemblyAllOperations(t *testing.T) {
 		}
 		t.Log("three partial startup failures: native DB HTTP socket count returned to baseline")
 	})
-	local := &Local{Backend: BackendConfig{Search: backend, Authentication: connection, TLS: trust}}
-	service := StoreConfig{Name: "search", Local: local}
+	service := StoreConfig{Name: "search", Search: backend, Authentication: connection, TLS: trust}
 
-	cfg := DefaultConfig()
-	cfg.Basic.Listeners.Application = "127.0.0.1:0"
-	cfg.Routing.Stores = []StoreConfig{service}
+	cfg := emptyConfig(t)
+	cfg.Stores = []StoreConfig{service}
 
 	node := secureNode(t, cfg)
 	const name = "direct"

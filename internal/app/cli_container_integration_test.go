@@ -131,8 +131,8 @@ func startCLIContainer(t *testing.T, opts cliContainerOptions) *cliContainer {
 	}
 	owner := fmt.Sprintf("weir-cli-%d-%d", os.Getpid(), time.Now().UnixNano())
 	cfg := opts.config
-	cfg.Basic.Listeners.Application = "0.0.0.0:7447"
-	cfg.Basic.Diagnostics.Address, cfg.Basic.Diagnostics.AllowIntranet = "0.0.0.0:7449", true
+	cfg.Listeners.Application = "0.0.0.0:7447"
+	cfg.Listeners.Diagnostics = "0.0.0.0:7449"
 	reservation, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -142,7 +142,7 @@ func startCLIContainer(t *testing.T, opts cliContainerOptions) *cliContainer {
 	if err := reservation.Close(); err != nil {
 		t.Fatal(err)
 	}
-	writeConfigFiles(t, filepath.Join(directory, "node.yaml"), cfg, 0644)
+	writeConfigFile(t, filepath.Join(directory, "weir.yaml"), cfg, 0644)
 	args := []string{"create", "--name", owner, "--label", "weir.owner=" + owner, "--platform=linux/" + runtime.GOARCH, "--pull=never",
 		"--read-only", "--cap-drop=ALL", "--security-opt=no-new-privileges", "--user=65532:65532",
 		fmt.Sprintf("--memory=%dm", opts.capacityMiB), fmt.Sprintf("--memory-swap=%dm", opts.capacityMiB), "--cpus=2", "--pids-limit=96",
@@ -152,7 +152,7 @@ func startCLIContainer(t *testing.T, opts cliContainerOptions) *cliContainer {
 		// Docker Engine on Linux maps the host gateway only on request.
 		args = append(args, "--add-host=host.docker.internal:host-gateway")
 	}
-	args = append(args, "busybox:1.37.0", "/weir", "serve", "--config", "/fixture/node.yaml", "--routes", "/fixture/node-routing.yaml")
+	args = append(args, "busybox:1.37.0", "/weir", "serve", "--config", "/fixture/weir.yaml")
 	// Install the guard before create; no post-create observation/log can bypass it.
 	containerID := ""
 	t.Cleanup(func() {
@@ -222,7 +222,7 @@ func startCLIContainer(t *testing.T, opts cliContainerOptions) *cliContainer {
 		t.Fatal(err)
 	}
 	runDocker(t, "start", containerID)
-	service := &cliContainer{name: containerID, owner: owner, capacity: float64(opts.capacityMiB << 20), stores: len(cfg.Routing.Stores)}
+	service := &cliContainer{name: containerID, owner: owner, capacity: float64(opts.capacityMiB << 20), stores: len(cfg.Stores)}
 	service.address = strings.TrimSpace(runDocker(t, "port", owner, "7447/tcp"))
 	if service.address != applicationAddress {
 		t.Fatal("Docker published address differs from the reserved application address", service.address, applicationAddress)

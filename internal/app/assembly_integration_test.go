@@ -25,17 +25,12 @@ func TestPartialStartupReleasesConstructedMongo(t *testing.T) {
 		return reply.Connections.Current
 	}
 	before := count()
-	mongo := mongoFixtureConfig(t, backend.URI)
+	mongoService := mongoFixtureStore(t, "mongo", backend.URI)
 	// The second valid static configuration fails only after Mongo opens.
-	search := &Search{URL: "http://127.0.0.1:1"}
-	first := &Local{Backend: mongo}
-	second := &Local{Backend: BackendConfig{Search: search}}
-	mongoService := StoreConfig{Name: "mongo", Local: first}
-	searchService := StoreConfig{Name: "search", Local: second}
+	searchService := searchFixtureStore("search", "http://127.0.0.1:1")
 
-	cfg := DefaultConfig()
-	cfg.Basic.Listeners.Application = "127.0.0.1:0"
-	cfg.Routing.Stores = []StoreConfig{mongoService, searchService}
+	cfg := emptyConfig(t)
+	cfg.Stores = []StoreConfig{mongoService, searchService}
 
 	for range 5 {
 		if routes, err := Open(ctx, cfg); err == nil || routes != nil {
