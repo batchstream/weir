@@ -102,7 +102,7 @@ func TestProcessFaults(t *testing.T) {
 		{store: "search", root: search.Index, media: "application/json", search: search, searchProxy: searchProxy},
 	}
 	t.Logf("backend=%s container=%s PID=%s capacity=512MiB CPUs=2 default_store_execution=16 default_stall=30s", search.Profile, process.name, suite.pid)
-	t.Log("gates: healthy Read/Native <=3s during one held IO; cancellation and all resource credits <=3s; proxy recovery and same-SDK CRUD/Native <=5s; ack-loss native=INCOMPLETE, typed=UNKNOWN, oracle increment/version exactly one; fault SIGTERM <=8s exit=0 no OOM; no forced GC or database failpoints")
+	t.Log("gates: healthy Read/Native <=3s during one held IO; cancellation and Store/session cleanup <=3s; proxy recovery and same-SDK CRUD/Native <=5s; ack-loss native=INCOMPLETE, typed=UNKNOWN, oracle increment/version exactly one; fault SIGTERM <=8s exit=0 no OOM; no forced GC or database failpoints")
 	for _, backend := range backends {
 		if !t.Run(backend.store, func(t *testing.T) {
 			processFaultHealthy(t, &suite, backend)
@@ -499,7 +499,7 @@ func processFaultCancelAfterAck(t *testing.T, suite *processFaultSuite, backend 
 	if n != 1 || backend.search != nil && actualVersion != version+1 || counts.writes != 1 || counts.acks != 1 || counts.drops != 1 {
 		t.Fatal("cancel-after-ack oracle or replay mismatch", n, actualVersion, counts)
 	}
-	t.Logf("cancel_after_ack backend=%s elapsed=%s caller=Canceled oracle_n=%d version=%d writes=%d acks=%d drops=%d all_credits=0", backend.store, time.Since(start), n, actualVersion, counts.writes, counts.acks, counts.drops)
+	t.Logf("cancel_after_ack backend=%s elapsed=%s caller=Canceled oracle_n=%d version=%d writes=%d acks=%d drops=%d cleanup=0", backend.store, time.Since(start), n, actualVersion, counts.writes, counts.acks, counts.drops)
 }
 
 func processFaultSlowIO(t *testing.T, suite *processFaultSuite, backend processFaultBackend) {

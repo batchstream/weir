@@ -85,16 +85,17 @@ func (m runtimeMetrics) observe(command *pb.Command, event *pb.Event) {
 
 func (r *Runtime) Describe(ch chan<- *prometheus.Desc) { prometheus.DescribeByCollect(r, ch) }
 
-// Stats is the Store's current queue and execution state.
+// Stats is the Store's current queue and execution state. Active counts record
+// batches and Natives counts running Native commands.
 type Stats struct {
-	Queued, QueuedBytes, Active int
-	Draining, Overloaded        bool
+	Queued, QueuedBytes, Active, Natives int
+	Draining, Overloaded                 bool
 }
 
 func (r *Runtime) Stats() Stats {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	stats := Stats{Queued: len(r.queue), QueuedBytes: r.queueBytes, Active: len(r.batches), Draining: r.draining, Overloaded: r.overloaded}
+	stats := Stats{Queued: len(r.queue), QueuedBytes: r.queueBytes, Active: r.records, Natives: r.natives, Draining: r.draining, Overloaded: r.overloaded}
 	return stats
 }
 
@@ -105,6 +106,8 @@ func (r *Runtime) Collect(ch chan<- prometheus.Metric) {
 		"queued_bytes":            float64(stats.QueuedBytes),
 		"active_executions":       float64(stats.Active),
 		"active_executions_limit": float64(r.limits.MaxInFlight),
+		"active_natives":          float64(stats.Natives),
+		"active_natives_limit":    float64(r.limits.MaxNative),
 		"draining":                boolValue(stats.Draining),
 		"overloaded":              boolValue(stats.Overloaded),
 	}

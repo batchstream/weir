@@ -21,17 +21,20 @@ type Limits struct {
 	CleanupTimeout, BatchWait   time.Duration
 	QueueOperations, QueueBytes int
 	BatchOperations, BatchBytes int
-	MaxInFlight                 int // Zero allows unlimited adapter invocations.
+	MaxInFlight                 int // Record batches; zero allows unlimited.
+	// MaxNative bounds concurrent Native commands. They run outside the record
+	// slots because each one lasts until its caller has read the response.
+	MaxNative int
 }
 
 func DefaultLimits() Limits {
-	limits := Limits{QueueOperations: 1024, QueueBytes: 32 << 20, BatchOperations: 128, BatchBytes: 4 << 20, BatchWait: 20 * time.Millisecond, MaxInFlight: 16, CleanupTimeout: 2 * time.Second}
+	limits := Limits{QueueOperations: 1024, QueueBytes: 32 << 20, BatchOperations: 128, BatchBytes: 4 << 20, BatchWait: 20 * time.Millisecond, MaxInFlight: 16, MaxNative: 64, CleanupTimeout: 2 * time.Second}
 	return limits
 }
 
 func (limits Limits) Validate() error {
 	if limits.QueueOperations < 1 || limits.QueueBytes < 1 ||
-		limits.BatchOperations < 1 || limits.BatchBytes < 1 || limits.MaxInFlight < 0 || limits.CleanupTimeout < 0 || limits.BatchWait < 0 {
+		limits.BatchOperations < 1 || limits.BatchBytes < 1 || limits.MaxInFlight < 0 || limits.MaxNative < 0 || limits.CleanupTimeout < 0 || limits.BatchWait < 0 {
 		return fmt.Errorf("invalid batch, execution or queue bounds")
 	}
 	return nil
@@ -46,6 +49,7 @@ type Runtime struct {
 	queue                        []*Ticket
 	queueBytes                   int
 	batches                      map[*batch]struct{}
+	records, natives             int
 	keys                         map[resourceKey]*Ticket
 	draining, closed, overloaded bool
 	// space is closed and replaced whenever a waiting Submit may proceed.
@@ -100,6 +104,9 @@ func New(adapter execution.Adapter, limits Limits) (*Runtime, error) {
 	}
 	if limits.CleanupTimeout == 0 {
 		limits.CleanupTimeout = DefaultLimits().CleanupTimeout
+	}
+	if limits.MaxNative == 0 {
+		limits.MaxNative = DefaultLimits().MaxNative
 	}
 	runtime := &Runtime{
 		adapter: adapter,
@@ -156,8 +163,8 @@ func (r *Runtime) Submit(ctx context.Context, plan *execution.Plan, session *Ses
 	return r.enqueue(ctx, ticket)
 }
 
-// SubmitNative queues a prepared Native command. While it holds an execution
-// slot, its response head and chunks are sent through emit.
+// SubmitNative queues a prepared Native command. Once it starts, its response
+// head and chunks are sent through emit.
 func (r *Runtime) SubmitNative(ctx context.Context, plan *execution.Plan, emit execution.Emit) (*Ticket, *pb.Failure) {
 	if plan == nil || plan.Command.GetNative() == nil || emit == nil {
 		return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid Native plan")
@@ -287,7 +294,7 @@ func (r *Runtime) dropCanceledLocked() {
 // dispatchLocked starts ready batches while execution slots are free and
 // returns when the earliest still-collecting batch becomes ready.
 func (r *Runtime) dispatchLocked(now time.Time) time.Time {
-	for !r.closed && (r.limits.MaxInFlight == 0 || len(r.batches) < r.limits.MaxInFlight) {
+	for !r.closed {
 		items, wakeAt := r.selectLocked(now)
 		if items == nil {
 			return wakeAt
@@ -312,13 +319,20 @@ type group struct {
 }
 
 // selectLocked scans the queue in FIFO order, groups compatible operations and
-// returns the oldest ready group. Native commands are groups of one.
+// returns the oldest ready group that has a free slot. Native commands are
+// groups of one.
 func (r *Runtime) selectLocked(now time.Time) ([]*Ticket, time.Time) {
+	recordSlot := r.limits.MaxInFlight == 0 || r.records < r.limits.MaxInFlight
+	nativeSlot := r.natives < r.limits.MaxNative
 	var groups []*group
 	byKey := make(map[groupKey]*group)
 	var ordered map[resourceKey]struct{}
 	for _, t := range r.queue {
 		plan := t.plan
+		native := plan.Command.GetNative() != nil
+		if native && !nativeSlot || !native && !recordSlot {
+			continue
+		}
 		mutation := plan.Command.GetMutate() != nil
 		if t.session != nil && mutation {
 			// The oldest queued mutation of a session's resource runs first,
@@ -332,7 +346,6 @@ func (r *Runtime) selectLocked(now time.Time) ([]*Ticket, time.Time) {
 			}
 			ordered[key] = struct{}{}
 		}
-		native := plan.Command.GetNative() != nil
 		key := groupKey{batch: plan.BatchKey, read: plan.Command.GetRead() != nil}
 		g := byKey[key]
 		if g == nil || native {
@@ -411,6 +424,11 @@ func (r *Runtime) startLocked(items []*Ticket, now time.Time) {
 	r.queue = kept
 	b := newBatch(items)
 	r.batches[b] = struct{}{}
+	if b.native() {
+		r.natives++
+	} else {
+		r.records++
+	}
 	r.notifySpaceLocked()
 	go r.execute(b)
 }
@@ -457,6 +475,10 @@ func newBatch(items []*Ticket) *batch {
 	return b
 }
 
+func (b *batch) native() bool {
+	return b.items[0].plan.Command.GetNative() != nil
+}
+
 var errInvalidNativeEvent = errors.New("adapter emitted an invalid Native event")
 
 func (r *Runtime) execute(b *batch) {
@@ -470,6 +492,11 @@ func (r *Runtime) execute(b *batch) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	delete(r.batches, b)
+	if b.native() {
+		r.natives--
+	} else {
+		r.records--
+	}
 	for i, t := range b.items {
 		if t.session != nil && t.plan.Command.GetMutate() != nil {
 			key := resourceKey{session: t.session, resource: t.plan.Key}
@@ -487,7 +514,7 @@ func (r *Runtime) run(b *batch) []*pb.Event {
 	r.metrics.executions.Inc()
 	r.metrics.batch.Observe(float64(len(b.items)))
 	first := b.items[0]
-	if first.plan.Command.GetNative() != nil {
+	if b.native() {
 		emit := func(event *pb.Event) error {
 			switch event.GetValue().(type) {
 			case *pb.Event_Head, *pb.Event_Chunk:

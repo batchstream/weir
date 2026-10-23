@@ -98,7 +98,8 @@ of improved capacity.
 | Family | Interpretation |
 | --- | --- |
 | `weir_node_state`, `weir_node_ready` | Lifecycle and readiness |
-| `weir_store_active_executions`, `weir_store_active_executions_limit` | Per-Store backend invocations; limit zero means unlimited |
+| `weir_store_active_executions`, `weir_store_active_executions_limit` | Per-Store record batches; limit zero means unlimited |
+| `weir_store_active_natives`, `weir_store_active_natives_limit` | Per-Store running Native commands |
 | `weir_store_queued_operations`, `weir_store_queued_bytes` | Waiting work |
 | `weir_store_draining`, `weir_store_overloaded` | Store admission state |
 | `weir_store_records_total` | Final typed results: mutation effect (`applied`, `not_applied`, `not_started`, `unknown`) or read `success`/`failure` |
@@ -192,8 +193,9 @@ admission closed. Use container/OS limits for the hard boundary.
 ## Slow consumers, failures and shutdown
 
 Store queues bound waiting input, and per-stream publication windows bound
-retained output. A Native command keeps its execution slot while its consumer
-reads, so slow Native consumers can occupy every slot of a Store. The stall
+retained output. A Native command occupies one of its Store's 64 Native slots
+while its consumer reads, so slow Native consumers can delay other Native
+commands but not typed reads and mutations. The stall
 timeout ends an RPC whose input or output makes no progress; keepalive closes
 unresponsive connections. Consume output promptly and set application
 deadlines.

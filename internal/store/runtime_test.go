@@ -643,27 +643,37 @@ func TestNativeStreamsThroughEmit(t *testing.T) {
 	}
 }
 
-func TestNativeHoldsAnExecutionSlotUntilItReturns(t *testing.T) {
+func TestNativesUseTheirOwnSlots(t *testing.T) {
 	adapter := &fakeAdapter{started: make(chan []*execution.Plan, 8)}
 	release := make(chan struct{})
-	runtime := open(t, adapter, limits(func(l *Limits) { l.MaxInFlight = 1 }))
+	runtime := open(t, adapter, limits(func(l *Limits) { l.MaxInFlight, l.MaxNative = 1, 1 }))
 	adapter.native = func(context.Context, *execution.Plan, execution.Emit) *pb.NativeEnd {
 		<-release
 		end := &pb.NativeEnd{Completion: pb.NativeCompletion_RESPONSE_COMPLETE}
 		return end
 	}
 	emit := func(*pb.Event) error { return nil }
-	native, failure := runtime.SubmitNative(t.Context(), nativePlan(), emit)
+	first, failure := runtime.SubmitNative(t.Context(), nativePlan(), emit)
 	if failure != nil {
 		t.Fatal(failure)
 	}
 	started(t, adapter)
+	// A running Native leaves the record slot free.
 	read := submit(t, t.Context(), runtime, readPlan("a"), nil)
+	started(t, adapter)
+	wait(t, read)
+	second, failure := runtime.SubmitNative(t.Context(), nativePlan(), emit)
+	if failure != nil {
+		t.Fatal(failure)
+	}
 	notStarted(t, adapter)
+	if stats := runtime.Stats(); stats.Natives != 1 || stats.Active != 0 || stats.Queued != 1 {
+		t.Fatal("Native slots were not counted separately", stats)
+	}
 	close(release)
 	started(t, adapter)
-	wait(t, native)
-	wait(t, read)
+	wait(t, first)
+	wait(t, second)
 }
 
 func TestInvalidAdapterResultsBecomeUnknown(t *testing.T) {

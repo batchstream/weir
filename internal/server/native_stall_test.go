@@ -203,9 +203,7 @@ func TestNativeContinuousSlowProgressPreservesHealthySiblingQueries(t *testing.T
 	if err := framer.WriteSettings(setting); err != nil {
 		t.Fatal(err)
 	}
-	// Each slow Native holds one execution slot while its output progresses,
-	// so siblings stay healthy while slots remain.
-	const slowStreams = 8
+	const slowStreams = 32
 	readID, nativeID := uint32(slowStreams*2+1), uint32(slowStreams*2+3)
 	readReply, nativeReply := &nativeHealthyResponse{}, &nativeHealthyResponse{native: true}
 	healthy := map[uint32]*nativeHealthyResponse{readID: readReply, nativeID: nativeReply}
@@ -362,12 +360,13 @@ func sendFlowControlledRequest(t *testing.T, opts flowControlledRequest) {
 	}
 }
 
-// Stalled Native output holds execution slots, so siblings wait until the
-// output watchdog cancels the stalled streams.
-func TestNativeOutputStallsHoldSlotsUntilWatchdogAbort(t *testing.T) {
+// Stalled Native output holds Native slots only: a sibling read proceeds at
+// once, while a sibling Native waits until the output watchdog frees a slot.
+func TestNativeOutputStallsHoldOnlyNativeSlots(t *testing.T) {
 	adapter := &nativeStallAdapter{chunks: 4}
 	adapter.documents = make(map[string]*pb.Document)
 	storeLimits := store.DefaultLimits()
+	storeLimits.MaxNative = 4
 	local, err := store.New(adapter, storeLimits)
 	if err != nil {
 		t.Fatal(err)
@@ -406,22 +405,22 @@ func TestNativeOutputStallsHoldSlotsUntilWatchdogAbort(t *testing.T) {
 	slowValue := &pb.Command_Native{Native: slow}
 	slowCommand := &pb.Command{Operation: slowValue}
 	started := time.Now()
-	for index := range storeLimits.MaxInFlight {
+	for index := range storeLimits.MaxNative {
 		requestOpts := flowControlledRequest{framer: framer, address: address, streamID: uint32(index*2 + 1), command: slowCommand}
 		sendFlowControlledRequest(t, requestOpts)
 	}
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
-	for adapter.nativeStarted.Load() != int32(storeLimits.MaxInFlight) {
+	for adapter.nativeStarted.Load() != int32(storeLimits.MaxNative) {
 		if ctx.Err() != nil {
-			t.Fatal("Native requests did not saturate Store execution", adapter.nativeStarted.Load())
+			t.Fatal("Native requests did not saturate the Native slots", adapter.nativeStarted.Load())
 		}
 		time.Sleep(time.Millisecond)
 	}
 	read := testRequest()
 	readValue := &pb.Command_Read{Read: read}
 	readCommand := &pb.Command{Operation: readValue}
-	sharedReadID := uint32(storeLimits.MaxInFlight*2 + 1)
+	sharedReadID := uint32(storeLimits.MaxNative*2 + 1)
 	requestOpts := flowControlledRequest{framer: framer, address: address, streamID: sharedReadID, command: readCommand, responseWindow: 64 << 10}
 	sendFlowControlledRequest(t, requestOpts)
 	short := &pb.NativeRequest{Resource: "short", Request: document}
@@ -471,23 +470,26 @@ func TestNativeOutputStallsHoldSlotsUntilWatchdogAbort(t *testing.T) {
 			if err := reply.observe(frame); err != nil {
 				t.Fatal("healthy shared-connection probe failed", err)
 			}
-			if reply.ended && watchdogs() == 0 {
-				t.Fatal("healthy probe ran while stalled Natives held every execution slot")
+			if reply.ended && reply == readReply && watchdogs() != 0 {
+				t.Fatal("read waited for the output watchdog beside stalled Natives")
+			}
+			if reply.ended && reply == nativeReply && watchdogs() == 0 {
+				t.Fatal("Native ran while stalled Natives held every Native slot")
 			}
 		}
 	}
 	select {
 	case err := <-completed:
 		if err != nil {
-			t.Fatal("independent read failed after the output watchdog", err)
+			t.Fatal("independent read failed beside stalled Natives", err)
 		}
 	case <-ctx.Done():
-		t.Fatal("independent read remained blocked after the output watchdog")
+		t.Fatal("independent read remained blocked beside stalled Natives")
 	}
 	if elapsed := time.Since(started); elapsed > 3*time.Second {
 		t.Fatal("output watchdog did not bound recovery", elapsed)
 	}
-	for watchdogs() != float64(storeLimits.MaxInFlight) {
+	for watchdogs() != float64(storeLimits.MaxNative) {
 		if ctx.Err() != nil {
 			t.Fatal("output watchdog did not end every stalled Native", watchdogs())
 		}

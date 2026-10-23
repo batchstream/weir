@@ -92,8 +92,8 @@ stores:
       # Simultaneous backend executions per Store. Default: 16.
       # Omit for the default; explicit 0 keeps executions unlimited.
       # Positive values retain waiting work for natural batching and backpressure.
-      # Includes Search visibility waits. Native keeps its slot until its
-      # response is delivered.
+      # Includes Search visibility waits. Native commands use a separate
+      # limit of 64 per Store.
       max_in_flight: 16
       # Maximum write collection wait from the oldest eligible admission.
       # Default: 20ms; nonnegative duration; 0s disables collection.

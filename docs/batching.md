@@ -34,9 +34,12 @@ selection.
 
 An execution includes metadata checks, pre-reads, Lua, writes and requested query
 visibility waits. A record batch returns its slot when the backend finishes,
-independently of result consumption. A Native command keeps its slot while it
-streams its response, so a slow Native consumer holds one slot until it reads
-or the output stall watchdog ends its RPC.
+independently of result consumption.
+
+Native commands do not use these slots. Each Store runs at most 64 Native
+commands at once, and each one lasts until its caller has read the response or
+the output stall timeout ends the RPC. Slow Native consumers can therefore delay
+other Native commands, but not typed reads and mutations.
 
 ## Memory sizing
 
@@ -46,10 +49,12 @@ Store is:
 ```text
 queue.max_bytes
   + max_in_flight × (batching.max_bytes + batching.max_operations × largest result)
+  + 64 × largest Native reply
 ```
 
-Every open record stream adds up to `max_pending_records` results awaiting
-delivery, and every message is at most 64 MiB. Real documents are usually much
+A MongoDB Native reply is held whole while it streams; Search Native bodies
+stream in chunks. Every open record stream adds up to `max_pending_records`
+results awaiting delivery, and every message is at most 64 MiB. Real documents are usually much
 smaller than these limits, so size the container from observed document sizes
 and the peak number of open streams. When actual memory crosses the overload
 watermark, new work receives `RESOURCE_EXHAUSTED` until it recovers; see

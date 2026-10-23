@@ -94,7 +94,7 @@ func TestProcessLoad(t *testing.T) {
 	opts := cliContainerOptions{binary: binary, capacityMiB: 1024, config: cfg}
 	process := startCLIContainer(t, opts)
 	t.Logf("measurement=%s warmup=30s fixed_arrival=200RPC/s capacity=1073741824 CPUs=2 driver=%s/%s/%s", duration, runtime.Version(), runtime.GOOS, runtime.GOARCH)
-	t.Log("driver_inflight_limit=512; service MaxInFlight=16/store, queue=1024 entries/32MiB, Node Native invocations=1024/total leases=32768/shared observed byte budget, batching=128/4MiB/20ms, stall=30s unchanged")
+	t.Log("driver_inflight_limit=512; service MaxInFlight=16/store, Native=64/store, queue=1024 entries/32MiB, batching=128/4MiB/20ms, stall=30s unchanged")
 	runProcessLoad(t, process, datasets, duration)
 }
 

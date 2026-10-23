@@ -55,10 +55,12 @@ other batch members active. Shared execution uses the latest participating
 deadline; an unbounded caller keeps it unbounded. Canceling all callers stops
 shared backend work.
 
-Native is a singleton invocation on the same scheduler. It holds its execution
-slot until its response is delivered, so a slow Native consumer occupies one
-slot until it reads or the output watchdog ends the RPC. The client sends one
-command, half-closes input and consumes metadata/body events plus NativeEnd.
+Native is a singleton invocation on the same scheduler, with its own limit of
+64 concurrent commands per Store instead of the record execution slots. A Native
+command lasts until its caller has read the response or the output watchdog
+ends the RPC, so slow Native consumers cannot starve typed work. The client
+sends one command, half-closes input and consumes metadata/body events plus
+NativeEnd.
 Success requires the terminal event and final gRPC OK. Native bypasses typed
 target qualification and forwards the backend's request/response formats.
 It preserves backend pagination, cursors, sessions and permissions.
