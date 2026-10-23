@@ -56,7 +56,7 @@ with `peer_address`. Advertised targets can be IP or DNS host:port values.
 Replicas serving equivalent Stores share one `discovery.group`. Seeds are peer
 bootstrap addresses. `discovery.lease`, `sync_interval` and `sync_timeout` default
 to `60s`, `1s` and `2s`; the lease must exceed the interval plus two exchange
-timeouts and use whole milliseconds. See [discovery](discovery-design.md).
+timeouts and use whole milliseconds. See [discovery](discovery.md).
 
 The diagnostics listener defaults to disabled. A non-loopback bind requires
 `diagnostics.allow_intranet: true`. Readiness describes Node lifecycle, independent
@@ -65,15 +65,13 @@ of Store pressure or backend health.
 Business work inherits caller cancellation and deadlines. Connection setup,
 transport progress and ordinary detached cleanup have independent deadlines.
 `lifecycle.shutdown_timeout` (default `5s`) is the full admitted drain. After it,
-`lifecycle.cleanup_timeout` (default `2s`) is one Store retirement budget, not a
-fresh timeout for each cleanup and disconnect phase. Forced MongoDB adapter
-teardown cancels its immutable lifetime, including already-running and later
-cleanup; ordinary caller cancellation alone does not shorten detached cleanup.
-Concurrent Store closes share the first close plan and result. Successful close
-requires actual execution, publisher and adapter-close joins, while a missed join
-or a genuine close error remains a failure. Lua's default
-instruction count is unlimited; zero call-depth and stack-slot settings select
-the VM defaults. See [Lua](lua.md) for allocation ownership and supported functions.
+`lifecycle.cleanup_timeout` (default `2s`) is one Store cleanup budget covering
+cancellation, session cleanup and disconnect, not a fresh timeout for each phase.
+Work that does not stop within it is reported as a shutdown failure. The same
+timeout bounds detached MongoDB transaction abort and session cleanup after a
+caller cancels, so lowering it to speed shutdown also shortens that cleanup. Lua's
+default instruction count is unlimited; zero call-depth and stack-slot settings
+select the VM defaults. See [Lua](lua.md) for allocation ownership and supported functions.
 
 ## Store settings
 

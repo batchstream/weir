@@ -11,7 +11,7 @@ client -> any node: ResolveStore -> owning nodes: Execute -> local backend
 
 Business payloads go directly to a Store owner. Peers exchange only Store names,
 replica identities, reachable addresses and leases. Backend configuration and
-authentication remain local. See [discovery](discovery-design.md) and
+authentication remain local. See [discovery](discovery.md) and
 [protocols](protocols.md).
 
 ## Module and ownership boundaries
@@ -96,15 +96,15 @@ discard existing ownership. Cold unknown capacity cannot admit work that require
 a trusted bound. Native has an additional count bound of 1024 invocations.
 
 Ingress reserves message and DATA buffer storage before allocation. Connection
-parser workspace has a conservative reservation. Decoded input transfers ownership
-to execution rather than receiving a second unrelated reservation. Encoded output
+parser workspace has a conservative reservation. Decoded input transfers its
+reservation to execution. Encoded output
 keeps its charge until the transport frees the final buffer reference. An
 application acknowledgement cannot release memory still held by the transport.
 Actual memory exhaustion returns explicit capacity failures.
 
 The gRPC and Lua allocation hooks are bounded local dependency patches. The
 [third-party guide](../third_party/README.md) records their purpose, upstream
-identities and verification. The transport remains native gRPC/HTTP2.
+identities and verification. The transport is native gRPC/HTTP2.
 
 Lua parsing, compilation, VM objects, allowed library buffers and document
 conversion reserve allocations on the same account. Each evaluation gets fresh

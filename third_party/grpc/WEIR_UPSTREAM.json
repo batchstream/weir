@@ -600,7 +600,7 @@
     },
     {
       "path": "WEIR_PATCH.md",
-      "sha256": "d19d52cf44efe9506bed5e5ccbb94c938107aa229d5fd933c61cd456304e5f6a"
+      "sha256": "298066366d7ca6d954580932b9407a1552dd3e7b339611bf04db304bdbde1614"
     },
     {
       "path": "internal/transport/receive_memory.go",

@@ -18,6 +18,7 @@ import check_dependencies as dependencies
 ROOT = Path(__file__).resolve().parent.parent
 TARGETS = tuple((system, arch) for system in ('linux', 'darwin') for arch in ('amd64', 'arm64'))
 GO = 'go1.27.1'
+PUREGO_LICENSES = ('purego-Apache-2.0.txt', 'purego-Go-BSD-3-Clause.txt', 'purego-NOTICE.txt')
 
 
 def run(args, *, cwd=ROOT, env=None, timeout=300):
@@ -63,11 +64,12 @@ def allowed(name):
                              'third_party/golua/LICENSE', 'third_party/golua/WEIR_UPSTREAM.json',
                              'third_party/golua/WEIR_PATCH.md', 'third_party/golua/WEIR_PATCH.diff'))
         )
-        or name.startswith('deploy/docker/')
+        or name in ('deploy/docker/Dockerfile', 'deploy/docker/base.json')
+        or name in ('licenses/' + license_name for license_name in PUREGO_LICENSES)
         or (
             name.endswith('.go')
             and not name.endswith('_test.go')
-            and name.startswith(('api/', 'internal/', 'cmd/weir/'))
+            and name.startswith(('internal/', 'cmd/weir/'))
             and not name.startswith('internal/testutil/')
         )
     )
@@ -127,8 +129,6 @@ def validate_patch(source, inputs, module, pin):
     version, relative = pin
     relative = relative.removeprefix('./')
     directory = source / relative
-    if not directory.is_dir():
-        return
     manifest = json.loads((directory / 'WEIR_UPSTREAM.json').read_text())
     if manifest.get('module') != module or manifest.get('version') != version:
         raise ValueError('unexpected public upstream manifest: ' + module)
@@ -223,15 +223,15 @@ def archive_members(source, system):
     }
     for _, relative in dependencies.LOCAL_PATCHES.values():
         patch_source = source / relative
-        if patch_source.is_dir():
-            names = ['LICENSE', 'WEIR_UPSTREAM.json', 'WEIR_PATCH.md', 'WEIR_PATCH.diff']
-            if patch_source.name == 'grpc':
-                names.append('AUTHORS')
-            for name in names:
-                members['licenses/' + patch_source.name + '/' + name] = ((patch_source / name).read_bytes(), 0o644)
+        names = ['LICENSE', 'WEIR_UPSTREAM.json', 'WEIR_PATCH.md', 'WEIR_PATCH.diff']
+        if patch_source.name == 'grpc':
+            names.append('AUTHORS')
+        for name in names:
+            members['licenses/' + patch_source.name + '/' + name] = ((patch_source / name).read_bytes(), 0o644)
     if system == 'darwin':
-        for license_file in sorted((source / 'deploy/docker/licenses').glob('purego-*.txt')):
-            members['licenses/' + license_file.name] = (license_file.read_bytes(), 0o644)
+        # purego is linked only into Darwin binaries.
+        for name in PUREGO_LICENSES:
+            members['licenses/' + name] = ((source / 'licenses' / name).read_bytes(), 0o644)
     return members
 
 

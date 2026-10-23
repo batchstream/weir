@@ -7,9 +7,8 @@ file hashes. Examples, command-line tools and upstream tests are omitted.
 
 Weir runs Lua inside its main process. A single `budget.Budget` spans source
 parsing, compilation, the VM, the allowed native functions and Weir's value
-bridge. Its reservation callback updates the existing Node execution-memory
-ledger before allocating. No additional process, worker, per-request fixed
-32 MiB reservation or monitoring-based heap estimate is involved.
+bridge. Its reservation callback updates the Node execution-memory ledger before
+allocating.
 
 The budget records a conservative cumulative allocation upper bound for one
 evaluation. It does not measure the Go collector's live heap. Reusing an existing
@@ -17,7 +16,7 @@ table slot, register, slice capacity or builder capacity consumes no additional
 byte credit. A new object, backing block, map entry or copied payload is prepaid.
 Old backing blocks remain included in the cumulative charge. Weir owns the scope
 until the VM and any result references covered by that credit have been released
-or transferred to the backend's existing result ownership.
+or transferred to the backend's result ownership.
 
 `Require` accepts an already calculated byte reservation. `RequireAllocation`
 adds Go 1.27 size-class/page-rounding headroom to one payload;
@@ -48,6 +47,6 @@ or allocating diagnostic snapshots.
 
 This patch protects the Lua environment that Weir exposes. Weir does not expose
 `load`, `string.rep`, patterns, arbitrary metatable mutation, coroutines, package
-loading, file/network/process APIs or other native modules. The original
+loading, file/network/process APIs or other native modules. The upstream
 unbudgeted constructors remain available for Weir's finite startup library
 template; evaluation code uses the VM's owned constructors.

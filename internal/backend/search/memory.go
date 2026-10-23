@@ -32,8 +32,10 @@ func programWorking(parts ...int) (int, error) {
 
 // Empty index/ID strings are expanded by their worst JSON escaping below. The
 // longest supported action/result and normal optional metadata cover both
-// typeless Elasticsearch and OpenSearch replies. All per-item numeric evidence
-// is nonnegative; elapsed times are decoded as unconstrained int64 values.
+// typeless and typed Elasticsearch/OpenSearch replies: Elasticsearch 7.x and
+// OpenSearch 1.x pass the adapter's flavor check and include "_type":"_doc".
+// All per-item numeric evidence is nonnegative; elapsed times are decoded as
+// unconstrained int64 values.
 const bulkAckItemShape = `{"delete":{"_index":"","_id":"","_type":"_doc","status":404,"result":"not_found","_version":9223372036854775807,"_seq_no":9223372036854775807,"_primary_term":9223372036854775807,"forced_refresh":false,"_shards":{"total":9223372036854775807,"successful":9223372036854775807,"failed":9223372036854775807}}}`
 const bulkAckEnvelopeShape = `{"errors":false,"took":-9223372036854775808,"ingest_took":-9223372036854775808,"items":[]}`
 

@@ -132,7 +132,7 @@ and a shared bootstrap Service.
 | Guide | Contents |
 | --- | --- |
 | [Architecture](docs/architecture.md) | Ownership, execution, memory and shutdown |
-| [Discovery](docs/discovery-design.md) | Store directory, leases and direct client connections |
+| [Discovery](docs/discovery.md) | Store directory, leases and direct client connections |
 | [Batching](docs/batching.md) | Queue, batch, wait and concurrency tuning |
 | [Operations](docs/operations.md) | Health, metrics, memory pressure and failure handling |
 | [Protocols](docs/protocols.md) | Public and peer contracts and module boundaries |

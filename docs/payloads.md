@@ -3,8 +3,9 @@
 Configured MongoDB, Elasticsearch and OpenSearch Stores accept typed Read/Mutate
 streams and one Native Command per Execute RPC. Execute emits typed
 Events. Unknown protobuf fields and missing oneof variants fail validation.
-Document content types identify native bytes. Native carries an opaque request Document interpreted by the owning adapter. New Stores do not require a new public request variant.
-BSON and JSON retain their native semantics.
+Document content types identify native bytes. Native carries an opaque request
+Document interpreted by the owning adapter. BSON and JSON retain their native
+semantics.
 
 The outer `store_name` selects the adapter. Resource paths are canonical relative
 paths: percent escaping must round-trip canonically, and full `weir://` resources
@@ -22,11 +23,12 @@ are invalid on the wire. Each Read/Mutate request is validated before its backen
 | Native target | `db`, or empty with explicit `$db` | optional canonical path prefix; empty selects the backend root |
 | Native request size | native MongoDB command boundary | native backend HTTP boundary |
 
-Weir imposes no document, Native, expression, Lua source or typed-value
-size/count quotas. BSON follows MongoDB native nesting rules and JSON follows
-its parser's syntax rules. Caller cancellation, schema validity and native
-backend limits still apply. Lua remains an in-process trusted-program facility
-with optional VM execution budgets and the allocation limitations in the architecture.
+Weir imposes no size or count quotas on documents, expressions, Lua source,
+typed values, or Native requests, replies and response bodies. BSON follows
+MongoDB native nesting rules and JSON follows its parser's syntax rules. Caller
+cancellation, schema validity, the Node memory account and native backend limits
+apply. Lua is an in-process trusted-program facility with optional VM execution
+budgets; see [Lua transforms](lua.md).
 
 Database names follow MongoDB's native nonempty, less-than-64-byte limit and
 cross-platform forbidden characters. Collections may contain dots, numeric
@@ -94,19 +96,19 @@ MongoDB accepts `application/bson` containing any valid ordered BSON command.
 The resource contains one database segment or is empty. An explicit string `$db`
 selects the database on the configured backend and is transmitted exactly once.
 Without `$db`, the resource supplies the database. An empty resource requires
-`$db`. Missing, duplicate or nonstring database routing metadata is invalid framing. The command owns collection names, session/transaction parameters and
+`$db`. Missing, duplicate or nonstring database routing metadata is invalid
+framing. The command owns collection names, session/transaction parameters and
 aggregation stages. Native uses the shared backend pool without adding implicit
 sessions, inferred read preferences or deadline-derived `maxTimeMS`; cancellation
 still follows the original caller lifetime.
 Native does not require an existing collection or insert revision metadata.
-Requests, replies and driver diagnostics have no additional Weir size quota. Native command errors
-retain the backend BSON reply rather than becoming normalized mutation results.
+Native command errors retain the backend BSON reply rather than becoming
+normalized mutation results.
 
 Search accepts `application/http` with an HTTP/1.1 origin-form request line,
 headers and body. An optional canonical resource prefix is prepended to the native
 request path; an empty resource addresses the backend root. Escaped paths, query
 strings, arbitrary methods and end-to-end headers retain their native meaning.
-Requests, response metadata and streamed entity bodies have no Weir size quota.
 Fixed Content-Length framing is required for nonempty request bodies; chunked
 framing, upgrades and trailers are outside this finite request envelope. Response
 status, headers, native error bodies and arbitrary entity bytes are preserved.
@@ -119,13 +121,9 @@ queries through the adapter's query path. Search uses `refresh=wait_for` for
 physical writes and a refresh barrier for successful no-op results. A visibility
 failure preserves any known APPLIED evidence and reports a Failure; it is not
 permission to replay the write.
-MongoDB's existing majority-acknowledged writes and primary read path satisfy
-the option without adding a refresh operation. Compatible record batches keep
+MongoDB's majority-acknowledged writes and primary reads satisfy the option
+without a refresh operation. Compatible record batches keep
 visibility waits separate from default application-only work.
-
-Mutation options are passed as one typed message by the protocol and SDK. New
-mutation settings belong in that message and are validated against the current
-contract.
 
 A record stream returns one indexed result per input record. Queries, counts and
 traversal use Native and retain the backend's own pagination, cursor and response

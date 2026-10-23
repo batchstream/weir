@@ -1,60 +1,61 @@
-# Scaling Weir with observed backend demand
+# Scaling Weir on Kubernetes
 
 `hpa.json` is an optional CPU HPA example with one to four replicas and at most
 one scale change per minute. Each Pod runs one Weir process, including Lua
 evaluation.
 
-Each Store defaults to 16 simultaneous adapter invocations, shared by reads,
-mutations and Native streaming. `batching.max_in_flight` controls
-this budget; explicit `0` removes the execution limit. Each Store and replica has
-its own budget, so their aggregate database demand can grow when scaling.
-Business connections, RPCs and backend pools have no additional concurrency cap.
-Each local Store owns an independent backend adapter. Connections grow with
-actual demand; every replica can increase aggregate database traffic.
+## Backend demand
+
+Each Store and replica has its own backend adapter. MongoDB pools and Search
+HTTP transports have no connection-count limit; connections grow with actual
+demand. `batching.max_in_flight` (default 16 simultaneous adapter invocations,
+shared by reads, mutations and Native streaming) is the only per-Store,
+per-replica concurrency cap, and explicit `0` removes it. Business connections
+and RPCs have no separate cap. Paused Native output releases its execution slot
+but can keep its backend socket open, so open connections can exceed
+`max_in_flight`.
+
+Size database connection limits for the sum over Stores and replicas, including
+rollout overlap. Adding Weir replicas raises aggregate database demand and does
+not add database capacity. Separate Stores provide independent scheduling
+budgets at the cost of additional backend connections. See
+[batching](../../docs/batching.md) for queue, batch and execution interaction.
+
 Observe backend connection ownership, active executions, queue count/bytes,
-completed throughput and latency together with backend CPU and memory.
-Use the container memory limit for the hard memory boundary; Weir detects the
-visible capacity and observes actual pressure automatically.
-Linux admission excludes reclaimable inactive file cache and exports both raw
-cgroup usage and working-set metrics. The CLI automatically sets the standard
-Go soft limit below the overload recovery watermark, leaving headroom for other
-resident memory. Explicit `GOMEMLIMIT` takes precedence; verify any override
-under allocation bursts. The runtime-limit and automatic-management gauges show
-which policy is active. Low live heap alone does not imply low resident memory.
-
-The configured queue bounds waiting input. Reads and mutations form separate
-batches within that one queue. Reads use compatible reads already queued without
-waiting for new arrivals; they do not flush the write collection window. Both
-can wait for an occupied execution slot. A full queue waits for dispatch or caller
-cancellation, and dispatch immediately returns its capacity. An active request
-does not hold waiting queue capacity. Use integration measurements to select
-execution and replica budgets for the actual workload.
-Native output releases execution slots while retained replies and publication
-remain charged to the Node execution-memory account across Stores. Further
-backend work fairly reacquires a slot. The Node bounds Native invocations to
-1024; queue settings do not impose another output pause limit. Memory exhaustion
-returns an explicit capacity failure. Paused HTTP responses can retain upstream
-sockets; observe paused output, shared memory and actual connections alongside
-executions. Consume responses promptly. Separate Stores provide independent
-scheduling budgets with additional backend connections.
-The transport stall watchdog closes a connection that stops output progress,
-affecting other RPCs on that connection. Continuously progressing streams have
-no total lifetime bound without a caller deadline.
-
-During rolling updates, account for overlap with terminating Pods when measuring
-backend connections. `maxSurge: 0` and HPA `maxReplicas` do not cap that overlap.
-The grace period bounds normal termination; connection metrics record sockets
-until their actual close completes.
-
-A gRPC connection usually pins calls to one instance. Scaling replicas does not
-redistribute an active RPC. Distribute new connections across discovered instances
-and measure per-instance load before interpreting average HPA CPU utilization.
-
-Use the independent [weir-tests](https://github.com/batchstream/weir-tests)
-repository for matched direct and Weir workloads. Compare the same submitted
-request rate and verify completed work; fewer sockets due to rejected work are
-not a throughput improvement. Check backend outcomes as well as transport status.
+paused Native output, completed throughput and latency together with backend
+CPU and memory. Consume Native responses promptly.
 
 After callers close, idle backend connections can remain for reuse. MongoDB pools
-close at adapter shutdown; Search idle connections expire after 30 seconds.
-Observe shutdown as well as active traffic when measuring aggregate ownership.
+close at adapter shutdown; Search idle connections expire after 30 seconds by
+default.
+
+## Memory
+
+Set a container memory limit; it is the hard memory boundary. Weir detects the
+visible capacity, excludes reclaimable cgroup `inactive_file` from admission and sets
+the Go soft limit below the overload recovery watermark unless `GOMEMLIMIT` is
+set. Verify any override under allocation bursts. See
+[operations](../../docs/operations.md#memory-pressure-and-recovery) for the
+gauges that show the active policy.
+
+## Connections and rollouts
+
+A gRPC connection usually pins calls to one instance, and scaling replicas does
+not redistribute an active RPC. Distribute new connections across discovered
+instances and measure per-instance load before interpreting average HPA CPU
+utilization. The transport stall watchdog closes a connection that stops output
+progress, affecting the other RPCs on that connection; continuously progressing
+streams are bounded only by caller deadlines.
+
+During rolling updates, terminating Pods can retain backend connections while new
+Pods start. `maxSurge: 0` and HPA `maxReplicas` do not cap that overlap. The
+grace period bounds normal termination; connection metrics record sockets until
+their close completes. Align `terminationGracePeriodSeconds` with preStop and the
+`lifecycle` timeouts.
+
+## Measuring
+
+Use the [weir-tests](https://github.com/batchstream/weir-tests) repository for
+matched direct and Weir workloads. Compare the same submitted request rate and
+verify completed work and backend outcomes as well as transport status; fewer
+sockets due to rejected work are not a throughput improvement.

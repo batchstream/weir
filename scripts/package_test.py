@@ -37,7 +37,7 @@ class PackageTests(unittest.TestCase):
     def test_inputs_exclude_tests_local_and_secrets(self):
         for name in ('secret/.env.production', '.ssh/config', 'keys/server.pem', 'server.key', 'credentials', 'keyfile'):
             self.assertTrue(package.secret_path(name), name)
-        for name in ('.tools/weir', '.testdata/test.go', '.git/config', 'examples/basic/main.go', 'examples/native/main.go', 'cmd/weir/main_test.go', 'internal/testutil/root.go'):
+        for name in ('.tools/weir', '.testdata/test.go', '.git/config', 'examples/basic/main.go', 'examples/native/main.go', 'cmd/weir/main_test.go', 'internal/testutil/root.go', 'api/v1/store.go', 'deploy/kubernetes/weir.yaml', 'licenses/other.txt'):
             self.assertFalse(package.allowed(name), name)
         self.assertFalse(package.allowed('cmd/other-product/main.go'))
         included = (
@@ -45,9 +45,8 @@ class PackageTests(unittest.TestCase):
             'config/weir.reference.yaml',
             'config/routes.reference.yaml',
             'deploy/docker/Dockerfile',
-            'deploy/docker/weir.yaml',
-            'deploy/docker/routes.yaml',
-            'deploy/docker/licenses/purego-NOTICE.txt',
+            'deploy/docker/base.json',
+            'licenses/purego-NOTICE.txt',
         )
         for name in included:
             self.assertTrue(package.allowed(name), name)
@@ -164,7 +163,8 @@ class PackageTests(unittest.TestCase):
                 inputs[relative + '/server.go'] = patch['sha256']
                 inputs[relative + '/mem/receive_memory.go'] = addition['sha256']
                 inputs[relative + '/WEIR_UPSTREAM.json'] = package.sha(json.dumps(manifest).encode())
-                package.validate_patch_inputs(source, inputs)
+                pin = (version, relative)
+                package.validate_patch(source, inputs, module, pin)
                 changed = dict(inputs)
                 changed[relative + '/server.go'] = base['server.go']
                 missing = dict(inputs)
@@ -173,7 +173,7 @@ class PackageTests(unittest.TestCase):
                 extra[relative + '/unrecorded.go'] = package.sha(b'unrecorded source')
                 for invalid in (changed, missing, extra):
                     with self.assertRaisesRegex(ValueError, 'differ from the pinned patch manifest'):
-                        package.validate_patch_inputs(source, invalid)
+                        package.validate_patch(source, invalid, module, pin)
 
     def test_toolchain_drift_rejected(self):
         result = subprocess.CompletedProcess([], 0, b'go1.27.0\n', b'')
@@ -195,9 +195,23 @@ class PackageTests(unittest.TestCase):
                 'README.md': b'fixture docs',
                 'config/weir.reference.yaml': b'# Complete process reference\nlisteners:\n  application: 127.0.0.1:7447\n',
                 'config/routes.reference.yaml': b'# Complete local Store reference\nstores: []\n',
-                'deploy/docker/weir.yaml': b'listeners:\n  application: 127.0.0.1:7447\n',
-                'deploy/docker/routes.yaml': b'stores: []\n',
             }
+            for license_name in package.PUREGO_LICENSES:
+                inputs['licenses/' + license_name] = license_name.encode()
+            patch_members = []
+            for module, (version, relative) in package.dependencies.LOCAL_PATCHES.items():
+                relative = relative.removeprefix('./')
+                upstream = {'go.mod': b'module ' + module.encode() + b'\n', 'LICENSE': b'license'}
+                if relative.endswith('/grpc'):
+                    upstream['AUTHORS'] = b'authors'
+                added = {'WEIR_PATCH.md': b'patch notes', 'WEIR_PATCH.diff': b'patch diff'}
+                manifest = {'module': module, 'version': version,
+                            'files': {name: package.sha(data) for name, data in upstream.items()},
+                            'newFiles': [{'path': name, 'sha256': package.sha(data)} for name, data in added.items()]}
+                for name, data in {**upstream, **added, 'WEIR_UPSTREAM.json': json.dumps(manifest).encode()}.items():
+                    inputs[relative + '/' + name] = data
+                    if name != 'go.mod':
+                        patch_members.append('licenses/' + relative.rsplit('/', 1)[-1] + '/' + name)
 
             def run(args, *, cwd=None, env=None):
                 if args[:3] == ['git', 'cat-file', 'blob']:
@@ -239,6 +253,12 @@ class PackageTests(unittest.TestCase):
                 for filename in configurations:
                     self.assertEqual(archive.extractfile(filename).read(), inputs[filename])
                 self.assertEqual(archive.extractfile('weir').read(), b'./cmd/weir linux/arm64')
+                licenses = {name for name in archive.getnames() if name.startswith('licenses/')}
+                self.assertEqual(licenses, set(patch_members))
+            with tarfile.open(output / 'weir-darwin-arm64.tar.gz') as archive:
+                licenses = {name for name in archive.getnames() if name.startswith('licenses/')}
+                purego = {'licenses/' + name for name in package.PUREGO_LICENSES}
+                self.assertEqual(licenses, set(patch_members) | purego)
             docker.assert_called_once()
 
     def test_oci_index_digest_requires_both_linux_platforms(self):

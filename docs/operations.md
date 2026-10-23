@@ -9,11 +9,11 @@ diagnostics:
   address: 127.0.0.1:7449
 ```
 
-`GET /livez` reports a running diagnostics handler. `GET /readyz` reports that the
-Node entered service and is not draining or failed. Neither endpoint tests backend
-health, workload capacity or directory convergence. `GET /metrics` exports a
-Node-owned Prometheus registry. Diagnostics accepts HTTP/1 GET requests without a
-body or query, with independent progress deadlines.
+`GET /livez` reports a running diagnostics handler. `GET /readyz` reports that
+the Node entered service and is not draining or failed. Neither endpoint tests
+backend health, workload capacity or directory convergence. `GET /metrics`
+exports a Node-owned Prometheus registry. Diagnostics accepts HTTP/1 GET
+requests without a body or query, with independent progress deadlines.
 
 ```sh
 weir probe live --address 127.0.0.1:7449
@@ -21,27 +21,28 @@ weir probe ready --address 127.0.0.1:7449 --timeout 750ms
 weir version
 ```
 
-Application and peer ports require isolated networking. Peers advertise reachable
-addresses; Store groups use equivalent local definitions. A node can bootstrap
-through any peer, and clients can resolve Stores through any application endpoint.
-Kubernetes manifests and scaling guidance live under
-[deploy/kubernetes](../deploy/kubernetes/scaling.md). Every Pod runs one Weir process.
+Application and peer ports require isolated networking. Peers advertise
+reachable addresses; Store groups use equivalent local definitions. A node can
+bootstrap through any peer, and clients can resolve Stores through any
+application endpoint. Kubernetes manifests and scaling guidance live under
+[deploy/kubernetes](../deploy/kubernetes/scaling.md). Every Pod runs one Weir
+process.
 
 ## MongoDB discovery and failover
 
-For automatic primary discovery, use the strict
-[replica-set connection profile](configuration.md#store-settings): an explicit set
-name with one to seven seeds and `directConnection` omitted or `false`. The driver
-uses ordinary replica-set topology discovery; Weir does not implement elections,
-secondary routing, SRV, mongos or load balancing. Direct mode intentionally stays
-on one member and cannot provide automatic failover.
+For automatic primary discovery, use the strict [replica-set connection
+profile](configuration.md#store-settings): an explicit set name with one to
+seven seeds and `directConnection` omitted or `false`. The driver uses ordinary
+replica-set topology discovery and follows MongoDB's own elections; secondary
+routing, SRV, mongos and load balancing are unsupported. Direct mode stays on
+one member and cannot provide automatic failover.
 
 Seeds are bootstrap addresses, not a routing allowlist or global connection cap.
 Every advertised member address must be reachable from Weir. With TLS, each
-member's certificate must verify its actual hostname/IP; a seed's identity is not
-reused for other members. `max_connecting` limits creation per member pool, while
-monitors and pools can exist for multiple discovered members. Monitor aggregate
-backend demand, connection ownership and cancellation together.
+member's certificate must verify its actual hostname/IP; a seed's identity is
+not reused for other members. `max_connecting` limits creation per member pool,
+while monitors and pools can exist for multiple discovered members. Monitor
+aggregate backend demand, connection ownership and cancellation together.
 
 Keep database transition time separate from Weir's reaction: observe when the
 external replica set can serve the required primary/majority operation, then
@@ -51,12 +52,13 @@ Caller deadlines still bound unavailable selection; do not increase them or
 resubmit a possibly applied mutation to conceal a failed recovery.
 
 Weir retains primary reads and majority-acknowledged typed writes, disables
-automatic read/write replay, and does not promise transparent migration of Native
-cursors, sessions or transactions. Preserve actual APPLIED/UNKNOWN/failure or
-Native completion evidence. An ambiguous Lua commit may only confirm that same
-commit; fresh Lua evaluation requires confirmed abort/conflict evidence. Native
-remains opaque: the caller supplies command-level concerns and manages any
-backend-specific cursor/session semantics.
+automatic read/write replay, and does not promise transparent migration of
+Native cursors, sessions or transactions. Preserve actual
+APPLIED/UNKNOWN/failure or Native completion evidence. An ambiguous Lua commit
+may only confirm that same commit; fresh Lua evaluation requires confirmed
+abort/conflict evidence. Native remains opaque: the caller supplies
+command-level concerns and manages any backend-specific cursor/session
+semantics.
 
 ## Bounded CPU investigation
 
@@ -69,28 +71,29 @@ weir serve --config weir.yaml --routes routes.yaml \
 go tool pprof -top .testdata/weir-cpu.pprof
 ```
 
-Prepare the private output directory first. The output must be a new file; creation
-is exclusive with mode `0600`, and existing files (including symlinks) are never
-overwritten. Both flags are required together; duration must be positive and at
-most `60s`. Capture begins before node assembly, not after warmup. The timer stops
-and flushes the runtime profiler and closes the file without stopping service;
-serve exit also stops capture and joins its worker without waiting out the capture
-duration. Existing node drain budgets are unchanged; profiler flush/file close add
-cleanup latency outside those budgets. Abrupt termination can leave an incomplete
-file. Use a local regular-file destination on trusted storage; filesystem IO and
-runtime flushing are not hard wall-clock bounded. File-close errors fail serve;
-the Go profiler API does not report asynchronous write errors, so verify that the
-retained profile parses. Treat profiles as sensitive process information.
+Prepare the private output directory first. The output must be a new file;
+creation is exclusive with mode `0600`, and existing files (including symlinks)
+are never overwritten. Both flags are required together; duration must be
+positive and at most `60s`. Capture begins before node assembly, not after
+warmup. The timer stops and flushes the runtime profiler and closes the file
+without stopping service; serve exit also stops capture and joins its worker
+without waiting out the capture duration. Profiler flush and file close add
+cleanup latency outside the node drain budgets. Abrupt termination can leave an
+incomplete file. Use a local regular-file destination on trusted storage;
+filesystem IO and runtime flushing are not hard wall-clock bounded. File-close
+errors fail serve; the Go profiler API does not report asynchronous write
+errors, so verify that the retained profile parses. Treat profiles as sensitive
+process information.
 
-Retain generated output only in ignored `.testdata/` or external artifacts. Match
-binary, workload, resource limits and observation windows across comparisons, and
-account for profiling overhead and startup samples.
+Retain generated output only in ignored `.testdata/` or external artifacts.
+Match binary, workload, resource limits and observation windows across
+comparisons, and account for profiling overhead and startup samples.
 
 ## Metrics
 
 Observe completed work and actual backend demand together with queue and memory
-occupancy. A lower connection count caused by rejected traffic is not evidence of
-improved capacity.
+occupancy. A lower connection count caused by rejected traffic is not evidence
+of improved capacity.
 
 | Family | Interpretation |
 | --- | --- |
@@ -108,33 +111,30 @@ improved capacity.
 
 Execution memory reports `budget_bytes`, `used_bytes`, `resident_bytes`,
 `input_reserved_bytes`, `input_used_bytes`, `wire_bytes`, `wire_buffers`,
-`io_reserve_bytes` and lease states. `ingress_connection_bytes` is a conservative
-workspace promise; `ingress_bytes` and `ingress_reserved_bytes` describe receive
-ownership. These are reservation estimates, not RSS measurements. Compare them
-with actual memory metrics and `budget_rejections_total`.
+`io_reserve_bytes` and lease states. `ingress_connection_bytes` is a
+conservative workspace promise; `ingress_bytes` and `ingress_reserved_bytes`
+describe receive ownership. These are reservation estimates, not RSS
+measurements. Compare them with actual memory metrics and
+`budget_rejections_total`.
 
-An admitted record's later working-memory growth may await a finite snapshot of
-other Native invocations still in initial preparation, only within the actual
-allocation/evaluation context's deadline. This is FIFO scheduling precedence over
-fresh execution starts across the Node, not extra memory credit: allocations
-remain forbidden until the complete reservation fits the unchanged ledger.
-Native initial IO can continue growing, converging or retiring while growth waits.
-Other records, settled slow outputs and future Native starts cannot extend that
-snapshot. If its remaining speculative working reservations cannot make the growth
-fit, or the snapshot finishes without releasing sufficient capacity, growth fails
-rather than awaiting a consumer Ack. A missing deadline fails promptly under
-pressure; cancellation removes the scheduling claim without releasing live data.
+When the account is full, an admitted record that needs more working memory can
+wait, within its own deadline, for Native invocations that are still starting to
+release capacity. It takes precedence over new executions but never receives
+extra credit. If capacity does not become available, the record fails with a
+capacity error instead of waiting for a slow consumer; a record without a
+deadline fails promptly under pressure.
 
 Typed record counters are updated once at Store completion, after final result
-normalization (including result-budget failures). Result-budget normalization can
-replace `Failure` with `RESOURCE_EXHAUSTED`, but preserves an already reported
-legal mutation effect; missing or invalid effect evidence falls back to `UNKNOWN`,
-not an assertion that the mutation was never started. `weir_store_records_total`
-preserves mutation effect evidence: `outcome="applied"` does **not** mean business
-success. For example, a query-visibility barrier can fail after application,
-producing `APPLIED` with `Failure` even when backend HTTP returns 200 and the RPC
-completes OK. This increments both `records_total{operation="mutate",outcome="applied"}`
-and `record_failures_total{operation="mutate"}`. A successful document read or a
+normalization (including result-budget failures). Result-budget normalization
+can replace `Failure` with `RESOURCE_EXHAUSTED`, but preserves an already
+reported legal mutation effect; missing or invalid effect evidence falls back to
+`UNKNOWN`, not an assertion that the mutation was never started.
+`weir_store_records_total` preserves mutation effect evidence:
+`outcome="applied"` does **not** mean business success. For example, a
+query-visibility barrier can fail after application, producing `APPLIED` with
+`Failure` even when backend HTTP returns 200 and the RPC completes OK. This
+increments both `records_total{operation="mutate",outcome="applied"}` and
+`record_failures_total{operation="mutate"}`. A successful document read or a
 missing record without `Failure` does not increment the failure counter.
 
 `weir_store_record_failures_total` has only the fixed `operation` label (`read`,
@@ -142,112 +142,108 @@ missing record without `Failure` does not increment the failure counter.
 terminate with `Failure`, including queued cancellations; it does not count
 preparation/admission rejections, individual HTTP exchanges, Lua evaluations or
 retries, RPC completion, publication acknowledgements, or scrapes. No failure
-message, code, resource, ID, or backend text becomes a label. This failure counter
-adds exactly two series per Store.
+message, code, resource, ID, or backend text becomes a label. This failure
+counter adds exactly two series per Store.
 
 Both typed record counters exclude Native. Native is opaque forwarding: its
-`NativeEnd` describes transfer completion/failure, not a portable backend business
-result. In particular, a complete non-2xx HTTP response is not interpreted as a
-generic business failure. These counters are not generic Native failure metrics.
+`NativeEnd` describes transfer completion/failure, not a portable backend
+business result. In particular, a complete non-2xx HTTP response is not
+interpreted as a generic business failure. These counters are not generic Native
+failure metrics.
 
-`weir_store_native_completions_total` counts each admitted Native call once at the
-same Store terminal point, after final result-budget normalization. Its only label
-is the fixed `completion` vocabulary: `not_started` (`NATIVE_NOT_STARTED`),
-`response_complete` (`RESPONSE_COMPLETE`), `response_incomplete`
-(`RESPONSE_INCOMPLETE`), or `invalid` (unspecified, unknown or illegal enum values).
-Exactly these four series are initialized to zero; no enum string, failure detail,
-HTTP status, resource or identity becomes a label. Queued cancellations count as
-`not_started`; preparation/admission rejections do not count as completions.
-Result-budget degradation counts the final normalized terminal evidence, not the
-adapter's original event. Publication acknowledgements and scrapes do not count
-again.
+`weir_store_native_completions_total` counts each admitted Native call once at
+the same Store terminal point, after final result-budget normalization. Its only
+label is the fixed `completion` vocabulary: `not_started`
+(`NATIVE_NOT_STARTED`), `response_complete` (`RESPONSE_COMPLETE`),
+`response_incomplete` (`RESPONSE_INCOMPLETE`), or `invalid` (unspecified,
+unknown or illegal enum values). Exactly these four series are initialized to
+zero; no enum string, failure detail, HTTP status, resource or identity becomes
+a label. Queued cancellations count as `not_started`; preparation/admission
+rejections do not count as completions. Result-budget degradation counts the
+final normalized terminal evidence, not the adapter's original event.
+Publication acknowledgements and scrapes do not count again.
 
 This is **Native forwarding terminal evidence**, not backend business success,
-RPC status or proof that the client received the response. An incomplete response
-with `Failure` can be delivered in an RPC that finishes gRPC OK; it still increments
-`completion="response_incomplete"`. A complete opaque HTTP 500 response increments
-`completion="response_complete"`, without inferring business failure or updating
-either typed record counter. Native completion adds exactly four series per Store:
-61 runtime series in total, or 67 with Mongo connection metrics. The maximum
-16-Store diagnostics fixture has 1,195 Weir series (excluding Go/process collectors).
+RPC status or proof that the client received the response. An incomplete
+response with `Failure` can be delivered in an RPC that finishes gRPC OK; it
+still increments `completion="response_incomplete"`. A complete opaque HTTP 500
+response increments `completion="response_complete"`, without inferring business
+failure or updating either typed record counter. Native completion adds exactly
+four series per Store.
 
 Search HTTP metrics include failed attempts and exclude Native relay. HTTP
 success does not prove every bulk item succeeded. Bulk elapsed time includes
-`refresh=wait_for`; concurrent durations overlap and cannot be summed as wall time.
-Framed request byte counts exclude headers and do not prove delivery. Lua evaluation
-time excludes external JSON decoding/encoding. Metrics use bounded labels without
-document or target identities.
+`refresh=wait_for`; concurrent durations overlap and cannot be summed as wall
+time. Framed request byte counts exclude headers and do not prove delivery. Lua
+evaluation time excludes external JSON decoding/encoding. Metrics use bounded
+labels without document or target identities.
 
 ## Memory pressure and recovery
 
 Capacity is the smallest trusted physical host, finite process address-space or
 visible container limit. Admission latches at the configured high watermark and
-recovers below the low watermark; defaults are 80% and 70%. Recovery needs complete
-trusted observations. Unknown samples alone do not manufacture overload.
+recovers below the low watermark; defaults are 80% and 70%. Recovery needs
+complete trusted observations. Unknown samples alone do not manufacture
+overload.
 
 On Linux cgroup v2, each finite visible level uses its own current/limit pair.
-Validated reclaimable `inactive_file` is subtracted from `memory.current`; missing
-or inconsistent statistics retain raw usage. Metrics expose both
+Validated reclaimable `inactive_file` is subtracted from `memory.current`;
+missing or inconsistent statistics retain raw usage. Metrics expose both
 `weir_memory_cgroup_current_bytes` and `weir_memory_cgroup_working_set_bytes`.
 Cgroup usage is not added to process RSS.
 
 The CLI owns an automatic Go soft limit of 80% of the remaining process recovery
 allowance after memory outside RSS is accounted for. With default watermarks its
 upper bound is 56% of capacity. Positive targets have a 16 MiB floor capped by
-that upper bound. This encourages release of idle Go heap after allocation bursts.
-It cannot reclaim a live working set or memory outside Go.
+that upper bound. This encourages release of idle Go heap after allocation
+bursts. It cannot reclaim a live working set or memory outside Go.
 
-An explicitly present `GOMEMLIMIT`, including `off`, or an already finite runtime
-limit takes precedence. A later external runtime-limit change ends automatic
-ownership. Shutdown restores the previous setting only while Weir still owns it.
-Embedded `app.Open` leaves global GC policy unchanged; process owners can explicitly
-call `Node.ManageRuntimeMemoryLimit`.
+An explicitly present `GOMEMLIMIT`, including `off`, or an already finite
+runtime limit takes precedence. A later external runtime-limit change ends
+automatic ownership. Shutdown restores the previous setting only while Weir
+still owns it.
 
 Inspect `weir_memory_go_runtime_limit_bytes`, `weir_memory_go_runtime_managed`,
 `weir_memory_recovery_allowance_bytes` and
-`weir_memory_recovery_allowance_known`. Unknown or known-zero remaining allowance
-preserves the previous soft limit while actual pressure keeps admission closed.
-Use container/OS limits for the hard boundary.
+`weir_memory_recovery_allowance_known`. Unknown or known-zero remaining
+allowance preserves the previous soft limit while actual pressure keeps
+admission closed. Use container/OS limits for the hard boundary.
 
 ## Slow consumers, failures and shutdown
 
-Store queues bound waiting input. Stream publication windows and the shared memory
-account bound retained output. A progressing Native stream can pause backend IO,
-release an execution slot and fairly regain it before reading more. A stalled
-connection can be closed by the transport watchdog; other RPCs on that connection
-then fail too. Consume output promptly and set application deadlines.
+Store queues bound waiting input. Stream publication windows and the shared
+memory account bound retained output. A progressing Native stream can pause
+backend IO, release an execution slot and fairly regain it before reading more.
+A stalled connection can be closed by the transport watchdog; other RPCs on that
+connection then fail too. Consume output promptly and set application deadlines.
 
 A transport failure after a possible write leaves it UNKNOWN unless application
 was already confirmed. Preserve indexed results received before failure. Do not
 replay unconfirmed mutations automatically. Query-visible completion can fail
-after application; APPLIED with Failure is not a successful visibility guarantee.
+after application; APPLIED with Failure is not a successful visibility
+guarantee.
 
 MongoDB transaction cleanup is bounded and best effort. An acknowledged abort or
-`NoSuchTransaction` does not create a permanent session tombstone; delayed remote
-work can retain locks until MongoDB's own transaction timeout and cleanup. A lost
-commit acknowledgement remains UNKNOWN. Confirmed abort/conflict retries retain
-the original caller lifetime.
+`NoSuchTransaction` does not create a permanent session tombstone; delayed
+remote work can retain locks until MongoDB's own transaction timeout and
+cleanup. A lost commit acknowledgement remains UNKNOWN. Confirmed abort/conflict
+retries retain the original caller lifetime.
 
-Align termination grace with preStop, `lifecycle.shutdown_timeout` and cleanup.
-Each Store preserves the full admitted drain (default `5s`), then owns one
-absolute retirement budget (default `2s`), shared by concurrent Close callers.
-Detached MongoDB cleanup keeps its ordinary caller-independent `2s` bound, but
-forced adapter teardown cancels that cleanup and all operation/metadata waiters.
-Remote cleanup gets at most the first three quarters of retirement; adapter close
-gets the remaining context through seven eighths, reserving the final eighth for
-actual execution, publication and close-worker joins. MongoDB stops admission and
-closes/joins its owned raw transports before disconnecting the client. An expired
-best-effort session cleanup is not confirmed remote cleanup or replay permission;
-actual disconnect/raw-close errors and missed joins remain shutdown failures.
-A noncooperative adapter returns a bounded failure, never a false successful stop.
-Consumer-owned record evidence remains charged until genuine Ack/session closure.
-During rolling updates, terminating Pods can retain connections while new Pods start;
+Align termination grace with preStop, `lifecycle.shutdown_timeout` and
+`lifecycle.cleanup_timeout`. Each Store drains admitted work for up to the
+shutdown timeout (default `5s`), then gets one cleanup budget (default `2s`) to
+cancel remaining work, end MongoDB sessions and close backend connections. An
+expired best-effort session cleanup is neither confirmed remote cleanup nor
+permission to replay. Disconnect errors and work that does not stop within the
+budget are reported as shutdown failures, never as a clean stop. Results not yet
+acknowledged by the consumer stay charged until Ack or stream closure. During
+rolling updates, terminating Pods can retain connections while new Pods start;
 `maxSurge: 0` does not cap that overlap. Scaling replicas increases aggregate
 backend demand and does not add database capacity.
 
-Validate the real deployment with persisted reads/writes, visibility requirements,
-slow consumers, cancellation, memory bursts and rolling replacement. Unit tests,
-tagged compilation and short functional probes do not establish sustainable
-throughput or universal latency guarantees. Use the workload tooling in
-[weir-tests](https://github.com/batchstream/weir-tests) and write run artifacts under
-ignored `.testdata/`.
+Validate the real deployment with persisted reads/writes, visibility
+requirements, slow consumers, cancellation, memory bursts and rolling
+replacement. Unit tests, tagged compilation and short functional probes do not
+establish sustainable throughput or universal latency guarantees. Use the
+workload tooling in [weir-tests](https://github.com/batchstream/weir-tests) and
+write run artifacts under ignored `.testdata/`.
