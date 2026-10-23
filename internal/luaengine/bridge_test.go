@@ -177,7 +177,7 @@ func TestBridgeAllowsDeepLargeAndSharedValues(t *testing.T) {
 		b, state := bridgeState(t)
 		result := bridgeExecute(t, state, source)
 		if _, err := b.fromLua(result); err != nil {
-			t.Fatal("valid data retained a former admission gate", err)
+			t.Fatal("valid deep, wide or large data rejected", err)
 		}
 	}
 }

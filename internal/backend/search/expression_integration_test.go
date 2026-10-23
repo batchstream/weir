@@ -293,7 +293,7 @@ func TestSearchExpressionRealCapacity(t *testing.T) {
 	if persisted.Version != 1+int64(applied.Load()) {
 		t.Fatal("independent capacity oracle observed a hidden write or replay", persisted.Version, applied.Load(), conflicts.Load(), congested.Load())
 	}
-	t.Logf("independent capacity oracle found=true id=counter version=%d seed=1 applied=%d conflict=%d congestion=%d preserved_padding_bytes=%d", persisted.Version, applied.Load(), conflicts.Load(), congested.Load(), len(persisted.Source.Pad))
+	t.Logf("capacity oracle id=counter version=%d seed=1 applied=%d conflict=%d congestion=%d preserved_padding_bytes=%d", persisted.Version, applied.Load(), conflicts.Load(), congested.Load(), len(persisted.Source.Pad))
 }
 
 func TestSearchExpressionRealConflictEvidence(t *testing.T) {

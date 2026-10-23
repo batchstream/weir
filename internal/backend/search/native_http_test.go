@@ -69,7 +69,7 @@ func TestNativeHTTPBodyBorrowsLargeInput(t *testing.T) {
 	}
 }
 
-func TestNativeHTTPHeadersBeyondFormerLimit(t *testing.T) {
+func TestNativeHTTPPreservesLargeAndManyHeaders(t *testing.T) {
 	header := strings.Repeat("x", 128<<10)
 	raw := []byte("GET /_doc/x HTTP/1.1\r\nX-Opaque-Id: " + header + "\r\n\r\n")
 	request, _, failure := parseNativeHTTPRequest(raw)

@@ -125,7 +125,7 @@ func TestEvaluateLua54LanguageContract(t *testing.T) {
 	}
 }
 
-func TestEvaluateRestrictsHostCapabilitiesAndOldInterface(t *testing.T) {
+func TestEvaluateRestrictsHostCapabilities(t *testing.T) {
 	program := testProgram(`
 		assert(current == nil and input == nil)
 		return function()
@@ -137,8 +137,18 @@ func TestEvaluateRestrictsHostCapabilitiesAndOldInterface(t *testing.T) {
 			assert(math.random == nil and math.randomseed == nil)
 			assert(string.dump == nil and string.pack == nil and string.rep == nil)
 			assert(string.find == nil and string.match == nil and string.gmatch == nil and string.gsub == nil)
-			assert(weir.replace == nil and weir.get == nil and weir.set == nil and weir.merge == nil)
-			assert(weir.i32 == nil and weir.i64 == nil and weir.add == nil)
+			local names = {}
+			for name in pairs(weir) do
+				names[#names + 1] = name
+			end
+			table.sort(names)
+			local exposed = table.concat(names, ",")
+			assert(exposed == "array,bytes,data,delete,extended,keep,kind,null,object,reject,time", exposed)
+			local timeNames = {}
+			for name in pairs(weir.time) do
+				timeNames[#timeNames + 1] = name
+			end
+			assert(#timeNames == 1 and timeNames[1] == "now", table.concat(timeNames, ","))
 			return weir.keep()
 		end
 	`)

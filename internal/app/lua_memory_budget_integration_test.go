@@ -66,9 +66,8 @@ func TestCLILuaMemoryBudget(t *testing.T) {
 	if cfg.Basic.Transport.MaxPendingRecords != 32 || time.Duration(cfg.Basic.Transport.Timeouts.Stall) != 30*time.Second {
 		t.Fatal("default transport policy changed")
 	}
-	opts := memoryRecoveryOptions{binary: binary, capacityMiB: 512, automatic: true, config: &cfg}
-	process := startMemoryRecoveryCLI(t, opts)
-	t.Log("Lua fixed512MiB/2CPU single_process=true")
+	opts := cliContainerOptions{binary: binary, capacityMiB: 512, config: cfg}
+	process := startCLIContainer(t, opts)
 	initial, err := ingressMemoryMetrics(process)
 	if err != nil {
 		t.Fatal("initial process metrics unavailable", err)
@@ -108,7 +107,7 @@ func TestCLILuaMemoryBudget(t *testing.T) {
 	}
 	const source = `return function(current, incoming) local s='x'; for i=1,29 do s=s..s end; return weir.keep() end`
 	const finalStringBytes = uint64(1) << 29
-	t.Logf("Lua_probe tiny_source_bytes=%d source_SHA256=%x iterations=29 final_string_bytes=%d transient_peak_may_exceed_final=true caller3s retries=0 host_executes_Lua=false", len(source), sha256.Sum256([]byte(source)), finalStringBytes)
+	t.Logf("Lua_probe source_bytes=%d source_SHA256=%x iterations=29 final_string_bytes=%d", len(source), sha256.Sum256([]byte(source)), finalStringBytes)
 	program := &weirclient.LuaTransform{Source: []byte(source)}
 	request := &weirclient.AtomicTransformRequest{Resource: dataset.root + "/s:lua-bound-target", Lua: program}
 	callOptions := weirclient.AtomicTransformOptions{StoreName: "mongo", Request: request}
@@ -209,7 +208,7 @@ func luaMemoryControl(t *testing.T, client *weirclient.Client, fixture *testmong
 	timely := call.returned && !call.finished.IsZero() && !call.finished.After(call.deadline)
 	valid := timely && err == nil && mutation != nil && mutation.Failure == nil && mutation.Outcome == weirclient.MutationApplied
 	if !valid {
-		t.Error("normal business Lua control lacked complete APPLIED within original3s caller deadline", mutation, err, call.returned, call.finished, call.deadline)
+		t.Error("normal business Lua control lacked complete APPLIED within 3s caller deadline", mutation, err, call.returned, call.finished, call.deadline)
 	}
 	filter := bson.D{{Key: "_id", Value: "lua-control"}}
 	ctx, cancel = context.WithTimeout(t.Context(), 3*time.Second)
@@ -222,7 +221,7 @@ func luaMemoryControl(t *testing.T, client *weirclient.Client, fixture *testmong
 		t.Error("normal Lua control differs from independent small-document oracle", err)
 		return false
 	}
-	t.Logf("Lua_normal_control Transform_APPLIED=%t ID_n_pad_valid=true bytes=%d SHA256=%x caller3s", valid, len(raw), sha256.Sum256(raw))
+	t.Logf("Lua_normal_control Transform_APPLIED=%t bytes=%d SHA256=%x", valid, len(raw), sha256.Sum256(raw))
 	return valid
 }
 
@@ -242,8 +241,8 @@ func luaMemoryOutcome(t *testing.T, result luaMemoryCall) {
 	if result.returned {
 		elapsed = result.finished.Sub(result.started)
 	}
-	t.Logf("Lua_probe_outcome outcome=%s failure=%s RPC=%s error=%v returned=%t started=%s finished=%s deadline=%s within_original_deadline=%t elapsed_or_observation_wait=%s confirmed_successful_Keep=%t safe_capacity_rejection=%t timeout_or_UNKNOWN_is_not_Keep=true", outcome, failure, status.Code(result.err), result.err, result.returned, result.started.UTC().Format(time.RFC3339Nano), result.finished.UTC().Format(time.RFC3339Nano), result.deadline.UTC().Format(time.RFC3339Nano), timely, elapsed, successfulKeep, safeRejection)
+	t.Logf("Lua_probe_outcome outcome=%s failure=%s RPC=%s error=%v returned=%t within_deadline=%t elapsed_or_observation_wait=%s confirmed_successful_Keep=%t safe_capacity_rejection=%t", outcome, failure, status.Code(result.err), result.err, result.returned, timely, elapsed, successfulKeep, safeRejection)
 	if !successfulKeep && !safeRejection {
-		t.Error("Lua allocation probe lacked complete Keep or explicit safe capacity outcome within original3s caller deadline", outcome, failure, result.err, result.returned, result.finished, result.deadline)
+		t.Error("Lua allocation probe lacked complete Keep or explicit safe capacity outcome within 3s caller deadline", outcome, failure, result.err, result.returned, result.finished, result.deadline)
 	}
 }

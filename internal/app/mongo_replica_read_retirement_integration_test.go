@@ -76,7 +76,7 @@ func replicaCLIReadFacts(t *testing.T, w *testmongo.ReadWatch, phase string) {
 	if s.FindRequests != 1 || s.FindWrites != 1 || s.FindReplies != 1 || s.FindForwarded != 0 || s.CleanupRequests != 1 || s.CleanupWrites != 1 || s.CleanupReplies != 1 || s.CleanupForwarded != 0 || !s.SessionPresent || !s.Held || !s.CleanupHeld || s.GetMore != 0 || s.KillCursors != 0 || s.Expired || s.Error != "" {
 		t.Fatal("persistent CLI sent/unreceived read facts", phase, s)
 	}
-	t.Logf("sent_read phase=%s unknown_to_Weir_cursor_state=true observation=%+v", phase, s)
+	t.Logf("sent_read phase=%s observation=%+v", phase, s)
 }
 func replicaCLIReadPending(t *testing.T, call *replicaCLIRead, remaining time.Duration) {
 	t.Helper()
@@ -149,7 +149,7 @@ func replicaCLISentReadRetirement(t *testing.T, lifetime *replyLossLifetime) (pr
 	if time.Since(usable) > 5*time.Second || lifetime.service.command.Process.Pid != lifetime.pid {
 		t.Fatal("same PID/SDK read recovery budget")
 	}
-	t.Logf("sent_read phase=CLI_same_PID_recovery same_PID=%d same_SDK=true independent_primary=%d primary_majority_usable=true immutable_health=true new_ID=read-recovery-new-id business_success=true new_work_elapsed=%s", lifetime.pid, primary, time.Since(usable))
+	t.Logf("sent_read phase=CLI_same_PID_recovery PID=%d primary=%d new_work_elapsed=%s", lifetime.pid, primary, time.Since(usable))
 	replicaCLIReadFacts(t, first, "CLI_after_same_PID_health_and_new_work")
 	replyLossOracles(t, lifetime, "read_recovery_old_operations_unchanged")
 	replicaCLIIdle(t, lifetime.service, time.Now().Add(3*time.Second))
@@ -164,7 +164,7 @@ func replicaCLISentReadRetirement(t *testing.T, lifetime *replyLossLifetime) (pr
 	replicaCLIReadBarrier(t, final, false, time.Now().Add(3*time.Second))
 	replyLossGauges(t, lifetime, "read_actual_SIGTERM_active", true)
 	replicaCLIReadPending(t, retirement, 8*time.Second)
-	t.Logf("sent_read phase=CLI_immediately_before_SIGTERM same_PID=%d caller_pending=true uncancelled=true original_deadline_remaining=%s find_reply_held=true cleanup_not_started=true", lifetime.pid, time.Until(retirement.deadline))
+	t.Logf("sent_read phase=CLI_immediately_before_SIGTERM PID=%d deadline_remaining=%s", lifetime.pid, time.Until(retirement.deadline))
 	if lua.ctx.Err() != nil {
 		t.Fatal("Lua caller canceled before actual SIGTERM")
 	}
@@ -212,7 +212,7 @@ func replicaCLISentReadRetirement(t *testing.T, lifetime *replyLossLifetime) (pr
 	if receipt.document || receipt.err == nil && !receipt.failure {
 		t.Fatal("retired read invented successful document receipt", receipt)
 	}
-	t.Logf("sent_read case=CLI_retirement same_PID=%d actual_Wait=true wait_error=%v exit_code_valid=%t exit_code=%d timed_out=%t elapsed=%s original_caller_alive=true caller_error=%v caller_failure=%t", lifetime.pid, terminal.WaitErr, terminal.ExitCodeValid, terminal.ExitCode, terminal.TimedOut, terminal.Elapsed, receipt.err, receipt.failure)
+	t.Logf("sent_read case=CLI_retirement PID=%d wait_error=%v exit_code_valid=%t exit_code=%d timed_out=%t elapsed=%s caller_error=%v caller_failure=%t", lifetime.pid, terminal.WaitErr, terminal.ExitCodeValid, terminal.ExitCode, terminal.TimedOut, terminal.Elapsed, receipt.err, receipt.failure)
 	replicaCLILuaRetired(t, lua, shutdownDeadline)
 	if err := testmongo.CheckLuaLifecycleDeadline(shutdown); err != nil {
 		t.Fatal("CLI final read/Lua shutdown joins exceeded original 8s", err)

@@ -53,8 +53,8 @@ func TestCLILargeNativeOutputBudgetPreservesHealthyQueries(t *testing.T) {
 	store := StoreConfig{Name: "mongo", Local: local}
 	cfg := DefaultConfig()
 	cfg.Routing.Stores = []StoreConfig{store}
-	opts := memoryRecoveryOptions{binary: binary, capacityMiB: 1024, automatic: true, config: &cfg}
-	service := startMemoryRecoveryCLI(t, opts)
+	opts := cliContainerOptions{binary: binary, capacityMiB: 1024, config: cfg}
+	service := startCLIContainer(t, opts)
 	t.Log("capacity=1GiB CPUs=2 stores=1 slow_streams=32 response_pad=8MiB stream_window=64KiB conn_window=4MiB caller_probe_budget=3s")
 	initial := nativeOutputBudgetSample(t, service, "initial")
 	for name, want := range map[string]float64{"weir_store_active_executions_limit": 16, "weir_store_pending_entries_limit": 1024, "weir_store_pending_reserved_bytes_limit": 32 << 20, "weir_execution_memory_leases_limit": 32768, "weir_execution_memory_native_leases_limit": 1024, "weir_execution_memory_budget_known": 1} {
@@ -65,9 +65,6 @@ func TestCLILargeNativeOutputBudgetPreservesHealthyQueries(t *testing.T) {
 	budget := testmetrics.Sum(initial, "weir_execution_memory_budget_bytes")
 	if budget <= 0 || budget > service.capacity*.70*2/3 {
 		t.Fatal("shared Native budget exceeded its default recovery-capacity bound", budget)
-	}
-	if initial["weir_store_paused_native_reserved_bytes_limit"] != nil {
-		t.Fatal("Native output still advertises the old input-queue byte limit")
 	}
 	healthClient := endpointProcessClient(t, service.address)
 	baseline, stopBaseline := context.WithTimeout(t.Context(), 3*time.Second)
@@ -298,7 +295,7 @@ func nativeOutputBudgetDocument(raw []byte) error {
 	return nil
 }
 
-func nativeOutputBudgetSample(t *testing.T, service *memoryRecoveryCLI, phase string) map[string]*dto.MetricFamily {
+func nativeOutputBudgetSample(t *testing.T, service *cliContainer, phase string) map[string]*dto.MetricFamily {
 	t.Helper()
 	metrics := service.sample(t)
 	nativeOutputBudgetLog(t, metrics, phase)

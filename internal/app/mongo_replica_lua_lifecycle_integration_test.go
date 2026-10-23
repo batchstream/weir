@@ -141,7 +141,7 @@ func replicaCLILuaLifecycleCancel(t *testing.T, lifetime *replyLossLifetime) []*
 	if elapsed := time.Since(started); elapsed > 3*time.Second || testmongo.CheckLuaLifecycleDeadline(wait) != nil {
 		t.Fatal("CLI Lua cancellation final join and majority ledgers exceeded original 3s", elapsed, wait.Err())
 	}
-	t.Logf("lua_lifecycle CLI_cancel_elapsed=%s actual_SDK_join=true peer_APPLIED=true separate_concurrent_transactions=true coalesced_batch_coverage=false typed_receipt=%t transport_error=%v", time.Since(started), receipt.result != nil, receipt.err)
+	t.Logf("lua_lifecycle CLI_cancel_elapsed=%s typed_receipt=%t transport_error=%v", time.Since(started), receipt.result != nil, receipt.err)
 	return watches
 }
 func replicaCLILuaRetired(t *testing.T, call *replicaCLILuaCall, retireDeadline time.Time) {
@@ -156,7 +156,7 @@ func replicaCLILuaRetired(t *testing.T, call *replicaCLILuaCall, retireDeadline 
 		if receipt.result.Outcome != weirclient.MutationUnknown || receipt.result.Failure == nil {
 			t.Fatal("retired Lua must preserve commit uncertainty", receipt.result)
 		}
-		t.Logf("lua_lifecycle CLI_actual_Wait delivered_typed_UNKNOWN=true failure=%v", receipt.result.Failure)
+		t.Logf("lua_lifecycle CLI_Wait failure=%v", receipt.result.Failure)
 	} else {
 		if receipt.err == nil {
 			t.Fatal("Lua shutdown missing typed receipt and transport error")

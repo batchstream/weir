@@ -5,12 +5,13 @@ package app
 import (
 	"bytes"
 	"context"
-	"github.com/batchstream/weir/internal/testutil"
 	"io"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/batchstream/weir/internal/testutil"
 
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 	"github.com/batchstream/weir/internal/backend/mongodb"
@@ -189,4 +190,19 @@ func TestMongoTLSApplicationAssemblyAllOperations(t *testing.T) {
 			t.Log("production basic/routing YAML Load/Open: CRUD, conflict/missing, opaque int64, expression, batch mutation, Native End/EOF passed")
 		})
 	}
+}
+
+// recordsStoreConfig hosts one unbatched MongoDB Store named records on local
+// listeners.
+func recordsStoreConfig(t *testing.T, uri string) Config {
+	backend := mongoFixtureConfig(t, uri)
+	local := &Local{Backend: backend, Batching: BatchingConfig{MaxOperations: 1}}
+	service := StoreConfig{Name: "records", Local: local}
+
+	config := DefaultConfig()
+	config.Basic.Listeners.Application = "127.0.0.1:0"
+	config.Basic.Diagnostics.Address = "127.0.0.1:0"
+	config.Routing.Stores = []StoreConfig{service}
+
+	return config
 }

@@ -62,8 +62,8 @@ func TestCLINativeSmallBurstPreservesAdmission(t *testing.T) {
 	mongoLocal, searchLocal := &Local{Backend: BackendConfig{MongoDB: mongoBackend}}, &Local{Backend: BackendConfig{Search: searchBackend}}
 	cfg := DefaultConfig()
 	cfg.Routing.Stores = []StoreConfig{{Name: "mongo", Local: mongoLocal}, {Name: "search", Local: searchLocal}}
-	opts := memoryRecoveryOptions{binary: binary, capacityMiB: 1024, automatic: true, config: &cfg}
-	process := startMemoryRecoveryCLI(t, opts)
+	opts := cliContainerOptions{binary: binary, capacityMiB: 1024, config: cfg}
+	process := startCLIContainer(t, opts)
 	t.Logf("fixed10x256 mixed1KiB 1GiB/2CPU caller3s cleanup5s retries=0 Search=%s container=%s", searchURL, process.name)
 	initial := nativeBurstSnapshot(t, process)
 	if initial["budget_rejections_total"] != 0 {
@@ -305,7 +305,7 @@ func executeNativeBurstCall(ctx context.Context, client *weirclient.Client, data
 	return nil
 }
 
-func nativeBurstSnapshot(t *testing.T, process *memoryRecoveryCLI) map[string]float64 {
+func nativeBurstSnapshot(t *testing.T, process *cliContainer) map[string]float64 {
 	t.Helper()
 	metrics := process.sample(t)
 	values := executionMemorySnapshot(t, metrics, process.capacity)
@@ -388,5 +388,5 @@ func verifyNativeBurstOracle(t *testing.T, dataset *nativeBurstDataset) {
 	if len(seen) != len(dataset.expected) {
 		t.Error("independent oracle lost acknowledged effects", dataset.store, len(seen), len(dataset.expected))
 	}
-	t.Logf("independent_oracle store=%s expected=%d seen=%d every_ID_n_pad_checked=true", dataset.store, len(dataset.expected), len(seen))
+	t.Logf("independent_oracle store=%s expected=%d seen=%d", dataset.store, len(dataset.expected), len(seen))
 }

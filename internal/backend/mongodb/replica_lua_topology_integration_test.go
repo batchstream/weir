@@ -249,6 +249,6 @@ func (s *replicaLuaTopology) finish(t *testing.T) (testmongo.LuaCase, testmongo.
 	}
 	abort := testmongo.LuaCase{Watch: s.calls[1].watch}
 	commit := testmongo.LuaCommitCase{Watch: s.calls[0].watch}
-	t.Logf("Lua topology=%s original_callers_live=true actual_receipts_joins_Ack_zero_before_Session_Close=true", s.transition)
+	t.Logf("Lua topology=%s", s.transition)
 	return abort, commit
 }

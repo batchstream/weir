@@ -26,7 +26,7 @@ import (
 
 // The normal reply includes the successful-write metadata already required by
 // Elasticsearch and OpenSearch fixtures. It has many small parser nodes even
-// though the entire body fits comfortably inside the old 64 KiB IO window.
+// though the entire body is under 64 KiB.
 func bulkAckMemoryReply(ids []string) string {
 	var reply strings.Builder
 	reply.WriteString(`{"errors":false,"took":1,"items":[`)

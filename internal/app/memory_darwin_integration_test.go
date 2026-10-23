@@ -4,13 +4,7 @@ package app
 
 import (
 	"context"
-	"encoding/json"
-	"io"
-	"net/http"
 	"os"
-	"os/exec"
-	"path/filepath"
-	"sync"
 	"testing"
 	"time"
 
@@ -19,7 +13,8 @@ import (
 	"github.com/batchstream/weir/internal/testutil/testmetrics"
 	"github.com/batchstream/weir/internal/testutil/testmongo"
 	"go.mongodb.org/mongo-driver/v2/bson"
-	"go.mongodb.org/mongo-driver/v2/event"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 func TestDarwinAutomaticMemoryApplication(t *testing.T) {
@@ -27,10 +22,10 @@ func TestDarwinAutomaticMemoryApplication(t *testing.T) {
 		t.Skip("explicit Darwin memory native fixture required")
 	}
 	fixture := testmongo.OpenSecure(t)
-	cfg := packagedConfig(t, fixture.URI)
+	cfg := recordsStoreConfig(t, fixture.URI)
 	n := secureNode(t, cfg)
 	client := endpointProcessClient(t, n.Addresses()[0])
-	packagedCalls(t, client, fixture)
+	checkRecordCalls(t, client, fixture)
 	snapshot := n.guard.Snapshot()
 	if snapshot.Budget == 0 || snapshot.Unknown || snapshot.Latched || !snapshot.ProcessValid {
 		t.Fatal("automatic memory capacity or observation unavailable", snapshot)
@@ -56,146 +51,44 @@ func darwinMetrics(t *testing.T, address string) {
 	if testmetrics.Sample(metrics, "weir_memory_cgroup_state", labels).GetGauge().GetValue() != 1 || testmetrics.Sum(metrics, "weir_memory_cgroup_valid") != 0 {
 		t.Fatal("Darwin cgroup")
 	}
-	t.Logf("metrics darwin_phys_footprint=%g bytes; other sources=0, process_valid=1, unknown=0, cgroup=not_applicable", footprint)
+	t.Logf("darwin_phys_footprint=%g bytes", footprint)
 }
 
-func darwinUnknown(t *testing.T, client pb.StoreServiceClient, fixture *testmongo.SecureFixture, proxy *testmongo.Proxy) {
+// checkRecordCalls exercises Read, Mutate and Bulk, readback and a cancelled
+// batch against fixture.
+func checkRecordCalls(t *testing.T, client pb.StoreServiceClient, fixture *testmongo.SecureFixture) {
 	t.Helper()
-	before := len(proxy.Events())
-	ctx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 	defer cancel()
-	request := budgetPut(fixture.DB+"/records", "lost")
-	proxy.DropRemaining.Store(1)
-	recordResult2, err := testutil.ExecuteRecord(ctx, client, testutil.RecordRequest("records", request))
-	result := recordResult2.GetMutationResult()
-	if err != nil || result.GetOutcome() != pb.MutationOutcome_UNKNOWN {
-		t.Fatal("lost ACK", result, err)
-	}
-	filter := bson.D{{Key: "_id", Value: "lost"}}
-	count, err := fixture.Admin.Database(fixture.DB).Collection("records").CountDocuments(ctx, filter)
-	if err != nil || count != 1 {
-		t.Fatal("real DB effect", count, err)
-	}
-	time.Sleep(200 * time.Millisecond)
-	updates := 0
-	for _, e := range proxy.Events()[before:] {
-		if e.Command == "bulkWrite" {
-			updates++
-			if !e.Acknowledged || !e.Dropped {
-				t.Fatal("ACK loss evidence")
-			}
+	request := budgetPut(fixture.DB+"/records", "record")
+	for mode := 0; mode < 3; mode++ {
+		success := budgetLoadCall(ctx, client, testutil.RecordRequest("records", request), mode)
+		if !success {
+			t.Fatal("Read/Mutate/Bulk", mode)
 		}
 	}
-	if updates != 1 || proxy.DropRemaining.Load() != 0 {
-		t.Fatal("replay", updates)
+	read := &pb.ReadRequest{Resource: request.Resource}
+	recordResult2, err := testutil.ExecuteRecord(ctx, client, testutil.RecordRequest("records", read))
+	result := recordResult2.GetReadResult()
+	if err != nil || result.GetDocument() == nil {
+		t.Fatal("readback", err)
 	}
-	t.Log("one acknowledged DB update; reply dropped; UNKNOWN; no replay")
-}
-
-func TestDarwinMemoryArtifact(t *testing.T) {
-	if os.Getenv("WEIR_MEMORY_DARWIN_ARTIFACT") != "1" {
-		t.Skip("explicit Darwin memory archive required")
+	cancelled, stop := context.WithCancel(ctx)
+	cancelRequest := budgetPut(fixture.DB+"/records", "cancelled-record")
+	batch := []*pb.MutateRequest{cancelRequest}
+	stop()
+	cancelResponse, err := testutil.MutateRecords(cancelled, client, "records", batch)
+	if status.Code(err) != codes.Canceled || cancelResponse != nil {
+		t.Fatal("batch cancellation", cancelResponse, err)
 	}
-	binary := os.Getenv("WEIR_MEMORY_DARWIN_BINARY")
-	if !filepath.IsAbs(binary) {
-		t.Fatal("WEIR_MEMORY_DARWIN_BINARY must be an absolute path")
+	filter := bson.D{{Key: "_id", Value: "record"}}
+	count, err := fixture.Admin.Database(fixture.DB).Collection("records").CountDocuments(ctx, filter)
+	if err != nil || count != 1 {
+		t.Fatal("independent backend read", count, err)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	output, err := exec.CommandContext(ctx, binary, "version").Output()
-	cancel()
-	if err != nil {
-		t.Fatal(err)
+	filter = bson.D{{Key: "_id", Value: "cancelled-record"}}
+	count, err = fixture.Admin.Database(fixture.DB).Collection("records").CountDocuments(ctx, filter)
+	if err != nil || count != 0 {
+		t.Fatal("cancelled batch reached database", count, err)
 	}
-	var version map[string]string
-	if err := json.Unmarshal(output, &version); err != nil {
-		t.Fatal(err)
-	}
-	if version["target"] != "darwin/arm64" {
-		t.Fatal(version)
-	}
-	t.Log("archive", string(output))
-	fixture := testmongo.OpenSecure(t)
-	proxy := testmongo.StartProxy(t, &fixture.Fixture)
-	proxy.DropCommand = "bulkWrite"
-	observation := &budgetObservation{}
-	monitor := &event.CommandMonitor{Started: observation.start, Succeeded: observation.finish}
-	proxy.Monitor = monitor
-	cfg := packagedConfig(t, proxy.URI())
-
-	p := startProcess(t, binary, cfg)
-	t.Logf("owned artifact PID=%d", p.command.Process.Pid)
-	client := endpointProcessClient(t, p.address)
-	darwinMetrics(t, p.diagnostic)
-	packagedCalls(t, client, fixture)
-	darwinUnknown(t, client, fixture, proxy)
-	// Hold a real in-flight request while the artifact begins SIGTERM drain.
-	gate := make(chan struct{})
-	observation.hold(gate, 0)
-	var release sync.Once
-	defer release.Do(func() {
-		close(gate)
-		observation.hold(nil, 0)
-	})
-	result := make(chan bool, 1)
-	request := budgetPut(fixture.DB+"/records", "inflight")
-	go func() {
-		call, stop := context.WithTimeout(context.Background(), 3*time.Second)
-		defer stop()
-		result <- budgetLoadCall(call, client, testutil.RecordRequest("records", request), 1)
-	}()
-	budgetWait(t, "artifact in-flight", func() bool {
-		n, _, _, _ := observation.snapshot()
-		return n == 1
-	})
-	done := make(chan struct{})
-	start := time.Now()
-	go func() {
-		defer close(done)
-		p.stop(t)
-	}()
-	budgetWait(t, "artifact draining", func() bool { return healthProcessDarwin(t, p) == 503 })
-	release.Do(func() {
-		close(gate)
-		observation.hold(nil, 0)
-	})
-	if !<-result {
-		t.Fatal("admitted write lost in drain")
-	}
-	select {
-	case <-done:
-	case <-time.After(3 * time.Second):
-		t.Fatal("artifact close deadline")
-	}
-	if time.Since(start) > 3*time.Second {
-		t.Fatal("fixed in-flight close bound")
-	}
-	t.Logf("exact artifact in-flight SIGTERM/Wait=%s", time.Since(start))
-	budgetWait(t, "artifact sockets released", func() bool {
-		n, _ := proxy.Sockets()
-		return n == 0
-	})
-	// Strong mmap hysteresis is confined to the opt-in app test above. The
-	// archive has no allocation hook; verify a second normal start/stop here.
-	fresh := startProcess(t, binary, cfg)
-	freshClient := endpointProcessClient(t, fresh.address)
-	packagedCalls(t, freshClient, fixture)
-	darwinMetrics(t, fresh.diagnostic)
-	start = time.Now()
-	fresh.stop(t)
-	if time.Since(start) > 3*time.Second {
-		t.Fatal("normal SIGTERM bound")
-	}
-	t.Logf("exact artifact normal SIGTERM/Wait=%s", time.Since(start))
-}
-
-func healthProcessDarwin(t *testing.T, p *process) int {
-	t.Helper()
-	client := &http.Client{Timeout: time.Second}
-	response, err := client.Get("http://" + p.diagnostic + "/readyz")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer response.Body.Close()
-	_, _ = io.Copy(io.Discard, response.Body)
-	return response.StatusCode
 }

@@ -176,6 +176,6 @@ func replicaLuaLifecycleCancel(t *testing.T, opts replicaLuaRuntimeOptions) []*t
 	if elapsed := time.Since(started); elapsed > 3*time.Second || testmongo.CheckLuaLifecycleDeadline(wait) != nil {
 		t.Fatal("Lua cancellation final join and majority ledgers exceeded original 3s", elapsed, wait.Err())
 	}
-	t.Logf("lua_lifecycle cancellation_elapsed=%s actual_execution_join=true Ack_before_SessionClose=true peer_APPLIED=true separate_concurrent_transactions=true coalesced_batch_coverage=false", time.Since(started))
+	t.Logf("lua_lifecycle cancellation_elapsed=%s", time.Since(started))
 	return watches
 }

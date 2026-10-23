@@ -72,7 +72,7 @@ func TestCLITypedMemoryBudget(t *testing.T) {
 	local := &Local{Backend: BackendConfig{MongoDB: mongoBackend}}
 	primary, sibling := StoreConfig{Name: "mongo", Local: local}, StoreConfig{Name: "sibling", Local: local}
 	for _, capacity := range []int{512, 1024} {
-		t.Run(fmt.Sprintf("original_pressure/%dMiB", capacity), func(t *testing.T) {
+		t.Run(fmt.Sprintf("pressure/%dMiB", capacity), func(t *testing.T) {
 			opts := typedMemoryProcessOptions{binary: binary, capacity: capacity, stores: []StoreConfig{primary}}
 			process := startTypedMemoryProcess(t, opts)
 			pressure := typedMemoryPressureOptions{process: process, documents: documents[:32], health: documents[33], stores: []string{"mongo"}}
@@ -117,15 +117,15 @@ func TestCLITypedMemoryBudget(t *testing.T) {
 	})
 }
 
-func startTypedMemoryProcess(t *testing.T, opts typedMemoryProcessOptions) *memoryRecoveryCLI {
+func startTypedMemoryProcess(t *testing.T, opts typedMemoryProcessOptions) *cliContainer {
 	t.Helper()
 	cfg := DefaultConfig()
 	cfg.Routing.Stores = opts.stores
 	if cfg.Basic.Transport.MaxPendingRecords != 32 || time.Duration(cfg.Basic.Transport.Timeouts.Stall) != 30*time.Second {
-		t.Fatal("original stream admission/stall policy changed")
+		t.Fatal("default stream admission/stall policy differs from this test", cfg.Basic.Transport.MaxPendingRecords, cfg.Basic.Transport.Timeouts.Stall)
 	}
-	options := memoryRecoveryOptions{binary: opts.binary, capacityMiB: opts.capacity, automatic: true, config: &cfg}
-	process := startMemoryRecoveryCLI(t, options)
+	options := cliContainerOptions{binary: opts.binary, capacityMiB: opts.capacity, config: cfg}
+	process := startCLIContainer(t, options)
 	t.Logf("CLI capacity=%dMiB CPUs=2", opts.capacity)
 	// Inspect independently before the shared helper stops/removes its owned CLI.
 	t.Cleanup(func() {
@@ -143,7 +143,7 @@ func startTypedMemoryProcess(t *testing.T, opts typedMemoryProcessOptions) *memo
 }
 
 type typedMemoryPressureOptions struct {
-	process     *memoryRecoveryCLI
+	process     *cliContainer
 	documents   []typedMemoryDocument
 	health      typedMemoryDocument
 	stores      []string
@@ -273,7 +273,7 @@ func runTypedMemoryPressure(t *testing.T, opts typedMemoryPressureOptions) {
 		calls.Go(func() {
 			<-healthStart
 			if !time.Now().Before(holdDeadline) {
-				healthResults <- fmt.Errorf("no held-pressure sample before the original hold ended")
+				healthResults <- fmt.Errorf("no held-pressure sample before the hold ended")
 				return
 			}
 			probeContext, stop := context.WithTimeout(t.Context(), 3*time.Second)
@@ -284,7 +284,7 @@ func runTypedMemoryPressure(t *testing.T, opts typedMemoryPressureOptions) {
 			if err == nil && (finished.Sub(probeStarted) > 3*time.Second || finished.After(holdDeadline)) {
 				err = fmt.Errorf("health completed after its3s budget or after pressure hold: latency=%s", finished.Sub(probeStarted))
 			}
-			t.Logf("pressure_health native=%t latency=%s within_original_hold=%t error=%v", native, finished.Sub(probeStarted), !finished.After(holdDeadline), err)
+			t.Logf("pressure_health native=%t latency=%s within_hold=%t error=%v", native, finished.Sub(probeStarted), !finished.After(holdDeadline), err)
 			healthResults <- err
 		})
 	}
@@ -308,7 +308,7 @@ func runTypedMemoryPressure(t *testing.T, opts typedMemoryPressureOptions) {
 	if !healthLaunched {
 		close(healthStart)
 	}
-	t.Logf("pressure original_noRecv=3s actual_hold=%s original_common_caller=5s count=32 native_every=%d", time.Since(started), opts.nativeEvery)
+	t.Logf("pressure hold=%s native_every=%d", time.Since(started), opts.nativeEvery)
 	joined := make(chan struct{})
 	go func() { calls.Wait(); close(joined) }()
 	var cancelledAt time.Time
@@ -323,7 +323,7 @@ func runTypedMemoryPressure(t *testing.T, opts typedMemoryPressureOptions) {
 		select {
 		case <-joined:
 		case <-time.After(max(0, time.Until(callerDeadline.Add(time.Second)))):
-			t.Error("pressure calls did not join within1s after the original common deadline")
+			t.Error("pressure calls did not join within 1s after the common caller deadline")
 			return
 		}
 	}
@@ -368,9 +368,9 @@ func runTypedMemoryPressure(t *testing.T, opts typedMemoryPressureOptions) {
 	_ = connection.Close()
 	closeTypedMemoryClient(t, healthClient)
 	if opts.nativeEvery == 0 && sent != 32 {
-		t.Error("original32 pressure requests were not all sent", sent)
+		t.Error("not all 32 pressure requests were sent", sent)
 	}
-	t.Logf("pressure_survival received=32 sent_terminal_evidence=%d validated_full_documents=%d complete_RPC_OK=%d capacity_denied=%d caller_deadline=%d; caller deadlines are not correctness passes", sent, validated, completed, capacity, deadline)
+	t.Logf("pressure_survival received=32 sent_terminal_evidence=%d validated_full_documents=%d complete_RPC_OK=%d capacity_denied=%d caller_deadline=%d", sent, validated, completed, capacity, deadline)
 	waitTypedMemoryIdle(t, opts.process, largestBudget, cancelledAt.Add(5*time.Second))
 }
 
@@ -446,7 +446,7 @@ func typedMemoryHealth(ctx context.Context, client *weirclient.Client, opts type
 	return nil
 }
 
-func openTypedMemoryClient(t *testing.T, process *memoryRecoveryCLI, stores []string) *weirclient.Client {
+func openTypedMemoryClient(t *testing.T, process *cliContainer, stores []string) *weirclient.Client {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
 	defer cancel()
@@ -599,7 +599,7 @@ func runTypedMemoryMongoBusiness(t *testing.T, opts typedMemoryBusinessOptions) 
 		if err != nil || readback == nil || readback.Failure != nil || readback.Document != nil || !readback.Missing {
 			t.Fatal("SDK Read after APPLIED Delete did not confirm document absence", id, err)
 		}
-		t.Logf("business_success id=%s exact_BSON_bytes=%d sha256=%x Put_APPLIED=true independent_hash=true SDK_Read_hash=true Delete_APPLIED=true independent_absent=true SDK_Missing=true caller_per_step=5s", id, len(raw), expected.digest)
+		t.Logf("business_success id=%s exact_BSON_bytes=%d sha256=%x", id, len(raw), expected.digest)
 	}
 }
 
@@ -624,7 +624,7 @@ func validateTypedMemoryDocument(t *testing.T, expected typedMemoryDocument, raw
 	return true
 }
 
-func observeTypedMemory(process *memoryRecoveryCLI) (map[string]*dto.MetricFamily, error) {
+func observeTypedMemory(process *cliContainer) (map[string]*dto.MetricFamily, error) {
 	client := &http.Client{Timeout: 150 * time.Millisecond}
 	response, err := client.Get("http://" + process.diagnostic + "/metrics")
 	if err != nil {
@@ -638,7 +638,7 @@ func observeTypedMemory(process *memoryRecoveryCLI) (map[string]*dto.MetricFamil
 	return parser.TextToMetricFamilies(io.LimitReader(response.Body, 4<<20))
 }
 
-func validateTypedMemorySnapshot(t *testing.T, process *memoryRecoveryCLI, sample map[string]*dto.MetricFamily, largestBudget float64) float64 {
+func validateTypedMemorySnapshot(t *testing.T, process *cliContainer, sample map[string]*dto.MetricFamily, largestBudget float64) float64 {
 	t.Helper()
 	values := make(map[string]float64, 26)
 	for _, suffix := range []string{"ingress_connection_bytes", "ingress_connections", "ingress_bytes", "ingress_reserved_bytes", "ingress_buffers", "ingress_messages", "ingress_waiting", "budget_bytes", "used_bytes", "resident_bytes", "input_reserved_bytes", "input_used_bytes", "io_reserve_bytes", "budget_known", "leases", "leases_limit", "native_leases", "native_leases_limit", "starting", "settled", "borrowed", "waiting", "terminal", "wire_bytes", "wire_buffers", "budget_rejections_total"} {
@@ -673,7 +673,7 @@ func validateTypedMemorySnapshot(t *testing.T, process *memoryRecoveryCLI, sampl
 		t.Error("shared execution ownership exceeded observed trusted capacity", largestBudget, absoluteBudget, values)
 	}
 	if values["used_bytes"] > values["budget_bytes"] {
-		t.Logf("trusted_budget_shrink at=%s Used=%.0f B=%.0f known=%.0f observed_max_B=%.0f", time.Now().UTC().Format(time.RFC3339Nano), values["used_bytes"], values["budget_bytes"], values["budget_known"], largestBudget)
+		t.Logf("trusted_budget_shrink Used=%.0f B=%.0f known=%.0f observed_max_B=%.0f", values["used_bytes"], values["budget_bytes"], values["budget_known"], largestBudget)
 	}
 	if testmetrics.Sum(sample, "weir_memory_cgroup_valid") != 1 || testmetrics.Sum(sample, "weir_memory_unknown") != 0 || testmetrics.Sum(sample, "weir_memory_cgroup_limit_bytes") != process.capacity || testmetrics.Sum(sample, "weir_memory_go_runtime_managed") != 1 {
 		t.Error("finite CLI cgroup observation unknown or changed")
@@ -698,11 +698,11 @@ func validateTypedMemorySnapshot(t *testing.T, process *memoryRecoveryCLI, sampl
 	if stores != process.stores {
 		t.Error("expected Store metrics missing", stores, process.stores)
 	}
-	t.Logf("execution_snapshot at=%s Node=%v RSS=%.0f WS=%.0f latch=%.0f pending=%.0f active=%.0f wire=%.0f sessions=%.0f", time.Now().UTC().Format(time.RFC3339Nano), values, testmetrics.Sum(sample, "process_resident_memory_bytes"), testmetrics.Sum(sample, "weir_memory_cgroup_working_set_bytes"), testmetrics.Sum(sample, "weir_memory_latched"), testmetrics.Sum(sample, "weir_store_pending_entries"), testmetrics.Sum(sample, "weir_store_active_executions"), testmetrics.Sum(sample, "weir_ingress_queued_response_bytes"), testmetrics.Sum(sample, "weir_ingress_sessions"))
+	t.Logf("execution_snapshot Node=%v RSS=%.0f WS=%.0f latch=%.0f pending=%.0f active=%.0f wire=%.0f sessions=%.0f", values, testmetrics.Sum(sample, "process_resident_memory_bytes"), testmetrics.Sum(sample, "weir_memory_cgroup_working_set_bytes"), testmetrics.Sum(sample, "weir_memory_latched"), testmetrics.Sum(sample, "weir_store_pending_entries"), testmetrics.Sum(sample, "weir_store_active_executions"), testmetrics.Sum(sample, "weir_ingress_queued_response_bytes"), testmetrics.Sum(sample, "weir_ingress_sessions"))
 	return largestBudget
 }
 
-func waitTypedMemoryIdle(t *testing.T, process *memoryRecoveryCLI, largestBudget float64, deadline time.Time) {
+func waitTypedMemoryIdle(t *testing.T, process *cliContainer, largestBudget float64, deadline time.Time) {
 	t.Helper()
 	for {
 		sample, err := observeTypedMemory(process)
@@ -801,7 +801,7 @@ func runTypedMemorySearch(t *testing.T, binary string) {
 		if !validateTypedMemoryDocument(t, document, result.Document.Data) {
 			t.Fatal("Search no-stall large content differs", document.id)
 		}
-		t.Logf("Search_business_success id=%s bytes=%d sha256=%x Put_APPLIED=true independent_GET_hash=true SDK_Read_hash=true", document.id, document.bytes, document.digest)
+		t.Logf("Search_business_success id=%s bytes=%d sha256=%x", document.id, document.bytes, document.digest)
 	}
 	cancelledAt := time.Now()
 	closeTypedMemoryClient(t, client)

@@ -107,15 +107,3 @@ func Series(families map[string]*dto.MetricFamily) int {
 	}
 	return count
 }
-
-func ScrapeCollector(t *testing.T, collector prometheus.Collector) map[string]*dto.MetricFamily {
-	t.Helper()
-	registry := prometheus.NewPedanticRegistry()
-	if err := registry.Register(collector); err != nil {
-		t.Fatal(err)
-	}
-	opts := promhttp.HandlerOpts{DisableCompression: true}
-	server := httptest.NewServer(promhttp.HandlerFor(registry, opts))
-	defer server.Close()
-	return Scrape(t, server.Listener.Addr().String())
-}

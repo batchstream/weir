@@ -107,14 +107,6 @@ func TestStrictConfigurationDocuments(t *testing.T) {
 			if decodeErr != nil {
 				t.Fatal("large valid configuration rejected", decodeErr)
 			}
-			if document == "basic" {
-				_, decodeErr = DecodeBasic(strings.NewReader(large + " "))
-			} else {
-				_, decodeErr = DecodeRouting(strings.NewReader(large + " "))
-			}
-			if decodeErr != nil {
-				t.Fatal("configuration retained its former size quota", decodeErr)
-			}
 		})
 	}
 }

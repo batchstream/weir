@@ -305,7 +305,7 @@ func TestExecuteDecodeRejectsRepeatedEnvelopesBeforeAllocation(t *testing.T) {
 	}
 }
 
-func TestControlDecodeBeyondFormerSizeAndCountLimits(t *testing.T) {
+func TestControlDecodeAcceptsLargeAndManyAnnouncements(t *testing.T) {
 	codec := &responseCodec{}
 	for _, count := range []int{512, 1025} {
 		announcements := make([]*peerpb.NodeAnnouncement, count)
@@ -322,7 +322,7 @@ func TestControlDecodeBeyondFormerSizeAndCountLimits(t *testing.T) {
 		decoded := &peerpb.SyncDirectoryRequest{}
 		err = codec.Unmarshal(input, decoded)
 		if err != nil || len(decoded.Announcements) != count {
-			t.Fatal("legitimate watermark capacity rejected", err)
+			t.Fatal("large directory sync rejected", err)
 		}
 
 	}

@@ -220,7 +220,7 @@ func TestMongoNativeResourceSelectsDatabaseWithoutCollectionQualification(t *tes
 	}
 }
 
-func TestMongoNativeCommandsBeyondFormerCapacityAreOpaque(t *testing.T) {
+func TestMongoNativeAcceptsLargeOpaqueCommands(t *testing.T) {
 	adapter := &Adapter{}
 	initializeTestLifetime(adapter)
 	for _, size := range []int{(4 << 20) + 1, (8 << 20) + 1} {

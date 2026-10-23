@@ -1,4 +1,4 @@
-// Package testdns serves only task-owned loopback DNS. It never edits host DNS.
+// Package testdns serves a loopback DNS fixture for tests. It never edits host DNS.
 package testdns
 
 import (

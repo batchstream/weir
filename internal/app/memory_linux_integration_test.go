@@ -228,7 +228,7 @@ func memoryState(t *testing.T, p *process, label string, latched bool) {
 			return
 		}
 		if time.Since(start) > 2*time.Second {
-			t.Fatal("fixed 2s overload/recovery deadline", label, value)
+			t.Fatal("no overload/recovery within 2s", label, value)
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
@@ -236,16 +236,16 @@ func memoryState(t *testing.T, p *process, label string, latched bool) {
 
 func TestLinuxMemoryCLI(t *testing.T) {
 	if os.Getenv("WEIR_MEMORY_NATIVE") != "1" {
-		t.Skip("requires owned scripts/test-memory-linux.py fixture")
+		t.Skip("requires WEIR_MEMORY_NATIVE=1; see scripts/test-memory-linux.py")
 	}
 	if memoryFile(t, "/sys/fs/cgroup/memory.max") != 512<<20 {
 		t.Fatal("requires 512 MiB owned cgroup")
 	}
 	t.Logf("native CLI suite Go=%s OS=%s arch=%s runner_PID=%d", runtime.Version(), runtime.GOOS, runtime.GOARCH, os.Getpid())
-	// The script supplies its owned private-network DB or explicit Darwin loopback fixture.
+	// The script supplies its database on a private Docker network.
 	address := os.Getenv("WEIR_MEMORY_MONGO_ADDR")
-	if address != "memory-mongo:27017" && !strings.HasPrefix(address, "host.docker.internal:") {
-		t.Fatal("requires owned fixture address")
+	if address != "memory-mongo:27017" {
+		t.Fatal("requires the scripts/test-memory-linux.py database address", address)
 	}
 	uri := "mongodb://" + address + "/?directConnection=true&serverMonitoringMode=poll"
 	opts := options.Client().ApplyURI(uri).SetRetryReads(false).SetRetryWrites(false).SetMaxPoolSize(2).SetServerSelectionTimeout(time.Second)

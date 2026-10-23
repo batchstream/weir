@@ -429,7 +429,7 @@ func TestLocalDirectoryAcceptsLargeStoreTargetAndSeedSets(t *testing.T) {
 	config := Config{Group: strings.Repeat("group", 1024), PeerAddress: "127.0.0.1:8447", Stores: stores, Targets: targets, Seeds: seeds}
 	directory, err := New(config)
 	if err != nil {
-		t.Fatal("valid local directory rejected by former scale limits", err)
+		t.Fatal("valid large local directory rejected", err)
 	}
 	defer func() {
 		ctx, cancel := context.WithCancel(t.Context())

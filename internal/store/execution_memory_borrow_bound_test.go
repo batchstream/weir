@@ -95,7 +95,7 @@ func fullResidentBorrowMemory(t testing.TB) *ExecutionMemory {
 	memory, large := borrowBoundFixture(t)
 	remaining := memory.residentLimitLocked() - memory.Snapshot().ResidentBytes
 	if remaining%2 != 1 {
-		t.Fatal("fixture no longer has an exact legal result boundary", remaining)
+		t.Fatal("fixture precondition: no exact legal result boundary", remaining)
 	}
 	work := plan(50, "resident-tail", true)
 	lease, failure, _ := memory.admit(work)

@@ -9,7 +9,7 @@ import (
 	"github.com/batchstream/weir/internal/value"
 )
 
-func TestDefaultExecutionHasNoFormerInstructionAndValueCaps(t *testing.T) {
+func TestDefaultExecutionRunsLongLoopsWithLargeValues(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
 	payload := value.Value{Kind: value.String, Text: strings.Repeat("x", 300<<10)}
@@ -18,7 +18,7 @@ func TestDefaultExecutionHasNoFormerInstructionAndValueCaps(t *testing.T) {
 	program := Program{Input: input, Source: `return function(_, incoming) local n = 0; for i=1,1100000 do n=n+1 end; return {payload=incoming.payload,n=n} end`}
 	result, err := Evaluate(ctx, program)
 	if err != nil {
-		t.Fatal("default execution retained an old cap", err)
+		t.Fatal("default execution rejected a long loop with a large value", err)
 	}
 	n, err := result.Value.Lookup("n")
 	if err != nil || n.Integer != 1100000 {
@@ -32,10 +32,10 @@ func TestDefaultExecutionHasNoFormerInstructionAndValueCaps(t *testing.T) {
 	}
 }
 
-func TestDeepValuesAndLargeArraysHaveNoAdmissionCaps(t *testing.T) {
+func TestEvaluateReturnsDeepValuesAndLargeArrays(t *testing.T) {
 	program := Program{Source: `return function() local a={}; for i=1,10000 do a[i]=i end; table.sort(a); local nested={}; for i=1,5000 do nested={x=nested} end; return {items=a,nested=nested} end`}
 	if _, err := Evaluate(t.Context(), program); err != nil {
-		t.Fatal("former data depth or node admission remained", err)
+		t.Fatal("deep or large result rejected", err)
 	}
 }
 

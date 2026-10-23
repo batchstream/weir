@@ -79,5 +79,5 @@ func TestDiagnosticsMaximumStaticSeries(t *testing.T) {
 	if testmetrics.Series(after) != maximumSeries {
 		t.Fatal("state added series")
 	}
-	t.Logf("maximum local Store configuration: 16 LocalStores, business and peer directory listeners, exactly %d Weir Prometheus series; no synthetic executions", maximumSeries)
+	t.Logf("maximum local Store configuration: 16 Stores, business and peer directory listeners, exactly %d Weir Prometheus series; no synthetic executions", maximumSeries)
 }
