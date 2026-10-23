@@ -36,15 +36,15 @@ An execution includes metadata checks, pre-reads, Lua, writes and requested quer
 visibility waits. A record batch returns its slot when the backend finishes,
 independently of result consumption.
 
-Native commands do not use these slots. Each Store runs at most 64 Native
-commands at once, and each one lasts until its caller has read the response or
-the output stall timeout ends the RPC. Slow Native consumers can therefore delay
-other Native commands, but not typed reads and mutations.
+Native commands use neither the queue nor these slots. Each Store runs at most
+64 Native commands at once; further ones wait for a free slot until their caller
+gives up. Each one lasts until its caller has read the response or the output
+stall timeout ends the RPC. Slow Native consumers can therefore delay other
+Native commands, but not typed reads and mutations.
 
 ## Memory sizing
 
-These limits, not a byte ledger, bound memory. A rough upper bound for one
-Store is:
+These limits bound memory. A rough upper bound for one Store is:
 
 ```text
 queue.max_bytes
@@ -53,10 +53,12 @@ queue.max_bytes
 ```
 
 A MongoDB Native reply is held whole while it streams; Search Native bodies
-stream in chunks. Every open record stream adds up to `max_pending_records`
-results awaiting delivery, and every message is at most 64 MiB. Real documents are usually much
-smaller than these limits, so size the container from observed document sizes
-and the peak number of open streams. When actual memory crosses the overload
+stream in chunks. Every open stream adds the request it is receiving, and every
+record stream adds up to `max_pending_records` results awaiting delivery. A
+stream ended by the output stall timeout keeps its last unsent message until the
+client reads it or disconnects. Every message is at most 64 MiB. Real documents
+are usually much smaller than these limits, so size the container from observed
+document sizes and the peak number of open streams. When actual memory crosses the overload
 watermark, new work receives `RESOURCE_EXHAUSTED` until it recovers; see
 [operations](operations.md).
 

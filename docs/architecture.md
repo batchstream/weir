@@ -55,10 +55,11 @@ other batch members active. Shared execution uses the latest participating
 deadline; an unbounded caller keeps it unbounded. Canceling all callers stops
 shared backend work.
 
-Native is a singleton invocation on the same scheduler, with its own limit of
-64 concurrent commands per Store instead of the record execution slots. A Native
-command lasts until its caller has read the response or the output watchdog
-ends the RPC, so slow Native consumers cannot starve typed work. The client
+Native is a singleton invocation that bypasses the record queue and execution
+slots. Each Store runs at most 64 Native commands; further ones wait for a free
+slot until their caller gives up. A Native command lasts until its caller has
+read the response or the output watchdog ends the RPC, so slow Native consumers
+delay only other Native commands, never typed work. The client
 sends one command, half-closes input and consumes metadata/body events plus
 NativeEnd.
 Success requires the terminal event and final gRPC OK. Native bypasses typed
@@ -111,9 +112,10 @@ is no per-evaluation memory limit, so transforms must be trusted. See
 
 Application listeners serve StoreService; peer listeners serve SyncDirectory.
 Both use plaintext gRPC on an isolated network. A stalled input or output
-cancels only its RPC after the stall timeout. Keepalive pings and the idle and
-handshake timeouts close unresponsive connections. Confirmed write evidence
-remains valid.
+cancels only its RPC after the stall timeout: the handler and its Store work end
+at once, but gRPC keeps the stream's last unsent message until the client reads
+it or the connection closes. Keepalive pings and the idle and handshake timeouts
+close unresponsive connections. Confirmed write evidence remains valid.
 
 ## Lifecycle
 

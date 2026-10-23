@@ -121,8 +121,9 @@ Reads combine already queued compatible reads without waiting for new arrivals.
 Full queues apply backpressure until dispatch or caller cancellation.
 
 Static queue, batch, stream and 64 MiB message limits bound memory use. Native
-commands run in their own pool of 64 per Store, so slow Native consumers never
-hold the slots of typed reads and mutations. Actual process/container pressure
+commands bypass the Store queue and run in their own pool of 64 per Store, so
+slow Native consumers never hold the queue space or slots of typed reads and
+mutations. Actual process/container pressure
 controls overload admission. Container/OS limits
 provide the hard memory boundary.
 

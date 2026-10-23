@@ -140,8 +140,9 @@ the same Store terminal point. Its only label is the fixed `completion`
 vocabulary: `not_started` (`NATIVE_NOT_STARTED`), `response_complete`
 (`RESPONSE_COMPLETE`) or `response_incomplete` (`RESPONSE_INCOMPLETE`). Exactly
 these three series are initialized to zero; no enum string, failure detail, HTTP
-status, resource or identity becomes a label. Queued cancellations count as
-`not_started`; preparation/admission rejections do not count as completions.
+status, resource or identity becomes a label. Preparation and admission
+rejections, and Natives abandoned while waiting for a slot, do not count as
+completions.
 Scrapes do not count again.
 
 This is **Native forwarding terminal evidence**, not backend business success,
@@ -194,11 +195,13 @@ admission closed. Use container/OS limits for the hard boundary.
 
 Store queues bound waiting input, and per-stream publication windows bound
 retained output. A Native command occupies one of its Store's 64 Native slots
-while its consumer reads, so slow Native consumers can delay other Native
-commands but not typed reads and mutations. The stall
-timeout ends an RPC whose input or output makes no progress; keepalive closes
-unresponsive connections. Consume output promptly and set application
-deadlines.
+while its consumer reads, and further Natives wait outside the queue, so slow
+Native consumers can delay other Native commands but not typed reads and
+mutations. The stall timeout ends an RPC whose input or output makes no
+progress; keepalive closes unresponsive connections. gRPC keeps a stalled
+stream's last unsent message until the client reads it or the connection
+closes, and graceful shutdown waits for such streams until its deadline. Consume
+output promptly and set application deadlines.
 
 A transport failure after a possible write leaves it UNKNOWN unless application
 was already confirmed. Preserve indexed results received before failure. Do not

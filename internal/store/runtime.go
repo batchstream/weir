@@ -22,8 +22,9 @@ type Limits struct {
 	QueueOperations, QueueBytes int
 	BatchOperations, BatchBytes int
 	MaxInFlight                 int // Record batches; zero allows unlimited.
-	// MaxNative bounds concurrent Native commands. They run outside the record
-	// slots because each one lasts until its caller has read the response.
+	// MaxNative bounds running Native commands. They bypass the queue and the
+	// record slots because each one lasts until its caller has read the
+	// response; further Natives wait for a free slot.
 	MaxNative int
 }
 
@@ -163,8 +164,8 @@ func (r *Runtime) Submit(ctx context.Context, plan *execution.Plan, session *Ses
 	return r.enqueue(ctx, ticket)
 }
 
-// SubmitNative queues a prepared Native command. Once it starts, its response
-// head and chunks are sent through emit.
+// SubmitNative waits for a free Native slot and starts the command. Its
+// response head and chunks are sent through emit.
 func (r *Runtime) SubmitNative(ctx context.Context, plan *execution.Plan, emit execution.Emit) (*Ticket, *pb.Failure) {
 	if plan == nil || plan.Command.GetNative() == nil || emit == nil {
 		return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid Native plan")
@@ -174,6 +175,7 @@ func (r *Runtime) SubmitNative(ctx context.Context, plan *execution.Plan, emit e
 }
 
 func (r *Runtime) enqueue(ctx context.Context, ticket *Ticket) (*Ticket, *pb.Failure) {
+	native := ticket.plan.Command.GetNative() != nil
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	for {
@@ -188,9 +190,10 @@ func (r *Runtime) enqueue(ctx context.Context, ticket *Ticket) (*Ticket, *pb.Fai
 		if ctx.Err() != nil {
 			return nil, protocol.ContextFailure(ctx)
 		}
-		// A single operation larger than QueueBytes waits for an empty queue
+		// A single record larger than QueueBytes waits for an empty queue
 		// instead of being rejected.
-		if len(r.queue) < r.limits.QueueOperations && (len(r.queue) == 0 || ticket.plan.Bytes <= r.limits.QueueBytes-r.queueBytes) {
+		fits := len(r.queue) < r.limits.QueueOperations && (len(r.queue) == 0 || ticket.plan.Bytes <= r.limits.QueueBytes-r.queueBytes)
+		if native && r.natives < r.limits.MaxNative || !native && fits {
 			break
 		}
 		space := r.space
@@ -208,6 +211,11 @@ func (r *Runtime) enqueue(ctx context.Context, ticket *Ticket) (*Ticket, *pb.Fai
 	ticket.queuedAt = time.Now()
 	ticket.done = make(chan struct{})
 	ticket.stop = context.AfterFunc(ticket.ctx, r.signal)
+	if native {
+		items := []*Ticket{ticket}
+		r.launchLocked(items)
+		return ticket, nil
+	}
 	r.queue = append(r.queue, ticket)
 	r.queueBytes += plan.Bytes
 	r.signal()
@@ -279,9 +287,6 @@ func (r *Runtime) dropCanceledLocked() {
 			failure = protocol.Fail(pb.FailureCode_UNAVAILABLE, "shutdown deadline")
 		}
 		event := execution.FailedEvent(t.plan.Command, pb.MutationOutcome_NOT_STARTED, failure)
-		if t.plan.Command.GetNative() != nil {
-			event = nativeEndEvent(protocol.NativeFailure(false, failure))
-		}
 		r.completeLocked(t, event)
 	}
 	if len(kept) != len(r.queue) {
@@ -291,7 +296,7 @@ func (r *Runtime) dropCanceledLocked() {
 	}
 }
 
-// dispatchLocked starts ready batches while execution slots are free and
+// dispatchLocked starts ready batches while record slots are free and
 // returns when the earliest still-collecting batch becomes ready.
 func (r *Runtime) dispatchLocked(now time.Time) time.Time {
 	for !r.closed {
@@ -318,21 +323,18 @@ type group struct {
 	resources map[string]struct{}
 }
 
-// selectLocked scans the queue in FIFO order, groups compatible operations and
-// returns the oldest ready group that has a free slot. Native commands are
-// groups of one.
+// selectLocked scans the queue in FIFO order, groups compatible records and
+// returns the oldest ready group while a record slot is free.
 func (r *Runtime) selectLocked(now time.Time) ([]*Ticket, time.Time) {
-	recordSlot := r.limits.MaxInFlight == 0 || r.records < r.limits.MaxInFlight
-	nativeSlot := r.natives < r.limits.MaxNative
+	var wakeAt time.Time
+	if r.limits.MaxInFlight > 0 && r.records >= r.limits.MaxInFlight {
+		return nil, wakeAt
+	}
 	var groups []*group
 	byKey := make(map[groupKey]*group)
 	var ordered map[resourceKey]struct{}
 	for _, t := range r.queue {
 		plan := t.plan
-		native := plan.Command.GetNative() != nil
-		if native && !nativeSlot || !native && !recordSlot {
-			continue
-		}
 		mutation := plan.Command.GetMutate() != nil
 		if t.session != nil && mutation {
 			// The oldest queued mutation of a session's resource runs first,
@@ -348,12 +350,10 @@ func (r *Runtime) selectLocked(now time.Time) ([]*Ticket, time.Time) {
 		}
 		key := groupKey{batch: plan.BatchKey, read: plan.Command.GetRead() != nil}
 		g := byKey[key]
-		if g == nil || native {
+		if g == nil {
 			g = &group{}
 			groups = append(groups, g)
-			if !native {
-				byKey[key] = g
-			}
+			byKey[key] = g
 		}
 		if _, duplicate := g.resources[plan.Key]; mutation && duplicate {
 			continue
@@ -371,11 +371,11 @@ func (r *Runtime) selectLocked(now time.Time) ([]*Ticket, time.Time) {
 			g.resources[plan.Key] = struct{}{}
 		}
 	}
-	var wakeAt time.Time
 	for _, g := range groups {
 		at := r.readyAt(g, now)
 		if !now.Before(at) {
-			return g.items, time.Time{}
+			var ready time.Time
+			return g.items, ready
 		}
 		if wakeAt.IsZero() || at.Before(wakeAt) {
 			wakeAt = at
@@ -385,7 +385,7 @@ func (r *Runtime) selectLocked(now time.Time) ([]*Ticket, time.Time) {
 }
 
 // readyAt is when a group stops collecting. Mutations wait up to BatchWait for
-// companions; reads, Native commands, full batches and a draining Store do not
+// companions; reads, full batches and a draining Store do not
 // wait, and neither does a batch holding a caller deadline inside the window.
 func (r *Runtime) readyAt(g *group, now time.Time) time.Time {
 	first := g.items[0]
@@ -406,7 +406,6 @@ func (r *Runtime) startLocked(items []*Ticket, now time.Time) {
 	selected := make(map[*Ticket]struct{}, len(items))
 	for _, t := range items {
 		selected[t] = struct{}{}
-		t.stop()
 		r.queueBytes -= t.plan.Bytes
 		if t.session != nil && t.plan.Command.GetMutate() != nil {
 			key := resourceKey{session: t.session, resource: t.plan.Key}
@@ -422,6 +421,15 @@ func (r *Runtime) startLocked(items []*Ticket, now time.Time) {
 	}
 	clear(r.queue[len(kept):])
 	r.queue = kept
+	r.notifySpaceLocked()
+	r.launchLocked(items)
+}
+
+// launchLocked runs items as one adapter invocation.
+func (r *Runtime) launchLocked(items []*Ticket) {
+	for _, t := range items {
+		t.stop()
+	}
 	b := newBatch(items)
 	r.batches[b] = struct{}{}
 	if b.native() {
@@ -429,7 +437,6 @@ func (r *Runtime) startLocked(items []*Ticket, now time.Time) {
 	} else {
 		r.records++
 	}
-	r.notifySpaceLocked()
 	go r.execute(b)
 }
 
@@ -494,6 +501,7 @@ func (r *Runtime) execute(b *batch) {
 	delete(r.batches, b)
 	if b.native() {
 		r.natives--
+		r.notifySpaceLocked()
 	} else {
 		r.records--
 	}
@@ -525,7 +533,8 @@ func (r *Runtime) run(b *batch) []*pb.Event {
 		}
 		end := r.adapter.ExecuteNative(b.ctx, first.plan, emit)
 		if end == nil {
-			end = protocol.NativeFailure(true, protocol.ContextFailure(b.ctx))
+			failure := protocol.Fail(pb.FailureCode_INTERNAL, "adapter returned no NativeEnd")
+			end = protocol.NativeFailure(true, failure)
 		}
 		events := []*pb.Event{nativeEndEvent(end)}
 		return events

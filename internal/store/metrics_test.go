@@ -33,8 +33,8 @@ func counter(families map[string]*dto.MetricFamily, name string, labels map[stri
 func TestMetricsCountFinalOutcomes(t *testing.T) {
 	adapter := &fakeAdapter{}
 	runtime := open(t, adapter, limits(func(l *Limits) { l.MaxInFlight = 3 }))
-	wait(t, submit(t, t.Context(), runtime, readPlan("r"), nil))
-	wait(t, submit(t, t.Context(), runtime, mutationPlan("m"), nil))
+	wait(t, submit(t, runtime, readPlan("r"), nil))
+	wait(t, submit(t, runtime, mutationPlan("m"), nil))
 	emit := func(*pb.Event) error { return nil }
 	native, failure := runtime.SubmitNative(t.Context(), nativePlan(), emit)
 	if failure != nil {

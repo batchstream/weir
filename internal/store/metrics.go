@@ -17,7 +17,7 @@ func newRuntimeMetrics() runtimeMetrics {
 	nativeOptions := prometheus.CounterOpts{Name: "weir_store_native_completions_total", Help: "Final Native completion evidence; not backend business success or client receipt."}
 	rejectOptions := prometheus.CounterOpts{Name: "weir_store_rejections_total", Help: "Operations refused before queueing."}
 	execOptions := prometheus.CounterOpts{Name: "weir_store_executions_total", Help: "Adapter invocations."}
-	queueOptions := prometheus.HistogramOpts{Name: "weir_store_queue_wait_seconds", Help: "Time from queueing to dispatch.", Buckets: []float64{.001, .01, .1, 1, 10}}
+	queueOptions := prometheus.HistogramOpts{Name: "weir_store_queue_wait_seconds", Help: "Record time from queueing to dispatch.", Buckets: []float64{.001, .01, .1, 1, 10}}
 	durationOptions := prometheus.HistogramOpts{Name: "weir_store_execution_seconds", Help: "Adapter invocation duration, including Native response delivery.", Buckets: []float64{.001, .01, .1, 1, 10}}
 	batchOptions := prometheus.HistogramOpts{Name: "weir_store_batch_operations", Help: "Operations per adapter invocation.", Buckets: []float64{1, 2, 4, 8, 16, 128}}
 	metrics := runtimeMetrics{

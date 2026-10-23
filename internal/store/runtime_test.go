@@ -160,9 +160,19 @@ func limits(change func(*Limits)) Limits {
 	return result
 }
 
-func submit(t *testing.T, ctx context.Context, runtime *Runtime, plan *execution.Plan, session *Session) *Ticket {
+func submit(t *testing.T, runtime *Runtime, plan *execution.Plan, session *Session) *Ticket {
 	t.Helper()
-	ticket, failure := runtime.Submit(ctx, plan, session)
+	ticket, failure := runtime.Submit(t.Context(), plan, session)
+	if failure != nil {
+		t.Fatal("submit failed", failure)
+	}
+	return ticket
+}
+
+// submitWithin submits a sessionless record that lives only as long as ctx.
+func submitWithin(t *testing.T, ctx context.Context, runtime *Runtime, plan *execution.Plan) *Ticket {
+	t.Helper()
+	ticket, failure := runtime.Submit(ctx, plan, nil)
 	if failure != nil {
 		t.Fatal("submit failed", failure)
 	}
@@ -209,14 +219,14 @@ func TestReadsAndMutationsBatchSeparately(t *testing.T) {
 	runtime := open(t, adapter, limits(func(l *Limits) { l.BatchWait = 50 * time.Millisecond; l.MaxInFlight = 1 }))
 	release := make(chan struct{})
 	adapter.records = blockUntil(release)
-	blocker := submit(t, t.Context(), runtime, mutationPlan("blocker"), nil)
+	blocker := submit(t, runtime, mutationPlan("blocker"), nil)
 	time.Sleep(80 * time.Millisecond)
 	var tickets []*Ticket
 	for _, key := range []string{"r1", "r2"} {
-		tickets = append(tickets, submit(t, t.Context(), runtime, readPlan(key), nil))
+		tickets = append(tickets, submit(t, runtime, readPlan(key), nil))
 	}
 	for _, key := range []string{"m1", "m2"} {
-		tickets = append(tickets, submit(t, t.Context(), runtime, mutationPlan(key), nil))
+		tickets = append(tickets, submit(t, runtime, mutationPlan(key), nil))
 	}
 	close(release)
 	wait(t, blocker)
@@ -233,8 +243,8 @@ func TestMutationsCollectUntilBatchWaitOrFull(t *testing.T) {
 	adapter := &fakeAdapter{started: make(chan []*execution.Plan, 8)}
 	runtime := open(t, adapter, limits(func(l *Limits) { l.BatchWait = 100 * time.Millisecond; l.BatchOperations = 3 }))
 	begin := time.Now()
-	first := submit(t, t.Context(), runtime, mutationPlan("a"), nil)
-	second := submit(t, t.Context(), runtime, mutationPlan("b"), nil)
+	first := submit(t, runtime, mutationPlan("a"), nil)
+	second := submit(t, runtime, mutationPlan("b"), nil)
 	if keys := started(t, adapter); !slices.Equal(keys, []string{"a", "b"}) || time.Since(begin) < 90*time.Millisecond {
 		t.Fatal("collection window was not honored", keys, time.Since(begin))
 	}
@@ -243,7 +253,7 @@ func TestMutationsCollectUntilBatchWaitOrFull(t *testing.T) {
 
 	begin = time.Now()
 	for _, key := range []string{"c", "d", "e"} {
-		submit(t, t.Context(), runtime, mutationPlan(key), nil)
+		submit(t, runtime, mutationPlan(key), nil)
 	}
 	if keys := started(t, adapter); len(keys) != 3 || time.Since(begin) > 80*time.Millisecond {
 		t.Fatal("full batch waited for the collection window", keys, time.Since(begin))
@@ -253,7 +263,7 @@ func TestMutationsCollectUntilBatchWaitOrFull(t *testing.T) {
 func TestReadsAndNativeDoNotWaitForCompanions(t *testing.T) {
 	adapter := &fakeAdapter{started: make(chan []*execution.Plan, 8)}
 	runtime := open(t, adapter, limits(func(l *Limits) { l.BatchWait = time.Hour }))
-	read := submit(t, t.Context(), runtime, readPlan("r"), nil)
+	read := submit(t, runtime, readPlan("r"), nil)
 	if keys := started(t, adapter); !slices.Equal(keys, []string{"r"}) {
 		t.Fatal("read waited for companions", keys)
 	}
@@ -274,7 +284,7 @@ func TestCallerDeadlineInsideCollectionWindowDispatchesImmediately(t *testing.T)
 	runtime := open(t, adapter, limits(func(l *Limits) { l.BatchWait = time.Hour }))
 	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
 	defer cancel()
-	submit(t, ctx, runtime, mutationPlan("a"), nil)
+	submitWithin(t, ctx, runtime, mutationPlan("a"))
 	if keys := started(t, adapter); !slices.Equal(keys, []string{"a"}) {
 		t.Fatal("short caller deadline waited for the collection window", keys)
 	}
@@ -283,7 +293,7 @@ func TestCallerDeadlineInsideCollectionWindowDispatchesImmediately(t *testing.T)
 func TestDrainDispatchesCollectingMutations(t *testing.T) {
 	adapter := &fakeAdapter{started: make(chan []*execution.Plan, 8)}
 	runtime := open(t, adapter, limits(func(l *Limits) { l.BatchWait = time.Hour }))
-	ticket := submit(t, t.Context(), runtime, mutationPlan("a"), nil)
+	ticket := submit(t, runtime, mutationPlan("a"), nil)
 	notStarted(t, adapter)
 	runtime.BeginDrain()
 	started(t, adapter)
@@ -297,11 +307,11 @@ func TestBatchesRespectCountAndByteBounds(t *testing.T) {
 	release := make(chan struct{})
 	runtime := open(t, adapter, limits(func(l *Limits) { l.MaxInFlight = 1; l.BatchOperations = 2 }))
 	adapter.records = blockUntil(release)
-	blocker := submit(t, t.Context(), runtime, readPlan("blocker"), nil)
+	blocker := submit(t, runtime, readPlan("blocker"), nil)
 	time.Sleep(20 * time.Millisecond)
 	var tickets []*Ticket
 	for _, key := range []string{"a", "b", "c"} {
-		tickets = append(tickets, submit(t, t.Context(), runtime, readPlan(key), nil))
+		tickets = append(tickets, submit(t, runtime, readPlan(key), nil))
 	}
 	close(release)
 	wait(t, blocker)
@@ -318,11 +328,11 @@ func TestBatchesRespectCountAndByteBounds(t *testing.T) {
 	size := readPlan("x").Bytes
 	runtime = open(t, adapter, limits(func(l *Limits) { l.MaxInFlight = 1; l.BatchBytes = 2*size + 1 }))
 	adapter.records = blockUntil(release)
-	blocker = submit(t, t.Context(), runtime, readPlan("blocker"), nil)
+	blocker = submit(t, runtime, readPlan("blocker"), nil)
 	time.Sleep(20 * time.Millisecond)
 	tickets = nil
 	for _, key := range []string{"x", "y", "z"} {
-		tickets = append(tickets, submit(t, t.Context(), runtime, readPlan(key), nil))
+		tickets = append(tickets, submit(t, runtime, readPlan(key), nil))
 	}
 	close(release)
 	wait(t, blocker)
@@ -340,15 +350,15 @@ func TestBatchKeysSeparateGroups(t *testing.T) {
 	release := make(chan struct{})
 	runtime := open(t, adapter, limits(func(l *Limits) { l.MaxInFlight = 1 }))
 	adapter.records = blockUntil(release)
-	blocker := submit(t, t.Context(), runtime, readPlan("blocker"), nil)
+	blocker := submit(t, runtime, readPlan("blocker"), nil)
 	time.Sleep(20 * time.Millisecond)
 	first, second := readPlan("a"), readPlan("b")
 	second.BatchKey = "other"
 	third := readPlan("c")
 	tickets := []*Ticket{
-		submit(t, t.Context(), runtime, first, nil),
-		submit(t, t.Context(), runtime, second, nil),
-		submit(t, t.Context(), runtime, third, nil),
+		submit(t, runtime, first, nil),
+		submit(t, runtime, second, nil),
+		submit(t, runtime, third, nil),
 	}
 	close(release)
 	wait(t, blocker)
@@ -367,12 +377,12 @@ func TestSessionMutationsOfOneResourceRunInOrder(t *testing.T) {
 	runtime := open(t, adapter, limits(nil))
 	adapter.records = blockUntil(release)
 	session := runtime.NewSession()
-	first := submit(t, t.Context(), runtime, mutationPlan("x"), session)
+	first := submit(t, runtime, mutationPlan("x"), session)
 	if keys := started(t, adapter); !slices.Equal(keys, []string{"x"}) {
 		t.Fatal(keys)
 	}
-	second := submit(t, t.Context(), runtime, mutationPlan("x"), session)
-	other := submit(t, t.Context(), runtime, mutationPlan("y"), session)
+	second := submit(t, runtime, mutationPlan("x"), session)
+	other := submit(t, runtime, mutationPlan("y"), session)
 	if keys := started(t, adapter); !slices.Equal(keys, []string{"y"}) {
 		t.Fatal("same-resource mutation overtook its predecessor", keys)
 	}
@@ -391,13 +401,13 @@ func TestSameResourceMutationsNeverShareABatch(t *testing.T) {
 	release := make(chan struct{})
 	runtime := open(t, adapter, limits(func(l *Limits) { l.MaxInFlight = 1 }))
 	adapter.records = blockUntil(release)
-	blocker := submit(t, t.Context(), runtime, mutationPlan("blocker"), nil)
+	blocker := submit(t, runtime, mutationPlan("blocker"), nil)
 	time.Sleep(20 * time.Millisecond)
 	tickets := []*Ticket{
-		submit(t, t.Context(), runtime, mutationPlan("x"), runtime.NewSession()),
-		submit(t, t.Context(), runtime, mutationPlan("x"), runtime.NewSession()),
-		submit(t, t.Context(), runtime, readPlan("r"), nil),
-		submit(t, t.Context(), runtime, readPlan("r"), nil),
+		submit(t, runtime, mutationPlan("x"), runtime.NewSession()),
+		submit(t, runtime, mutationPlan("x"), runtime.NewSession()),
+		submit(t, runtime, readPlan("r"), nil),
+		submit(t, runtime, readPlan("r"), nil),
 	}
 	close(release)
 	wait(t, blocker)
@@ -410,6 +420,83 @@ func TestSameResourceMutationsNeverShareABatch(t *testing.T) {
 	}
 }
 
+func TestCanceledQueuedMutationKeepsSessionOrder(t *testing.T) {
+	adapter := &fakeAdapter{started: make(chan []*execution.Plan, 8)}
+	release := make(chan struct{})
+	runtime := open(t, adapter, limits(nil))
+	adapter.records = blockUntil(release)
+	session := runtime.NewSession()
+	first := submit(t, runtime, mutationPlan("x"), session)
+	started(t, adapter)
+	ctx, cancel := context.WithCancel(t.Context())
+	second, failure := runtime.Submit(ctx, mutationPlan("x"), session)
+	if failure != nil {
+		t.Fatal(failure)
+	}
+	third := submit(t, runtime, mutationPlan("x"), session)
+	cancel()
+	if outcome := wait(t, second).GetMutationResult().GetOutcome(); outcome != pb.MutationOutcome_NOT_STARTED {
+		t.Fatal("canceled queued mutation lost NOT_STARTED evidence", outcome)
+	}
+	notStarted(t, adapter)
+	close(release)
+	if keys := started(t, adapter); !slices.Equal(keys, []string{"x"}) {
+		t.Fatal("later mutation did not follow the running one", keys)
+	}
+	wait(t, first)
+	wait(t, third)
+}
+
+func TestFullBatchesKeepSessionOrder(t *testing.T) {
+	adapter := &fakeAdapter{started: make(chan []*execution.Plan, 8)}
+	release := make(chan struct{})
+	runtime := open(t, adapter, limits(func(l *Limits) { l.MaxInFlight = 1; l.BatchOperations = 2 }))
+	adapter.records = blockUntil(release)
+	blocker := submit(t, runtime, mutationPlan("blocker"), nil)
+	started(t, adapter)
+	session := runtime.NewSession()
+	var tickets []*Ticket
+	for _, key := range []string{"a", "b", "c", "a"} {
+		tickets = append(tickets, submit(t, runtime, mutationPlan(key), session))
+	}
+	close(release)
+	wait(t, blocker)
+	for _, ticket := range tickets {
+		wait(t, ticket)
+	}
+	want := [][]string{{"blocker"}, {"a", "b"}, {"c", "a"}}
+	if got := adapter.executed(); !slices.EqualFunc(got, want, slices.Equal) {
+		t.Fatal("full batches reordered session mutations", got)
+	}
+}
+
+func TestReadyGroupsPassCollectingMutations(t *testing.T) {
+	adapter := &fakeAdapter{started: make(chan []*execution.Plan, 8)}
+	runtime := open(t, adapter, limits(func(l *Limits) { l.BatchWait = time.Hour; l.BatchOperations = 2 }))
+	collecting := submit(t, runtime, mutationPlan("old"), nil)
+	read := submit(t, runtime, readPlan("r"), nil)
+	if keys := started(t, adapter); !slices.Equal(keys, []string{"r"}) {
+		t.Fatal("ready read waited behind a collecting mutation", keys)
+	}
+	tickets := []*Ticket{collecting, read}
+	for _, key := range []string{"a", "b"} {
+		plan := mutationPlan(key)
+		plan.BatchKey = "other"
+		tickets = append(tickets, submit(t, runtime, plan, nil))
+	}
+	if keys := started(t, adapter); !slices.Equal(keys, []string{"a", "b"}) {
+		t.Fatal("full batch waited behind a collecting mutation", keys)
+	}
+	notStarted(t, adapter)
+	runtime.BeginDrain()
+	if keys := started(t, adapter); !slices.Equal(keys, []string{"old"}) {
+		t.Fatal("drain did not dispatch the collecting mutation", keys)
+	}
+	for _, ticket := range tickets {
+		wait(t, ticket)
+	}
+}
+
 func TestMaxInFlightBoundsConcurrentExecutions(t *testing.T) {
 	adapter := &fakeAdapter{started: make(chan []*execution.Plan, 8)}
 	release := make(chan struct{})
@@ -417,9 +504,9 @@ func TestMaxInFlightBoundsConcurrentExecutions(t *testing.T) {
 	adapter.records = blockUntil(release)
 	first, second := readPlan("a"), readPlan("b")
 	second.BatchKey = "other"
-	firstTicket := submit(t, t.Context(), runtime, first, nil)
+	firstTicket := submit(t, runtime, first, nil)
 	started(t, adapter)
-	secondTicket := submit(t, t.Context(), runtime, second, nil)
+	secondTicket := submit(t, runtime, second, nil)
 	notStarted(t, adapter)
 	close(release)
 	started(t, adapter)
@@ -433,7 +520,7 @@ func TestMaxInFlightBoundsConcurrentExecutions(t *testing.T) {
 	for i := range 4 {
 		plan := readPlan("a")
 		plan.BatchKey = strings.Repeat("k", i+1)
-		submit(t, t.Context(), runtime, plan, nil)
+		submit(t, runtime, plan, nil)
 	}
 	for range 4 {
 		started(t, adapter)
@@ -446,9 +533,9 @@ func TestSubmitWaitsForQueueSpace(t *testing.T) {
 	release := make(chan struct{})
 	runtime := open(t, adapter, limits(func(l *Limits) { l.MaxInFlight = 1; l.QueueOperations = 1 }))
 	adapter.records = blockUntil(release)
-	running := submit(t, t.Context(), runtime, readPlan("a"), nil)
+	running := submit(t, runtime, readPlan("a"), nil)
 	started(t, adapter)
-	queued := submit(t, t.Context(), runtime, readPlan("b"), nil)
+	queued := submit(t, runtime, readPlan("b"), nil)
 
 	expired, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
 	defer cancel()
@@ -480,7 +567,7 @@ func TestSubmitWaitsForQueueSpace(t *testing.T) {
 func TestOversizedOperationWaitsForAnEmptyQueue(t *testing.T) {
 	adapter := &fakeAdapter{}
 	runtime := open(t, adapter, limits(func(l *Limits) { l.QueueBytes = 1; l.BatchBytes = 1 }))
-	ticket := submit(t, t.Context(), runtime, readPlan("large"), nil)
+	ticket := submit(t, runtime, readPlan("large"), nil)
 	if event := wait(t, ticket); event.GetReadResult() == nil {
 		t.Fatal("oversized operation lost its result", event)
 	}
@@ -491,9 +578,9 @@ func TestOverloadAndDrainRejectSubmissions(t *testing.T) {
 	release := make(chan struct{})
 	runtime := open(t, adapter, limits(func(l *Limits) { l.MaxInFlight = 1; l.QueueOperations = 1 }))
 	adapter.records = blockUntil(release)
-	submit(t, t.Context(), runtime, readPlan("a"), nil)
+	submit(t, runtime, readPlan("a"), nil)
 	started(t, adapter)
-	submit(t, t.Context(), runtime, readPlan("b"), nil)
+	submit(t, runtime, readPlan("b"), nil)
 	blocked := make(chan *pb.Failure, 1)
 	go func() {
 		_, failure := runtime.Submit(t.Context(), readPlan("c"), nil)
@@ -520,23 +607,15 @@ func TestQueuedCancellationCompletesNotStarted(t *testing.T) {
 	release := make(chan struct{})
 	runtime := open(t, adapter, limits(func(l *Limits) { l.MaxInFlight = 1 }))
 	adapter.records = blockUntil(release)
-	running := submit(t, t.Context(), runtime, mutationPlan("a"), nil)
+	running := submit(t, runtime, mutationPlan("a"), nil)
 	started(t, adapter)
 	ctx, cancel := context.WithCancel(t.Context())
-	queued := submit(t, ctx, runtime, mutationPlan("b"), nil)
-	emit := func(*pb.Event) error { return nil }
-	native, failure := runtime.SubmitNative(ctx, nativePlan(), emit)
-	if failure != nil {
-		t.Fatal(failure)
-	}
+	queued := submitWithin(t, ctx, runtime, mutationPlan("b"))
 	cancel()
 	event := wait(t, queued)
 	result := event.GetMutationResult()
 	if result.GetOutcome() != pb.MutationOutcome_NOT_STARTED || result.GetFailure().GetCode() != pb.FailureCode_CANCELLED {
 		t.Fatal("canceled queued mutation lost NOT_STARTED evidence", event)
-	}
-	if end := wait(t, native).GetNativeEnd(); end.GetCompletion() != pb.NativeCompletion_NATIVE_NOT_STARTED {
-		t.Fatal("canceled queued Native lost NOT_STARTED evidence", end)
 	}
 	close(release)
 	wait(t, running)
@@ -559,9 +638,9 @@ func TestSharedBatchFollowsInterestedCallers(t *testing.T) {
 	defer cancelSecond()
 	bounded, cancelBounded := context.WithTimeout(t.Context(), time.Hour)
 	defer cancelBounded()
-	submit(t, first, runtime, mutationPlan("a"), nil)
-	submit(t, second, runtime, mutationPlan("b"), nil)
-	submit(t, bounded, runtime, mutationPlan("c"), nil)
+	submitWithin(t, first, runtime, mutationPlan("a"))
+	submitWithin(t, second, runtime, mutationPlan("b"))
+	submitWithin(t, bounded, runtime, mutationPlan("c"))
 	ctx := <-contexts
 	batch := <-plans
 	if _, ok := ctx.Deadline(); ok {
@@ -587,8 +666,8 @@ func TestSharedBatchFollowsInterestedCallers(t *testing.T) {
 	defer cancelEarly()
 	late, cancelLate := context.WithTimeout(t.Context(), time.Hour)
 	defer cancelLate()
-	submit(t, early, runtime, mutationPlan("d"), nil)
-	submit(t, late, runtime, mutationPlan("e"), nil)
+	submitWithin(t, early, runtime, mutationPlan("d"))
+	submitWithin(t, late, runtime, mutationPlan("e"))
 	ctx = <-contexts
 	deadline, ok := ctx.Deadline()
 	latest, _ := late.Deadline()
@@ -601,7 +680,7 @@ func TestPlanContextsDoNotMutateCallerPlans(t *testing.T) {
 	adapter := &fakeAdapter{}
 	runtime := open(t, adapter, limits(nil))
 	plan := readPlan("a")
-	wait(t, submit(t, t.Context(), runtime, plan, nil))
+	wait(t, submit(t, runtime, plan, nil))
 	if plan.Context != nil {
 		t.Fatal("submit changed the caller's plan")
 	}
@@ -646,7 +725,7 @@ func TestNativeStreamsThroughEmit(t *testing.T) {
 func TestNativesUseTheirOwnSlots(t *testing.T) {
 	adapter := &fakeAdapter{started: make(chan []*execution.Plan, 8)}
 	release := make(chan struct{})
-	runtime := open(t, adapter, limits(func(l *Limits) { l.MaxInFlight, l.MaxNative = 1, 1 }))
+	runtime := open(t, adapter, limits(func(l *Limits) { l.MaxInFlight, l.MaxNative, l.QueueOperations = 1, 1, 1 }))
 	adapter.native = func(context.Context, *execution.Plan, execution.Emit) *pb.NativeEnd {
 		<-release
 		end := &pb.NativeEnd{Completion: pb.NativeCompletion_RESPONSE_COMPLETE}
@@ -658,29 +737,45 @@ func TestNativesUseTheirOwnSlots(t *testing.T) {
 		t.Fatal(failure)
 	}
 	started(t, adapter)
-	// A running Native leaves the record slot free.
-	read := submit(t, t.Context(), runtime, readPlan("a"), nil)
+	waiting := make(chan *Ticket, 2)
+	for range 2 {
+		go func() {
+			ticket, _ := runtime.SubmitNative(t.Context(), nativePlan(), emit)
+			waiting <- ticket
+		}()
+	}
+	expired, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
+	defer cancel()
+	if _, failure := runtime.SubmitNative(expired, nativePlan(), emit); failure.GetCode() != pb.FailureCode_DEADLINE_EXCEEDED {
+		t.Fatal("Native passed a full Native pool", failure)
+	}
+	// Natives waiting for a slot occupy neither the record queue nor a record slot.
+	read := submit(t, runtime, readPlan("a"), nil)
 	started(t, adapter)
 	wait(t, read)
-	second, failure := runtime.SubmitNative(t.Context(), nativePlan(), emit)
-	if failure != nil {
-		t.Fatal(failure)
-	}
-	notStarted(t, adapter)
-	if stats := runtime.Stats(); stats.Natives != 1 || stats.Active != 0 || stats.Queued != 1 {
+	if stats := runtime.Stats(); stats.Natives != 1 || stats.Active != 0 || stats.Queued != 0 {
 		t.Fatal("Native slots were not counted separately", stats)
 	}
 	close(release)
-	started(t, adapter)
 	wait(t, first)
-	wait(t, second)
+	for range 2 {
+		select {
+		case ticket := <-waiting:
+			if ticket == nil {
+				t.Fatal("waiting Native was refused")
+			}
+			wait(t, ticket)
+		case <-time.After(5 * time.Second):
+			t.Fatal("waiting Native did not get a free slot")
+		}
+	}
 }
 
 func TestInvalidAdapterResultsBecomeUnknown(t *testing.T) {
 	adapter := &fakeAdapter{}
 	runtime := open(t, adapter, limits(nil))
 	adapter.records = func(context.Context, []*execution.Plan) []*pb.Event { return nil }
-	event := wait(t, submit(t, t.Context(), runtime, mutationPlan("a"), nil))
+	event := wait(t, submit(t, runtime, mutationPlan("a"), nil))
 	result := event.GetMutationResult()
 	if result.GetOutcome() != pb.MutationOutcome_UNKNOWN || result.GetFailure().GetCode() != pb.FailureCode_INTERNAL {
 		t.Fatal("missing adapter result was not reported as uncertain", event)
@@ -691,8 +786,8 @@ func TestInvalidAdapterResultsBecomeUnknown(t *testing.T) {
 	if failure != nil {
 		t.Fatal(failure)
 	}
-	if end := wait(t, ticket).GetNativeEnd(); end.GetCompletion() != pb.NativeCompletion_RESPONSE_INCOMPLETE {
-		t.Fatal("missing NativeEnd was not reported as incomplete", end)
+	if end := wait(t, ticket).GetNativeEnd(); end.GetCompletion() != pb.NativeCompletion_RESPONSE_INCOMPLETE || end.GetFailure().GetCode() != pb.FailureCode_INTERNAL {
+		t.Fatal("missing NativeEnd was not reported as an incomplete internal failure", end)
 	}
 }
 
@@ -702,7 +797,7 @@ func TestCloseDrainsAcceptedWork(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ticket := submit(t, t.Context(), runtime, mutationPlan("a"), nil)
+	ticket := submit(t, runtime, mutationPlan("a"), nil)
 	if err := runtime.Close(t.Context()); err != nil {
 		t.Fatal(err)
 	}
@@ -721,9 +816,9 @@ func TestCloseCancelsRemainingWorkAfterItsDeadline(t *testing.T) {
 		t.Fatal(err)
 	}
 	adapter.records = blockUntil(make(chan struct{}))
-	running := submit(t, t.Context(), runtime, mutationPlan("a"), nil)
+	running := submit(t, runtime, mutationPlan("a"), nil)
 	started(t, adapter)
-	queued := submit(t, t.Context(), runtime, mutationPlan("b"), nil)
+	queued := submit(t, runtime, mutationPlan("b"), nil)
 	expired, cancel := context.WithCancel(t.Context())
 	cancel()
 	if err := runtime.Close(expired); err != nil {
@@ -750,7 +845,7 @@ func TestCloseReportsWorkThatDoesNotRetire(t *testing.T) {
 		<-release
 		return applied(plans)
 	}
-	submit(t, t.Context(), runtime, readPlan("a"), nil)
+	submit(t, runtime, readPlan("a"), nil)
 	started(t, adapter)
 	expired, cancel := context.WithCancel(t.Context())
 	cancel()
@@ -758,6 +853,46 @@ func TestCloseReportsWorkThatDoesNotRetire(t *testing.T) {
 	err = runtime.Close(expired)
 	if err == nil || !strings.Contains(err.Error(), "executions_joined=false") || time.Since(begin) > 2*time.Second {
 		t.Fatal("stuck execution was not reported within the cleanup budget", err, time.Since(begin))
+	}
+}
+
+func TestCloseReportsNativeBlockedInEmit(t *testing.T) {
+	adapter := &fakeAdapter{started: make(chan []*execution.Plan, 8)}
+	runtime, err := New(adapter, limits(func(l *Limits) { l.CleanupTimeout = 200 * time.Millisecond }))
+	if err != nil {
+		t.Fatal(err)
+	}
+	adapter.native = func(ctx context.Context, _ *execution.Plan, emit execution.Emit) *pb.NativeEnd {
+		value := &pb.Event_Chunk{Chunk: []byte("x")}
+		event := &pb.Event{Value: value}
+		if err := emit(event); err != nil {
+			return protocol.NativeFailure(true, protocol.ContextFailure(ctx))
+		}
+		end := &pb.NativeEnd{Completion: pb.NativeCompletion_RESPONSE_COMPLETE}
+		return end
+	}
+	// The caller's emit blocks until its RPC ends, as a stalled stream does.
+	caller, cancelCaller := context.WithCancel(t.Context())
+	defer cancelCaller()
+	emit := func(*pb.Event) error {
+		<-caller.Done()
+		return caller.Err()
+	}
+	ticket, failure := runtime.SubmitNative(caller, nativePlan(), emit)
+	if failure != nil {
+		t.Fatal(failure)
+	}
+	started(t, adapter)
+	expired, cancel := context.WithCancel(t.Context())
+	cancel()
+	begin := time.Now()
+	err = runtime.Close(expired)
+	if err == nil || !strings.Contains(err.Error(), "executions_joined=false") || time.Since(begin) > 2*time.Second {
+		t.Fatal("Native blocked in emit was not reported within the cleanup budget", err, time.Since(begin))
+	}
+	cancelCaller()
+	if end := wait(t, ticket).GetNativeEnd(); end.GetCompletion() != pb.NativeCompletion_RESPONSE_INCOMPLETE {
+		t.Fatal("interrupted Native lost incomplete evidence", end)
 	}
 }
 
