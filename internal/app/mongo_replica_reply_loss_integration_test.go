@@ -574,7 +574,7 @@ func replyLossGauges(t *testing.T, lifetime *replyLossLifetime, phase string, ac
 	t.Helper()
 	metrics := testmetrics.Scrape(t, lifetime.service.diagnostic)
 	values := make(map[string]float64)
-	for _, name := range []string{"weir_store_queued_operations", "weir_store_active_executions"} {
+	for _, name := range []string{"weir_store_queued_operations", "weir_store_active_executions", "weir_store_active_natives"} {
 		if metrics[name] == nil {
 			t.Fatal("missing reply-loss ownership gauge", name)
 		}
@@ -583,7 +583,7 @@ func replyLossGauges(t *testing.T, lifetime *replyLossLifetime, phase string, ac
 			t.Fatal("idle reply-loss ownership gauge", phase, name, values[name])
 		}
 	}
-	if active && values["weir_store_active_executions"] < 1 {
+	if active && values["weir_store_active_executions"]+values["weir_store_active_natives"] < 1 {
 		t.Fatal("held reply had no actual active execution", values)
 	}
 	t.Logf("reply_loss phase=%s same_PID=%d actual_gauges=%v", phase, lifetime.pid, values)

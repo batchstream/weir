@@ -382,7 +382,7 @@ func runLoadWorkload(t *testing.T, work loadWorkload) {
 			t.Fatal("work was rejected during final recovery", rejections-work.rejections)
 		}
 		idle := testmetrics.Sum(metrics, "weir_memory_latched") == 0 && testmetrics.Sum(metrics, "weir_memory_cgroup_working_set_bytes") <= work.process.capacity*.70
-		for _, name := range []string{"weir_store_queued_operations", "weir_store_queued_bytes", "weir_store_active_executions", "weir_ingress_sessions"} {
+		for _, name := range []string{"weir_store_queued_operations", "weir_store_queued_bytes", "weir_store_active_executions", "weir_store_active_natives", "weir_ingress_sessions"} {
 			idle = idle && metrics[name] != nil && testmetrics.Sum(metrics, name) == 0
 		}
 		if time.Now().After(deadline) {

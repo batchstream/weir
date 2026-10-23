@@ -118,7 +118,7 @@ func waitSearchCRUDIdle(t *testing.T, diagnostics string, rejections float64) {
 			t.Fatal("finite SDK sequence was rejected by the Store")
 		}
 		nonzero := make(map[string]float64)
-		for _, name := range []string{"weir_memory_latched", "weir_store_queued_operations", "weir_store_queued_bytes", "weir_store_active_executions", "weir_ingress_sessions"} {
+		for _, name := range []string{"weir_memory_latched", "weir_store_queued_operations", "weir_store_queued_bytes", "weir_store_active_executions", "weir_store_active_natives", "weir_ingress_sessions"} {
 			if metrics[name] == nil {
 				t.Fatal("required gauge is missing", name)
 			}

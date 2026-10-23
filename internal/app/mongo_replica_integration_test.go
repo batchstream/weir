@@ -297,7 +297,7 @@ func replicaCLIActive(t *testing.T, service *process, done <-chan error) {
 		if metrics["weir_store_active_executions"] == nil {
 			t.Fatal("missing active execution gauge")
 		}
-		active := testmetrics.Sum(metrics, "weir_store_active_executions")
+		active := storeActive(metrics)
 		if active >= 1 {
 			select {
 			case err := <-done:
@@ -319,7 +319,7 @@ func replicaCLIIdle(t *testing.T, service *process, deadline time.Time) {
 	for {
 		metrics := testmetrics.Scrape(t, service.diagnostic)
 		idle := true
-		for _, name := range []string{"weir_store_queued_operations", "weir_store_active_executions"} {
+		for _, name := range []string{"weir_store_queued_operations", "weir_store_active_executions", "weir_store_active_natives"} {
 			if metrics[name] == nil {
 				t.Fatal("missing cleanup gauge", name)
 			}
