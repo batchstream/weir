@@ -139,12 +139,9 @@ func runProcessLoad(t *testing.T, process *cliContainer, datasets []*loadDataset
 			t.Fatal("load test changed the default Store execution limit", dataset.store, limit)
 		}
 	}
-	openContext, stop := context.WithTimeout(t.Context(), 3*time.Second)
-	openOptions := weirclient.OpenOptions{Seed: process.address, Stores: []string{"mongo", "search"}}
-	client, err := weirclient.Open(openContext, openOptions)
-	stop()
+	client, err := weirclient.New(process.address)
 	if err != nil {
-		t.Fatal("real SDK Resolve initialization failed", err)
+		t.Fatal("SDK client", err)
 	}
 	t.Cleanup(func() { _ = client.Close() })
 	workload := loadWorkload{process: process, client: client, datasets: datasets, duration: duration, rejections: loadRejections(initial)}

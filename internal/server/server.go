@@ -1,4 +1,4 @@
-// Package server provides the application and peer gRPC transports for a deployment-isolated intranet.
+// Package server serves StoreService over plaintext gRPC on an isolated network.
 package server
 
 import (
@@ -6,8 +6,6 @@ import (
 
 	"github.com/batchstream/weir-protocol/api/protocol"
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
-	peerpb "github.com/batchstream/weir/internal/api/peer/v1"
-	"github.com/batchstream/weir/internal/directory"
 	"github.com/batchstream/weir/internal/store"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -44,18 +42,13 @@ func (l Limits) Validate() error {
 
 type Config struct {
 	Stores    map[string]*store.Runtime
-	Directory *directory.Directory
 	Limits    Limits
 	Admission *Admission
-	// Peer exposes the directory control service instead of business RPCs.
-	Peer bool
 }
 
 type Server struct {
 	stores    map[string]*store.Runtime
-	directory *directory.Directory
 	admission *Admission
-	peer      bool
 	limits    Limits
 	grpc      *grpc.Server
 	metrics   transportMetrics
@@ -94,9 +87,7 @@ func New(cfg Config) (*Server, error) {
 	}
 	s := &Server{
 		stores:    stores,
-		directory: cfg.Directory,
 		admission: cfg.Admission,
-		peer:      cfg.Peer,
 		limits:    l,
 		metrics:   newTransportMetrics(),
 		serving:   make(chan struct{}),
@@ -107,19 +98,12 @@ func New(cfg Config) (*Server, error) {
 		grpc.MaxSendMsgSize(MaxMessageBytes),
 		grpc.MaxHeaderListSize(64 << 10),
 		grpc.InTapHandle(s.admitRPC),
-		grpc.ChainUnaryInterceptor(s.observeUnary),
 		grpc.ChainStreamInterceptor(s.observeStream),
 		grpc.KeepaliveParams(keepaliveParameters),
 		grpc.WaitForHandlers(true),
 		grpc.ConnectionTimeout(l.Handshake),
 	}
 	s.grpc = grpc.NewServer(options...)
-	if cfg.Peer {
-		if cfg.Directory != nil {
-			peerpb.RegisterPeerDiscoveryServiceServer(s.grpc, cfg.Directory)
-		}
-	} else {
-		pb.RegisterStoreServiceServer(s.grpc, s)
-	}
+	pb.RegisterStoreServiceServer(s.grpc, s)
 	return s, nil
 }

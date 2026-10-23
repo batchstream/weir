@@ -97,10 +97,7 @@ func TestSearchLowLoadBusinessReliability(t *testing.T) {
 // SDK and final RPC completion.
 func runLowLoadReliability(t *testing.T, probe reliabilityProbe) {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
-	defer cancel()
-	openOptions := weirclient.OpenOptions{Seed: probe.node.Addresses()[0], Stores: []string{"records"}}
-	client, err := weirclient.Open(ctx, openOptions)
+	client, err := weirclient.New(probe.node.Address())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -297,7 +294,7 @@ func validateReliabilityNative(result *weirclient.NativeResult, body []byte) err
 // in-flight cancellation is covered separately by the backend integration suites.
 func cancelReliabilityStreams(t *testing.T, probe reliabilityProbe) {
 	t.Helper()
-	client := endpointProcessClient(t, probe.node.Addresses()[0])
+	client := processClient(t, probe.node.Address())
 	for range 32 {
 		ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
 		stream, err := client.Execute(ctx)

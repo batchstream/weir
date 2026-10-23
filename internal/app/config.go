@@ -11,7 +11,6 @@ import (
 	"github.com/batchstream/weir/internal/backend"
 	"github.com/batchstream/weir/internal/backend/mongodb"
 	"github.com/batchstream/weir/internal/backend/search"
-	"github.com/batchstream/weir/internal/directory"
 	"github.com/batchstream/weir/internal/luaengine"
 	"github.com/batchstream/weir/internal/overload"
 	"github.com/batchstream/weir/internal/server"
@@ -31,31 +30,17 @@ type BasicConfig struct {
 	Listeners   ListenerConfig    `json:"listeners" yaml:"listeners"`
 	Diagnostics DiagnosticsConfig `json:"diagnostics" yaml:"diagnostics"`
 	Transport   TransportConfig   `json:"transport" yaml:"transport"`
-	Discovery   DiscoveryConfig   `json:"discovery" yaml:"discovery"`
 	Overload    OverloadConfig    `json:"overload" yaml:"overload"`
 }
 
 type ListenerConfig struct {
 	Application string `json:"application" yaml:"application"`
-	Peer        string `json:"peer" yaml:"peer"`
 }
 
 type DiagnosticsConfig struct {
 	Timeout       Duration `json:"timeout" yaml:"timeout"`
 	Address       string   `json:"address" yaml:"address"`
 	AllowIntranet bool     `json:"allow_intranet" yaml:"allow_intranet"`
-}
-
-// DiscoveryConfig advertises the local Store group and seeds directory synchronization.
-type DiscoveryConfig struct {
-	Lease          Duration `json:"lease" yaml:"lease"`
-	SyncInterval   Duration `json:"sync_interval" yaml:"sync_interval"`
-	SyncTimeout    Duration `json:"sync_timeout" yaml:"sync_timeout"`
-	Group          string   `json:"group" yaml:"group"`
-	PeerAddress    string   `json:"peer_address" yaml:"peer_address"`
-	PeerAddressEnv string   `json:"peer_address_env" yaml:"peer_address_env"`
-	Seeds          []string `json:"seeds" yaml:"seeds,omitempty"`
-	Advertise      []string `json:"advertise" yaml:"advertise,omitempty"`
 }
 
 // RoutingConfig declares only Stores hosted by this process.
@@ -108,11 +93,6 @@ type MemoryPressureConfig struct {
 	HighWatermark  int      `json:"high_watermark" yaml:"high_watermark"`
 	LowWatermark   int      `json:"low_watermark" yaml:"low_watermark"`
 	SampleInterval Duration `json:"sample_interval" yaml:"sample_interval"`
-}
-
-func (cfg DiscoveryConfig) policy() directory.Policy {
-	policy := directory.Policy{Lease: time.Duration(cfg.Lease), SyncInterval: time.Duration(cfg.SyncInterval), SyncTimeout: time.Duration(cfg.SyncTimeout)}
-	return policy
 }
 
 func (cfg MemoryPressureConfig) limits() overload.Limits {
@@ -178,12 +158,10 @@ func DefaultConfig() Config {
 	transport := TransportConfig{Timeouts: timeouts, Keepalive: keepalive, MaxPendingRecords: defaults.MaxPendingRecords}
 	memory := MemoryPressureConfig{HighWatermark: 80, LowWatermark: 70, SampleInterval: Duration(100 * time.Millisecond)}
 	lua := LuaConfig{}
-	policy := directory.DefaultPolicy()
-	discovery := DiscoveryConfig{Lease: Duration(policy.Lease), SyncInterval: Duration(policy.SyncInterval), SyncTimeout: Duration(policy.SyncTimeout)}
 	lifecycle := LifecycleConfig{StartupTimeout: Duration(5 * time.Second), ShutdownTimeout: Duration(5 * time.Second), CleanupTimeout: Duration(backend.DefaultOptions().CleanupTimeout)}
 	diagnostics := DiagnosticsConfig{Timeout: Duration(diagnosticTimeout)}
 	overloadConfig := OverloadConfig{Memory: memory}
-	basic := BasicConfig{Lua: lua, Discovery: discovery, Lifecycle: lifecycle, Transport: transport, Diagnostics: diagnostics, Overload: overloadConfig}
+	basic := BasicConfig{Lua: lua, Lifecycle: lifecycle, Transport: transport, Diagnostics: diagnostics, Overload: overloadConfig}
 	cfg := Config{Basic: basic.resolved()}
 	return cfg
 }
@@ -207,23 +185,10 @@ func (cfg Config) validate() error {
 	if err := cfg.Basic.validate(); err != nil {
 		return err
 	}
-	if err := cfg.Routing.validate(); err != nil {
-		return err
-	}
-	if err := cfg.validateDiscovery(); err != nil {
-		return err
-	}
-	return nil
+	return cfg.Routing.validate()
 }
 
 func (cfg BasicConfig) validate() error {
-	if err := cfg.Discovery.policy().Validate(); err != nil {
-		return err
-	}
-	if err := cfg.Discovery.validateSource(); err != nil {
-		return err
-	}
-
 	if cfg.Diagnostics.AllowIntranet && cfg.Diagnostics.Address == "" {
 		return errors.New("diagnostics.allow_intranet requires a diagnostic listener")
 	}
@@ -231,12 +196,10 @@ func (cfg BasicConfig) validate() error {
 		return errors.New("diagnostics requires explicit IP and port; non-loopback requires diagnostics.allow_intranet")
 	}
 
-	if cfg.Listeners.Application == "" && cfg.Listeners.Peer == "" ||
-		cfg.Listeners.Application != "" && !address(cfg.Listeners.Application, false) ||
-		cfg.Listeners.Peer != "" && !address(cfg.Listeners.Peer, false) {
-		return errors.New("invalid listener configuration")
+	if !address(cfg.Listeners.Application, false) {
+		return errors.New("listeners.application requires an explicit IP and port")
 	}
-	listeners := []string{cfg.Listeners.Application, cfg.Listeners.Peer, cfg.Diagnostics.Address}
+	listeners := []string{cfg.Listeners.Application, cfg.Diagnostics.Address}
 	for i, listener := range listeners {
 		if listener == "" {
 			continue
@@ -273,65 +236,6 @@ func (cfg BasicConfig) validate() error {
 		return err
 	}
 	return cfg.Transport.serverLimits().Validate()
-}
-
-func (cfg DiscoveryConfig) validateSource() error {
-	if cfg.PeerAddress != "" && cfg.PeerAddressEnv != "" {
-		return errors.New("peer address value and environment source are mutually exclusive")
-	}
-	if cfg.PeerAddressEnv == "" {
-		return nil
-	}
-	for i, c := range cfg.PeerAddressEnv {
-		if !(c == '_' || c >= 'A' && c <= 'Z' || c >= 'a' && c <= 'z' || i > 0 && c >= '0' && c <= '9') {
-			return errors.New("invalid peer address environment source")
-		}
-	}
-	return nil
-}
-
-func (cfg Config) validateDiscovery() error {
-	discovery := cfg.Basic.Discovery
-	if discovery.PeerAddressEnv != "" {
-		return errors.New("unresolved peer address environment source")
-	}
-	if discovery.Group != "" && !directory.ValidReplicaGroup(discovery.Group) {
-		return errors.New("invalid discovery group")
-	}
-	for _, addresses := range [][]string{discovery.Advertise, discovery.Seeds} {
-		if len(addresses) != 0 {
-			if _, err := protocol.CanonicalEndpoints(addresses); err != nil {
-				return errors.New("invalid discovery addresses")
-			}
-		}
-	}
-	if discovery.PeerAddress != "" {
-		if _, err := protocol.CanonicalEndpoint(discovery.PeerAddress); err != nil {
-			return errors.New("invalid advertised peer address")
-		}
-		if cfg.Basic.Listeners.Peer == "" {
-			return errors.New("advertised peer address requires peer listener")
-		}
-	}
-	if len(discovery.Seeds) != 0 && cfg.Basic.Listeners.Peer == "" {
-		return errors.New("discovery seeds require peer listener")
-	}
-	if len(cfg.Routing.Stores) != 0 && cfg.Basic.Listeners.Application == "" {
-		return errors.New("local Stores require application listener")
-	}
-	if len(discovery.Advertise) == 0 && len(cfg.Routing.Stores) != 0 {
-		host, _, _ := net.SplitHostPort(cfg.Basic.Listeners.Application)
-		if net.ParseIP(host).IsUnspecified() {
-			return errors.New("wildcard application listener requires discovery.advertise")
-		}
-	}
-	if cfg.Basic.Listeners.Peer != "" && discovery.PeerAddress == "" {
-		host, _, _ := net.SplitHostPort(cfg.Basic.Listeners.Peer)
-		if net.ParseIP(host).IsUnspecified() {
-			return errors.New("wildcard peer listener requires discovery.peer_address")
-		}
-	}
-	return nil
 }
 
 func (cfg RoutingConfig) validate() error {

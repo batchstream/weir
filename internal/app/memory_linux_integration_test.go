@@ -280,12 +280,11 @@ func TestLinuxMemoryCLI(t *testing.T) {
 
 	cfg := DefaultConfig()
 	cfg.Basic.Listeners.Application = "127.0.0.1:0"
-	cfg.Basic.Listeners.Peer = "127.0.0.1:0"
 	cfg.Basic.Diagnostics.Address = "127.0.0.1:0"
 	cfg.Routing.Stores = []StoreConfig{service}
 
 	p := startProcess(t, "/fixture/weir", cfg)
-	client := endpointProcessClient(t, p.address)
+	client := processClient(t, p.address)
 	root := db + "/records"
 	request := budgetPut(root, "before")
 	recordFixture := testutil.RecordRequest("records", request)
@@ -296,7 +295,7 @@ func TestLinuxMemoryCLI(t *testing.T) {
 		}
 	}
 	front := startProcess(t, "/fixture/weir", cfg)
-	frontClient := endpointProcessClient(t, front.address)
+	frontClient := processClient(t, front.address)
 	success := budgetLoadCall(ctx, frontClient, recordFixture, 1)
 	if !success {
 		t.Fatal("second executor before pressure")

@@ -38,7 +38,7 @@ func (s *Server) Execute(stream executeStream) error {
 	runtime, ok := s.stores[request.StoreName]
 	if !ok {
 		s.admission.rejections.WithLabelValues("execute").Inc()
-		return status.Error(codes.Unavailable, "Store is not hosted here; ResolveStore before sending business requests")
+		return status.Error(codes.NotFound, "Store is not hosted here")
 	}
 	if commandKind(request.Command) == "native" {
 		_, err = s.receive(stream)
@@ -53,7 +53,7 @@ func (s *Server) Execute(stream executeStream) error {
 	return s.executeRecords(stream, runtime, request)
 }
 
-// receive reads one request; a peer that sends nothing within Stall loses the RPC.
+// receive reads one request; a client that sends nothing within Stall loses the RPC.
 func (s *Server) receive(stream executeStream) (*pb.ExecuteRequest, error) {
 	timer := time.AfterFunc(s.limits.Stall, func() { s.cancelRPC(stream.Context(), "input") })
 	defer timer.Stop()
@@ -105,7 +105,7 @@ func (s *Server) executeRecords(stream executeStream, runtime *store.Runtime, fi
 }
 
 // recordStream bounds the records one stream has queued or awaiting delivery.
-// A peer may take any time while results are pending, but an idle stream that
+// A client may take any time while results are pending, but an idle stream that
 // sends nothing for Stall is canceled.
 type recordStream struct {
 	server  *Server
@@ -300,7 +300,7 @@ func nativeFailure(failure *pb.Failure) *pb.Event {
 	return event
 }
 
-// send delivers one response; a peer that stops reading for Stall loses the RPC.
+// send delivers one response; a client that stops reading for Stall loses the RPC.
 func (s *Server) send(stream executeStream, index uint64, event *pb.Event) error {
 	response := &pb.ExecuteResponse{Index: index, Event: event}
 	if proto.Size(response) > MaxMessageBytes {

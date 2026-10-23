@@ -68,11 +68,10 @@ func TestMongoTLSApplicationAssemblyAllOperations(t *testing.T) {
 
 	cfg := DefaultConfig()
 	cfg.Basic.Listeners.Application = "127.0.0.1:0"
-	cfg.Basic.Listeners.Peer = "127.0.0.1:0"
 	cfg.Routing.Stores = []StoreConfig{service}
 
 	node := secureNode(t, cfg)
-	for name, address := range map[string]string{"direct": node.Addresses()[0]} {
+	for name, address := range map[string]string{"direct": node.Address()} {
 		t.Run(name, func(t *testing.T) {
 			conn, err := grpc.NewClient(address, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithDisableRetry())
 			if err != nil {

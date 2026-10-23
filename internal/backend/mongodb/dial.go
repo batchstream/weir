@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/batchstream/weir-protocol/api/netlimit"
+	"github.com/batchstream/weir/internal/netlimit"
 )
 
 var errConnections = errors.New("MongoDB connection owner closed")

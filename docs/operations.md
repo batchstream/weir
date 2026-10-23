@@ -11,7 +11,7 @@ diagnostics:
 
 `GET /livez` reports a running diagnostics handler. `GET /readyz` reports that
 the Node entered service and is not draining or failed. Neither endpoint tests
-backend health, workload capacity or directory convergence. `GET /metrics`
+backend health or workload capacity. `GET /metrics`
 exports a Node-owned Prometheus registry. Diagnostics accepts HTTP/1 GET
 requests without a body or query, with independent progress deadlines.
 
@@ -21,12 +21,11 @@ weir probe ready --address 127.0.0.1:7449 --timeout 750ms
 weir version
 ```
 
-Application and peer ports require isolated networking. Peers advertise
-reachable addresses; Store groups use equivalent local definitions. A node can
-bootstrap through any peer, and clients can resolve Stores through any
-application endpoint. Kubernetes manifests and scaling guidance live under
-[deploy/kubernetes](../deploy/kubernetes/scaling.md). Every Pod runs one Weir
-process.
+The application port requires isolated networking. Every replica behind one
+address uses the same Store definitions. In Kubernetes, put the replicas behind a
+headless Service so clients connect to every Pod; the
+[weir-charts](https://github.com/batchstream/weir-charts) Helm chart is the
+deployment reference. Every Pod runs one Weir process.
 
 ## MongoDB discovery and failover
 

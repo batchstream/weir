@@ -10,7 +10,6 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/batchstream/weir-protocol/api/protocol"
 	"go.yaml.in/yaml/v3"
 )
 
@@ -47,17 +46,6 @@ func Load(basicFilename, routingFilename string) (Config, error) {
 	basic = basic.resolved()
 	if err := basic.validate(); err != nil {
 		return cfg, err
-	}
-	if basic.Discovery.PeerAddressEnv != "" {
-		value, exists := os.LookupEnv(basic.Discovery.PeerAddressEnv)
-		if !exists {
-			return cfg, errors.New("advertised peer address environment value unavailable")
-		}
-		canonical, err := protocol.CanonicalEndpoint(value)
-		if err != nil {
-			return cfg, errors.New("invalid advertised peer address environment value")
-		}
-		basic.Discovery.PeerAddress, basic.Discovery.PeerAddressEnv = canonical, ""
 	}
 	routing := RoutingConfig{}
 	if routingFilename != "" {
@@ -155,7 +143,7 @@ func validateConfigYAML(node *yaml.Node, allowNull bool, field string) error {
 		if node.Tag == "!!null" {
 			if allowNull {
 				switch frame.field {
-				case "mongodb", "search", "authentication", "tls", "stores", "seeds", "advertise":
+				case "mongodb", "search", "authentication", "tls", "stores":
 					continue
 				}
 			}

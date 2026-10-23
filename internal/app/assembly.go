@@ -4,14 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"maps"
 	"net"
-	"slices"
 	"time"
 
 	"github.com/batchstream/weir/internal/backend/mongodb"
 	"github.com/batchstream/weir/internal/backend/search"
-	"github.com/batchstream/weir/internal/directory"
 	"github.com/batchstream/weir/internal/execution"
 	"github.com/batchstream/weir/internal/luaengine"
 	"github.com/batchstream/weir/internal/overload"
@@ -48,7 +45,7 @@ func Open(ctx context.Context, cfg Config) (*Node, error) {
 	}
 	durationOpts := prometheus.HistogramOpts{
 		Name:    "weir_node_drain_seconds",
-		Help:    "Node data drain and owned backend/directory cleanup duration.",
+		Help:    "Node data drain and owned backend cleanup duration.",
 		Buckets: []float64{.01, .1, 1, 5, 10},
 	}
 	node.drains = prometheus.NewCounter(drainOpts)
@@ -76,62 +73,17 @@ func Open(ctx context.Context, cfg Config) (*Node, error) {
 		node.stores[definition.Name] = runtime
 	}
 
-	applicationAddress, peerAddress := "", ""
-	for i, address := range []string{cfg.Basic.Listeners.Application, cfg.Basic.Listeners.Peer} {
-		if err := ctx.Err(); err != nil {
-			return nil, err
-		}
-		if address == "" {
-			continue
-		}
-		listener, err := net.Listen("tcp", address)
-		if err != nil {
-			return nil, errors.New("listener startup failed")
-		}
-		bound := endpoint{listener: listener, peer: i == 1}
-		node.endpoints = append(node.endpoints, bound)
-		if i == 0 {
-			applicationAddress = listener.Addr().String()
-		} else {
-			peerAddress = listener.Addr().String()
-		}
-	}
-
-	discovery := cfg.Basic.Discovery
-	if discovery.PeerAddress != "" {
-		peerAddress = discovery.PeerAddress
-	}
-	targets := discovery.Advertise
-	if len(targets) == 0 && len(node.stores) != 0 {
-		targets = []string{applicationAddress}
-	}
-	storeNames := slices.Sorted(maps.Keys(node.stores))
-	directoryConfig := directory.Config{
-		Policy:      discovery.policy(),
-		Group:       discovery.Group,
-		PeerAddress: peerAddress,
-		Targets:     targets,
-		Stores:      storeNames,
-		Seeds:       discovery.Seeds,
-	}
-	node.directory, err = directory.New(directoryConfig)
-	if err != nil {
+	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-
-	for i, endpoint := range node.endpoints {
-		options := server.Config{
-			Stores:    node.stores,
-			Directory: node.directory,
-			Limits:    limits,
-			Admission: admission,
-			Peer:      endpoint.peer,
-		}
-		listenerServer, err := server.New(options)
-		if err != nil {
-			return nil, err
-		}
-		node.endpoints[i].server = listenerServer
+	node.listener, err = net.Listen("tcp", cfg.Basic.Listeners.Application)
+	if err != nil {
+		return nil, errors.New("listener startup failed")
+	}
+	options := server.Config{Stores: node.stores, Limits: limits, Admission: admission}
+	node.server, err = server.New(options)
+	if err != nil {
+		return nil, err
 	}
 
 	node.guard = overload.New(overloadTargets, cfg.Basic.Overload.Memory.limits())

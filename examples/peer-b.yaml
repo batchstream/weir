@@ -1,6 +1,0 @@
-listeners:
-  application: 127.0.0.1:7458
-  peer: 127.0.0.1:7448
-
-discovery:
-  group: mongo

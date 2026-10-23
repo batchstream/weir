@@ -2,7 +2,6 @@ package server
 
 import (
 	"bytes"
-	"fmt"
 	"io"
 	"net"
 	"strings"
@@ -10,7 +9,6 @@ import (
 	"time"
 
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
-	peerpb "github.com/batchstream/weir/internal/api/peer/v1"
 	"github.com/batchstream/weir/internal/store"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/hpack"
@@ -19,143 +17,138 @@ import (
 // Exercise bytes before and after HTTP/2 dispatch. Handler-only deadlines cannot
 // bound connections that have not supplied complete prefaces and headers.
 func TestPlaintextPrefaceAndHeaderLifetime(t *testing.T) {
-	for _, peer := range []bool{false, true} {
-		for _, mode := range []string{"silent", "preface", "settings", "frame-header", "header-body", "continuations", "rpc-no-data", "rpc-prefix", "rpc-body"} {
-			t.Run(fmt.Sprintf("peer=%t/%s", peer, mode), func(t *testing.T) {
-				adapter, localRuntime := peerLocal(t, "records")
-				limits := DefaultLimits()
-				limits.Stall = 75 * time.Millisecond
-				limits.Handshake = 75 * time.Millisecond
-				limits.KeepaliveInterval = time.Second
-				limits.KeepaliveTimeout = 75 * time.Millisecond
-				opts := peerServerOptions{stores: map[string]*store.Runtime{"records": localRuntime}, peer: peer, limits: limits}
-				srv, address := startPeerServer(t, opts)
-				conn, err := net.DialTimeout("tcp", address, time.Second)
-				if err != nil {
+	for _, mode := range []string{"silent", "preface", "settings", "frame-header", "header-body", "continuations", "rpc-no-data", "rpc-prefix", "rpc-body"} {
+		t.Run(mode, func(t *testing.T) {
+			adapter, localRuntime := localStore(t, "records")
+			limits := DefaultLimits()
+			limits.Stall = 75 * time.Millisecond
+			limits.Handshake = 75 * time.Millisecond
+			limits.KeepaliveInterval = time.Second
+			limits.KeepaliveTimeout = 75 * time.Millisecond
+			opts := testServerOptions{stores: map[string]*store.Runtime{"records": localRuntime}, limits: limits}
+			srv, address := startTestServer(t, opts)
+			conn, err := net.DialTimeout("tcp", address, time.Second)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer conn.Close()
+			_ = conn.SetDeadline(time.Now().Add(3 * time.Second))
+			started := time.Now()
+			if mode == "preface" {
+				_, err = io.WriteString(conn, http2.ClientPreface[:14])
+			} else if mode != "silent" {
+				_, err = io.WriteString(conn, http2.ClientPreface)
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			framer := http2.NewFramer(conn, conn)
+			if mode != "silent" && mode != "preface" && mode != "settings" {
+				if err := framer.WriteSettings(); err != nil {
 					t.Fatal(err)
 				}
-				defer conn.Close()
-				_ = conn.SetDeadline(time.Now().Add(3 * time.Second))
-				started := time.Now()
-				if mode == "preface" {
-					_, err = io.WriteString(conn, http2.ClientPreface[:14])
-				} else if mode != "silent" {
-					_, err = io.WriteString(conn, http2.ClientPreface)
-				}
-				if err != nil {
-					t.Fatal(err)
-				}
-				framer := http2.NewFramer(conn, conn)
-				if mode != "silent" && mode != "preface" && mode != "settings" {
-					if err := framer.WriteSettings(); err != nil {
+				var block, encoded bytes.Buffer
+				encoder := hpack.NewEncoder(&block)
+				fields := []hpack.HeaderField{{Name: ":method", Value: "POST"}, {Name: ":scheme", Value: "http"}, {Name: ":authority", Value: address}, {Name: ":path", Value: pb.StoreService_Execute_FullMethodName}, {Name: "content-type", Value: "application/grpc"}}
+				for _, field := range fields {
+					if err := encoder.WriteField(field); err != nil {
 						t.Fatal(err)
 					}
-					var block, encoded bytes.Buffer
-					encoder := hpack.NewEncoder(&block)
-					fields := []hpack.HeaderField{{Name: ":method", Value: "POST"}, {Name: ":scheme", Value: "http"}, {Name: ":authority", Value: address}, {Name: ":path", Value: pb.StoreService_Execute_FullMethodName}, {Name: "content-type", Value: "application/grpc"}}
-					if peer {
-						fields[3].Value = peerpb.PeerDiscoveryService_SyncDirectory_FullMethodName
-					}
-					for _, field := range fields {
-						if err := encoder.WriteField(field); err != nil {
-							t.Fatal(err)
+				}
+				writer := http2.NewFramer(&encoded, nil)
+				params := http2.HeadersFrameParam{StreamID: 1, BlockFragment: block.Bytes(), EndHeaders: mode != "continuations"}
+				if err := writer.WriteHeaders(params); err != nil {
+					t.Fatal(err)
+				}
+				raw := encoded.Bytes()
+				switch mode {
+				case "frame-header":
+					raw = raw[:4]
+				case "header-body":
+					raw = raw[:len(raw)-1]
+				}
+				if _, err := conn.Write(raw); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if mode == "rpc-prefix" || mode == "rpc-body" {
+				data := []byte{0, 0, 0}
+				if mode == "rpc-body" {
+					data = []byte{0, 0, 0, 0, 20, 10}
+				}
+				err := framer.WriteData(1, false, data)
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			producer := make(chan struct{})
+			go func() {
+				defer close(producer)
+				if mode == "continuations" {
+					// Progress without END_HEADERS must not buy unbounded lifetime.
+					for range 50 {
+						time.Sleep(10 * time.Millisecond)
+						if err := framer.WriteContinuation(1, false, nil); err != nil {
+							return
 						}
 					}
-					writer := http2.NewFramer(&encoded, nil)
-					params := http2.HeadersFrameParam{StreamID: 1, BlockFragment: block.Bytes(), EndHeaders: mode != "continuations"}
-					if err := writer.WriteHeaders(params); err != nil {
-						t.Fatal(err)
-					}
-					raw := encoded.Bytes()
-					switch mode {
-					case "frame-header":
-						raw = raw[:4]
-					case "header-body":
-						raw = raw[:len(raw)-1]
-					}
-					if _, err := conn.Write(raw); err != nil {
-						t.Fatal(err)
-					}
 				}
-				if mode == "rpc-prefix" || mode == "rpc-body" {
-					data := []byte{0, 0, 0}
-					if mode == "rpc-body" {
-						data = []byte{0, 0, 0, 0, 20, 10}
-					}
-					err := framer.WriteData(1, false, data)
+			}()
+			var readErr error
+			if strings.HasPrefix(mode, "rpc-") {
+				ended := false
+				for !ended {
+					frame, err := framer.ReadFrame()
 					if err != nil {
-						t.Fatal(err)
+						if timeout, ok := err.(net.Error); ok && timeout.Timeout() {
+							t.Fatal("partial body survived until the client deadline", err)
+						}
+						ended = true
+						break
 					}
-				}
-				producer := make(chan struct{})
-				go func() {
-					defer close(producer)
-					if mode == "continuations" {
-						// Progress without END_HEADERS must not buy unbounded lifetime.
-						for range 50 {
-							time.Sleep(10 * time.Millisecond)
-							if err := framer.WriteContinuation(1, false, nil); err != nil {
-								return
+					switch frame := frame.(type) {
+					case *http2.SettingsFrame:
+						if !frame.IsAck() {
+							if err := framer.WriteSettingsAck(); err != nil {
+								t.Fatal(err)
 							}
 						}
-					}
-				}()
-				var readErr error
-				if strings.HasPrefix(mode, "rpc-") {
-					ended := false
-					for !ended {
-						frame, err := framer.ReadFrame()
-						if err != nil {
-							if timeout, ok := err.(net.Error); ok && timeout.Timeout() {
-								t.Fatal("partial body survived until the client deadline", err)
+					case *http2.PingFrame:
+						if !frame.IsAck() {
+							if err := framer.WritePing(true, frame.Data); err != nil {
+								t.Fatal(err)
 							}
-							ended = true
-							break
 						}
-						switch frame := frame.(type) {
-						case *http2.SettingsFrame:
-							if !frame.IsAck() {
-								if err := framer.WriteSettingsAck(); err != nil {
-									t.Fatal(err)
-								}
-							}
-						case *http2.PingFrame:
-							if !frame.IsAck() {
-								if err := framer.WritePing(true, frame.Data); err != nil {
-									t.Fatal(err)
-								}
-							}
-						case *http2.RSTStreamFrame:
-							ended = frame.StreamID == 1
-						case *http2.HeadersFrame:
-							ended = frame.StreamID == 1 && frame.StreamEnded()
-						}
+					case *http2.RSTStreamFrame:
+						ended = frame.StreamID == 1
+					case *http2.HeadersFrame:
+						ended = frame.StreamID == 1 && frame.StreamEnded()
 					}
-				} else {
-					_, readErr = io.Copy(io.Discard, conn)
 				}
-				_ = conn.Close()
-				<-producer
-				if timeout, ok := readErr.(net.Error); ok && timeout.Timeout() {
-					t.Fatal("only the client deadline closed the stalled connection", readErr)
-				}
-				waitPeerIdle(t, srv)
-				if time.Since(started) > 2500*time.Millisecond || len(adapter.seen) != 0 || adapter.commands.Load() != 0 {
-					t.Fatal("stalled transport outlived its bound or executed", time.Since(started))
-				}
-			})
-		}
+			} else {
+				_, readErr = io.Copy(io.Discard, conn)
+			}
+			_ = conn.Close()
+			<-producer
+			if timeout, ok := readErr.(net.Error); ok && timeout.Timeout() {
+				t.Fatal("only the client deadline closed the stalled connection", readErr)
+			}
+			waitIdle(t, srv)
+			if time.Since(started) > 2500*time.Millisecond || len(adapter.seen) != 0 || adapter.commands.Load() != 0 {
+				t.Fatal("stalled transport outlived its bound or executed", time.Since(started))
+			}
+		})
 	}
 }
 
 func TestPartialHTTP2DataFrameCannotRetainConnection(t *testing.T) {
-	adapter, local := peerLocal(t, "records")
+	adapter, local := localStore(t, "records")
 	limits := DefaultLimits()
 	limits.Stall = 75 * time.Millisecond
 	limits.KeepaliveInterval = time.Second
 	limits.KeepaliveTimeout = 75 * time.Millisecond
-	opts := peerServerOptions{stores: map[string]*store.Runtime{"records": local}, limits: limits}
-	server, address := startPeerServer(t, opts)
+	opts := testServerOptions{stores: map[string]*store.Runtime{"records": local}, limits: limits}
+	server, address := startTestServer(t, opts)
 	conn, err := net.DialTimeout("tcp", address, time.Second)
 	if err != nil {
 		t.Fatal(err)
@@ -220,7 +213,7 @@ func TestPartialHTTP2DataFrameCannotRetainConnection(t *testing.T) {
 	if !ended {
 		t.Fatal("RPC input timeout did not terminate its stream before the connection")
 	}
-	waitPeerIdle(t, server)
+	waitIdle(t, server)
 	if adapter.commands.Load() != 0 || len(adapter.seen) != 0 {
 		t.Fatal("partial HTTP/2 frame executed a record")
 	}

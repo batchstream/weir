@@ -1,17 +1,16 @@
 # Architecture
 
-Weir has one process per node. A Node owns local Store runtimes, application and
-peer listeners, an in-memory directory, diagnostics and the memory-pressure
-guard. Lua evaluates inside that same process.
+Weir has one process per server. A Node owns its Store runtimes, the application
+listener, diagnostics and the memory-pressure guard. Lua evaluates inside that
+same process.
 
 ```text
-client -> any node: ResolveStore -> owning nodes: Execute -> local backend
-                  peer directory synchronization
+client -> Weir address -> any replica: Execute -> local backend
 ```
 
-Business payloads go directly to a Store owner. Peers exchange only Store names,
-replica identities, reachable addresses and leases. Backend configuration and
-authentication remain local. See [discovery](discovery.md) and
+Every replica behind an address hosts the same Stores and shares nothing with
+the others. A request naming a Store the server does not host fails with
+NotFound. Backend configuration and authentication remain local. See
 [protocols](protocols.md).
 
 ## Module and ownership boundaries
@@ -20,8 +19,7 @@ authentication remain local. See [discovery](discovery.md) and
 | --- | --- |
 | `cmd/weir` | CLI, signals and process lifecycle |
 | `internal/app` | Configuration, resource assembly, diagnostics and Node shutdown |
-| `internal/directory` | Store ownership, lease expiry and peer synchronization |
-| `internal/server` | Public/peer RPCs, transport admission and ordered publication |
+| `internal/server` | StoreService, transport admission and ordered publication |
 | `internal/store` | Queueing, batch selection and execution slots |
 | `internal/execution` | Prepared plans and the MongoDB/Search adapter contract |
 | `internal/backend` | Native backend encoding, execution and completion evidence |
@@ -30,8 +28,8 @@ authentication remain local. See [discovery](discovery.md) and
 
 The independent `weir-protocol` module owns public schemas and shared validation.
 The independent `weir-go` SDK depends on it. Server acceptance tests consume the
-SDK; the production server does not import the SDK. Only the internal peer schema
-is generated in this repository.
+SDK; the production server does not import the SDK. No code is generated in this
+repository.
 
 ## Request execution
 
@@ -110,8 +108,8 @@ Lua programs run with instruction, call-depth, stack and deadline limits. There
 is no per-evaluation memory limit, so transforms must be trusted. See
 [Lua](lua.md).
 
-Application listeners serve StoreService; peer listeners serve SyncDirectory.
-Both use plaintext gRPC on an isolated network. A stalled input or output
+The application listener serves only StoreService, over plaintext gRPC on an
+isolated network. A stalled input or output
 cancels only its RPC after the stall timeout: the handler and its Store work end
 at once, but gRPC keeps the stream's last unsent message until the client reads
 it or the connection closes. Keepalive pings and the idle and handshake timeouts
@@ -119,12 +117,10 @@ close unresponsive connections. Confirmed write evidence remains valid.
 
 ## Lifecycle
 
-Startup resolves configuration, qualifies local backends, binds listeners and
-assembles the directory. Partial startup closes already owned resources.
+Startup resolves configuration, qualifies local backends and binds listeners. Partial startup closes already owned resources.
 Diagnostics readiness tracks lifecycle rather than backend health or Store load.
 
-Shutdown stops new admission, withdraws directory ownership and drains admitted
-work to its deadline. Cancellation then stops owned work; bounded cleanup joins
+Shutdown stops new admission and drains admitted work to its deadline. Cancellation then stops owned work; bounded cleanup joins
 runtimes and closes backend connections, listeners and diagnostics. Cancellation
 never proves a sent write was not applied. Remote transaction locks can outlive
 local cancellation or best-effort session cleanup. See [operations](operations.md).

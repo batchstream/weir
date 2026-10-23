@@ -24,7 +24,7 @@ func TestDarwinAutomaticMemoryApplication(t *testing.T) {
 	fixture := testmongo.OpenSecure(t)
 	cfg := recordsStoreConfig(t, fixture.URI)
 	n := secureNode(t, cfg)
-	client := endpointProcessClient(t, n.Addresses()[0])
+	client := processClient(t, n.Address())
 	checkRecordCalls(t, client, fixture)
 	snapshot := n.guard.Snapshot()
 	if snapshot.Budget == 0 || snapshot.Unknown || snapshot.Latched || !snapshot.ProcessValid {

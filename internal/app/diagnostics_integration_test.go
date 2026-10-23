@@ -23,7 +23,6 @@ func TestDiagnosticsMaximumStaticSeries(t *testing.T) {
 	}
 	cfg.Basic.Listeners.Application = first.Addr().String()
 	_ = first.Close()
-	cfg.Basic.Listeners.Peer = "127.0.0.1:0"
 	cfg.Basic.Diagnostics.Address = "127.0.0.1:0"
 	cfg.Routing.Stores = nil
 
@@ -52,14 +51,15 @@ func TestDiagnosticsMaximumStaticSeries(t *testing.T) {
 			delete(families, name)
 		}
 	}
-	// 16 Mongo Stores (61 runtime + 6 connection series each), two listener
-	// transports at 22 each, plus admission, directory, diagnostics, and Node.
-	const maximumSeries = 16*(61+6) + 2*22 + 8 + 2 + 3 + 66
+	// 16 Mongo Stores (48 runtime + 6 connection series each), plus the
+	// business transport (15), diagnostics (3), Node lifecycle (15) and the
+	// memory guard (25). Histograms count every bucket, sum and count.
+	const maximumSeries = 16*(48+6) + 15 + 3 + 15 + 25
 	if got := testmetrics.Series(families); got != maximumSeries {
 		t.Fatal("maximum static series changed", got)
 	}
-	if testmetrics.Sum(families, "weir_store_native_completions_total") != 0 || len(families["weir_store_native_completions_total"].GetMetric()) != 16*4 {
-		t.Fatal("Native completions must expose only four prewarmed series per Store without synthetic work")
+	if testmetrics.Sum(families, "weir_store_native_completions_total") != 0 || len(families["weir_store_native_completions_total"].GetMetric()) != 16*3 {
+		t.Fatal("Native completions must expose only three prewarmed series per Store without synthetic work")
 	}
 	if testmetrics.Sum(families, "weir_store_executions_total") != 0 {
 		t.Fatal("diagnostics executed database work")
@@ -79,5 +79,5 @@ func TestDiagnosticsMaximumStaticSeries(t *testing.T) {
 	if testmetrics.Series(after) != maximumSeries {
 		t.Fatal("state added series")
 	}
-	t.Logf("maximum local Store configuration: 16 Stores, business and peer directory listeners, exactly %d Weir Prometheus series; no synthetic executions", maximumSeries)
+	t.Logf("maximum local Store configuration: 16 Stores, one business listener, exactly %d Weir Prometheus series; no synthetic executions", maximumSeries)
 }

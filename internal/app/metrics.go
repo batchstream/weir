@@ -29,22 +29,7 @@ func (n *Node) registerMetrics() error {
 		}
 	}
 
-	if err := n.registry.Register(n.directory); err != nil {
-		return err
-	}
-
-	for _, endpoint := range n.endpoints {
-		name := "application"
-		if endpoint.peer {
-			name = "peer"
-		}
-		labels := prometheus.Labels{"listener": name}
-		if err := prometheus.WrapRegistererWith(labels, n.registry).Register(endpoint.server); err != nil {
-			return err
-		}
-	}
-
-	return nil
+	return n.registry.Register(n.server)
 }
 
 func (n *Node) Describe(ch chan<- *prometheus.Desc) {

@@ -2,7 +2,6 @@ package app
 
 import (
 	"context"
-	"io"
 	"net"
 	"os"
 	"path/filepath"
@@ -12,7 +11,6 @@ import (
 	"time"
 
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
-	peerpb "github.com/batchstream/weir/internal/api/peer/v1"
 	"github.com/batchstream/weir/internal/testutil"
 	"go.yaml.in/yaml/v3"
 	"google.golang.org/grpc"
@@ -77,7 +75,6 @@ func TestEmptyRoutingDocuments(t *testing.T) {
 func TestRoutelessNodeLifecycleAndUnknownStore(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.Basic.Listeners.Application = "127.0.0.1:0"
-	cfg.Basic.Listeners.Peer = "127.0.0.1:0"
 	cfg.Basic.Diagnostics.Address = "127.0.0.1:0"
 	node, err := Open(context.Background(), cfg)
 	if err != nil {
@@ -100,34 +97,24 @@ func TestRoutelessNodeLifecycleAndUnknownStore(t *testing.T) {
 	if health(t, node, "/readyz") != 200 || health(t, node, "/livez") != 200 || health(t, node, "/metrics") != 200 {
 		t.Fatal("routeless node did not serve diagnostics after startup")
 	}
-	addresses := node.Addresses()
-	if len(addresses) != 2 {
-		t.Fatal("both configured data-plane listeners must start")
-	}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	request := &pb.ReadRequest{Resource: "records/s:key"}
-	for i, address := range addresses {
-		connection, err := grpc.NewClient("passthrough:///"+address, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithNoProxy(), grpc.WithDisableRetry())
-		if err != nil {
-			t.Fatal(err)
-		}
-		client := pb.NewStoreServiceClient(connection)
-		recordResult, readErr := testutil.ExecuteRecord(ctx, client, testutil.RecordRequest("missing", request))
-		result := recordResult.GetReadResult()
-		closeErr := connection.Close()
-		want := codes.Unavailable
-		if i == 1 {
-			want = codes.Unimplemented
-		}
-		if status.Code(readErr) != want || closeErr != nil || result != nil {
-			t.Fatal("an unknown Store must return a routing status on either listener", readErr, closeErr)
-		}
+	connection, err := grpc.NewClient("passthrough:///"+node.Address(), grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithNoProxy(), grpc.WithDisableRetry())
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := pb.NewStoreServiceClient(connection)
+	recordResult, readErr := testutil.ExecuteRecord(ctx, client, testutil.RecordRequest("missing", request))
+	result := recordResult.GetReadResult()
+	closeErr := connection.Close()
+	if status.Code(readErr) != codes.NotFound || closeErr != nil || result != nil {
+		t.Fatal("an unknown Store must be reported as not found", readErr, closeErr)
 	}
 	if len(node.stores) != 0 || health(t, node, "/readyz") != 200 {
 		t.Fatal("unknown Store traffic must not create backends or alter readiness")
 	}
-	addresses = append(addresses, node.DiagnosticAddress())
+	addresses := []string{node.Address(), node.DiagnosticAddress()}
 	if err := node.Close(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -140,107 +127,5 @@ func TestRoutelessNodeLifecycleAndUnknownStore(t *testing.T) {
 			t.Fatal("routeless shutdown did not release a listener", err)
 		}
 		_ = listener.Close()
-	}
-}
-
-func TestDiscoveryOnlyWildcardApplicationLearnsTargets(t *testing.T) {
-	for _, application := range []string{"0.0.0.0:0", "[::]:0"} {
-		t.Run(application, func(t *testing.T) {
-			loopback := "127.0.0.1"
-			if strings.HasPrefix(application, "[") {
-				probe, err := net.Listen("tcp6", "[::1]:0")
-				if err != nil {
-					t.Skip("IPv6 loopback unavailable")
-				}
-				_ = probe.Close()
-				loopback = "::1"
-			}
-			cfg := emptyConfig(t)
-			cfg.Basic.Listeners.Application = application
-			cfg.Basic.Listeners.Peer = "127.0.0.1:0"
-			cfg.Basic.Discovery.Group = "discovery-only"
-			node, err := Open(context.Background(), cfg)
-			if err != nil {
-				t.Fatal("discovery-only wildcard listener failed assembly", err)
-			}
-			t.Cleanup(func() { _ = node.Close(context.Background()) })
-			if err := node.Start(context.Background()); err != nil {
-				t.Fatal(err)
-			}
-			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-			defer cancel()
-			addresses := node.Addresses()
-			peerConnection, err := grpc.NewClient("passthrough:///"+addresses[1], grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithNoProxy())
-			if err != nil {
-				t.Fatal(err)
-			}
-			defer peerConnection.Close()
-			advertisement := &peerpb.NodeAnnouncement{
-				IncarnationId: strings.Repeat("1", 32), Revision: 1,
-				ReplicaGroup: "owners", StoreNames: []string{"records"}, StoreEndpoints: []string{"business.example:7447"},
-				LeaseRemainingMs: 10000, OriginLeaseMs: 60000,
-			}
-			exchangeRequest := &peerpb.SyncDirectoryRequest{Announcements: []*peerpb.NodeAnnouncement{advertisement}}
-			peer := peerpb.NewPeerDiscoveryServiceClient(peerConnection)
-			stream, err := peer.SyncDirectory(ctx)
-			if err != nil {
-				t.Fatal(err)
-			}
-			opening := &peerpb.SyncDirectoryRequest{}
-			if err := stream.Send(opening); err != nil {
-				t.Fatal(err)
-			}
-			exchanged, err := stream.Recv()
-			if err != nil {
-				t.Fatal(err)
-			}
-			if err := stream.Send(exchangeRequest); err != nil {
-				t.Fatal(err)
-			}
-			if err := stream.CloseSend(); err != nil {
-				t.Fatal(err)
-			}
-			if _, err := stream.Recv(); err != io.EOF {
-				t.Fatal("discovery-only node rejected learned Store", err)
-			}
-			localAdvertisement := false
-			for _, entry := range exchanged.Announcements {
-				if entry.ReplicaGroup == "discovery-only" {
-					localAdvertisement = true
-					if len(entry.StoreNames) != 0 || len(entry.StoreEndpoints) != 0 {
-						t.Fatal("discovery-only node advertised business targets", entry)
-					}
-				}
-			}
-			if !localAdvertisement {
-				t.Fatal("local directory membership missing")
-			}
-			_, port, err := net.SplitHostPort(addresses[0])
-			if err != nil {
-				t.Fatal(err)
-			}
-			applicationAddress := net.JoinHostPort(loopback, port)
-			connection, err := grpc.NewClient("passthrough:///"+applicationAddress, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithNoProxy())
-			if err != nil {
-				t.Fatal(err)
-			}
-			defer connection.Close()
-			client := pb.NewStoreServiceClient(connection)
-			resolveRequest := &pb.ResolveStoreRequest{StoreName: "records"}
-			resolved, err := client.ResolveStore(ctx, resolveRequest)
-			if err != nil || len(resolved.Endpoints) != 1 || resolved.Endpoints[0] != "business.example:7447" {
-				t.Fatal("wildcard initialization ingress did not Resolve learned targets", resolved, err)
-			}
-			if err := node.Close(ctx); err != nil {
-				t.Fatal(err)
-			}
-			for _, address := range addresses {
-				listener, err := net.Listen("tcp", address)
-				if err != nil {
-					t.Fatal("wildcard discovery-only shutdown retained a listener", err)
-				}
-				_ = listener.Close()
-			}
-		})
 	}
 }

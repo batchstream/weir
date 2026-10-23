@@ -10,7 +10,6 @@ import (
 
 	"github.com/batchstream/weir-protocol/api/protocol"
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
-	"github.com/batchstream/weir/internal/directory"
 	"github.com/batchstream/weir/internal/execution"
 	"github.com/batchstream/weir/internal/store"
 	"github.com/batchstream/weir/internal/testutil"
@@ -18,7 +17,7 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 )
 
-type peerAdapter struct {
+type recordAdapter struct {
 	name             string
 	mu               sync.Mutex
 	documents        map[string]*pb.Document
@@ -30,26 +29,26 @@ type peerAdapter struct {
 	batchSizes       []int
 }
 
-func newPeerAdapter(name string) *peerAdapter {
-	adapter := &peerAdapter{name: name, documents: make(map[string]*pb.Document), seen: make(chan context.Context, 64)}
+func newRecordAdapter(name string) *recordAdapter {
+	adapter := &recordAdapter{name: name, documents: make(map[string]*pb.Document), seen: make(chan context.Context, 64)}
 	return adapter
 }
 
-func (*peerAdapter) PrepareNative(context.Context, *pb.Command) (*execution.Plan, *pb.Failure) {
+func (*recordAdapter) PrepareNative(context.Context, *pb.Command) (*execution.Plan, *pb.Failure) {
 	return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "record fixture")
 }
 
-func (*peerAdapter) ExecuteNative(context.Context, *execution.Plan, execution.Emit) *pb.NativeEnd {
+func (*recordAdapter) ExecuteNative(context.Context, *execution.Plan, execution.Emit) *pb.NativeEnd {
 	failure := protocol.Fail(pb.FailureCode_UNSUPPORTED, "record fixture")
 	return protocol.NativeFailure(false, failure)
 }
 
-func (a *peerAdapter) PrepareRecord(ctx context.Context, record *execution.Record) (*execution.Plan, *pb.Failure) {
+func (a *recordAdapter) PrepareRecord(ctx context.Context, record *execution.Record) (*execution.Plan, *pb.Failure) {
 	plan := &execution.Plan{Command: record.Command(), Key: record.Key(), BatchKey: "records", Bytes: record.Bytes()}
 	return plan, nil
 }
 
-func (a *peerAdapter) ExecuteRecords(ctx context.Context, plans []*execution.Plan) []*pb.Event {
+func (a *recordAdapter) ExecuteRecords(ctx context.Context, plans []*execution.Plan) []*pb.Event {
 	events := make([]*pb.Event, len(plans))
 	a.mu.Lock()
 	a.batchSizes = append(a.batchSizes, len(plans))
@@ -104,11 +103,11 @@ func (a *peerAdapter) ExecuteRecords(ctx context.Context, plans []*execution.Pla
 	return events
 }
 
-func (a *peerAdapter) Close(context.Context) error { a.closed.Add(1); return nil }
+func (a *recordAdapter) Close(context.Context) error { a.closed.Add(1); return nil }
 
-func peerLocal(t *testing.T, name string) (*peerAdapter, *store.Runtime) {
+func localStore(t *testing.T, name string) (*recordAdapter, *store.Runtime) {
 	t.Helper()
-	adapter := newPeerAdapter(name)
+	adapter := newRecordAdapter(name)
 	limits := store.DefaultLimits()
 	local, err := store.New(adapter, limits)
 	if err != nil {
@@ -127,16 +126,14 @@ func peerLocal(t *testing.T, name string) (*peerAdapter, *store.Runtime) {
 	return adapter, local
 }
 
-type peerServerOptions struct {
+type testServerOptions struct {
 	stores    map[string]*store.Runtime
-	directory *directory.Directory
-	peer      bool
 	limits    Limits
 	admission *Admission
 	listener  net.Listener
 }
 
-func startPeerServer(t *testing.T, opts peerServerOptions) (*Server, string) {
+func startTestServer(t *testing.T, opts testServerOptions) (*Server, string) {
 	t.Helper()
 	if opts.limits.Stall == 0 {
 		opts.limits = DefaultLimits()
@@ -145,7 +142,7 @@ func startPeerServer(t *testing.T, opts peerServerOptions) (*Server, string) {
 	if opts.admission == nil {
 		opts.admission = NewAdmission()
 	}
-	cfg := Config{Stores: opts.stores, Directory: opts.directory, Limits: opts.limits, Admission: opts.admission, Peer: opts.peer}
+	cfg := Config{Stores: opts.stores, Limits: opts.limits, Admission: opts.admission}
 	srv, err := New(cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -171,7 +168,7 @@ func startPeerServer(t *testing.T, opts peerServerOptions) (*Server, string) {
 	return srv, listener.Addr().String()
 }
 
-func peerClient(t *testing.T, address string) (*grpc.ClientConn, pb.StoreServiceClient) {
+func testClient(t *testing.T, address string) (*grpc.ClientConn, pb.StoreServiceClient) {
 	t.Helper()
 	options := []grpc.DialOption{grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithNoProxy(), grpc.WithDisableRetry(), grpc.WithDisableServiceConfig(), grpc.WithDefaultCallOptions(grpc.MaxRetryRPCBufferSize(0), grpc.MaxCallRecvMsgSize(protocol.MaxTransportMessageBytes), grpc.MaxCallSendMsgSize(protocol.MaxTransportMessageBytes))}
 	conn, err := grpc.NewClient("passthrough:///"+address, options...)
@@ -194,9 +191,9 @@ func testMutation(value string) *pb.MutateRequest {
 	return request
 }
 
-// waitPeerIdle waits until every handler has returned and every Store holds
+// waitIdle waits until every handler has returned and every Store holds
 // no queued or running work.
-func waitPeerIdle(t *testing.T, s *Server) {
+func waitIdle(t *testing.T, s *Server) {
 	t.Helper()
 	until := time.Now().Add(3 * time.Second)
 	for {

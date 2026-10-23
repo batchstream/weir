@@ -252,7 +252,7 @@ func TestLoadUnavailableDocumentsAreRedacted(t *testing.T) {
 	if err := os.WriteFile(filename, basic, 0600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Load(filename, routingFilename); err == nil || err.Error() != "invalid listener configuration" {
+	if _, err := Load(filename, routingFilename); err == nil || err.Error() != "listeners.application requires an explicit IP and port" {
 		t.Fatal("invalid basic configuration reached routing file or leaked value", err)
 	}
 }

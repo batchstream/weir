@@ -23,7 +23,7 @@ import (
 // SDK closes.
 func TestProcessSearchCRUD(t *testing.T) {
 	backend := testsearch.Open(t)
-	binary := buildEndpointProcess(t)
+	binary := buildWeirBinary(t)
 	connection := &Search{URL: backend.URL}
 	local := &Local{Backend: BackendConfig{Search: connection}}
 	store := StoreConfig{Name: "search", Local: local}
@@ -57,10 +57,9 @@ func TestProcessSearchCRUD(t *testing.T) {
 	rejections := searchCRUDRejections(t, initial)
 	ctx, cancel := context.WithTimeout(t.Context(), time.Minute)
 	defer cancel()
-	openOptions := weirclient.OpenOptions{Seed: process.address, Stores: []string{"search"}}
-	client, err := weirclient.Open(ctx, openOptions)
+	client, err := weirclient.New(process.address)
 	if err != nil {
-		t.Fatal("SDK Resolve failed", err)
+		t.Fatal("SDK client", err)
 	}
 	t.Cleanup(func() { _ = client.Close() })
 	for _, kind := range []int{1, 0, 2, 3, 4} {

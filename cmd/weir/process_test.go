@@ -126,8 +126,7 @@ func (b *startupBackend) config() app.Config {
 	service := app.StoreConfig{Name: "records", Local: local}
 
 	cfg := app.DefaultConfig()
-	cfg.Basic.Listeners.Application, cfg.Basic.Listeners.Peer, cfg.Basic.Diagnostics.Address =
-		"127.0.0.1:0", "127.0.0.1:0", "127.0.0.1:0"
+	cfg.Basic.Listeners.Application, cfg.Basic.Diagnostics.Address = "127.0.0.1:0", "127.0.0.1:0"
 	cfg.Routing.Stores = []app.StoreConfig{service}
 	return cfg
 }
@@ -377,11 +376,12 @@ func reserveReleasedAddresses(t *testing.T, addresses []string) {
 
 func listenerAddresses(t *testing.T, line string) []string {
 	t.Helper()
-	start, end := strings.Index(line, "["), strings.Index(line, "]")
-	if !strings.HasPrefix(line, "Weir listening on ") || start < 0 || end <= start {
-		t.Fatal("invalid listener boundary", line)
+	address, found := strings.CutPrefix(line, "Weir listening on ")
+	if !found || address == "" || strings.ContainsAny(address, " []") {
+		t.Fatal("invalid listener line", line)
 	}
-	return strings.Fields(line[start+1 : end])
+	addresses := []string{address}
+	return addresses
 }
 
 func TestCLISignalDuringHandshake(t *testing.T) {
@@ -452,7 +452,6 @@ func TestCLIBasicOnlyServe(t *testing.T) {
 	}
 	cfg := app.DefaultConfig()
 	cfg.Basic.Listeners.Application = "127.0.0.1:0"
-	cfg.Basic.Listeners.Peer = "127.0.0.1:0"
 	cfg.Basic.Diagnostics.Address = "127.0.0.1:0"
 	p := startCLI(t, cfg, "cli")
 	addresses := listenerAddresses(t, p.line(t))
@@ -537,7 +536,7 @@ func beforeStartChild(config, routes string) error {
 	if err != nil {
 		return err
 	}
-	fmt.Fprintln(os.Stdout, "opened", strings.Join(node.Addresses(), " "), node.DiagnosticAddress())
+	fmt.Fprintln(os.Stdout, "opened", node.Address(), node.DiagnosticAddress())
 	<-signals.Done()
 	err = node.Start(startup)
 	drain, stopDrain := context.WithTimeout(context.Background(), 5*time.Second)

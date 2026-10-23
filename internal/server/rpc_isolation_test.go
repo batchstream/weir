@@ -24,8 +24,8 @@ func TestRPCExpiryKeepsSharedConnectionAndMutation(t *testing.T) {
 					close(gate)
 				}
 			}()
-			firstAdapter, firstStore := peerLocal(t, "records")
-			secondAdapter, secondStore := peerLocal(t, "mutations")
+			firstAdapter, firstStore := localStore(t, "records")
+			secondAdapter, secondStore := localStore(t, "mutations")
 			secondAdapter.block = gate
 			limits := DefaultLimits()
 			limits.Stall = 2 * time.Second
@@ -37,9 +37,9 @@ func TestRPCExpiryKeepsSharedConnectionAndMutation(t *testing.T) {
 			} else {
 				firstAdapter.block = gate
 			}
-			opts := peerServerOptions{stores: map[string]*store.Runtime{"records": firstStore, "mutations": secondStore}, limits: limits}
-			server, address := startPeerServer(t, opts)
-			conn, client := peerClient(t, address)
+			opts := testServerOptions{stores: map[string]*store.Runtime{"records": firstStore, "mutations": secondStore}, limits: limits}
+			server, address := startTestServer(t, opts)
+			conn, client := testClient(t, address)
 			ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
 			defer cancel()
 			firstContext := ctx
@@ -154,7 +154,7 @@ func TestRPCExpiryKeepsSharedConnectionAndMutation(t *testing.T) {
 			if _, err := second.Recv(); err != io.EOF {
 				t.Fatal(err)
 			}
-			waitPeerIdle(t, server)
+			waitIdle(t, server)
 			// A caller deadline can race an already admitted write. It must never
 			// replay that write, and the unrelated RPC keeps its confirmation.
 			if conn.GetState() != connectivity.Ready || firstAdapter.commands.Load() > 1 || secondAdapter.commands.Load() != 1 {

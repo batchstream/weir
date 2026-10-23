@@ -12,8 +12,8 @@ func TestConnectionOpeningUsesConfiguredHandshakeTimeout(t *testing.T) {
 	limits := DefaultLimits()
 	limits.Handshake = 500 * time.Millisecond
 	limits.Stall = 20 * time.Millisecond
-	opts := peerServerOptions{limits: limits}
-	_, address := startPeerServer(t, opts)
+	opts := testServerOptions{limits: limits}
+	_, address := startTestServer(t, opts)
 	client, err := net.Dial("tcp", address)
 	if err != nil {
 		t.Fatal(err)

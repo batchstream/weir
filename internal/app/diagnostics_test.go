@@ -67,7 +67,7 @@ func TestDiagnosticsLifecycleIsolationAndNoSyntheticExecutions(t *testing.T) {
 	if health(t, n, "/readyz") != 200 || health(t, n, "/livez") != 200 {
 		t.Fatal("not serving")
 	}
-	conn, err := grpc.NewClient("passthrough:///"+n.Addresses()[0], grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithNoProxy(), grpc.WithDisableRetry())
+	conn, err := grpc.NewClient("passthrough:///"+n.Address(), grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithNoProxy(), grpc.WithDisableRetry())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -156,7 +156,7 @@ func TestDiagnosticsInputCardinalityAndNoSecrets(t *testing.T) {
 	n := diagnosticNode(t)
 	n.Start(context.Background())
 	before := testmetrics.Scrape(t, n.DiagnosticAddress())
-	conn, err := grpc.NewClient("passthrough:///"+n.Addresses()[0], grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithNoProxy())
+	conn, err := grpc.NewClient("passthrough:///"+n.Address(), grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithNoProxy())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -424,7 +424,7 @@ func TestDiagnosticsDisabledAndFatalListenerReadiness(t *testing.T) {
 	_ = disabled.Close(context.Background())
 	n := diagnosticNode(t)
 	n.Start(context.Background())
-	_ = n.endpoints[0].listener.Close()
+	_ = n.listener.Close()
 	select {
 	case <-n.Errors:
 	case <-time.After(time.Second):

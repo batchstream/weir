@@ -2,23 +2,15 @@
 # Loading, syntax and runtime semantics: ../docs/configuration.md
 # Omit optional fields for defaults. Changes require a restart.
 
-# Application business/Resolve and peer directory listeners.
-# Required: yes, at least one child address must be nonempty. Default: both disabled.
-# Nodes hosting local Stores must enable application.
+# Business listener serving StoreService for every Store this process hosts.
 listeners:
-  # Address for SDK Resolve initialization and local business traffic.
-  # Required: one of application/peer. Default: "" (disabled).
+  # Address clients connect to.
+  # Required: yes.
   # Allowed: explicit IPv4:port or [IPv6]:port, port 0..65535; no DNS/URL syntax.
   # Port 0 requests a random port. Use a fixed port for normal deployments.
-  # A wildcard bind (0.0.0.0 or ::) hosting Stores needs discovery.advertise.
+  # Must not overlap the diagnostic listener, including an unspecified address
+  # and a specific IP on the same port.
   application: "127.0.0.1:7447"
-
-  # Address for directory synchronization between Weir nodes.
-  # Required: one of application/peer. Default: "" (disabled).
-  # Allowed: the same IP:port format as application. Nonzero listener addresses
-  # must not overlap, including an unspecified address and a specific IP.
-  # A wildcard peer bind needs discovery.peer_address or peer_address_env.
-  peer: ""
 
 # Independent HTTP diagnostics: /livez, /readyz and /metrics.
 # Required: no. Default: disabled until address is set.
@@ -62,64 +54,10 @@ transport:
   # Connection health checks; independent of RPC progress and caller deadlines.
   keepalive:
     # Send a gRPC ping after this interval without connection activity.
-    # Default: 30s; duration >=1s (gRPC native minimum). Applies to both listeners.
+    # Default: 30s; duration >=1s (gRPC native minimum).
     interval: 30s
     # Wait for that ping's acknowledgement. Default: 5s; positive duration.
     timeout: 5s
-
-# Optional peer directory configuration. Uncomment this block when needed.
-# The defaults below keep a standalone node without explicit advertisements.
-# Enable listeners.peer before setting peer_address, peer_address_env or seeds.
-# discovery:
-#   # Local announcement lifetime. Default: 60s; positive whole milliseconds.
-#   # Must exceed 2 * sync_timeout + sync_interval, covering peer and seed exchange.
-#   lease: 60s
-#
-#   # One cadence for local lease renewal, peer synchronization and seed discovery.
-#   # Default: 1s; positive duration.
-#   sync_interval: 1s
-#
-#   # Deadline of each peer exchange. Default: 2s; positive duration.
-#   sync_timeout: 2s
-#
-#   # Stable identity of replicas serving equivalent local Store definitions.
-#   # Required: no. Default: "" (a new random standalone group at startup).
-#   # Allowed: nonempty printable ASCII without spaces, or "" for default.
-#   # Example: "catalog". Set the same explicit value on equivalent replicas.
-#   group: ""
-#
-#   # Reachable peer address advertised to other nodes, distinct from the bind.
-#   # Required: for a wildcard peer listener unless peer_address_env is set.
-#   # Default: "" (use the concrete bound peer address when peer is enabled).
-#   # Allowed: IPv4:port, [IPv6]:port or DNS:port, port 1..65535.
-#   # No URL/resolver prefixes, wildcard/multicast IPs or IPv6 zone identifiers.
-#   # Example: "node-a.example:7448". Requires listeners.peer to be enabled.
-#   # Mutually exclusive with peer_address_env.
-#   peer_address: ""
-#
-#   # Environment variable supplying the complete advertised peer host:port.
-#   # Required: no. Default: "" (do not read an environment variable).
-#   # Allowed: ASCII letters, digits or underscores, starting with a
-#   # letter or underscore. Example: "WEIR_PEER_ADDRESS".
-#   # Its value must satisfy peer_address and be present at Load/check time.
-#   # Mutually exclusive with peer_address; no other string is expanded.
-#   peer_address_env: ""
-#
-#   # Initial peer endpoints used to learn and synchronize the Store directory.
-#   # Required: no. Default: [] (no bootstrap peers).
-#   # Allowed: unique endpoints with the same format as peer_address.
-#   # DNS case, trailing dot and port spelling are normalized for duplicates.
-#   # Example: ["seed.example:7448"]. Requires listeners.peer to be enabled.
-#   # These are peer endpoints, not backend or application endpoints.
-#   seeds: []
-#
-#   # Application endpoints returned to SDK clients for locally hosted Stores.
-#   # Required: when hosting Stores on a wildcard application listener.
-#   # Default: [] (advertise the concrete bound application address for Stores).
-#   # Allowed: unique endpoints with the same format as peer_address.
-#   # Example: ["catalog.example:7447", "192.0.2.10:7447"]. Advertise addresses
-#   # reachable by clients; a shared DNS name can identify multiple replicas.
-#   advertise: []
 
 # Process lifecycle deadlines, independent of business request contexts.
 lifecycle:

@@ -1,8 +1,6 @@
 package app
 
 import (
-	"slices"
-
 	"github.com/batchstream/weir/internal/backend"
 	"github.com/batchstream/weir/internal/backend/mongodb"
 	"github.com/batchstream/weir/internal/server"
@@ -34,8 +32,6 @@ func (cfg RoutingConfig) Validate() error {
 }
 
 func (cfg BasicConfig) resolved() BasicConfig {
-	cfg.Discovery.Seeds = slices.Clone(cfg.Discovery.Seeds)
-	cfg.Discovery.Advertise = slices.Clone(cfg.Discovery.Advertise)
 	if cfg.Transport.MaxPendingRecords == 0 {
 		cfg.Transport.MaxPendingRecords = server.DefaultLimits().MaxPendingRecords
 	}

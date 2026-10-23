@@ -230,7 +230,7 @@ func serveContext(ctx context.Context, cfg app.Config, output io.Writer) (result
 	}
 	stop()
 
-	_, err = fmt.Fprintf(output, "Weir listening on %v; local execution and peer directory discovery\n", node.Addresses())
+	_, err = fmt.Fprintf(output, "Weir listening on %s\n", node.Address())
 	if err != nil {
 		return errors.New("listener output failed")
 	}

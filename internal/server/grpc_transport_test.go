@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
-	peerpb "github.com/batchstream/weir/internal/api/peer/v1"
 	"github.com/batchstream/weir/internal/store"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -13,13 +12,13 @@ import (
 )
 
 func TestTapAdmitsOnlyServedMethodsWhileAccepting(t *testing.T) {
-	_, local := peerLocal(t, "records")
-	opts := peerServerOptions{stores: map[string]*store.Runtime{"records": local}}
-	server, _ := startPeerServer(t, opts)
+	_, local := localStore(t, "records")
+	opts := testServerOptions{stores: map[string]*store.Runtime{"records": local}}
+	server, _ := startTestServer(t, opts)
 	execute := &tap.Info{FullMethodName: pb.StoreService_Execute_FullMethodName}
-	peer := &tap.Info{FullMethodName: peerpb.PeerDiscoveryService_SyncDirectory_FullMethodName}
-	if _, err := server.admitRPC(t.Context(), peer); status.Code(err) != codes.Unimplemented {
-		t.Fatal("application listener admitted a peer method", err)
+	unknown := &tap.Info{FullMethodName: "/weir.v1.StoreService/Other"}
+	if _, err := server.admitRPC(t.Context(), unknown); status.Code(err) != codes.Unimplemented {
+		t.Fatal("listener admitted an unserved method", err)
 	}
 	accepted, err := server.admitRPC(t.Context(), execute)
 	if err != nil {
