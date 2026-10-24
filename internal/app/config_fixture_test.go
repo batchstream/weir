@@ -1,6 +1,7 @@
 package app
 
 import (
+	"io"
 	"net/url"
 	"os"
 	"testing"
@@ -52,4 +53,14 @@ func writeConfigFile(t *testing.T, filename string, cfg Config, mode os.FileMode
 	if err := os.WriteFile(filename, raw, mode); err != nil {
 		t.Fatal(err)
 	}
+}
+
+// Decode reads one configuration document and validates it without IO, so a
+// document naming credential files fails validation.
+func Decode(input io.Reader) (Config, error) {
+	cfg, err := decode(input)
+	if err != nil {
+		return cfg, err
+	}
+	return cfg, cfg.Validate()
 }

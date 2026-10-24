@@ -83,7 +83,7 @@ func TestConcurrentRPCExecutionPolicy(t *testing.T) {
 			endpoint := httptest.NewServer(handler)
 			t.Cleanup(endpoint.Close)
 			definition := searchFixtureStore("records", endpoint.URL)
-			definition.Batching = Batching{MaxOperations: 1, MaxInFlight: test.maxInFlight}
+			definition.Batching = Batching{MaxOperations: 1, MaxInFlight: Count(test.maxInFlight)}
 			cfg := emptyConfig(t)
 			cfg.Stores = []StoreConfig{definition}
 			ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)

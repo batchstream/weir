@@ -120,7 +120,7 @@ Confirmed write evidence remains valid.
 
 ## Lifecycle
 
-Startup loads the configuration file, qualifies local backends and binds
+Startup loads the configuration file, then qualifies local backends and binds
 listeners within 30s. Partial startup closes already owned resources.
 Diagnostics readiness tracks lifecycle rather than backend health or Store load.
 

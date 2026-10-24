@@ -15,13 +15,14 @@ weir serve --config weir.yaml
 directory. Relative credential and CA paths inside the file resolve from the
 file's own directory. Changes require a restart.
 
-The file is one YAML document. Unknown and duplicate keys are rejected. Durations
-require units such as `ms`, `s` or `m`; byte sizes use integer `B`, `KiB`, `MiB`
-or `GiB` units. Strings are literal; no field reads environment variables.
+The file is one YAML document. Unknown and duplicate keys and null Store entries
+are rejected. Counts are YAML integers. Durations require units such as `ms`, `s`
+or `m`; byte sizes use integer `B`, `KiB`, `MiB` or `GiB` units. Strings are literal; no field reads environment variables.
 Omitted fields and zero values select the defaults.
 
 `check` runs the same validation as `serve` without binding listeners, resolving
-DNS or connecting to backends. It reads credential files but not CA files.
+DNS or connecting to backends. It validates the whole file before reading
+credential files, and does not read CA files.
 Validation errors never include configuration values.
 
 ## Process settings

@@ -29,6 +29,21 @@ func (value *Duration) UnmarshalYAML(node *yaml.Node) error {
 	return nil
 }
 
+// Count is a YAML integer; fractional and quoted values are rejected.
+type Count int
+
+func (value *Count) UnmarshalYAML(node *yaml.Node) error {
+	if node.Kind != yaml.ScalarNode || node.ShortTag() != "!!int" {
+		return errors.New("count requires an integer")
+	}
+	var parsed int
+	if err := node.Decode(&parsed); err != nil {
+		return errors.New("invalid count")
+	}
+	*value = Count(parsed)
+	return nil
+}
+
 // ByteSize is an integer byte count encoded with an explicit binary unit.
 type ByteSize uint64
 

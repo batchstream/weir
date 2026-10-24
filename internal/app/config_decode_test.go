@@ -67,6 +67,8 @@ func TestBatchingReachesRuntimeAndAdapter(t *testing.T) {
 		"    batching:\n      max_bytes: 1024\n",
 		"    batching:\n      max_wait: 5\n",
 		"    batching:\n      max_bytes: 9223372036854775808B\n",
+		"    batching:\n      max_operations: 1.5\n",
+		"    batching:\n      max_in_flight: 0.9\n",
 	} {
 		if _, err := Decode(strings.NewReader(searchDocument + fragment)); err == nil {
 			t.Fatal("invalid batching accepted", fragment)
@@ -80,8 +82,11 @@ func TestDecodeIsStrict(t *testing.T) {
 		"[]",
 		"secret-sentinel",
 		"unknown-secret-sentinel: value\n" + searchDocument,
-		strings.Replace(searchDocument, "url:", "retry_attempts: 5\n      url:", 1),
-		strings.Replace(searchDocument, "    search:", "    backend: {}\n    search:", 1),
+		strings.Replace(searchDocument, "url:", "unknown_option: 5\n      url:", 1),
+		strings.Replace(searchDocument, "    search:", "    unknown_block: {}\n    search:", 1),
+		searchDocument + "  - null\n",
+		searchDocument + "  -\n",
+		"listeners:\n  application: 127.0.0.1:0\nstores: [~]\n",
 		searchDocument + "listeners:\n  application: 127.0.0.1:1\n",
 		searchDocument + "---\n{}\n",
 		"shutdown_timeout: 5\n" + searchDocument,
@@ -119,7 +124,8 @@ func (configErrorReader) Read([]byte) (int, error) {
 }
 
 func TestReadErrorsAreRedacted(t *testing.T) {
-	if _, err := Decode(configErrorReader{}); err == nil || err.Error() != "configuration unavailable" {
+	reader := configErrorReader{}
+	if _, err := Decode(reader); err == nil || err.Error() != "configuration unavailable" {
 		t.Fatal("reader error leaked input", err)
 	}
 	filename := filepath.Join(t.TempDir(), "missing-secret-sentinel.yaml")

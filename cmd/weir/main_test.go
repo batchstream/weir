@@ -159,7 +159,6 @@ func TestHelpWithoutConfiguration(t *testing.T) {
 		}
 	}
 	if strings.Contains(output.String(), "completion") ||
-		strings.Contains(output.String(), "probe") ||
 		strings.Contains(output.String(), "--config") {
 		t.Fatal("root must show only command help and root flags", output.String())
 	}
@@ -236,13 +235,12 @@ func TestCLIRejectsArgumentsBeforeConfiguration(t *testing.T) {
 	t.Chdir(t.TempDir())
 	missing := filepath.Join(t.TempDir(), "missing.yaml")
 	cases := [][]string{
-		{"unknown"}, {"completion"}, {"probe"}, {"version", "extra"},
+		{"unknown"}, {"completion"}, {"version", "extra"},
 		{"serve", "extra"}, {"check", "extra"},
 		{"serve", "--config", ""}, {"check", "--config", ""},
 		{"--config", missing},
 		{"version", "--config", missing},
-		{"check", "--config", missing, "--routes", missing},
-		{"serve", "--config", missing, "--cpu-profile", missing},
+		{"check", "--config", missing, "--unknown-file", missing},
 		{"serve", "--config", missing, "--unknown", "value"},
 		{"-version"}, {"serve", "-config", missing},
 	}

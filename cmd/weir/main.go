@@ -90,7 +90,8 @@ func run(args []string, output io.Writer) error {
 
 func load(filename string) (app.Config, error) {
 	if filename == "" {
-		return app.Config{}, errors.New("--config requires a file")
+		var empty app.Config
+		return empty, errors.New("--config requires a file")
 	}
 	return app.Load(filename)
 }

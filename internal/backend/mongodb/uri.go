@@ -61,14 +61,6 @@ func parseConfig(cfg Config) (connectionProfile, error) {
 	return profile, nil
 }
 
-// ValidateURI checks only the pure URI profile, including its authentication
-// options, before credential-file resolution. It does not validate a Store,
-// connection settings, actual credentials or a CA path; use ValidateConfig too.
-func ValidateURI(raw string) error {
-	_, err := parseURI(raw)
-	return err
-}
-
 func parseURI(raw string) (connectionProfile, error) {
 	var profile connectionProfile
 	if len(raw) == 0 || len(raw) > maxMongoURIBytes || strings.TrimSpace(raw) != raw || !strings.HasPrefix(raw, "mongodb://") {

@@ -15,7 +15,7 @@ listeners:
 
 # Drain admitted work for up to this long after SIGTERM before cancelling it.
 # Each Store then gets a fixed 2s to cancel remaining work, end MongoDB
-# sessions and close connections. Optional. Default: 5s; positive duration.
+# sessions and close connections. Optional; omitted or 0s selects 5s.
 shutdown_timeout: 5s
 
 # Stores this process hosts. Optional; default none. Names are unique.

@@ -61,10 +61,10 @@ type Credentials struct {
 // values select the defaults; MaxWait is a pointer so an explicit 0s disables
 // collection.
 type Batching struct {
-	MaxOperations int       `yaml:"max_operations,omitempty"`
+	MaxOperations Count     `yaml:"max_operations,omitempty"`
 	MaxBytes      ByteSize  `yaml:"max_bytes,omitempty"`
 	MaxWait       *Duration `yaml:"max_wait,omitempty"`
-	MaxInFlight   int       `yaml:"max_in_flight,omitempty"`
+	MaxInFlight   Count     `yaml:"max_in_flight,omitempty"`
 }
 
 const defaultShutdownTimeout = 5 * time.Second
@@ -79,17 +79,57 @@ func (cfg Config) shutdownTimeout() time.Duration {
 // Validate checks the configuration without performing IO. Credential files
 // must already be resolved, as Load does.
 func (cfg Config) Validate() error {
+	if err := cfg.validateShape(); err != nil {
+		return err
+	}
+	for _, definition := range cfg.Stores {
+		if c := definition.Authentication; c != nil && (c.UsernameFile != "" || c.PasswordFile != "") {
+			return errors.New("unresolved credential file")
+		}
+		if err := definition.validateBackend(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validateShape checks everything except credential file contents, so Load
+// rejects an invalid configuration before it reads any credential file.
+func (cfg Config) validateShape() error {
 	if err := cfg.Listeners.validate(); err != nil {
 		return err
 	}
 	if cfg.ShutdownTimeout < 0 {
 		return errors.New("shutdown_timeout must not be negative")
 	}
-	if err := cfg.validateSources(); err != nil {
-		return err
-	}
+	names := make(map[string]bool, len(cfg.Stores))
 	for _, definition := range cfg.Stores {
-		if err := definition.validate(); err != nil {
+		if !protocol.ValidStoreName(definition.Name) || names[definition.Name] {
+			return errors.New("invalid or duplicate Store name")
+		}
+		names[definition.Name] = true
+		if (definition.MongoDB == nil) == (definition.Search == nil) {
+			return errors.New("Store requires exactly one of mongodb or search")
+		}
+		if err := definition.runtimeLimits().Validate(); err != nil {
+			return err
+		}
+		standIn := definition
+		if c := definition.Authentication; c != nil {
+			if err := c.validateSources(); err != nil {
+				return err
+			}
+			// File sources stand in for their values until Load reads them.
+			sources := *c
+			if sources.UsernameFile != "" {
+				sources.Username, sources.UsernameFile = "file", ""
+			}
+			if sources.PasswordFile != "" {
+				sources.Password, sources.PasswordFile = "file", ""
+			}
+			standIn.Authentication = &sources
+		}
+		if err := standIn.validateBackend(); err != nil {
 			return err
 		}
 	}
@@ -126,39 +166,7 @@ func address(value string) bool {
 		portErr == nil && number >= 0 && number <= 65535
 }
 
-// validateSources checks Store identities, backend URIs and credential
-// sources: everything Load must trust before it reads any credential file.
-func (cfg Config) validateSources() error {
-	names := make(map[string]bool, len(cfg.Stores))
-	for _, definition := range cfg.Stores {
-		if !protocol.ValidStoreName(definition.Name) || names[definition.Name] {
-			return errors.New("invalid or duplicate Store name")
-		}
-		names[definition.Name] = true
-		if (definition.MongoDB == nil) == (definition.Search == nil) {
-			return errors.New("Store requires exactly one of mongodb or search")
-		}
-		if definition.MongoDB != nil {
-			if err := mongodb.ValidateURI(definition.MongoDB.URI); err != nil {
-				return err
-			}
-		}
-		if credentials := definition.Authentication; credentials != nil {
-			if err := credentials.validateSources(); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
-}
-
-func (definition StoreConfig) validate() error {
-	if err := definition.runtimeLimits().Validate(); err != nil {
-		return err
-	}
-	if c := definition.Authentication; c != nil && (c.UsernameFile != "" || c.PasswordFile != "") {
-		return errors.New("unresolved credential file")
-	}
+func (definition StoreConfig) validateBackend() error {
 	if definition.MongoDB != nil {
 		return mongodb.ValidateConfig(definition.mongoConfig())
 	}
@@ -169,7 +177,7 @@ func (definition StoreConfig) runtimeLimits() store.Limits {
 	limits := store.DefaultLimits()
 	b := definition.Batching
 	if b.MaxOperations != 0 {
-		limits.BatchOperations = b.MaxOperations
+		limits.BatchOperations = int(b.MaxOperations)
 	}
 	if b.MaxBytes != 0 {
 		limits.BatchBytes = boundedSize(b.MaxBytes)
@@ -178,7 +186,7 @@ func (definition StoreConfig) runtimeLimits() store.Limits {
 		limits.BatchWait = time.Duration(*b.MaxWait)
 	}
 	if b.MaxInFlight != 0 {
-		limits.MaxInFlight = b.MaxInFlight
+		limits.MaxInFlight = int(b.MaxInFlight)
 	}
 	return limits
 }

@@ -2,7 +2,9 @@
 
 ## Health and deployment
 
-Enable an independent diagnostics listener, usually on loopback:
+Enable an independent diagnostics listener. Kubernetes HTTP probes connect to
+the Pod address, so bind it on `[::]` or the Pod IP there and restrict access with
+network policy; elsewhere loopback is enough:
 
 ```yaml
 listeners:

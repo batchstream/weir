@@ -46,6 +46,28 @@ func writeCredentialTestDocument(t *testing.T, cfg Config) string {
 	return filename
 }
 
+func TestLoadRejectsInvalidConfigurationBeforeCredentialFiles(t *testing.T) {
+	cases := map[string]func(*Config){
+		"listener": func(cfg *Config) { cfg.Listeners.Application = "localhost:1" },
+		"shutdown": func(cfg *Config) { cfg.ShutdownTimeout = Duration(-1) },
+		"batching": func(cfg *Config) { cfg.Stores[0].Batching.MaxOperations = -1 },
+		"url":      func(cfg *Config) { cfg.Stores[0].Search.URL = "https://127.0.0.1" },
+		"https":    func(cfg *Config) { cfg.Stores[0].Search.URL = "http://127.0.0.1:9200" },
+	}
+	for name, invalidate := range cases {
+		t.Run(name, func(t *testing.T) {
+			cfg := credentialTestConfig(t, "search")
+			credentials := cfg.Stores[0].Authentication
+			credentials.Username, credentials.UsernameFile = "", "missing-secret-sentinel.txt"
+			invalidate(&cfg)
+			_, err := Load(writeCredentialTestDocument(t, cfg))
+			if err == nil || err.Error() == "credential file unavailable" || strings.Contains(err.Error(), "sentinel") {
+				t.Fatal("invalid configuration must fail before credential file IO", err)
+			}
+		})
+	}
+}
+
 func TestCredentialConfigurationUsesSharedAuthentication(t *testing.T) {
 	for _, backend := range []string{"mongodb", "search"} {
 		t.Run(backend, func(t *testing.T) {
@@ -513,7 +535,8 @@ func TestLoadRejectsLaterMongoURIBeforeEarlierCredentialIO(t *testing.T) {
 		later := credentialTestConfig(t, "mongodb")
 		later.Stores[0].MongoDB.URI = uri
 		cfg.Stores = append(cfg.Stores, later.Stores[0])
-		want := mongodb.ValidateURI(uri)
+		uriOnly := mongodb.Config{Store: "mongo", URI: uri}
+		want := mongodb.ValidateConfig(uriOnly)
 		if want == nil {
 			t.Fatal("negative URI test is not invalid")
 		}
