@@ -23,9 +23,9 @@ import (
 
 func secureNode(t *testing.T, cfg Config) *Node {
 	t.Helper()
-	filename := filepath.Join(t.TempDir(), "node.yaml")
-	routingFilename := writeConfigFiles(t, filename, cfg, 0600)
-	cfg, err := Load(filename, routingFilename)
+	filename := filepath.Join(t.TempDir(), "weir.yaml")
+	writeConfigFile(t, filename, cfg, 0600)
+	cfg, err := Load(filename)
 	if err != nil {
 		t.Fatal("owned config load failed")
 	}
@@ -51,7 +51,7 @@ func TestMongoTLSApplicationAssemblyAllOperations(t *testing.T) {
 		t.Skip("secure profile opt-in")
 	}
 	fixture := testmongo.OpenSecure(t)
-	mongo := mongoFixtureConfig(t, fixture.URI)
+	mongo := mongoFixtureStore(t, "mongo", fixture.URI)
 	valueDirectory := t.TempDir()
 	mongo.Authentication.UsernameFile = filepath.Join(valueDirectory, "username")
 	mongo.Authentication.PasswordFile = filepath.Join(valueDirectory, "password")
@@ -63,12 +63,8 @@ func TestMongoTLSApplicationAssemblyAllOperations(t *testing.T) {
 	}
 	mongo.Authentication.Username, mongo.Authentication.Password = "", ""
 
-	local := &Local{Backend: mongo}
-	service := StoreConfig{Name: "mongo", Local: local}
-
-	cfg := DefaultConfig()
-	cfg.Basic.Listeners.Application = "127.0.0.1:0"
-	cfg.Routing.Stores = []StoreConfig{service}
+	cfg := emptyConfig(t)
+	cfg.Stores = []StoreConfig{mongo}
 
 	node := secureNode(t, cfg)
 	const name = "direct"
@@ -185,20 +181,18 @@ func TestMongoTLSApplicationAssemblyAllOperations(t *testing.T) {
 	if bson.Raw(response).Lookup("ok").AsInt64() != 1 {
 		t.Fatal("Native lost response")
 	}
-	t.Log("production basic/routing YAML Load/Open: CRUD, conflict/missing, opaque int64, expression, batch mutation, Native End/EOF passed")
+	t.Log("production YAML Load/Open: CRUD, conflict/missing, opaque int64, expression, batch mutation, Native End/EOF passed")
 }
 
 // recordsStoreConfig hosts one unbatched MongoDB Store named records on local
 // listeners.
 func recordsStoreConfig(t *testing.T, uri string) Config {
-	backend := mongoFixtureConfig(t, uri)
-	local := &Local{Backend: backend, Batching: BatchingConfig{MaxOperations: 1}}
-	service := StoreConfig{Name: "records", Local: local}
+	service := mongoFixtureStore(t, "records", uri)
+	service.Batching.MaxOperations = 1
 
-	config := DefaultConfig()
-	config.Basic.Listeners.Application = "127.0.0.1:0"
-	config.Basic.Diagnostics.Address = "127.0.0.1:0"
-	config.Routing.Stores = []StoreConfig{service}
+	config := emptyConfig(t)
+	config.Listeners.Diagnostics = "127.0.0.1:0"
+	config.Stores = []StoreConfig{service}
 
 	return config
 }

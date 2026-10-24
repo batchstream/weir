@@ -23,7 +23,7 @@ func TestCanceledOpenAndValidationPrecedence(t *testing.T) {
 		t.Fatal("canceled Open acquired a node", node, err)
 	}
 
-	cfg.Basic.Listeners.Application = "invalid-listener"
+	cfg.Listeners.Application = "invalid-listener"
 	if node, err := Open(ctx, cfg); node != nil || err == nil || errors.Is(err, context.Canceled) {
 		t.Fatal("cancellation hid a real configuration failure", node, err)
 	}
@@ -32,7 +32,7 @@ func TestCanceledOpenAndValidationPrecedence(t *testing.T) {
 func TestCanceledStartNeverReadyAndClosesOnce(t *testing.T) {
 	for _, concurrent := range []bool{false, true} {
 		cfg := emptyConfig(t)
-		cfg.Basic.Diagnostics.Address = "127.0.0.1:0"
+		cfg.Listeners.Diagnostics = "127.0.0.1:0"
 		node, err := Open(context.Background(), cfg)
 		if err != nil {
 			t.Fatal(err)
@@ -79,7 +79,7 @@ func TestCanceledStartNeverReadyAndClosesOnce(t *testing.T) {
 
 func TestCloseBeforeStartNeverPublishesServingResources(t *testing.T) {
 	cfg := emptyConfig(t)
-	cfg.Basic.Diagnostics.Address = "127.0.0.1:0"
+	cfg.Listeners.Diagnostics = "127.0.0.1:0"
 	node, err := Open(t.Context(), cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -178,7 +178,7 @@ func TestDrainingListenerReportsPreserveShutdownState(t *testing.T) {
 
 func TestCloseJoinsListenerReports(t *testing.T) {
 	cfg := emptyConfig(t)
-	cfg.Basic.Diagnostics.Address = "127.0.0.1:0"
+	cfg.Listeners.Diagnostics = "127.0.0.1:0"
 	node, err := Open(context.Background(), cfg)
 	if err != nil {
 		t.Fatal(err)

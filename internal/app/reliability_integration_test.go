@@ -29,19 +29,16 @@ type reliabilityProbe struct {
 	native   *pb.NativeRequest
 }
 
-func reliabilityConfig(backend BackendConfig) Config {
-	local := &Local{Backend: backend}
-	definition := StoreConfig{Name: "records", Local: local}
-	cfg := DefaultConfig()
-	cfg.Basic.Listeners.Application = "127.0.0.1:0"
-	cfg.Routing.Stores = []StoreConfig{definition}
+func reliabilityConfig(t *testing.T, definition StoreConfig) Config {
+	t.Helper()
+	cfg := emptyConfig(t)
+	cfg.Stores = []StoreConfig{definition}
 	return cfg
 }
 
 func TestMongoLowLoadBusinessReliability(t *testing.T) {
 	fixture := testmongo.Open(t)
-	backend := mongoFixtureConfig(t, fixture.URI)
-	cfg := reliabilityConfig(backend)
+	cfg := reliabilityConfig(t, mongoFixtureStore(t, "records", fixture.URI))
 	node := secureNode(t, cfg)
 	filter := bson.D{{Key: "_id", Value: "probe"}}
 	command := bson.D{{Key: "find", Value: "records"}, {Key: "filter", Value: filter}, {Key: "limit", Value: 1}, {Key: "singleBatch", Value: true}}
@@ -66,9 +63,7 @@ func TestMongoLowLoadBusinessReliability(t *testing.T) {
 
 func TestSearchLowLoadBusinessReliability(t *testing.T) {
 	fixture := testsearch.Open(t)
-	search := &Search{URL: fixture.URL}
-	backend := BackendConfig{Search: search}
-	cfg := reliabilityConfig(backend)
+	cfg := reliabilityConfig(t, searchFixtureStore("records", fixture.URL))
 	node := secureNode(t, cfg)
 	request, err := http.NewRequest(http.MethodGet, "http://weir.invalid/"+fixture.Index+"/_doc/probe", nil)
 	if err != nil {

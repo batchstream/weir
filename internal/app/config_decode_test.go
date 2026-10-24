@@ -2,7 +2,6 @@ package app
 
 import (
 	"errors"
-	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -11,163 +10,109 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
-	"go.yaml.in/yaml/v3"
+	"github.com/batchstream/weir/internal/store"
 )
 
-func TestDecodeBasicDefaultsAndListenerRequirement(t *testing.T) {
-	input := "listeners:\n  application: 127.0.0.1:0\n"
-	cfg, err := DecodeBasic(strings.NewReader(input))
+const searchDocument = `listeners:
+  application: 127.0.0.1:0
+stores:
+  - name: records
+    search:
+      url: http://127.0.0.1:9200
+`
+
+func TestDecodeAppliesDefaults(t *testing.T) {
+	cfg, err := Decode(strings.NewReader(searchDocument))
 	if err != nil {
 		t.Fatal(err)
 	}
-	defaults := DefaultConfig().Basic
-	if cfg.Transport != defaults.Transport || defaults.Listeners.Application != "" {
-		t.Fatal("process defaults changed")
+	if cfg.shutdownTimeout() != 5*time.Second || cfg.Listeners.Diagnostics != "" {
+		t.Fatal("omitted settings did not select their defaults", cfg)
 	}
-	input = "{}\n"
-	if _, err := DecodeBasic(strings.NewReader(input)); err == nil {
-		t.Fatal("missing listeners accepted")
+	limits := cfg.Stores[0].runtimeLimits()
+	if limits != store.DefaultLimits() {
+		t.Fatal("omitted batching did not select the Store defaults", limits)
 	}
-	defaults.Listeners.Application = "127.0.0.1:0"
-	if err := defaults.Validate(); err != nil {
-		t.Fatal("runtime basic configuration rejected a listener", err)
+	if _, err := Decode(strings.NewReader("stores: []\n")); err == nil {
+		t.Fatal("missing application listener accepted")
 	}
 }
 
-func TestStrictConfigurationDocuments(t *testing.T) {
-	cfg := credentialTestConfig(t, "search")
-	basic, err := yaml.Marshal(cfg.Basic)
+func TestBatchingReachesRuntimeAndAdapter(t *testing.T) {
+	input := searchDocument + `    batching:
+      max_operations: 7
+      max_bytes: 1KiB
+      max_wait: 0s
+      max_in_flight: 3
+`
+	cfg, err := Decode(strings.NewReader(input))
 	if err != nil {
 		t.Fatal(err)
 	}
-	routing, err := yaml.Marshal(cfg.Routing)
-	if err != nil {
-		t.Fatal(err)
+	definition := cfg.Stores[0]
+	limits := definition.runtimeLimits()
+	if limits.BatchOperations != 7 || limits.BatchBytes != 1024 || limits.BatchWait != 0 || limits.MaxInFlight != 3 {
+		t.Fatal("explicit batching did not reach the Store runtime", limits)
 	}
-	for _, document := range []string{"basic", "routing"} {
-		t.Run(document, func(t *testing.T) {
-			raw := string(basic)
-			duplicate := "MEMORY: 512MiB\n"
-			crossField := "stores: []\n"
-			nestedDuplicate := strings.Replace(raw, "stall: 30s", "stall: 30s\n    STALL: 30s", 1)
-			if document == "routing" {
-				raw = string(routing)
-				duplicate = "STORES: []\n"
-				crossField = "listeners: {}\n"
-				nestedDuplicate = strings.Replace(raw, "max_operations: 0", "max_operations: 0\n      MAX_OPERATIONS: 0", 1)
-			}
-			var decodeErr error
-			if document == "basic" {
-				_, decodeErr = DecodeBasic(strings.NewReader(raw))
-			} else {
-				_, decodeErr = DecodeRouting(strings.NewReader(raw))
-			}
-			if decodeErr != nil {
-				t.Fatal("valid document rejected", decodeErr)
-			}
-			inputs := []string{
-				"", "null", "[]", "true", "2", "secret-sentinel", "{", "{]",
-				"unknown-secret-sentinel: value\n" + raw,
-				duplicate + raw,
-				"ſtores: []\n" + string(routing),
-				crossField + raw,
-				nestedDuplicate,
-				raw + "---\n{}\n",
-				raw + "---\nnull\n",
-				raw + "---\n",
-				raw + "garbage\n",
-				"unexpected: " + strings.Repeat("[", 12) + "0" + strings.Repeat("]", 12) + "\n" + raw,
-				"1: value\n" + raw,
-				"? [a, b]\n: value\n" + raw,
-				"<<: {}\n" + raw,
-				"'<<': {}\n" + raw,
-				"unexpected: &secret-sentinel value\n" + raw,
-				"unexpected: &a [*a]\n" + raw,
-				"unexpected: !secret-sentinel value\n" + raw,
-				"unexpected: !!str secret-sentinel\n" + raw,
-				"!!map\n" + raw,
-			}
-			for i, input := range inputs {
-				if document == "basic" {
-					_, decodeErr = DecodeBasic(strings.NewReader(input))
-				} else {
-					_, decodeErr = DecodeRouting(strings.NewReader(input))
-				}
-				if decodeErr == nil || strings.Contains(decodeErr.Error(), "sentinel") {
-					t.Fatal("invalid document accepted or error leaked input", i, decodeErr)
-				}
-			}
-			large := raw + strings.Repeat(" ", 256<<10)
-			if document == "basic" {
-				_, decodeErr = DecodeBasic(strings.NewReader(large))
-			} else {
-				_, decodeErr = DecodeRouting(strings.NewReader(large))
-			}
-			if decodeErr != nil {
-				t.Fatal("large valid configuration rejected", decodeErr)
-			}
-		})
+	if definition.searchConfig().Options.BatchBytes != 1024 {
+		t.Fatal("batch bytes did not reach the adapter")
 	}
-}
-
-func TestConfigurationValidationHasNoDepthQuota(t *testing.T) {
-	for _, depth := range []int{12, 64, 1000} {
-		input := "unexpected: " + strings.Repeat("[", depth) + "value" + strings.Repeat("]", depth) + "\n"
-		var document yaml.Node
-		if err := yaml.Unmarshal([]byte(input), &document); err != nil {
-			t.Fatal(err)
-		}
-		if err := validateConfigYAML(document.Content[0], true, ""); err != nil {
-			t.Fatal("valid YAML tree retained a depth quota", depth, err)
-		}
-		_, basicErr := DecodeBasic(strings.NewReader(input))
-		_, routingErr := DecodeRouting(strings.NewReader(input))
-		for _, err := range []error{basicErr, routingErr} {
-			if err == nil || strings.Contains(err.Error(), "nesting limit") {
-				t.Fatal("unknown field must fail its schema, independently of depth", depth, err)
-			}
-		}
-	}
-	cyclic := &yaml.Node{Kind: yaml.SequenceNode, Tag: "!!seq"}
-	cyclic.Content = []*yaml.Node{cyclic}
-	if err := validateConfigYAML(cyclic, true, ""); err == nil || !strings.Contains(err.Error(), "cyclic") {
-		t.Fatal("cyclic configuration structure escaped validation", err)
-	}
-}
-
-func TestConfigurationUnicodeFieldDuplicates(t *testing.T) {
-	cfg := credentialTestConfig(t, "search")
-	routing, err := yaml.Marshal(cfg.Routing)
-	if err != nil {
-		t.Fatal(err)
-	}
-	input := "ſtores: []\n" + string(routing)
-	if _, err := DecodeRouting(strings.NewReader(input)); err == nil || !strings.Contains(err.Error(), "duplicate configuration field") {
-		t.Fatal("Unicode case alias overwrote routing field", err)
-	}
-	basic, err := yaml.Marshal(cfg.Basic)
-	if err != nil {
-		t.Fatal(err)
-	}
-	input = strings.Replace(string(basic), "stall: 30s", "stall: 30s\n        ſtall: 30s", 1)
-	if _, err := DecodeBasic(strings.NewReader(input)); err == nil || !strings.Contains(err.Error(), "duplicate configuration field") {
-		t.Fatal("Unicode case alias overwrote basic field", err)
-	}
-}
-
-func TestBasicConfigurationRejectsNullFields(t *testing.T) {
 	for _, fragment := range []string{
-		"diagnostics: null\n",
-		"listeners: ~\n",
-		"memory:\n",
-		"transport: null\n",
-		"transport:\n  timeouts:\n    stall: null\n",
-		"transport:\n  timeouts:\n    request: null\n",
+		"    batching:\n      max_operations: -1\n",
+		"    batching:\n      max_in_flight: -1\n",
+		"    batching:\n      max_wait: -1ms\n",
+		"    batching:\n      max_operations: '7'\n",
+		"    batching:\n      max_bytes: 1024\n",
+		"    batching:\n      max_wait: 5\n",
+		"    batching:\n      max_bytes: 9223372036854775808B\n",
+		"    batching:\n      max_operations: 1.5\n",
+		"    batching:\n      max_in_flight: 0.9\n",
 	} {
-		input := fragment
-		if _, err := DecodeBasic(strings.NewReader(input)); err == nil || !strings.Contains(err.Error(), "cannot be null") {
-			t.Fatal("null basic field accepted", err)
+		if _, err := Decode(strings.NewReader(searchDocument + fragment)); err == nil {
+			t.Fatal("invalid batching accepted", fragment)
+		}
+	}
+}
+
+func TestDecodeIsStrict(t *testing.T) {
+	inputs := []string{
+		"",
+		"[]",
+		"secret-sentinel",
+		"unknown-secret-sentinel: value\n" + searchDocument,
+		strings.Replace(searchDocument, "url:", "unknown_option: 5\n      url:", 1),
+		strings.Replace(searchDocument, "    search:", "    unknown_block: {}\n    search:", 1),
+		searchDocument + "  - null\n",
+		searchDocument + "  -\n",
+		"listeners:\n  application: 127.0.0.1:0\nstores: [~]\n",
+		searchDocument + "listeners:\n  application: 127.0.0.1:1\n",
+		searchDocument + "---\n{}\n",
+		"shutdown_timeout: 5\n" + searchDocument,
+		"shutdown_timeout: -1s\n" + searchDocument,
+	}
+	for i, input := range inputs {
+		if _, err := Decode(strings.NewReader(input)); err == nil || strings.Contains(err.Error(), "sentinel") {
+			t.Fatal("invalid document accepted or error leaked input", i, err)
+		}
+	}
+	large := searchDocument + strings.Repeat(" ", 256<<10)
+	if _, err := Decode(strings.NewReader(large)); err != nil {
+		t.Fatal("large valid configuration rejected", err)
+	}
+}
+
+func TestStoresRequireOneBackendAndUniqueNames(t *testing.T) {
+	inputs := []string{
+		strings.Replace(searchDocument, "    search:\n      url: http://127.0.0.1:9200\n", "", 1),
+		searchDocument + "    mongodb:\n      uri: mongodb://127.0.0.1:27017/?directConnection=true\n",
+		searchDocument + "  - name: records\n    search:\n      url: http://127.0.0.1:9201\n",
+		strings.Replace(searchDocument, "name: records", "name: Records", 1),
+	}
+	for i, input := range inputs {
+		if _, err := Decode(strings.NewReader(input)); err == nil {
+			t.Fatal("invalid Store accepted", i)
 		}
 	}
 }
@@ -175,85 +120,59 @@ func TestBasicConfigurationRejectsNullFields(t *testing.T) {
 type configErrorReader struct{}
 
 func (configErrorReader) Read([]byte) (int, error) {
-	return 0, errors.New("reader-path-secret-sentinel")
+	return 0, errors.New("read-secret-sentinel")
 }
 
-func TestConfigurationReadErrorsAreRedacted(t *testing.T) {
+func TestReadErrorsAreRedacted(t *testing.T) {
 	reader := configErrorReader{}
-	_, basicErr := DecodeBasic(reader)
-	_, routingErr := DecodeRouting(reader)
-	if basicErr == nil || basicErr.Error() != "basic configuration unavailable" || routingErr == nil || routingErr.Error() != "routing configuration unavailable" {
-		t.Fatal("reader error lost its document scope or leaked input", basicErr, routingErr)
+	if _, err := Decode(reader); err == nil || err.Error() != "configuration unavailable" {
+		t.Fatal("reader error leaked input", err)
+	}
+	filename := filepath.Join(t.TempDir(), "missing-secret-sentinel.yaml")
+	if _, err := Load(filename); err == nil || err.Error() != "configuration unavailable" {
+		t.Fatal("missing file error leaked its path", err)
 	}
 }
 
-func TestLoadRoutingPaths(t *testing.T) {
+func TestLoadPathIsRelativeToWorkingDirectory(t *testing.T) {
 	root := t.TempDir()
-	directory := filepath.Join(root, "basic")
-	if err := os.Mkdir(directory, 0700); err != nil {
+	if err := os.Mkdir(filepath.Join(root, "config"), 0700); err != nil {
 		t.Fatal(err)
 	}
-	cfg := credentialTestConfig(t, "search")
-	routing, err := yaml.Marshal(cfg.Routing)
-	if err != nil {
-		t.Fatal(err)
-	}
-	routingFilename := filepath.Join(root, "routing.yaml")
-	if err := os.WriteFile(routingFilename, routing, 0600); err != nil {
-		t.Fatal(err)
-	}
-	basic, err := yaml.Marshal(cfg.Basic)
-	if err != nil {
-		t.Fatal(err)
-	}
-	filename := filepath.Join(directory, "node.yaml")
-	if err := os.WriteFile(filename, basic, 0600); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(directory, "routing.yaml"), []byte("invalid-secret-sentinel"), 0600); err != nil {
+	filename := filepath.Join(root, "config", "weir.yaml")
+	if err := os.WriteFile(filename, []byte(searchDocument), 0600); err != nil {
 		t.Fatal(err)
 	}
 	t.Chdir(root)
-	for _, basicPath := range []string{"basic/node.yaml", filename} {
-		for _, routingPath := range []string{"routing.yaml", routingFilename} {
-			loaded, err := Load(basicPath, routingPath)
-			if err != nil || loaded.Basic.Listeners.Application != cfg.Basic.Listeners.Application ||
-				len(loaded.Routing.Stores) != 1 {
-				t.Fatal("basic and routing paths must both resolve from the working directory", err)
-			}
+	for _, path := range []string{"config/weir.yaml", filename} {
+		loaded, err := Load(path)
+		if err != nil || len(loaded.Stores) != 1 {
+			t.Fatal("configuration path did not resolve from the working directory", path, err)
 		}
 	}
 }
 
-func TestLoadUnavailableDocumentsAreRedacted(t *testing.T) {
-	root := t.TempDir()
-	filename := filepath.Join(root, "missing-basic-secret-sentinel.yaml")
-	if _, err := Load(filename, ""); err == nil || err.Error() != "basic configuration unavailable" {
-		t.Fatal("missing basic error leaked path", err)
+func TestLoadResolvesCAFileFromConfigDirectory(t *testing.T) {
+	directory := filepath.Join(t.TempDir(), "config")
+	if err := os.Mkdir(directory, 0700); err != nil {
+		t.Fatal(err)
 	}
-	cfg := credentialTestConfig(t, "search")
-	basic, err := yaml.Marshal(cfg.Basic)
+	relative := searchFixtureStore("relative", "https://127.0.0.1:9200")
+	relative.TLS = &TLS{CAFile: "trust/ca.pem"}
+	absolute := searchFixtureStore("absolute", "https://127.0.0.1:9200")
+	absolute.TLS = &TLS{CAFile: "/etc/weir/ca.pem"}
+	cfg := emptyConfig(t)
+	cfg.Stores = []StoreConfig{relative, absolute}
+	filename := filepath.Join(directory, "weir.yaml")
+	writeConfigFile(t, filename, cfg, 0600)
+
+	t.Chdir(t.TempDir())
+	loaded, err := Load(filename)
 	if err != nil {
 		t.Fatal(err)
 	}
-	filename = filepath.Join(root, "node.yaml")
-	if err := os.WriteFile(filename, basic, 0600); err != nil {
-		t.Fatal(err)
-	}
-	routingFilename := filepath.Join(root, "missing-routing-secret-sentinel.yaml")
-	if _, err := Load(filename, routingFilename); err == nil || err.Error() != "routing configuration unavailable" {
-		t.Fatal("missing routing error leaked path", err)
-	}
-	cfg.Basic.Listeners.Application = "invalid-listener-secret-sentinel"
-	basic, err = yaml.Marshal(cfg.Basic)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filename, basic, 0600); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := Load(filename, routingFilename); err == nil || err.Error() != "listeners.application requires an explicit IP and port" {
-		t.Fatal("invalid basic configuration reached routing file or leaked value", err)
+	if loaded.Stores[0].TLS.CAFile != filepath.Join(directory, "trust", "ca.pem") || loaded.Stores[1].TLS.CAFile != "/etc/weir/ca.pem" {
+		t.Fatal("CA paths must resolve from the configuration directory", loaded.Stores[0].TLS, loaded.Stores[1].TLS)
 	}
 }
 
@@ -263,131 +182,34 @@ func TestLoadDoesNotPerformStartupIO(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer listener.Close()
-	credentials := Credentials{Username: "user", Password: "secret-sentinel"}
-	connection := &credentials
-	trust := &BackendTLS{CAFile: "/missing/ca-secret-sentinel.pem"}
-	backend := &Search{
-		URL: "https://unresolved.invalid:443",
-	}
-	local := &Local{Backend: BackendConfig{Search: backend, Authentication: connection, TLS: trust}}
-	service := StoreConfig{Name: "records", Local: local}
+	credentials := &Credentials{Username: "user", Password: "secret-sentinel"}
+	trust := &TLS{CAFile: "/missing/ca-secret-sentinel.pem"}
+	definition := searchFixtureStore("records", "https://unresolved.invalid:443")
+	definition.Authentication, definition.TLS = credentials, trust
 
-	cfg := DefaultConfig()
-	cfg.Basic.Listeners.Application = listener.Addr().String()
-	cfg.Routing.Stores = []StoreConfig{service}
-	filename := filepath.Join(t.TempDir(), "node.yaml")
-	routingFilename := writeConfigFiles(t, filename, cfg, 0600)
-	if _, err := Load(filename, routingFilename); err != nil {
+	cfg := Config{}
+	cfg.Listeners.Application = listener.Addr().String()
+	cfg.Stores = []StoreConfig{definition}
+	filename := filepath.Join(t.TempDir(), "weir.yaml")
+	writeConfigFile(t, filename, cfg, 0600)
+	if _, err := Load(filename); err != nil {
 		t.Fatal("Load accessed CA, DNS, backend or occupied listener", err)
 	}
 }
 
-func TestLoadValidatesWholeGraphBeforeStartup(t *testing.T) {
+func TestLoadValidatesEveryStoreBeforeStartup(t *testing.T) {
 	var contacts atomic.Int32
 	handler := http.HandlerFunc(func(http.ResponseWriter, *http.Request) { contacts.Add(1) })
 	endpoint := httptest.NewServer(handler)
 	defer endpoint.Close()
-	backend := &Search{URL: endpoint.URL}
-	local := &Local{Backend: BackendConfig{Search: backend}}
-	service := StoreConfig{Name: "records", Local: local}
-	invalidService := StoreConfig{Name: "invalid"}
+	invalid := StoreConfig{Name: "invalid"}
 
-	cfg := DefaultConfig()
-	cfg.Basic.Listeners.Application = strings.TrimPrefix(endpoint.URL, "http://")
-	cfg.Routing.Stores = []StoreConfig{service, invalidService}
-	filename := filepath.Join(t.TempDir(), "node.yaml")
-	routingFilename := writeConfigFiles(t, filename, cfg, 0600)
-	if _, err := Load(filename, routingFilename); err == nil || contacts.Load() != 0 {
-		t.Fatal("invalid later service reached startup", err, contacts.Load())
-	}
-}
-
-func TestDecodeRoutingAllowsOptionalNullAdapters(t *testing.T) {
-	cfg := credentialTestConfig(t, "search")
-	raw, err := yaml.Marshal(cfg.Routing)
-	if err != nil {
-		t.Fatal(err)
-	}
-	decoded, err := DecodeRouting(strings.NewReader(string(raw)))
-	if err != nil || len(decoded.Stores) != 1 || decoded.Stores[0].Backend.Search == nil || decoded.Stores[0].Backend.MongoDB != nil {
-		t.Fatal("optional null backend rejected", err)
-	}
-	if _, err := DecodeRouting(io.LimitReader(strings.NewReader(string(raw)), int64(strings.Index(string(raw), "url:")+3))); err == nil {
-		t.Fatal("truncated Store document accepted")
-	}
-}
-
-func TestConfigurationScalarTypes(t *testing.T) {
-	basic := "listeners:\n  application: 127.0.0.1:0\n"
-	for _, fragment := range []string{
-		"listeners:\n  application: 127001\n", basic + "diagnostics:\n  allow_intranet: yes\n", basic + "diagnostics:\n  allow_intranet: 'true'\n", basic + "transport:\n  timeouts:\n    stall: true\n", basic + "transport:\n  max_pending_records: '32'\n",
-	} {
-		_, err := DecodeBasic(strings.NewReader(fragment))
-		if err == nil || !strings.Contains(err.Error(), "invalid configuration scalar type") {
-			t.Fatal("basic field accepted implicit type coercion", err)
-		}
-	}
-	input := "stores:\n  - name: records\n    backend:\n      search:\n        url: http://127.0.0.1:9200\n    batching:\n      max_operations: 2\n"
-	for _, replacement := range [][2]string{{"name: records", "name: true"}, {"url: http://127.0.0.1:9200", "url: 123"}, {"max_operations: 2", "max_operations: '2'"}} {
-		invalid := strings.Replace(input, replacement[0], replacement[1], 1)
-		_, err := DecodeRouting(strings.NewReader(invalid))
-		if err == nil || !strings.Contains(err.Error(), "invalid configuration scalar type") {
-			t.Fatal("Store field accepted implicit coercion", replacement, err)
-		}
-	}
-}
-
-func TestRoutingNullFields(t *testing.T) {
-	input := "stores:\n  - name: database\n    backend:\n      search: null\n      mongodb:\n        uri: mongodb://127.0.0.1:27017\n"
-
-	cfg, err := DecodeRouting(strings.NewReader(input))
-	if err != nil || cfg.Stores[0].Local.Backend.Search != nil {
-		t.Fatal("unused adapter blocks may be explicitly null", err)
-	}
-	for _, field := range []string{"uri"} {
-		lines := strings.Split(input, "\n")
-		for i, line := range lines {
-			prefix := "        " + field + ":"
-			if strings.HasPrefix(line, prefix) {
-				lines[i] = prefix + " null"
-			}
-		}
-		_, err := DecodeRouting(strings.NewReader(strings.Join(lines, "\n")))
-		if err == nil || !strings.Contains(err.Error(), "cannot be null") {
-			t.Fatal("required adapter scalar may not be null", field, err)
-		}
-	}
-	for _, document := range []string{
-		"stores: [null]\n",
-		"stores:\n  - name: database\n    backend:\n      mongodb:\n        uri: mongodb://127.0.0.1:27017\n    batching:\n      max_operations: null\n",
-	} {
-		if _, err := DecodeRouting(strings.NewReader(document)); err == nil {
-			t.Fatal("null Store or required scalar accepted")
-		}
-	}
-}
-
-func TestNestedUnknownRoutingFieldsAreRedacted(t *testing.T) {
-	input := "stores:\n  - name: search\n    backend:\n      search:\n        url: https://127.0.0.1:9200\n      authentication:\n        username: user-secret-sentinel\n        password: password-secret-sentinel\n      tls:\n        ca_file: /missing/ca-secret-sentinel.pem\n"
-
-	if _, err := DecodeRouting(strings.NewReader(input)); err != nil {
-		t.Fatal("valid secret-bearing fields should pass pure validation", err)
-	}
-	for _, field := range []string{"server_name", "insecure_skip_verify", "auth_provider", "token", "resolver", "tls", "credentials"} {
-		unknown := strings.Replace(input, "      authentication:\n", "      authentication:\n        "+field+": field-secret-sentinel\n", 1)
-		_, err := DecodeRouting(strings.NewReader(unknown))
-		if err == nil || err.Error() != "routing invalid configuration YAML or unknown field" {
-			t.Fatal("unknown nested option must be rejected without exposing credentials or parser details", field, err)
-		}
-	}
-	for _, mutation := range [][2]string{
-		{"password-secret-sentinel", "null"},
-		{"username: user-secret-sentinel", "username: bad:user-secret-sentinel"},
-	} {
-		invalid := strings.Replace(input, mutation[0], mutation[1], 1)
-		_, err := DecodeRouting(strings.NewReader(invalid))
-		if err == nil || strings.Contains(err.Error(), "sentinel") || strings.Contains(err.Error(), "/missing/") {
-			t.Fatal("invalid nested input accepted or leaked a sensitive value", mutation, err)
-		}
+	cfg := Config{}
+	cfg.Listeners.Application = strings.TrimPrefix(endpoint.URL, "http://")
+	cfg.Stores = []StoreConfig{searchFixtureStore("records", endpoint.URL), invalid}
+	filename := filepath.Join(t.TempDir(), "weir.yaml")
+	writeConfigFile(t, filename, cfg, 0600)
+	if _, err := Load(filename); err == nil || contacts.Load() != 0 {
+		t.Fatal("invalid later Store reached startup", err, contacts.Load())
 	}
 }

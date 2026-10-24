@@ -80,8 +80,7 @@ type retirementNodeFixture struct {
 
 func newRetirementNode(t *testing.T, failure error) retirementNodeFixture {
 	t.Helper()
-	cfg := DefaultConfig()
-	cfg.Basic.Listeners.Application = "127.0.0.1:0"
+	cfg := emptyConfig(t)
 	node, err := Open(t.Context(), cfg)
 	if err != nil {
 		t.Fatal(err)

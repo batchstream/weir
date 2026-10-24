@@ -11,320 +11,193 @@ import (
 	"github.com/batchstream/weir/internal/backend"
 	"github.com/batchstream/weir/internal/backend/mongodb"
 	"github.com/batchstream/weir/internal/backend/search"
-	"github.com/batchstream/weir/internal/luaengine"
-	"github.com/batchstream/weir/internal/overload"
-	"github.com/batchstream/weir/internal/server"
 	"github.com/batchstream/weir/internal/store"
 )
 
-// Config contains the separately loaded process and local Store settings.
+// Config is a node's complete configuration, loaded from one YAML file.
 type Config struct {
-	Basic   BasicConfig   `json:"basic" yaml:"basic"`
-	Routing RoutingConfig `json:"routing" yaml:"routing"`
+	Listeners Listeners `yaml:"listeners"`
+	// ShutdownTimeout bounds the drain of admitted work. Zero selects 5s.
+	ShutdownTimeout Duration      `yaml:"shutdown_timeout,omitempty"`
+	Stores          []StoreConfig `yaml:"stores,omitempty"`
 }
 
-// BasicConfig groups settings by their process responsibility.
-type BasicConfig struct {
-	Lua         LuaConfig         `json:"lua" yaml:"lua"`
-	Lifecycle   LifecycleConfig   `json:"lifecycle" yaml:"lifecycle"`
-	Listeners   ListenerConfig    `json:"listeners" yaml:"listeners"`
-	Diagnostics DiagnosticsConfig `json:"diagnostics" yaml:"diagnostics"`
-	Transport   TransportConfig   `json:"transport" yaml:"transport"`
-	Overload    OverloadConfig    `json:"overload" yaml:"overload"`
+// Listeners are explicit IP:port addresses. Diagnostics is optional.
+type Listeners struct {
+	Application string `yaml:"application"`
+	Diagnostics string `yaml:"diagnostics,omitempty"`
 }
 
-type ListenerConfig struct {
-	Application string `json:"application" yaml:"application"`
-}
-
-type DiagnosticsConfig struct {
-	Timeout       Duration `json:"timeout" yaml:"timeout"`
-	Address       string   `json:"address" yaml:"address"`
-	AllowIntranet bool     `json:"allow_intranet" yaml:"allow_intranet"`
-}
-
-// RoutingConfig declares only Stores hosted by this process.
-type RoutingConfig struct {
-	Stores []StoreConfig `json:"stores" yaml:"stores"`
-}
-
+// StoreConfig hosts one Store on exactly one backend.
 type StoreConfig struct {
-	Name   string `json:"name" yaml:"name"`
-	*Local `yaml:",inline"`
+	Name           string       `yaml:"name"`
+	MongoDB        *MongoDB     `yaml:"mongodb,omitempty"`
+	Search         *Search      `yaml:"search,omitempty"`
+	Authentication *Credentials `yaml:"authentication,omitempty"`
+	TLS            *TLS         `yaml:"tls,omitempty"`
+	Batching       Batching     `yaml:"batching,omitempty"`
 }
 
-type Local struct {
-	Backend  BackendConfig  `json:"backend" yaml:"backend"`
-	Queue    QueueConfig    `json:"queue" yaml:"queue"`
-	Batching BatchingConfig `json:"batching" yaml:"batching"`
-}
-
-type BackendConfig struct {
-	MongoDB          *Mongo       `json:"mongodb,omitempty" yaml:"mongodb,omitempty"`
-	Search           *Search      `json:"search,omitempty" yaml:"search,omitempty"`
-	Authentication   *Credentials `json:"authentication,omitempty" yaml:"authentication,omitempty"`
-	TLS              *BackendTLS  `json:"tls,omitempty" yaml:"tls,omitempty"`
-	ConnectTimeout   *Duration    `json:"connect_timeout,omitempty" yaml:"connect_timeout,omitempty"`
-	MaxExchangeBytes *ByteSize    `json:"max_exchange_bytes,omitempty" yaml:"max_exchange_bytes,omitempty"`
-}
-
-type BackendTLS struct {
-	CAFile string `json:"ca_file" yaml:"ca_file"`
-}
-
-type BatchingConfig struct {
-	MaxOperations int       `json:"max_operations" yaml:"max_operations"`
-	MaxBytes      *ByteSize `json:"max_bytes,omitempty" yaml:"max_bytes,omitempty"`
-	MaxInFlight   *int      `json:"max_in_flight,omitempty" yaml:"max_in_flight,omitempty"`
-	MaxWait       *Duration `json:"max_wait,omitempty" yaml:"max_wait,omitempty"`
-}
-
-type LuaConfig struct {
-	MaxInstructions int64 `json:"max_instructions" yaml:"max_instructions"`
-	MaxCallDepth    int   `json:"max_call_depth" yaml:"max_call_depth"`
-	MaxStackSlots   int   `json:"max_stack_slots" yaml:"max_stack_slots"`
-}
-
-type OverloadConfig struct {
-	Memory MemoryPressureConfig `json:"memory" yaml:"memory"`
-}
-
-type MemoryPressureConfig struct {
-	HighWatermark  int      `json:"high_watermark" yaml:"high_watermark"`
-	LowWatermark   int      `json:"low_watermark" yaml:"low_watermark"`
-	SampleInterval Duration `json:"sample_interval" yaml:"sample_interval"`
-}
-
-func (cfg MemoryPressureConfig) limits() overload.Limits {
-	limits := overload.Limits{HighWatermark: uint64(cfg.HighWatermark), LowWatermark: uint64(cfg.LowWatermark), SampleInterval: time.Duration(cfg.SampleInterval)}
-	return limits
-}
-
-// QueueConfig bounds waiting work. Dispatch releases queue capacity;
-// running operations and completed results do not consume this capacity.
-type QueueConfig struct {
-	MaxOperations int       `json:"max_operations" yaml:"max_operations"`
-	MaxBytes      *ByteSize `json:"max_bytes,omitempty" yaml:"max_bytes,omitempty"`
-}
-
-type Mongo struct {
-	URI                  string    `json:"uri" yaml:"uri"`
-	MaxConnecting        uint64    `json:"max_connecting" yaml:"max_connecting"`
-	MetadataCacheEntries *int      `json:"metadata_cache_entries,omitempty" yaml:"metadata_cache_entries,omitempty"`
-	RetryAttempts        int       `json:"retry_attempts" yaml:"retry_attempts"`
-	RetryBackoff         *Duration `json:"retry_backoff,omitempty" yaml:"retry_backoff,omitempty"`
-}
-
-type Credentials struct {
-	Username     string `json:"username" yaml:"username"`
-	Password     string `json:"password" yaml:"password"`
-	UsernameFile string `json:"username_file" yaml:"username_file"`
-	PasswordFile string `json:"password_file" yaml:"password_file"`
+type MongoDB struct {
+	URI string `yaml:"uri"`
 }
 
 type Search struct {
-	URL           string    `json:"url" yaml:"url"`
-	RetryAttempts int       `json:"retry_attempts" yaml:"retry_attempts"`
-	IdleTimeout   *Duration `json:"idle_timeout,omitempty" yaml:"idle_timeout,omitempty"`
+	URL string `yaml:"url"`
 }
 
-type TransportConfig struct {
-	MaxPendingRecords int               `json:"max_pending_records" yaml:"max_pending_records"`
-	Timeouts          TransportTimeouts `json:"timeouts" yaml:"timeouts"`
-	Keepalive         KeepaliveConfig   `json:"keepalive" yaml:"keepalive"`
+type TLS struct {
+	CAFile string `yaml:"ca_file"`
 }
 
-type KeepaliveConfig struct {
-	Interval Duration `json:"interval" yaml:"interval"`
-	Timeout  Duration `json:"timeout" yaml:"timeout"`
+type Credentials struct {
+	Username     string `yaml:"username,omitempty"`
+	Password     string `yaml:"password,omitempty"`
+	UsernameFile string `yaml:"username_file,omitempty"`
+	PasswordFile string `yaml:"password_file,omitempty"`
 }
 
-type LifecycleConfig struct {
-	StartupTimeout  Duration `json:"startup_timeout" yaml:"startup_timeout"`
-	ShutdownTimeout Duration `json:"shutdown_timeout" yaml:"shutdown_timeout"`
-	CleanupTimeout  Duration `json:"cleanup_timeout" yaml:"cleanup_timeout"`
+// Batching bounds how queued records combine into backend executions. Zero
+// values select the defaults; MaxWait is a pointer so an explicit 0s disables
+// collection.
+type Batching struct {
+	MaxOperations Count     `yaml:"max_operations,omitempty"`
+	MaxBytes      ByteSize  `yaml:"max_bytes,omitempty"`
+	MaxWait       *Duration `yaml:"max_wait,omitempty"`
+	MaxInFlight   Count     `yaml:"max_in_flight,omitempty"`
 }
 
-type TransportTimeouts struct {
-	Handshake Duration `json:"handshake" yaml:"handshake"`
-	Idle      Duration `json:"idle" yaml:"idle"`
-	Stall     Duration `json:"stall" yaml:"stall"`
+const defaultShutdownTimeout = 5 * time.Second
+
+func (cfg Config) shutdownTimeout() time.Duration {
+	if cfg.ShutdownTimeout == 0 {
+		return defaultShutdownTimeout
+	}
+	return time.Duration(cfg.ShutdownTimeout)
 }
 
-func DefaultConfig() Config {
-	defaults := server.DefaultLimits()
-	timeouts := TransportTimeouts{Stall: Duration(defaults.Stall), Handshake: Duration(defaults.Handshake), Idle: Duration(defaults.Idle)}
-	keepalive := KeepaliveConfig{Interval: Duration(defaults.KeepaliveInterval), Timeout: Duration(defaults.KeepaliveTimeout)}
-	transport := TransportConfig{Timeouts: timeouts, Keepalive: keepalive, MaxPendingRecords: defaults.MaxPendingRecords}
-	memory := MemoryPressureConfig{HighWatermark: 80, LowWatermark: 70, SampleInterval: Duration(100 * time.Millisecond)}
-	lua := LuaConfig{}
-	lifecycle := LifecycleConfig{StartupTimeout: Duration(5 * time.Second), ShutdownTimeout: Duration(5 * time.Second), CleanupTimeout: Duration(backend.DefaultOptions().CleanupTimeout)}
-	diagnostics := DiagnosticsConfig{Timeout: Duration(diagnosticTimeout)}
-	overloadConfig := OverloadConfig{Memory: memory}
-	basic := BasicConfig{Lua: lua, Lifecycle: lifecycle, Transport: transport, Diagnostics: diagnostics, Overload: overloadConfig}
-	cfg := Config{Basic: basic.resolved()}
-	return cfg
+// Validate checks the configuration without performing IO. Credential files
+// must already be resolved, as Load does.
+func (cfg Config) Validate() error {
+	if err := cfg.validateShape(); err != nil {
+		return err
+	}
+	for _, definition := range cfg.Stores {
+		if c := definition.Authentication; c != nil && (c.UsernameFile != "" || c.PasswordFile != "") {
+			return errors.New("unresolved credential file")
+		}
+		if err := definition.validateBackend(); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
-func (cfg TransportConfig) serverLimits() server.Limits {
-	limits := server.Limits{MaxPendingRecords: cfg.MaxPendingRecords, KeepaliveInterval: time.Duration(cfg.Keepalive.Interval), KeepaliveTimeout: time.Duration(cfg.Keepalive.Timeout), Stall: time.Duration(cfg.Timeouts.Stall), Handshake: time.Duration(cfg.Timeouts.Handshake), Idle: time.Duration(cfg.Timeouts.Idle)}
-	return limits
+// validateShape checks everything except credential file contents, so Load
+// rejects an invalid configuration before it reads any credential file.
+func (cfg Config) validateShape() error {
+	if err := cfg.Listeners.validate(); err != nil {
+		return err
+	}
+	if cfg.ShutdownTimeout < 0 {
+		return errors.New("shutdown_timeout must not be negative")
+	}
+	names := make(map[string]bool, len(cfg.Stores))
+	for _, definition := range cfg.Stores {
+		if !protocol.ValidStoreName(definition.Name) || names[definition.Name] {
+			return errors.New("invalid or duplicate Store name")
+		}
+		names[definition.Name] = true
+		if (definition.MongoDB == nil) == (definition.Search == nil) {
+			return errors.New("Store requires exactly one of mongodb or search")
+		}
+		if err := definition.runtimeLimits().Validate(); err != nil {
+			return err
+		}
+		standIn := definition
+		if c := definition.Authentication; c != nil {
+			if err := c.validateSources(); err != nil {
+				return err
+			}
+			// File sources stand in for their values until Load reads them.
+			sources := *c
+			if sources.UsernameFile != "" {
+				sources.Username, sources.UsernameFile = "file", ""
+			}
+			if sources.PasswordFile != "" {
+				sources.Password, sources.PasswordFile = "file", ""
+			}
+			standIn.Authentication = &sources
+		}
+		if err := standIn.validateBackend(); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
-func address(value string, loopback bool) bool {
+func (l Listeners) validate() error {
+	if !address(l.Application) {
+		return errors.New("listeners.application requires an explicit IP and port")
+	}
+	if l.Diagnostics == "" {
+		return nil
+	}
+	if !address(l.Diagnostics) {
+		return errors.New("listeners.diagnostics requires an explicit IP and port")
+	}
+	host, port, _ := net.SplitHostPort(l.Application)
+	diagnosticHost, diagnosticPort, _ := net.SplitHostPort(l.Diagnostics)
+	number, _ := strconv.Atoi(port)
+	diagnosticNumber, _ := strconv.Atoi(diagnosticPort)
+	ip, diagnosticIP := net.ParseIP(host), net.ParseIP(diagnosticHost)
+	// Each port 0 bind requests its own ephemeral port.
+	if number != 0 && number == diagnosticNumber && (ip.Equal(diagnosticIP) || ip.IsUnspecified() || diagnosticIP.IsUnspecified()) {
+		return errors.New("listeners.application and listeners.diagnostics overlap")
+	}
+	return nil
+}
+
+func address(value string) bool {
 	host, port, err := net.SplitHostPort(value)
-	ip := net.ParseIP(host)
 	number, portErr := strconv.Atoi(port)
-
-	return err == nil && ip != nil && (!loopback || ip.IsLoopback()) &&
+	return err == nil && net.ParseIP(host) != nil &&
 		port != "" && strings.Trim(port, "0123456789") == "" &&
 		portErr == nil && number >= 0 && number <= 65535
 }
 
-func (cfg Config) validate() error {
-	if err := cfg.Basic.validate(); err != nil {
-		return err
+func (definition StoreConfig) validateBackend() error {
+	if definition.MongoDB != nil {
+		return mongodb.ValidateConfig(definition.mongoConfig())
 	}
-	return cfg.Routing.validate()
+	return search.ValidateConfig(definition.searchConfig())
 }
 
-func (cfg BasicConfig) validate() error {
-	if cfg.Diagnostics.AllowIntranet && cfg.Diagnostics.Address == "" {
-		return errors.New("diagnostics.allow_intranet requires a diagnostic listener")
+func (definition StoreConfig) runtimeLimits() store.Limits {
+	limits := store.DefaultLimits()
+	b := definition.Batching
+	if b.MaxOperations != 0 {
+		limits.BatchOperations = int(b.MaxOperations)
 	}
-	if cfg.Diagnostics.Address != "" && !address(cfg.Diagnostics.Address, !cfg.Diagnostics.AllowIntranet) {
-		return errors.New("diagnostics requires explicit IP and port; non-loopback requires diagnostics.allow_intranet")
+	if b.MaxBytes != 0 {
+		limits.BatchBytes = boundedSize(b.MaxBytes)
 	}
-
-	if !address(cfg.Listeners.Application, false) {
-		return errors.New("listeners.application requires an explicit IP and port")
+	if b.MaxWait != nil {
+		limits.BatchWait = time.Duration(*b.MaxWait)
 	}
-	listeners := []string{cfg.Listeners.Application, cfg.Diagnostics.Address}
-	for i, listener := range listeners {
-		if listener == "" {
-			continue
-		}
-		host, port, _ := net.SplitHostPort(listener)
-		number, _ := strconv.Atoi(port)
-		if number == 0 {
-			continue // Each bind requests its own ephemeral port.
-		}
-		ip := net.ParseIP(host)
-		for _, other := range listeners[:i] {
-			otherHost, otherPort, _ := net.SplitHostPort(other)
-			otherNumber, _ := strconv.Atoi(otherPort)
-			otherIP := net.ParseIP(otherHost)
-			if number == otherNumber && (ip.Equal(otherIP) || ip.IsUnspecified() || otherIP.IsUnspecified()) {
-				return errors.New("duplicate or overlapping listener addresses")
-			}
-		}
-	}
-
-	if cfg.Lifecycle.StartupTimeout <= 0 || cfg.Lifecycle.ShutdownTimeout <= 0 || cfg.Lifecycle.CleanupTimeout <= 0 || cfg.Transport.Timeouts.Handshake <= 0 {
-		return errors.New("invalid lifecycle or handshake timeout")
-	}
-	if cfg.Transport.Keepalive.Interval < Duration(time.Second) || cfg.Transport.Keepalive.Timeout <= 0 {
-		return errors.New("invalid transport keepalive configuration")
-	}
-	if cfg.Diagnostics.Timeout <= 0 {
-		return errors.New("invalid diagnostics timeout")
-	}
-	if err := cfg.Overload.Memory.limits().Validate(); err != nil {
-		return err
-	}
-	if err := cfg.Lua.limits().Validate(); err != nil {
-		return err
-	}
-	return cfg.Transport.serverLimits().Validate()
-}
-
-func (cfg RoutingConfig) validate() error {
-	if err := cfg.validateStores(); err != nil {
-		return err
-	}
-	if err := cfg.validateCredentialSources(); err != nil {
-		return err
-	}
-	for _, service := range cfg.Stores {
-		l := service.Local
-		opts := l.backendOptions()
-		if err := opts.Validate(); err != nil {
-			return err
-		}
-		limits := l.runtimeLimits()
-		if err := limits.Validate(); err != nil {
-			return err
-		}
-
-		credentials := l.credentials()
-		if credentials != nil && (credentials.UsernameFile != "" || credentials.PasswordFile != "") {
-			return errors.New("unresolved credential file")
-		}
-		if l.Backend.MongoDB != nil {
-			config := l.mongoConfig(service.Name)
-			if err := mongodb.ValidateConfig(config); err != nil {
-				return err
-			}
-		} else {
-			config := l.searchConfig(service.Name)
-			if err := search.ValidateConfig(config); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
-}
-
-func (cfg RoutingConfig) validateStores() error {
-	names := make(map[string]bool)
-	for _, definition := range cfg.Stores {
-		if !protocol.ValidStoreName(definition.Name) || names[definition.Name] || definition.Local == nil {
-			return errors.New("invalid or duplicate Store")
-		}
-		if (definition.Backend.MongoDB == nil) == (definition.Backend.Search == nil) {
-			return errors.New("Store requires exactly one backend adapter")
-		}
-		names[definition.Name] = true
-	}
-	return nil
-}
-
-func (l *Local) runtimeLimits() store.Limits {
-	limits := store.Limits{
-		QueueOperations: l.Queue.MaxOperations, QueueBytes: boundedSize(*l.Queue.MaxBytes),
-		BatchOperations: l.Batching.MaxOperations, BatchBytes: boundedSize(*l.Batching.MaxBytes),
-		MaxInFlight: *l.Batching.MaxInFlight, BatchWait: time.Duration(*l.Batching.MaxWait),
-		CleanupTimeout: backend.DefaultOptions().CleanupTimeout,
+	if b.MaxInFlight != 0 {
+		limits.MaxInFlight = int(b.MaxInFlight)
 	}
 	return limits
 }
 
-func (l *Local) backendOptions() backend.Options {
+func (definition StoreConfig) backendOptions() backend.Options {
 	opts := backend.DefaultOptions()
-	opts.ConnectTimeout = time.Duration(*l.Backend.ConnectTimeout)
-	opts.BatchBytes = boundedSize(*l.Batching.MaxBytes)
-	opts.ExchangeBytes = boundedSize(*l.Backend.MaxExchangeBytes)
-	if mongo := l.Backend.MongoDB; mongo != nil {
-		opts.MetadataCacheEntries = *mongo.MetadataCacheEntries
-		opts.RetryAttempts = mongo.RetryAttempts
-		opts.RetryBackoff = time.Duration(*mongo.RetryBackoff)
-	}
-	if search := l.Backend.Search; search != nil {
-		opts.RetryAttempts = search.RetryAttempts
-		opts.IdleTimeout = time.Duration(*search.IdleTimeout)
-	}
+	opts.BatchBytes = definition.runtimeLimits().BatchBytes
 	return opts
 }
 
-func (cfg LuaConfig) limits() luaengine.Limits {
-	limits := luaengine.DefaultLimits()
-	limits.MaxInstructions = cfg.MaxInstructions
-	limits.MaxCallDepth = cfg.MaxCallDepth
-	limits.MaxStackSlots = cfg.MaxStackSlots
-
-	return limits
-}
-
+// boundedSize maps sizes beyond the platform integer to an invalid bound.
 func boundedSize(size ByteSize) int {
 	if uint64(size) > uint64(^uint(0)>>1) {
 		return -1
@@ -332,30 +205,29 @@ func boundedSize(size ByteSize) int {
 	return int(size)
 }
 
-func (l *Local) searchConfig(name string) search.Config {
+func (definition StoreConfig) searchConfig() search.Config {
 	var connection *search.Connection
-	if l.Backend.Authentication != nil || l.Backend.TLS != nil {
+	if definition.Authentication != nil || definition.TLS != nil {
 		connection = &search.Connection{}
-		if c := l.Backend.Authentication; c != nil {
+		if c := definition.Authentication; c != nil {
 			connection.Username, connection.Password = c.Username, c.Password
 		}
-		if tls := l.Backend.TLS; tls != nil {
+		if tls := definition.TLS; tls != nil {
 			connection.CAFile = tls.CAFile
 		}
 	}
-	settings := l.backendOptions()
-	cfg := search.Config{Options: &settings, Store: name, URL: l.Backend.Search.URL, Connection: connection}
+	settings := definition.backendOptions()
+	cfg := search.Config{Options: &settings, Store: definition.Name, URL: definition.Search.URL, Connection: connection}
 	return cfg
 }
 
-func (l *Local) mongoConfig(name string) mongodb.Config {
-	m := l.Backend.MongoDB
-	settings := l.backendOptions()
-	cfg := mongodb.Config{Options: &settings, URI: m.URI, MaxConnecting: m.MaxConnecting, Store: name}
-	if c := l.Backend.Authentication; c != nil {
+func (definition StoreConfig) mongoConfig() mongodb.Config {
+	settings := definition.backendOptions()
+	cfg := mongodb.Config{Options: &settings, URI: definition.MongoDB.URI, Store: definition.Name}
+	if c := definition.Authentication; c != nil {
 		cfg.Username, cfg.Password = c.Username, c.Password
 	}
-	if tls := l.Backend.TLS; tls != nil {
+	if tls := definition.TLS; tls != nil {
 		cfg.CAFile = tls.CAFile
 	}
 	return cfg

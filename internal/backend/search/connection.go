@@ -19,9 +19,9 @@ import (
 // Connection is static backend client configuration, never caller identity.
 // HTTPS without this block uses the system trust roots and no credentials.
 type Connection struct {
-	Username string `json:"username" yaml:"username"`
-	Password string `json:"password" yaml:"password"`
-	CAFile   string `json:"ca_file" yaml:"ca_file"`
+	Username string
+	Password string
+	CAFile   string
 }
 
 // ValidateConfig is pure: app validates the complete graph with these same

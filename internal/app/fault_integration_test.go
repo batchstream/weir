@@ -79,13 +79,12 @@ func TestProcessFaults(t *testing.T) {
 	}
 	mongoURI.Host = containerHostAddress(t, mongoURI.Host)
 	searchProxy := startProcessFaultHTTPProxy(t, search.URL)
-	mongoConnection := &Mongo{URI: mongoURI.String()}
+	mongoConnection := &MongoDB{URI: mongoURI.String()}
 	searchConnection := &Search{URL: "http://" + containerHostAddress(t, searchProxy.listener.Addr().String())}
-	mongoLocal := &Local{Backend: BackendConfig{MongoDB: mongoConnection}}
-	searchLocal := &Local{Backend: BackendConfig{Search: searchConnection}}
-	mongoStore, searchStore := StoreConfig{Name: "mongo", Local: mongoLocal}, StoreConfig{Name: "search", Local: searchLocal}
-	cfg := DefaultConfig()
-	cfg.Routing.Stores = []StoreConfig{mongoStore, searchStore}
+	mongoStore := StoreConfig{Name: "mongo", MongoDB: mongoConnection}
+	searchStore := StoreConfig{Name: "search", Search: searchConnection}
+	cfg := Config{}
+	cfg.Stores = []StoreConfig{mongoStore, searchStore}
 	opts := cliContainerOptions{binary: binary, capacityMiB: 512, config: cfg}
 	process := startCLIContainer(t, opts)
 	client, err := weirclient.New(process.address)

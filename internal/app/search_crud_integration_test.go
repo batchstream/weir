@@ -25,11 +25,10 @@ func TestProcessSearchCRUD(t *testing.T) {
 	backend := testsearch.Open(t)
 	binary := buildWeirBinary(t)
 	connection := &Search{URL: backend.URL}
-	local := &Local{Backend: BackendConfig{Search: connection}}
-	store := StoreConfig{Name: "search", Local: local}
+	store := StoreConfig{Name: "search", Search: connection}
 	cfg := emptyConfig(t)
-	cfg.Basic.Diagnostics.Address = "127.0.0.1:0"
-	cfg.Routing.Stores = []StoreConfig{store}
+	cfg.Listeners.Diagnostics = "127.0.0.1:0"
+	cfg.Stores = []StoreConfig{store}
 	process := startProcess(t, binary, cfg)
 	pad := "search-crud-no-business-replay"
 	expected := map[string]loadRecord{"hot-0": {N: 1, Pad: pad}, "lua-000": {N: 0, Pad: pad}}

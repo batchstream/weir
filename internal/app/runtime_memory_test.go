@@ -25,9 +25,8 @@ func TestOpenAndFailedOpenLeaveHostRuntimeMemoryLimitUnchanged(t *testing.T) {
 	})
 	for _, current := range []int64{math.MaxInt64, 256 << 20} {
 		debug.SetMemoryLimit(current)
-		cfg := DefaultConfig()
-		cfg.Basic.Listeners.Application = "127.0.0.1:0"
-		cfg.Basic.Diagnostics.Address = ""
+		cfg := emptyConfig(t)
+		cfg.Listeners.Diagnostics = ""
 		node, err := Open(t.Context(), cfg)
 		if err != nil {
 			t.Fatal(err)
@@ -44,19 +43,11 @@ func TestOpenAndFailedOpenLeaveHostRuntimeMemoryLimitUnchanged(t *testing.T) {
 		if debug.SetMemoryLimit(-1) != current {
 			t.Fatal("embedded Start/Close changed its host runtime")
 		}
-		cfg.Basic.Overload.Memory.LowWatermark = 0
-		if _, err := Open(t.Context(), cfg); err == nil {
-			t.Fatal("zero recovery watermark accepted")
-		}
-		if debug.SetMemoryLimit(-1) != current {
-			t.Fatal("failed Open changed its host runtime")
-		}
-		cfg.Basic.Overload.Memory.LowWatermark = 70
 		occupied, err := net.Listen("tcp", "127.0.0.1:0")
 		if err != nil {
 			t.Fatal(err)
 		}
-		cfg.Basic.Diagnostics.Address = occupied.Addr().String()
+		cfg.Listeners.Diagnostics = occupied.Addr().String()
 		failed, openErr := Open(t.Context(), cfg)
 		if err := occupied.Close(); err != nil {
 			t.Fatal(err)

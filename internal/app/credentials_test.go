@@ -2,7 +2,6 @@ package app
 
 import (
 	"context"
-	"encoding/json"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -17,81 +16,73 @@ import (
 
 func credentialTestConfig(t *testing.T, backend string) Config {
 	t.Helper()
-	local := &Local{}
-	credentials := Credentials{
+	credentials := &Credentials{
 		Username: "user-secret-sentinel",
 		Password: " password-secret-sentinel:@/%?汉 ",
 	}
-	local.Backend.Authentication = &credentials
+	definition := StoreConfig{Name: backend, Authentication: credentials}
 	if backend == "mongodb" {
-		local.Backend.MongoDB = &Mongo{URI: "mongodb://unresolved.invalid:27017/?authSource=admin&authMechanism=SCRAM-SHA-256&tls=true"}
+		definition.MongoDB = &MongoDB{URI: "mongodb://unresolved.invalid:27017/?authSource=admin&authMechanism=SCRAM-SHA-256&tls=true"}
 	} else {
-		local.Backend.TLS = &BackendTLS{CAFile: "/missing/ca-secret-sentinel.pem"}
-		local.Backend.Search = &Search{URL: "https://unresolved.invalid:9200"}
+		definition.TLS = &TLS{CAFile: "/missing/ca-secret-sentinel.pem"}
+		definition.Search = &Search{URL: "https://unresolved.invalid:9200"}
 	}
-	service := StoreConfig{Name: backend, Local: local}
-
-	cfg := DefaultConfig()
-	cfg.Basic.Listeners.Application = "127.0.0.1:0"
-	cfg.Routing.Stores = []StoreConfig{service}
-
+	cfg := Config{}
+	cfg.Listeners.Application = "127.0.0.1:0"
+	cfg.Stores = []StoreConfig{definition}
 	return cfg
 }
 
-func writeCredentialTestDocuments(t *testing.T, cfg Config) (string, string) {
+// writeCredentialTestDocument writes cfg to its own directory, where relative
+// credential files resolve.
+func writeCredentialTestDocument(t *testing.T, cfg Config) string {
 	t.Helper()
-	root := t.TempDir()
-	basicDirectory := filepath.Join(root, "basic")
-	routingDirectory := filepath.Join(root, "routing")
-	for _, directory := range []string{basicDirectory, routingDirectory} {
-		if err := os.Mkdir(directory, 0700); err != nil {
-			t.Fatal(err)
-		}
-	}
-	basic, err := yaml.Marshal(cfg.Basic)
-	if err != nil {
+	directory := filepath.Join(t.TempDir(), "config")
+	if err := os.Mkdir(directory, 0700); err != nil {
 		t.Fatal(err)
 	}
-	routing, err := yaml.Marshal(cfg.Routing)
-	if err != nil {
-		t.Fatal(err)
+	filename := filepath.Join(directory, "weir.yaml")
+	writeConfigFile(t, filename, cfg, 0600)
+	return filename
+}
+
+func TestLoadRejectsInvalidConfigurationBeforeCredentialFiles(t *testing.T) {
+	cases := map[string]func(*Config){
+		"listener": func(cfg *Config) { cfg.Listeners.Application = "localhost:1" },
+		"shutdown": func(cfg *Config) { cfg.ShutdownTimeout = Duration(-1) },
+		"batching": func(cfg *Config) { cfg.Stores[0].Batching.MaxOperations = -1 },
+		"url":      func(cfg *Config) { cfg.Stores[0].Search.URL = "https://127.0.0.1" },
+		"https":    func(cfg *Config) { cfg.Stores[0].Search.URL = "http://127.0.0.1:9200" },
 	}
-	basicFilename := filepath.Join(basicDirectory, "weir.yaml")
-	routingFilename := filepath.Join(routingDirectory, "routes.yaml")
-	if err := os.WriteFile(basicFilename, basic, 0600); err != nil {
-		t.Fatal(err)
+	for name, invalidate := range cases {
+		t.Run(name, func(t *testing.T) {
+			cfg := credentialTestConfig(t, "search")
+			credentials := cfg.Stores[0].Authentication
+			credentials.Username, credentials.UsernameFile = "", "missing-secret-sentinel.txt"
+			invalidate(&cfg)
+			_, err := Load(writeCredentialTestDocument(t, cfg))
+			if err == nil || err.Error() == "credential file unavailable" || strings.Contains(err.Error(), "sentinel") {
+				t.Fatal("invalid configuration must fail before credential file IO", err)
+			}
+		})
 	}
-	if err := os.WriteFile(routingFilename, routing, 0600); err != nil {
-		t.Fatal(err)
-	}
-	return basicFilename, routingFilename
 }
 
 func TestCredentialConfigurationUsesSharedAuthentication(t *testing.T) {
 	for _, backend := range []string{"mongodb", "search"} {
 		t.Run(backend, func(t *testing.T) {
 			cfg := credentialTestConfig(t, backend)
-			local := cfg.Routing.Stores[0].Local
-			var source any = local.Backend.Authentication
+			raw, err := yaml.Marshal(cfg.Stores[0].Authentication)
+			if err != nil {
+				t.Fatal(err)
+			}
 			expected := map[string]any{
-				"username":      "user-secret-sentinel",
-				"password":      " password-secret-sentinel:@/%?汉 ",
-				"username_file": "",
-				"password_file": "",
+				"username": "user-secret-sentinel",
+				"password": " password-secret-sentinel:@/%?汉 ",
 			}
-			jsonRaw, err := json.Marshal(source)
-			if err != nil {
-				t.Fatal(err)
-			}
-			yamlRaw, err := yaml.Marshal(source)
-			if err != nil {
-				t.Fatal(err)
-			}
-			for _, raw := range [][]byte{jsonRaw, yamlRaw} {
-				var fields map[string]any
-				if err := yaml.Unmarshal(raw, &fields); err != nil || !reflect.DeepEqual(fields, expected) {
-					t.Fatal("serialized backend changed its credential field layout", err)
-				}
+			var fields map[string]any
+			if err := yaml.Unmarshal(raw, &fields); err != nil || !reflect.DeepEqual(fields, expected) {
+				t.Fatal("serialized Store changed its credential field layout", err)
 			}
 		})
 	}
@@ -105,8 +96,10 @@ func TestLoadCredentialSources(t *testing.T) {
 					continue
 				}
 				t.Run(backend+"/"+mode+"/"+pathMode, func(t *testing.T) {
+					workingDirectory := t.TempDir()
+					t.Chdir(workingDirectory)
 					cfg := credentialTestConfig(t, backend)
-					fields := cfg.Routing.Stores[0].Local.credentials()
+					fields := cfg.Stores[0].Authentication
 					username, password := fields.Username, fields.Password
 					if mode == "username-file" || mode == "both-files" {
 						fields.Username, fields.UsernameFile = "", "username.txt"
@@ -121,7 +114,7 @@ func TestLoadCredentialSources(t *testing.T) {
 							}
 						}
 					}
-					basicFilename, routingFilename := writeCredentialTestDocuments(t, cfg)
+					configFilename := writeCredentialTestDocument(t, cfg)
 					for _, input := range [][2]string{
 						{fields.UsernameFile, username + "\n"},
 						{fields.PasswordFile, password + "\r\n"},
@@ -131,8 +124,8 @@ func TestLoadCredentialSources(t *testing.T) {
 							continue
 						}
 						if !filepath.IsAbs(filename) {
-							filename = filepath.Join(filepath.Dir(routingFilename), filename)
-							decoy := filepath.Join(filepath.Dir(basicFilename), input[0])
+							filename = filepath.Join(filepath.Dir(configFilename), filename)
+							decoy := filepath.Join(workingDirectory, input[0])
 							if err := os.WriteFile(decoy, []byte("invalid\x00"), 0600); err != nil {
 								t.Fatal(err)
 							}
@@ -148,11 +141,11 @@ func TestLoadCredentialSources(t *testing.T) {
 							t.Fatal(err)
 						}
 					}
-					loaded, err := Load(basicFilename, routingFilename)
+					loaded, err := Load(configFilename)
 					if err != nil {
 						t.Fatal("all inline/file combinations must load without backend, DNS or CA-file IO", err)
 					}
-					resolved := loaded.Routing.Stores[0].Local.credentials()
+					resolved := loaded.Stores[0].Authentication
 					if resolved.Username != username || resolved.Password != password || resolved.UsernameFile != "" || resolved.PasswordFile != "" {
 						t.Fatal("credential resolution changed values or retained a file reference")
 					}
@@ -228,7 +221,7 @@ func TestLoadLargeCredentialsFromTemporaryFiles(t *testing.T) {
 	}
 	username := strings.Repeat("u", 8192)
 	password := strings.Repeat("p", 1<<20)
-	fields := cfg.Routing.Stores[0].Local.credentials()
+	fields := cfg.Stores[0].Authentication
 	fields.Username, fields.Password = "", ""
 	fields.UsernameFile = filepath.Join(directory, "username.txt")
 	fields.PasswordFile = filepath.Join(directory, "password.txt")
@@ -238,12 +231,12 @@ func TestLoadLargeCredentialsFromTemporaryFiles(t *testing.T) {
 	if err := os.WriteFile(fields.PasswordFile, []byte(password+"\r\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	basicFile, routingFile := writeCredentialTestDocuments(t, cfg)
-	loaded, err := Load(basicFile, routingFile)
+	configFilename := writeCredentialTestDocument(t, cfg)
+	loaded, err := Load(configFilename)
 	if err != nil {
 		t.Fatal("large generated credentials retained an artificial path/text threshold", err)
 	}
-	resolved := loaded.Routing.Stores[0].Local.credentials()
+	resolved := loaded.Stores[0].Authentication
 	if resolved.Username != username || resolved.Password != password || resolved.UsernameFile != "" || resolved.PasswordFile != "" {
 		t.Fatal("large credential values were changed or file sources not cleared")
 	}
@@ -333,15 +326,15 @@ func TestCredentialSourceValidation(t *testing.T) {
 
 func TestLoadValidatesAllCredentialSourcesBeforeIO(t *testing.T) {
 	cfg := credentialTestConfig(t, "search")
-	first := cfg.Routing.Stores[0].Local.credentials()
+	first := cfg.Stores[0].Authentication
 	first.Username, first.UsernameFile = "", "missing-secret-sentinel.txt"
 	other := credentialTestConfig(t, "mongodb")
-	second := other.Routing.Stores[0].Local.credentials()
+	second := other.Stores[0].Authentication
 	second.PasswordFile = "conflicting-secret-sentinel.txt"
-	cfg.Routing.Stores = append(cfg.Routing.Stores, other.Routing.Stores[0])
+	cfg.Stores = append(cfg.Stores, other.Stores[0])
 
-	basicFilename, routingFilename := writeCredentialTestDocuments(t, cfg)
-	if _, err := Load(basicFilename, routingFilename); err == nil || err.Error() != "credential value and file are mutually exclusive" {
+	configFilename := writeCredentialTestDocument(t, cfg)
+	if _, err := Load(configFilename); err == nil || err.Error() != "credential value and file are mutually exclusive" {
 		t.Fatal("all source conflicts must be rejected before opening the earlier missing credential file", err)
 	}
 }
@@ -350,25 +343,25 @@ func TestLoadValidatesGraphBeforeCredentialIO(t *testing.T) {
 	for _, mode := range []string{"unknown-service", "local-alias", "large-membership"} {
 		t.Run(mode, func(t *testing.T) {
 			cfg := credentialTestConfig(t, "search")
-			fields := cfg.Routing.Stores[0].Local.credentials()
+			fields := cfg.Stores[0].Authentication
 			fields.Username, fields.UsernameFile = "", "missing-secret-sentinel.txt"
-			want := "invalid or duplicate Store"
+			want := "invalid or duplicate Store name"
 			switch mode {
 			case "unknown-service":
-				cfg.Routing.Stores[0].Name = "INVALID"
+				cfg.Stores[0].Name = "INVALID"
 			case "local-alias":
 
-				cfg.Routing.Stores = append(cfg.Routing.Stores, cfg.Routing.Stores[0])
+				cfg.Stores = append(cfg.Stores, cfg.Stores[0])
 			case "large-membership":
-				for len(cfg.Routing.Stores) < 32 {
-					service := cfg.Routing.Stores[0]
-					service.Name = "store-" + strconv.Itoa(len(cfg.Routing.Stores))
-					cfg.Routing.Stores = append(cfg.Routing.Stores, service)
+				for len(cfg.Stores) < 32 {
+					service := cfg.Stores[0]
+					service.Name = "store-" + strconv.Itoa(len(cfg.Stores))
+					cfg.Stores = append(cfg.Stores, service)
 				}
 				want = "credential file unavailable"
 			}
-			basicFilename, routingFilename := writeCredentialTestDocuments(t, cfg)
-			if _, err := Load(basicFilename, routingFilename); err == nil || err.Error() != want {
+			configFilename := writeCredentialTestDocument(t, cfg)
+			if _, err := Load(configFilename); err == nil || err.Error() != want {
 				t.Fatal("static graph failures must precede credential file IO", err)
 			}
 		})
@@ -379,15 +372,15 @@ func TestUnresolvedCredentialFilesCannotOpen(t *testing.T) {
 	for _, backend := range []string{"mongodb", "search"} {
 		t.Run(backend, func(t *testing.T) {
 			cfg := credentialTestConfig(t, backend)
-			fields := cfg.Routing.Stores[0].Local.credentials()
+			fields := cfg.Stores[0].Authentication
 			fields.Username, fields.UsernameFile = "", "unopened-secret-sentinel.txt"
-			raw, err := yaml.Marshal(cfg.Routing)
+			raw, err := yaml.Marshal(cfg)
 			if err != nil {
 				t.Fatal(err)
 			}
-			_, decodeErr := DecodeRouting(strings.NewReader(string(raw)))
+			_, decodeErr := Decode(strings.NewReader(string(raw)))
 			node, openErr := Open(context.Background(), cfg)
-			for _, err := range []error{decodeErr, cfg.Routing.Validate(), cfg.Validate(), openErr} {
+			for _, err := range []error{decodeErr, cfg.Validate(), openErr} {
 				if err == nil || err.Error() != "unresolved credential file" {
 					t.Fatal("unresolved credential sources must fail without reading files or opening backends/listeners", err)
 				}
@@ -401,19 +394,15 @@ func TestUnresolvedCredentialFilesCannotOpen(t *testing.T) {
 
 func TestMongoCredentialMappingAndProfile(t *testing.T) {
 	cfg := credentialTestConfig(t, "mongodb")
-	m := cfg.Routing.Stores[0].Local.Backend.MongoDB
-	cfg.Routing.Stores[0].Local.Backend.Authentication.Username = "user:name@/%?#+ 汉"
-	cfg.Routing.Stores[0].Local.Backend.Authentication.Password = " password:/@%#?+[]汉 "
+	m := cfg.Stores[0].MongoDB
+	cfg.Stores[0].Authentication.Username = "user:name@/%?#+ 汉"
+	cfg.Stores[0].Authentication.Password = " password:/@%#?+[]汉 "
 	if err := cfg.Validate(); err != nil {
 		t.Fatal("special credential characters must be accepted without URI encoding", err)
 	}
-	resolved, err := cfg.Resolve()
-	if err != nil {
-		t.Fatal(err)
-	}
-	backend := resolved.Routing.Stores[0].Local.mongoConfig("mongodb")
+	backend := cfg.Stores[0].mongoConfig()
 	parsed, err := url.Parse(backend.URI)
-	if err != nil || parsed.User != nil || backend.URI != m.URI || backend.Username != cfg.Routing.Stores[0].Local.Backend.Authentication.Username || backend.Password != cfg.Routing.Stores[0].Local.Backend.Authentication.Password {
+	if err != nil || parsed.User != nil || backend.URI != m.URI || backend.Username != cfg.Stores[0].Authentication.Username || backend.Password != cfg.Stores[0].Authentication.Password {
 		t.Fatal("MongoDB credentials must remain separate and unchanged in backend configuration", err)
 	}
 	m.URI = "mongodb://user:password-secret-sentinel@unresolved.invalid:27017/?authSource=admin&authMechanism=SCRAM-SHA-256&tls=true"
@@ -429,74 +418,49 @@ func TestMongoCredentialMappingAndProfile(t *testing.T) {
 func TestLoadLaterInvalidCredentialBeforeStartup(t *testing.T) {
 	cfg := credentialTestConfig(t, "search")
 	other := credentialTestConfig(t, "mongodb")
-	fields := other.Routing.Stores[0].Local.credentials()
+	fields := other.Stores[0].Authentication
 	fields.Password, fields.PasswordFile = "", "invalid-secret-sentinel.txt"
-	cfg.Routing.Stores = append(cfg.Routing.Stores, other.Routing.Stores[0])
+	cfg.Stores = append(cfg.Stores, other.Stores[0])
 
-	basicFilename, routingFilename := writeCredentialTestDocuments(t, cfg)
-	filename := filepath.Join(filepath.Dir(routingFilename), fields.PasswordFile)
+	configFilename := writeCredentialTestDocument(t, cfg)
+	filename := filepath.Join(filepath.Dir(configFilename), fields.PasswordFile)
 	if err := os.WriteFile(filename, []byte("bad\x00secret-sentinel"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Load(basicFilename, routingFilename); err == nil || err.Error() != "invalid credential file content" {
+	if _, err := Load(configFilename); err == nil || err.Error() != "invalid credential file content" {
 		t.Fatal("later invalid secret must fail before opening the first Search backend or missing CA", err)
 	}
 }
 
 func TestCredentialSourceYAMLFieldsAreStrict(t *testing.T) {
-	for _, backend := range []string{"mongodb", "search"} {
-		t.Run(backend, func(t *testing.T) {
-			cfg := credentialTestConfig(t, backend)
-			raw, err := yaml.Marshal(cfg.Routing)
-			if err != nil {
-				t.Fatal(err)
-			}
-			input := string(raw)
-			for _, replacement := range [][2]string{
-				{`username_file: ""`, "username_file: true"},
-				{`username_file: ""`, "username_file: 42"},
-				{`username_file: ""`, "username_file: null"},
-				{`password_file: ""`, "password_file: []"},
-				{`username_file: ""`, "username_file: !!str secret-sentinel"},
-				{`username_file: ""`, "usernamefile: secret-sentinel"},
-			} {
-				if !strings.Contains(input, replacement[0]) {
-					t.Fatal("credential source field missing from serialized test document")
-				}
-				invalid := strings.Replace(input, replacement[0], replacement[1], 1)
-				_, err := DecodeRouting(strings.NewReader(invalid))
-				if err == nil || strings.Contains(err.Error(), "sentinel") {
-					t.Fatal("invalid credential source YAML accepted or exposed input", err)
-				}
-			}
-			for _, line := range strings.Split(input, "\n") {
-				if strings.TrimSpace(line) != `username_file: ""` {
-					continue
-				}
-				duplicate := strings.Replace(input, line, line+"\n"+strings.Replace(line, "username_file", "USERNAME_FILE", 1), 1)
-				_, err := DecodeRouting(strings.NewReader(duplicate))
-				if err == nil || err.Error() != "routing duplicate configuration field" {
-					t.Fatal("case duplicate credential source fields must be rejected", err)
-				}
-			}
-		})
+	for _, fields := range []string{
+		"username_file: true\n      password: p\n",
+		"username_file: 42\n      password: p\n",
+		"username_file: [secret-sentinel]\n      password: p\n",
+		"usernamefile: secret-sentinel\n      password: p\n",
+		"USERNAME_FILE: secret-sentinel\n      password: p\n",
+	} {
+		input := searchDocument + "    authentication:\n      " + fields
+		if _, err := Decode(strings.NewReader(input)); err == nil || strings.Contains(err.Error(), "sentinel") {
+			t.Fatal("invalid credential source YAML accepted or exposed input", fields, err)
+		}
 	}
 }
 
-func TestCredentialPathsUseRoutingSymlinkDirectory(t *testing.T) {
+func TestCredentialPathsUseConfigSymlinkDirectory(t *testing.T) {
 	cfg := credentialTestConfig(t, "search")
-	fields := cfg.Routing.Stores[0].Local.credentials()
+	fields := cfg.Stores[0].Authentication
 	fields.Username, fields.UsernameFile = "", "username.txt"
-	basicFilename, routingFilename := writeCredentialTestDocuments(t, cfg)
-	directory := filepath.Dir(routingFilename)
+	configFilename := writeCredentialTestDocument(t, cfg)
+	directory := filepath.Dir(configFilename)
 	targetDirectory := filepath.Join(directory, "revision")
 	if err := os.Mkdir(targetDirectory, 0700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Rename(routingFilename, filepath.Join(targetDirectory, "routes.yaml")); err != nil {
+	if err := os.Rename(configFilename, filepath.Join(targetDirectory, "weir.yaml")); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Symlink("revision/routes.yaml", routingFilename); err != nil {
+	if err := os.Symlink("revision/weir.yaml", configFilename); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(directory, "username.txt"), []byte("public-user\n"), 0600); err != nil {
@@ -505,12 +469,12 @@ func TestCredentialPathsUseRoutingSymlinkDirectory(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(targetDirectory, "username.txt"), []byte("invalid\x00"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	loaded, err := Load(basicFilename, routingFilename)
+	loaded, err := Load(configFilename)
 	if err != nil {
-		t.Fatal("credential paths must use the routing filename's directory, rather than its symlink target", err)
+		t.Fatal("credential paths must use the configuration filename's directory, rather than its symlink target", err)
 	}
-	if loaded.Routing.Stores[0].Local.credentials().Username != "public-user" {
-		t.Fatal("wrong credential file selected through routing symlink")
+	if loaded.Stores[0].Authentication.Username != "public-user" {
+		t.Fatal("wrong credential file selected through a configuration symlink")
 	}
 }
 
@@ -522,24 +486,24 @@ func TestLoadMongoReplicaCredentialFiles(t *testing.T) {
 		"mongo-a.invalid:27017,[::1]:27018/?replicaSet=rs",
 	} {
 		cfg := credentialTestConfig(t, "mongodb")
-		local := cfg.Routing.Stores[0].Local
-		local.Backend.MongoDB.URI = "mongodb://" + endpoint + "&authSource=admin&authMechanism=SCRAM-SHA-256&tls=true"
-		fields := local.credentials()
+		definition := &cfg.Stores[0]
+		definition.MongoDB.URI = "mongodb://" + endpoint + "&authSource=admin&authMechanism=SCRAM-SHA-256&tls=true"
+		fields := definition.Authentication
 		username, password := fields.Username, fields.Password
 		fields.Username, fields.Password = "", ""
 		fields.UsernameFile, fields.PasswordFile = "new-user.txt", "new-password.txt"
-		basic, routing := writeCredentialTestDocuments(t, cfg)
+		configFilename := writeCredentialTestDocument(t, cfg)
 		for name, value := range map[string]string{fields.UsernameFile: username, fields.PasswordFile: password} {
-			filename := filepath.Join(filepath.Dir(routing), name)
+			filename := filepath.Join(filepath.Dir(configFilename), name)
 			if err := os.WriteFile(filename, []byte(value), 0600); err != nil {
 				t.Fatal("cannot write new fixture credential material")
 			}
 		}
-		loaded, err := Load(basic, routing)
+		loaded, err := Load(configFilename)
 		if err != nil {
 			t.Fatal("Load rejected a supported URI before resolving new credential files", err)
 		}
-		resolved := loaded.Routing.Stores[0].Local.credentials()
+		resolved := loaded.Stores[0].Authentication
 		if resolved.Username != username || resolved.Password != password || resolved.UsernameFile != "" || resolved.PasswordFile != "" {
 			t.Fatal("Load changed resolved credential values or retained source paths")
 		}
@@ -566,17 +530,18 @@ func TestLoadRejectsLaterMongoURIBeforeEarlierCredentialIO(t *testing.T) {
 		"mongodb://[::1]:27017/?replicaSet=rs&private-sentinel=" + strings.Repeat("x", 4096),
 	} {
 		cfg := credentialTestConfig(t, "search")
-		first := cfg.Routing.Stores[0].Local.credentials()
+		first := cfg.Stores[0].Authentication
 		first.Username, first.UsernameFile = "", "not-created-private-sentinel.txt"
 		later := credentialTestConfig(t, "mongodb")
-		later.Routing.Stores[0].Local.Backend.MongoDB.URI = uri
-		cfg.Routing.Stores = append(cfg.Routing.Stores, later.Routing.Stores[0])
-		want := mongodb.ValidateURI(uri)
+		later.Stores[0].MongoDB.URI = uri
+		cfg.Stores = append(cfg.Stores, later.Stores[0])
+		uriOnly := mongodb.Config{Store: "mongo", URI: uri}
+		want := mongodb.ValidateConfig(uriOnly)
 		if want == nil {
 			t.Fatal("negative URI test is not invalid")
 		}
-		basic, routing := writeCredentialTestDocuments(t, cfg)
-		_, err := Load(basic, routing)
+		configFilename := writeCredentialTestDocument(t, cfg)
+		_, err := Load(configFilename)
 		if err == nil || err.Error() != want.Error() || strings.Contains(err.Error(), "sentinel") {
 			t.Fatal("later invalid URI must fail before earlier credential file IO without details", err)
 		}

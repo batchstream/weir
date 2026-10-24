@@ -43,7 +43,6 @@ class PackageTests(unittest.TestCase):
         included = (
             'README.md',
             'config/weir.reference.yaml',
-            'config/routes.reference.yaml',
             'deploy/docker/Dockerfile',
             'deploy/docker/base.json',
             'licenses/purego-NOTICE.txt',
@@ -117,8 +116,7 @@ class PackageTests(unittest.TestCase):
                 'deploy/docker/base.json': json.dumps(base).encode(),
                 'deploy/docker/Dockerfile': b'product Dockerfile',
                 'README.md': b'fixture docs',
-                'config/weir.reference.yaml': b'# Complete process reference\nlisteners:\n  application: 127.0.0.1:7447\n',
-                'config/routes.reference.yaml': b'# Complete local Store reference\nstores: []\n',
+                'config/weir.reference.yaml': b'# Configuration reference\nlisteners:\n  application: 127.0.0.1:7447\n',
             }
             for license_name in package.PUREGO_LICENSES:
                 inputs['licenses/' + license_name] = license_name.encode()
@@ -157,7 +155,7 @@ class PackageTests(unittest.TestCase):
                 self.assertEqual((context / 'weir').read_bytes(), built.read_bytes())
             self.assertEqual((root / 'oci-context' / 'Dockerfile').read_bytes(), inputs['deploy/docker/Dockerfile'])
             with tarfile.open(output / 'weir-linux-arm64.tar.gz') as archive:
-                configurations = ('config/weir.reference.yaml', 'config/routes.reference.yaml')
+                configurations = ('config/weir.reference.yaml',)
                 yaml_files = {name for name in archive.getnames() if name.endswith('.yaml')}
                 self.assertEqual(yaml_files, set(configurations))
                 for filename in configurations:

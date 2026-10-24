@@ -21,17 +21,14 @@ func TestDiagnosticsMaximumStaticSeries(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cfg.Basic.Listeners.Application = first.Addr().String()
+	cfg.Listeners.Application = first.Addr().String()
 	_ = first.Close()
-	cfg.Basic.Diagnostics.Address = "127.0.0.1:0"
-	cfg.Routing.Stores = nil
+	cfg.Listeners.Diagnostics = "127.0.0.1:0"
+	cfg.Stores = nil
 
 	for i := 0; i < 16; i++ {
 		name := fmt.Sprintf("local%d", i)
-		mongo := mongoFixtureConfig(t, backend.URI)
-		local := &Local{Backend: mongo}
-		service := StoreConfig{Name: name, Local: local}
-		cfg.Routing.Stores = append(cfg.Routing.Stores, service)
+		cfg.Stores = append(cfg.Stores, mongoFixtureStore(t, name, backend.URI))
 
 	}
 

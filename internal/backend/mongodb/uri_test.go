@@ -261,7 +261,7 @@ func TestMongoReplicaProfileRejectsAmbiguity(t *testing.T) {
 
 func TestMongoURIValidationDoesNotReplaceConfigPolicy(t *testing.T) {
 	uri := "mongodb://[::1]:27017,mongo.invalid:27018/?replicaSet=rs&authSource=admin&authMechanism=SCRAM-SHA-256&tls=true"
-	if err := ValidateURI(uri); err != nil {
+	if _, err := parseURI(uri); err != nil {
 		t.Fatal("URI validation must not need credentials, trust files or DNS", err)
 	}
 	cfg := Config{Store: "mongo", URI: uri}
@@ -278,7 +278,7 @@ func TestMongoURIValidationDoesNotReplaceConfigPolicy(t *testing.T) {
 		t.Fatal("URI validation cannot replace Store validation")
 	}
 	for _, query := range []string{"authSource=", "authMechanism=", "tls=", "authSource=admin", "authMechanism=SCRAM-SHA-256&authSource=admin", "tls=true", "authMechanism=SCRAM-SHA-256&authSource=&tls=true"} {
-		if err := ValidateURI("mongodb://mongo.invalid:27017/?" + query); err == nil {
+		if _, err := parseURI("mongodb://mongo.invalid:27017/?" + query); err == nil {
 			t.Fatal("present empty or incomplete authentication options accepted")
 		}
 	}

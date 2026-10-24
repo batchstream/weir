@@ -8,29 +8,7 @@ import (
 	"strings"
 	"unicode"
 	"unicode/utf8"
-
-	"github.com/batchstream/weir/internal/backend/mongodb"
 )
-
-func (l *Local) credentials() *Credentials {
-	return l.Backend.Authentication
-}
-
-func (cfg RoutingConfig) validateCredentialSources() error {
-	for _, service := range cfg.Stores {
-		if m := service.Local.Backend.MongoDB; m != nil {
-			if err := mongodb.ValidateURI(m.URI); err != nil {
-				return err
-			}
-		}
-		if credentials := service.Local.credentials(); credentials != nil {
-			if err := credentials.validateSources(); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
-}
 
 func (c Credentials) validateSources() error {
 	if c.Username != "" && c.UsernameFile != "" || c.Password != "" && c.PasswordFile != "" {
@@ -63,24 +41,6 @@ func validCredentialText(value string) bool {
 		}
 	}
 	return true
-}
-
-func (cfg RoutingConfig) resolveCredentials(directory string) error {
-	if err := cfg.validateStores(); err != nil {
-		return err
-	}
-	// Validate every source first, so a later conflict cannot trigger earlier IO.
-	if err := cfg.validateCredentialSources(); err != nil {
-		return err
-	}
-	for _, service := range cfg.Stores {
-		if credentials := service.Local.credentials(); credentials != nil {
-			if err := credentials.resolve(directory); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
 }
 
 func (c *Credentials) resolve(directory string) error {

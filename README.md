@@ -18,44 +18,30 @@ also require transactions. Native commands can provision backend resources.
 ```sh
 go build -o bin/weir ./cmd/weir
 cp config/weir.reference.yaml weir.yaml
-cp config/routes.reference.yaml routes.yaml
 ```
 
-Edit the copied files for your addresses, backends and authentication, then run:
+Edit the copied file for your addresses, backends and authentication, then run:
 
 ```sh
-bin/weir check --config weir.yaml --routes routes.yaml
-bin/weir check --config weir.yaml --routes routes.yaml --effective
-bin/weir serve --config weir.yaml --routes routes.yaml
+bin/weir check --config weir.yaml
+bin/weir serve --config weir.yaml
 ```
 
-`--config` defaults to `./weir.yaml`. Omit `--routes` to run without Stores.
-Paths resolve from the working directory. Configuration
-changes require a restart. The effective report shows defaults and automatic
-sources with authentication and trust paths redacted.
-
-A minimal local setup uses two files:
+`--config` defaults to `./weir.yaml`. Configuration changes require a restart.
+A minimal local setup:
 
 ```yaml
-# weir.yaml
 listeners:
   application: 127.0.0.1:7447
-diagnostics:
-  address: 127.0.0.1:7449
-```
-
-```yaml
-# routes.yaml
+  diagnostics: 127.0.0.1:7449
 stores:
   - name: mongo
-    backend:
-      mongodb:
-        uri: mongodb://127.0.0.1:27028/?directConnection=true
+    mongodb:
+      uri: mongodb://127.0.0.1:27028/?directConnection=true
 ```
 
-The [process reference](config/weir.reference.yaml) and
-[Store reference](config/routes.reference.yaml) describe every supported field.
-[Configuration](docs/configuration.md) explains file loading, addresses and policy.
+The [reference](config/weir.reference.yaml) describes every supported field, and
+[Configuration](docs/configuration.md) explains loading, addresses and defaults.
 
 The example intentionally uses isolated MongoDB **direct mode**, without failover.
 For automatic primary discovery in an ordinary replica set, configure one to seven

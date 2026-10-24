@@ -1,72 +1,39 @@
 package app
 
 import (
-	"bytes"
-	"os"
 	"path/filepath"
-	"reflect"
 	"strings"
 	"testing"
-	"time"
 
+	"github.com/batchstream/weir/internal/store"
 	"github.com/batchstream/weir/internal/testutil"
 )
 
-func TestBasicConfigurationFile(t *testing.T) {
+func TestReferenceConfigurationFile(t *testing.T) {
 	filename := filepath.Join(testutil.Root(t), "config", "weir.reference.yaml")
-	cfg, err := Load(filename, "")
+	cfg, err := Load(filename)
 	if err != nil {
-		t.Fatal("basic configuration must load without routing", err)
+		t.Fatal("reference configuration must load without backend IO", err)
 	}
-
-	expected := DefaultConfig().Basic.resolved()
-	expected.Listeners.Application = "127.0.0.1:7447"
-	expected.Diagnostics.Address = "127.0.0.1:7449"
-	if !reflect.DeepEqual(cfg.Basic, expected) {
-		t.Fatal("basic configuration differs from its documented defaults and addresses")
-	}
-}
-
-func TestRoutingConfigurationFile(t *testing.T) {
-	filename := filepath.Join(testutil.Root(t), "config", "routes.reference.yaml")
-	raw, err := os.ReadFile(filename)
-	if err != nil {
-		t.Fatal(err)
-	}
-	cfg, err := DecodeRouting(bytes.NewReader(raw))
-	if err != nil {
-		t.Fatal("Store file must validate without backend IO", err)
+	if cfg.Listeners.Application != "127.0.0.1:7447" || cfg.Listeners.Diagnostics != "127.0.0.1:7449" || cfg.shutdownTimeout() != defaultShutdownTimeout {
+		t.Fatal("reference listeners or shutdown timeout differ from the documented values", cfg)
 	}
 	if len(cfg.Stores) != 2 {
 		t.Fatal("reference must declare MongoDB and Search Stores")
 	}
-	for _, definition := range cfg.Stores {
-		limits := definition.runtimeLimits()
-		if limits.BatchOperations != 128 || limits.BatchBytes != 4<<20 || limits.MaxInFlight != 16 || limits.BatchWait != 20*time.Millisecond {
-			t.Fatal("documented scheduler defaults differ")
-		}
-		if limits.QueueOperations != 1024 || limits.QueueBytes != 32<<20 {
-			t.Fatal("documented working memory or backend timeout differs")
-		}
-		if definition.Name == "mongo" {
-			if definition.Backend.MongoDB == nil || definition.Backend.Search != nil {
-				t.Fatal("invalid documented Mongo Store")
-			}
-		} else if definition.Name == "search" {
-			if definition.Backend.Search == nil || definition.Backend.MongoDB != nil {
-				t.Fatal("invalid documented Search Store")
-			}
-			backend := definition.Backend.Search
-			if !strings.HasPrefix(backend.URL, "https://") || definition.Backend.Authentication == nil || definition.Backend.Authentication.Username != "weir" || definition.Backend.Authentication.Password != "change-me" || definition.Backend.TLS.CAFile != "/etc/weir/ca.pem" {
-				t.Fatal("documented Search HTTPS fields differ")
-			}
-		} else {
-			t.Fatal("unexpected local Store")
-		}
+	mongo, search := cfg.Stores[0], cfg.Stores[1]
+	if mongo.MongoDB == nil || mongo.Search != nil || mongo.runtimeLimits() != store.DefaultLimits() {
+		t.Fatal("documented MongoDB Store or batching defaults differ")
+	}
+	authentication := search.Authentication
+	if search.Search == nil || !strings.HasPrefix(search.Search.URL, "https://") || authentication == nil ||
+		authentication.Username != "weir" || authentication.Password != "change-me" || search.TLS.CAFile != "/etc/weir/ca.pem" {
+		t.Fatal("documented Search HTTPS fields differ")
 	}
 }
 
-func TestRoutingMongoReplicaProfiles(t *testing.T) {
+func TestMongoReplicaProfiles(t *testing.T) {
+	prefix := "listeners:\n  application: 127.0.0.1:0\nstores:\n  - name: mongo\n    mongodb:\n      uri: "
 	for _, uri := range []string{
 		"mongodb://mongo-a.invalid:27017/?replicaSet=orders",
 		"mongodb://mongo-a.invalid:27017,mongo-b.invalid:27018/?replicaSet=orders",
@@ -78,20 +45,13 @@ func TestRoutingMongoReplicaProfiles(t *testing.T) {
 		"mongodb://mongo-a.invalid:27017/",
 		"mongodb://[::1]:27017,mongo-b.invalid:27018/?replicaSet=orders&directConnection=false",
 	} {
-		input := "stores:\n  - name: mongo\n    backend:\n      mongodb:\n        uri: " + uri + "\n"
-		cfg, err := DecodeRouting(strings.NewReader(input))
-		if err != nil || len(cfg.Stores) != 1 || cfg.Stores[0].Backend.MongoDB.URI != uri {
-			t.Fatal("documented discovery profile must decode without DNS or backend IO", err)
+		cfg, err := Decode(strings.NewReader(prefix + uri + "\n"))
+		if err != nil || cfg.Stores[0].MongoDB.URI != uri {
+			t.Fatal("documented discovery profile must decode without DNS or backend IO", uri, err)
 		}
-		full := emptyConfig(t)
-		full.Routing = cfg
-		if err := full.Validate(); err != nil {
-			t.Fatal("full connection profile validation must remain pure", err)
-		}
-		basic, routing := writeCredentialTestDocuments(t, full)
-		loaded, err := Load(basic, routing)
-		if err != nil || loaded.Routing.Stores[0].Backend.MongoDB.URI != uri {
-			t.Fatal("Load must use the same URI grammar without backend IO", err)
+		loaded, err := Load(writeCredentialTestDocument(t, cfg))
+		if err != nil || loaded.Stores[0].MongoDB.URI != uri {
+			t.Fatal("Load must use the same URI grammar without backend IO", uri, err)
 		}
 	}
 	for _, uri := range []string{
@@ -99,9 +59,8 @@ func TestRoutingMongoReplicaProfiles(t *testing.T) {
 		"mongodb://mongo-a.invalid:27017/?replicaSet=orders&directConnection=true",
 		"mongodb://mongo-a.invalid:27017/?replicaSet=orders&readPreference=secondary",
 	} {
-		input := "stores:\n  - name: mongo\n    backend:\n      mongodb:\n        uri: " + uri + "\n"
-		if _, err := DecodeRouting(strings.NewReader(input)); err == nil {
-			t.Fatal("ambiguous or unsupported discovery profile accepted")
+		if _, err := Decode(strings.NewReader(prefix + uri + "\n")); err == nil {
+			t.Fatal("ambiguous or unsupported discovery profile accepted", uri)
 		}
 	}
 }
