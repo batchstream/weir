@@ -4,8 +4,6 @@ package backend
 import (
 	"fmt"
 	"time"
-
-	"github.com/batchstream/weir/internal/luaengine"
 )
 
 type Options struct {
@@ -17,13 +15,12 @@ type Options struct {
 	MetadataCacheEntries int
 	BatchBytes           int
 	ExchangeBytes        int
-	Lua                  luaengine.Limits
 }
 
 func DefaultOptions() Options {
 	opts := Options{ConnectTimeout: 2 * time.Second, CleanupTimeout: 2 * time.Second,
 		RetryAttempts: 5, RetryBackoff: 5 * time.Millisecond, IdleTimeout: 30 * time.Second, MetadataCacheEntries: 64,
-		BatchBytes: 4 << 20, ExchangeBytes: 32 << 20, Lua: luaengine.DefaultLimits()}
+		BatchBytes: 4 << 20, ExchangeBytes: 32 << 20}
 	return opts
 }
 
@@ -34,5 +31,5 @@ func (opts Options) Validate() error {
 	if opts.CleanupTimeout <= 0 || opts.RetryAttempts < 1 || opts.RetryBackoff < 0 || opts.IdleTimeout < 0 {
 		return fmt.Errorf("invalid backend cleanup, retry or idle timeout configuration")
 	}
-	return opts.Lua.Validate()
+	return nil
 }

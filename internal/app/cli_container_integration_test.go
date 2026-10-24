@@ -246,13 +246,14 @@ func startCLIContainer(t *testing.T, opts cliContainerOptions) *cliContainer {
 	return service
 }
 
-// sample scrapes the container's diagnostics and fails unless the CLI observes
-// the container's cgroup limit.
+// sample scrapes the container's diagnostics and fails unless the CLI set its
+// Go memory limit to 90% of the container's.
 func (service *cliContainer) sample(t *testing.T) map[string]*dto.MetricFamily {
 	t.Helper()
 	metrics := testmetrics.Scrape(t, service.diagnostic)
-	if testmetrics.Sum(metrics, "weir_memory_cgroup_valid") != 1 || testmetrics.Sum(metrics, "weir_memory_cgroup_limit_bytes") != service.capacity || testmetrics.Sum(metrics, "weir_memory_unknown") != 0 {
-		t.Fatal("missing or wrong native cgroup observation")
+	limit := float64(uint64(service.capacity) / 10 * 9)
+	if testmetrics.Sum(metrics, "weir_memory_limit_bytes") != limit {
+		t.Fatal("CLI did not derive its Go memory limit from the container")
 	}
 	return metrics
 }

@@ -36,7 +36,7 @@ func TestStorelessNodeLifecycleAndUnknownStore(t *testing.T) {
 			t.Error(err)
 		}
 	})
-	if len(node.stores) != 0 || node.guard.Snapshot().Budget == 0 {
+	if len(node.stores) != 0 || node.guard.Snapshot().Used == 0 {
 		t.Fatal("an empty graph must construct admission only, with no backend or remote state")
 	}
 	if node.ready() {

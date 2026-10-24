@@ -40,18 +40,6 @@ func open(ctx context.Context, cfg Config, transport server.Limits) (*Node, erro
 	}
 	overloadTargets := []overload.Target{admission}
 
-	drainOpts := prometheus.CounterOpts{
-		Name: "weir_node_drains_total",
-		Help: "First Close calls, including partial startup cleanup.",
-	}
-	durationOpts := prometheus.HistogramOpts{
-		Name:    "weir_node_drain_seconds",
-		Help:    "Node data drain and owned backend cleanup duration.",
-		Buckets: []float64{.01, .1, 1, 5, 10},
-	}
-	node.drains = prometheus.NewCounter(drainOpts)
-	node.drainDuration = prometheus.NewHistogram(durationOpts)
-
 	complete := false
 	defer func() {
 		if !complete {
@@ -87,7 +75,7 @@ func open(ctx context.Context, cfg Config, transport server.Limits) (*Node, erro
 		return nil, err
 	}
 
-	node.guard = overload.New(overloadTargets, overload.DefaultLimits())
+	node.guard = overload.New(overloadTargets)
 	if err := node.registerMetrics(); err != nil {
 		return nil, err
 	}

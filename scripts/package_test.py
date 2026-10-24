@@ -45,7 +45,6 @@ class PackageTests(unittest.TestCase):
             'config/weir.reference.yaml',
             'deploy/docker/Dockerfile',
             'deploy/docker/base.json',
-            'licenses/purego-NOTICE.txt',
         )
         for name in included:
             self.assertTrue(package.allowed(name), name)
@@ -118,8 +117,6 @@ class PackageTests(unittest.TestCase):
                 'README.md': b'fixture docs',
                 'config/weir.reference.yaml': b'# Configuration reference\nlisteners:\n  application: 127.0.0.1:7447\n',
             }
-            for license_name in package.PUREGO_LICENSES:
-                inputs['licenses/' + license_name] = license_name.encode()
 
             def run(args, *, cwd=None, env=None):
                 if args[:3] == ['git', 'cat-file', 'blob']:
@@ -163,9 +160,7 @@ class PackageTests(unittest.TestCase):
                 self.assertEqual(archive.extractfile('weir').read(), b'./cmd/weir linux/arm64')
                 self.assertFalse(any(name.startswith('licenses/') for name in archive.getnames()))
             with tarfile.open(output / 'weir-darwin-arm64.tar.gz') as archive:
-                licenses = {name for name in archive.getnames() if name.startswith('licenses/')}
-                purego = {'licenses/' + name for name in package.PUREGO_LICENSES}
-                self.assertEqual(licenses, purego)
+                self.assertFalse(any(name.startswith('licenses/') for name in archive.getnames()))
             docker.assert_called_once()
 
     def test_oci_index_digest_requires_both_linux_platforms(self):

@@ -105,9 +105,9 @@ Full queues apply backpressure until dispatch or caller cancellation.
 Static queue, batch, stream and 64 MiB message limits bound memory use. Native
 commands bypass the Store queue and run in their own pool of 64 per Store, so
 slow Native consumers never hold the queue space or slots of typed reads and
-mutations. Actual process/container pressure
-controls overload admission. Container/OS limits
-provide the hard memory boundary.
+mutations. New work is refused while Go memory is above 80% of the Go memory
+limit, which the CLI sets to 90% of the container's memory limit. Container/OS
+limits provide the hard memory boundary.
 
 The application listener uses plaintext gRPC on an isolated network. Backend
 authentication stays local. In Kubernetes, expose the replicas through a headless
@@ -191,7 +191,7 @@ go test -race -p=1 -parallel=1 -tags=integration -count=1 -timeout=20m \
   -run '^TestMongoReplicaCLIReplyLoss$' ./internal/app
 ```
 
-### Load, fault and memory tests
+### Load and fault tests
 
 These tests cross-compile the Linux CLI and run it in a CPU- and memory-limited
 `busybox:1.37.0` container, reaching the MongoDB and Search fixtures above
@@ -216,31 +216,6 @@ Run the load and fault tests separately so injected faults do not distort load
 measurements. `WEIR_MONGO_SECURE_INTEGRATION=1` and
 `WEIR_SEARCH_SECURE_INTEGRATION=1` enable the TLS and authentication tests, which
 start their own fixtures.
-
-`scripts/test-memory-linux.py` runs the Linux memory Guard and CLI tests, each in
-its own memory-limited container: the Guard sampler and CLI under pressure,
-reclaimable page cache, released Go heap, shared memory, automatic and
-`GOMEMLIMIT=off` runtime limits, and external tmpfs pressure. It needs a Linux
-cgroup-v2 Docker engine of the host architecture and the script's pinned MongoDB
-image present locally; it pulls and installs nothing. The Guard cases run first
-and need no database. Only the CLI case starts MongoDB, which refuses Docker
-engine kernels 6.19 and newer
-([SERVER-121912](https://jira.mongodb.org/browse/SERVER-121912)); on such an
-engine the script reports that after the Guard cases pass:
-
-```sh
-docker pull mongo:8.0@sha256:4968f22d0c6c10ef29952f3e807f62872ba22b3312f25803564fbfc08255efc2
-WEIR_MEMORY_INTEGRATION=1 scripts/test-memory-linux.py
-```
-
-On macOS, `WEIR_MEMORY_DARWIN_NATIVE=1` runs the native `phys_footprint` Guard
-test and the in-process automatic memory test (the latter also needs
-`WEIR_MONGO_SECURE_INTEGRATION=1`):
-
-```sh
-WEIR_MEMORY_DARWIN_NATIVE=1 WEIR_MONGO_SECURE_INTEGRATION=1 \
-  go test -tags=integration -count=1 -run '^TestDarwin' ./internal/overload ./internal/app
-```
 
 The [weir-tests](https://github.com/batchstream/weir-tests) repository contains
 matched direct/Weir workloads and blackbox integration. Keep generated logs and

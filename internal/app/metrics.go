@@ -37,29 +37,11 @@ func (n *Node) Describe(ch chan<- *prometheus.Desc) {
 }
 
 func (n *Node) Collect(ch chan<- prometheus.Metric) {
-	n.mu.Lock()
-	state := n.state
-	n.mu.Unlock()
-
-	desc := prometheus.NewDesc(
-		"weir_node_state",
-		"Node lifecycle. Readiness is independent of Store load or backend connectivity.",
-		[]string{"state"},
-		nil,
-	)
-	for _, label := range []string{"constructed", "serving", "failed", "draining", "closed"} {
-		value := 0.0
-		if state == label {
-			value = 1
-		}
-		ch <- prometheus.MustNewConstMetric(desc, prometheus.GaugeValue, value, label)
-	}
-
 	ready := 0.0
-	if state == "serving" {
+	if n.ready() {
 		ready = 1
 	}
-	desc = prometheus.NewDesc(
+	desc := prometheus.NewDesc(
 		"weir_node_ready",
 		"The application listener entered service and the node is not draining or failed. Does not promise backend health.",
 		nil,
@@ -68,135 +50,19 @@ func (n *Node) Collect(ch chan<- prometheus.Metric) {
 	ch <- prometheus.MustNewConstMetric(desc, prometheus.GaugeValue, ready)
 
 	memory := n.guard.Snapshot()
-	observed, latched := 0.0, 0.0
-	if memory.Observed {
-		observed = 1
+	overloaded := 0.0
+	if memory.Overloaded {
+		overloaded = 1
 	}
-	if memory.Latched {
-		latched = 1
-	}
-	for name, value := range map[string]float64{
-		"budget_bytes":    float64(memory.Budget),
-		"sample_observed": observed,
-		"latched":         latched,
+	for _, gauge := range []struct {
+		name, help string
+		value      float64
+	}{
+		{"used_bytes", "Memory the Go runtime holds from the OS at the last sample.", float64(memory.Used)},
+		{"limit_bytes", "Go memory limit the overload guard compares with; zero means none.", float64(memory.Limit)},
+		{"overloaded", "Whether memory pressure is refusing new work.", overloaded},
 	} {
-		desc := prometheus.NewDesc(
-			"weir_memory_"+name,
-			"Last overload guard memory observation; scraping does not sample or call backends.",
-			nil,
-			nil,
-		)
-		ch <- prometheus.MustNewConstMetric(desc, prometheus.GaugeValue, value)
+		desc := prometheus.NewDesc("weir_memory_"+gauge.name, gauge.help, nil, nil)
+		ch <- prometheus.MustNewConstMetric(desc, prometheus.GaugeValue, gauge.value)
 	}
-	managed := 0.0
-	if memory.GoRuntimeManaged {
-		managed = 1
-	}
-	for name, value := range map[string]float64{
-		"go_runtime_limit_bytes": float64(memory.GoRuntimeLimit),
-		"go_runtime_managed":     managed,
-	} {
-		desc := prometheus.NewDesc(
-			"weir_memory_"+name,
-			"Last sampled Go soft memory limit (MaxInt64 means unlimited) and whether the CLI still owns an automatic finite limit; OS memory remains the admission boundary.",
-			nil,
-			nil,
-		)
-		ch <- prometheus.MustNewConstMetric(desc, prometheus.GaugeValue, value)
-	}
-	known := 0.0
-	if memory.RecoveryAllowanceKnown {
-		known = 1
-	}
-	for name, value := range map[string]float64{
-		"recovery_allowance_bytes": float64(memory.RecoveryAllowance),
-		"recovery_allowance_known": known,
-	} {
-		desc := prometheus.NewDesc(
-			"weir_memory_"+name,
-			"Process resident allowance below all trusted recovery thresholds after accounting for memory outside process RSS; known distinguishes zero allowance from missing observations.",
-			nil,
-			nil,
-		)
-		ch <- prometheus.MustNewConstMetric(desc, prometheus.GaugeValue, value)
-	}
-
-	desc = prometheus.NewDesc(
-		"weir_memory_sample_bytes",
-		"Last Guard sample by source; physical footprint and Go fallback are not RSS. Inactive sources are zero.",
-		[]string{"source"},
-		nil,
-	)
-	for _, source := range []string{"unobserved", "linux_rss", "darwin_phys_footprint", "go_sys_minus_released"} {
-		value := 0.0
-		if memory.Source == source {
-			value = float64(memory.Bytes)
-		}
-		ch <- prometheus.MustNewConstMetric(desc, prometheus.GaugeValue, value, source)
-	}
-
-	for name, value := range map[string]bool{
-		"process_valid": memory.ProcessValid,
-		"unknown":       memory.Unknown,
-		"cgroup_finite": memory.Cgroup.Finite,
-		"cgroup_valid":  memory.Cgroup.Valid,
-	} {
-		desc := prometheus.NewDesc(
-			"weir_memory_"+name,
-			"Guard observation validity; unknown observations alone do not latch overload; recovery requires complete observations.",
-			nil,
-			nil,
-		)
-		n := 0.0
-		if value {
-			n = 1
-		}
-		ch <- prometheus.MustNewConstMetric(desc, prometheus.GaugeValue, n)
-	}
-
-	for name, value := range map[string]float64{
-		"current_bytes":     float64(memory.Cgroup.Current),
-		"working_set_bytes": float64(memory.Cgroup.WorkingSet),
-		"limit_bytes":       float64(memory.Cgroup.Limit),
-		"levels":            float64(memory.Cgroup.Levels),
-	} {
-		desc := prometheus.NewDesc(
-			"weir_memory_cgroup_"+name,
-			"Visible finite cgroup with greatest working-set/max pressure; current includes file cache, working set excludes validated inactive_file. Missing breakdown uses current. Unlimited reports leaf usage with finite=0. Values require cgroup_valid=1. Never added to process RSS.",
-			nil,
-			nil,
-		)
-		ch <- prometheus.MustNewConstMetric(desc, prometheus.GaugeValue, value)
-	}
-
-	desc = prometheus.NewDesc(
-		"weir_memory_cgroup_state",
-		"Current visible cgroup profile, refreshed after complete observations; hidden ancestors are not observed.",
-		[]string{"state"},
-		nil,
-	)
-	for _, state := range []string{"not_applicable", "v2", "unknown"} {
-		value := 0.0
-		if memory.Cgroup.State == state {
-			value = 1
-		}
-		ch <- prometheus.MustNewConstMetric(desc, prometheus.GaugeValue, value, state)
-	}
-
-	desc = prometheus.NewDesc(
-		"weir_memory_cgroup_scope",
-		"Scope of the reported cgroup pair; no paths or dynamic labels.",
-		[]string{"scope"},
-		nil,
-	)
-	for _, scope := range []string{"none", "leaf", "ancestor"} {
-		value := 0.0
-		if memory.Cgroup.Scope == scope {
-			value = 1
-		}
-		ch <- prometheus.MustNewConstMetric(desc, prometheus.GaugeValue, value, scope)
-	}
-
-	n.drains.Collect(ch)
-	n.drainDuration.Collect(ch)
 }

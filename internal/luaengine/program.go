@@ -20,25 +20,9 @@ const (
 	Reject  Action = "reject"
 )
 
-type Limits struct {
-	MaxInstructions             int64
-	MaxCallDepth, MaxStackSlots int
-}
-
-func DefaultLimits() Limits {
-	limits := Limits{}
-	return limits
-}
-
-func (limits Limits) Validate() error {
-	if limits.MaxInstructions < 0 || limits.MaxCallDepth < 0 || limits.MaxStackSlots < 0 {
-		return fmt.Errorf("invalid Lua VM limits")
-	}
-	return nil
-}
-
+// Program runs until it returns or its caller's context ends, within golua's
+// default call depth and stack limits.
 type Program struct {
-	Limits     *Limits
 	Source     string
 	Current    value.Value
 	Input      value.Value
@@ -56,13 +40,6 @@ func ValidateProgram(ctx context.Context, program Program) error {
 }
 
 func validateProgram(ctx context.Context, program Program) error {
-	limits := DefaultLimits()
-	if program.Limits != nil {
-		limits = *program.Limits
-	}
-	if err := limits.Validate(); err != nil {
-		return err
-	}
 	if len(program.Source) == 0 ||
 		!utf8.ValidString(program.Source) ||
 		strings.IndexByte(program.Source, 0) >= 0 ||

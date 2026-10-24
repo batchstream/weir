@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/batchstream/weir/internal/app"
+	"github.com/batchstream/weir/internal/overload"
 	"github.com/spf13/cobra"
 )
 
@@ -97,7 +98,9 @@ func load(filename string) (app.Config, error) {
 }
 
 func serve(ctx context.Context, cfg app.Config, output io.Writer) error {
-	// The CLI owns signals from before assembly until all owned resources close.
+	// The CLI owns the process: its Go memory limit and, from before assembly
+	// until all owned resources close, its signals.
+	overload.SetContainerMemoryLimit()
 	signals, cancelSignal := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
 	defer cancelSignal()
 	return serveContext(signals, cfg, output)
@@ -111,10 +114,6 @@ func serveContext(ctx context.Context, cfg app.Config, output io.Writer) (result
 	if err != nil {
 		return err
 	}
-	// Register this first so the node closes before its process budget is restored.
-	restoreMemoryLimit := node.ManageRuntimeMemoryLimit()
-	defer restoreMemoryLimit()
-
 	defer func() {
 		// A startup cancellation must not cancel the drain; Close bounds it
 		// with the configured shutdown timeout.

@@ -510,7 +510,7 @@ func processFaultSlowIO(t *testing.T, suite *processFaultSuite, backend processF
 	go func() { done <- processFaultNativeRead(ctx, suite.client, backend, id) }()
 	processFaultWait(t, gate.started, "single Native before forwarding to real backend")
 	metrics := suite.process.sample(t)
-	if storeActive(metrics) < 1 || testmetrics.Sum(metrics, "weir_memory_latched") != 0 {
+	if storeActive(metrics) < 1 || testmetrics.Sum(metrics, "weir_memory_overloaded") != 0 {
 		t.Fatal("one real blocked IO must have active credit without memory pressure")
 	}
 	for _, kind := range []string{"Read", "Native"} {
@@ -527,7 +527,7 @@ func processFaultSlowIO(t *testing.T, suite *processFaultSuite, backend processF
 		if err != nil || elapsed > 3*time.Second {
 			t.Fatal("single slow IO starved healthy work or exceeded 3s", backend.store, kind, elapsed, err)
 		}
-		t.Logf("one_held_IO backend=%s healthy_method=%s elapsed=%s active=%.0f RSS=%.0f WS=%.0f latch=0", backend.store, kind, elapsed, storeActive(metrics), testmetrics.Sum(metrics, "process_resident_memory_bytes"), testmetrics.Sum(metrics, "weir_memory_cgroup_working_set_bytes"))
+		t.Logf("one_held_IO backend=%s healthy_method=%s elapsed=%s active=%.0f RSS=%.0f Go=%.0f overloaded=0", backend.store, kind, elapsed, storeActive(metrics), testmetrics.Sum(metrics, "process_resident_memory_bytes"), testmetrics.Sum(metrics, "weir_memory_used_bytes"))
 	}
 	select {
 	case <-gate.ack:
@@ -661,7 +661,7 @@ func processFaultIdle(t *testing.T, process *cliContainer, bound time.Duration) 
 	for {
 		metrics := process.sample(t)
 		nonzero := make(map[string]float64)
-		for _, name := range []string{"weir_store_active_executions", "weir_store_active_natives", "weir_store_queued_operations", "weir_store_queued_bytes", "weir_ingress_sessions", "weir_memory_latched"} {
+		for _, name := range []string{"weir_store_active_executions", "weir_store_active_natives", "weir_store_queued_operations", "weir_store_queued_bytes", "weir_ingress_sessions", "weir_memory_overloaded"} {
 			if metrics[name] == nil {
 				t.Fatal("missing cleanup gauge", name)
 			}

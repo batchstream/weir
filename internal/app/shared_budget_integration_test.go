@@ -8,9 +8,6 @@ import (
 	"testing"
 	"time"
 
-	pb "github.com/batchstream/weir-protocol/api/weir/v1"
-	"github.com/batchstream/weir/internal/testutil"
-	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/event"
 )
 
@@ -86,15 +83,6 @@ func (o *budgetObservation) snapshot() (active, peak, started, completed int) {
 	return o.active, o.peak, o.started, o.completed
 }
 
-func budgetPut(root, id string) *pb.MutateRequest {
-	doc := bson.D{{Key: "_id", Value: id}, {Key: "n", Value: int64(1)}}
-	raw, _ := bson.Marshal(doc)
-	document := &pb.Document{ContentType: "application/bson", Data: raw}
-	action := &pb.MutateRequest_Put{Put: document}
-	request := &pb.MutateRequest{Resource: root + "/s:" + id, Action: action}
-	return request
-}
-
 func budgetWait(t *testing.T, label string, predicate func() bool) {
 	t.Helper()
 	until := time.Now().Add(1500 * time.Millisecond)
@@ -103,38 +91,5 @@ func budgetWait(t *testing.T, label string, predicate func() bool) {
 			t.Fatal("barrier not reached:", label)
 		}
 		time.Sleep(5 * time.Millisecond)
-	}
-}
-
-func budgetLoadCall(ctx context.Context, client pb.StoreServiceClient, fixture testutil.RecordFixture, mode int) bool {
-	request := fixture.Command.GetMutate()
-	switch mode {
-	case 0:
-		response, err := testutil.ExecuteRecord(ctx, client, fixture)
-		if err != nil || response == nil {
-			return false
-		}
-		result := response.GetMutationResult()
-		return result.GetFailure() == nil && result.GetOutcome() == pb.MutationOutcome_APPLIED
-	case 1:
-		read := &pb.ReadRequest{Resource: request.Resource}
-		response, err := testutil.ExecuteRecord(ctx, client, testutil.RecordRequest(fixture.StoreName, read))
-		if err != nil || response == nil {
-			return false
-		}
-		result := response.GetReadResult()
-		return result.GetFailure() == nil
-	default:
-		batch := []*pb.MutateRequest{fixture.Command.GetMutate(), fixture.Command.GetMutate()}
-		response, err := testutil.MutateRecords(ctx, client, fixture.StoreName, batch)
-		if err != nil || len(response) != len(batch) {
-			return false
-		}
-		for _, result := range response {
-			if result.GetOutcome() != pb.MutationOutcome_APPLIED || result.GetFailure() != nil {
-				return false
-			}
-		}
-		return true
 	}
 }
