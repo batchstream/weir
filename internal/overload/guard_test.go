@@ -1,92 +1,98 @@
 package overload
 
 import (
-	"context"
-	"runtime"
-	"sync"
-	"sync/atomic"
+	"math"
+	"runtime/debug"
 	"testing"
-	"time"
+	"testing/fstest"
 )
 
-type guardTarget struct{ latched atomic.Bool }
+type guardTarget struct{ calls []bool }
 
-func (t *guardTarget) SetOverloaded(value bool) { t.latched.Store(value) }
+func (t *guardTarget) SetOverloaded(value bool) { t.calls = append(t.calls, value) }
 
-func TestGuardHysteresisAndUnknown(t *testing.T) {
+func TestGuardHysteresis(t *testing.T) {
 	target := &guardTarget{}
-	state := Snapshot{Budget: 1000}
-	guard := &Guard{targets: []Target{target}, state: state, processBudget: 1000}
-	cg := CgroupSnapshot{State: "v2", Valid: true}
+	guard := &Guard{targets: []Target{target}}
 	for _, step := range []struct {
-		n                      uint64
-		high, low, valid, want bool
+		used, limit uint64
+		want        bool
 	}{
-		{100, false, true, true, false},
-		{800, false, true, true, true},
-		{750, false, true, true, true},
-		{700, false, true, true, false},
-		{100, true, false, true, true},  // another process in the cgroup
-		{100, false, false, true, true}, // intermediate cgroup pressure
-		{100, false, true, false, true}, // missing RSS cannot clear the latch
-		{100, false, true, true, false},
+		{100, 1000, false},
+		{800, 1000, true},
+		{750, 1000, true},
+		{700, 1000, false},
+		{900, 1000, true},
+		{900, 0, false}, // removing the limit reopens admission
+		{2000, 0, false},
 	} {
-		o := observation{bytes: step.n, source: "linux_rss", processValid: step.valid, cgroup: cg, high: step.high, low: step.low}
-		guard.sample(o)
-		s := guard.Snapshot()
-		if s.Latched != step.want || target.latched.Load() != step.want || s.Bytes != step.n || !s.Observed {
-			t.Fatal(s, step)
+		guard.observeLocked(step.used, step.limit)
+		if got := guard.Snapshot(); got.Overloaded != step.want || got.Used != step.used || got.Limit != step.limit {
+			t.Fatal(got, step)
 		}
 	}
-	for _, status := range []string{"unknown"} {
-		cg.State = status
-		o := observation{bytes: 0, source: "linux_rss", processValid: true, cgroup: cg, low: true}
-		guard.sample(o)
-		if s := guard.Snapshot(); s.Latched || !s.Unknown {
-			t.Fatal(s)
-		}
+	// Targets hear only transitions.
+	want := []bool{true, false, true, false}
+	if len(target.calls) != len(want) {
+		t.Fatal(target.calls)
 	}
-	if watermark(^uint64(0), 80, true) != 14757395258967641292 || watermark(^uint64(0), 70, false) != 12912720851596686130 {
-		t.Fatal("overflow")
+	for i := range want {
+		if target.calls[i] != want[i] {
+			t.Fatal(target.calls)
+		}
 	}
 }
 
-func TestGuardStartupRunCancelAndSnapshots(t *testing.T) {
+func TestGuardSamplesTheGoMemoryLimit(t *testing.T) {
+	prior := debug.SetMemoryLimit(math.MaxInt64)
+	defer debug.SetMemoryLimit(prior)
 	target := &guardTarget{}
 	targets := []Target{target}
-	guard := New(targets, DefaultLimits())
-	if s := guard.Snapshot(); !s.Observed || s.Budget == 0 || s.Latched != target.latched.Load() {
-		t.Fatal("startup must sample synchronously", s)
+	guard := New(targets)
+	if got := guard.Snapshot(); got.Used == 0 || got.Limit != 0 || got.Overloaded {
+		t.Fatal("unlimited runtime", got)
 	}
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan struct{})
-	go func() { defer close(done); guard.Run(ctx) }()
-	var readers sync.WaitGroup
-	for range 4 {
-		readers.Go(func() {
-			for range 1000 {
-				guard.Snapshot()
-			}
-		})
+	// A limit below current use closes admission on the next sample.
+	debug.SetMemoryLimit(1 << 20)
+	guard.sample()
+	if got := guard.Snapshot(); got.Limit != 1<<20 || !got.Overloaded || len(target.calls) != 1 {
+		t.Fatal("tight limit", got)
 	}
-	time.Sleep(150 * time.Millisecond)
-	cancel()
-	select {
-	case <-done:
-	case <-time.After(time.Second):
-		t.Fatal("sampler did not join")
+	debug.SetMemoryLimit(math.MaxInt64)
+	guard.sample()
+	if got := guard.Snapshot(); got.Overloaded || len(target.calls) != 2 {
+		t.Fatal("restored limit", got)
 	}
-	readers.Wait()
-	s := guard.Snapshot()
-	time.Sleep(150 * time.Millisecond)
-	if guard.Snapshot() != s {
-		t.Fatal("sampling after join")
-	}
-	source := "go_sys_minus_released"
-	if runtime.GOOS == "darwin" {
-		source = "darwin_phys_footprint"
-	}
-	if !s.Observed || s.Bytes == 0 || runtime.GOOS != "linux" && (s.Source != source || s.Cgroup.State != "not_applicable") {
-		t.Fatal(s)
+}
+
+func TestContainerMemoryLimit(t *testing.T) {
+	for _, test := range []struct {
+		name  string
+		files fstest.MapFS
+		want  uint64
+	}{
+		{"namespaced", fstest.MapFS{
+			"proc/self/cgroup":         {Data: []byte("0::/\n")},
+			"sys/fs/cgroup/memory.max": {Data: []byte("536870912\n")},
+		}, 512 << 20},
+		{"host namespace", fstest.MapFS{
+			"proc/self/cgroup": {Data: []byte("0::/system.slice/weir.service\n")},
+			"sys/fs/cgroup/system.slice/weir.service/memory.max": {Data: []byte("1073741824\n")},
+		}, 1 << 30},
+		{"unlimited", fstest.MapFS{
+			"proc/self/cgroup":         {Data: []byte("0::/\n")},
+			"sys/fs/cgroup/memory.max": {Data: []byte("max\n")},
+		}, 0},
+		{"cgroup v1", fstest.MapFS{
+			"proc/self/cgroup": {Data: []byte("12:memory:/docker/abc\n1:name=systemd:/docker/abc\n")},
+		}, 0},
+		{"no memory controller", fstest.MapFS{
+			"proc/self/cgroup": {Data: []byte("0::/\n")},
+		}, 0},
+		{"not linux", fstest.MapFS{}, 0},
+	} {
+		if got := containerMemoryLimit(test.files); got != test.want {
+			t.Fatal(test.name, got)
+		}
 	}
 }

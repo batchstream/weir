@@ -24,12 +24,6 @@ func TestDefaultExecutionRunsLongLoopsWithLargeValues(t *testing.T) {
 	if err != nil || n.Integer != 1100000 {
 		t.Fatal(result, err)
 	}
-	limits := DefaultLimits()
-	limits.MaxInstructions = 100
-	program.Limits = &limits
-	if _, err := Evaluate(ctx, program); err == nil {
-		t.Fatal("configured instruction budget did not apply")
-	}
 }
 
 func TestEvaluateReturnsDeepValuesAndLargeArrays(t *testing.T) {

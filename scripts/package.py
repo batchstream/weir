@@ -18,7 +18,6 @@ import check_dependencies as dependencies
 ROOT = Path(__file__).resolve().parent.parent
 TARGETS = tuple((system, arch) for system in ('linux', 'darwin') for arch in ('amd64', 'arm64'))
 GO = 'go1.27.1'
-PUREGO_LICENSES = ('purego-Apache-2.0.txt', 'purego-Go-BSD-3-Clause.txt', 'purego-NOTICE.txt')
 
 
 def run(args, *, cwd=ROOT, env=None, timeout=300):
@@ -45,7 +44,6 @@ def allowed(name):
     return (
         name in ('go.mod', 'go.sum', 'README.md', 'config/weir.reference.yaml')
         or name in ('deploy/docker/Dockerfile', 'deploy/docker/base.json')
-        or name in ('licenses/' + license_name for license_name in PUREGO_LICENSES)
         or (
             name.endswith('.go')
             and not name.endswith('_test.go')
@@ -149,15 +147,11 @@ def oci_index_digest(path):
     return digest
 
 
-def archive_members(source, system):
+def archive_members(source):
     members = {
         'README.md': ((source / 'README.md').read_bytes(), 0o644),
         'config/weir.reference.yaml': ((source / 'config/weir.reference.yaml').read_bytes(), 0o644),
     }
-    if system == 'darwin':
-        # purego is linked only into Darwin binaries.
-        for name in PUREGO_LICENSES:
-            members['licenses/' + name] = ((source / 'licenses' / name).read_bytes(), 0o644)
     return members
 
 
@@ -210,7 +204,7 @@ def build_source(opts):
         binary.parent.mkdir(parents=True)
         target_env = dict(env, GOOS=system, GOARCH=arch)
         run(['go', 'build', *flags, '-o', str(binary), './cmd/weir'], cwd=source, env=target_env)
-        members = archive_members(source, system)
+        members = archive_members(source)
         members['weir'] = (binary.read_bytes(), 0o755)
         dest = output / ('weir-' + target + '.tar.gz')
         archive(dest, members, opts['epoch'])

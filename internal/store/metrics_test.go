@@ -57,7 +57,6 @@ func TestMetricsCountFinalOutcomes(t *testing.T) {
 		{"weir_store_rejections_total", map[string]string{"reason": "overload"}, 1},
 		{"weir_store_executions_total", nil, 3},
 		{"weir_store_active_executions_limit", nil, 3},
-		{"weir_store_overloaded", nil, 1},
 		{"weir_store_queued_operations", nil, 0},
 	}
 	for _, check := range checks {

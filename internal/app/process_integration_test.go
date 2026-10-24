@@ -497,8 +497,8 @@ func TestDiagnosticProcessSIGTERMReadinessBeforeExit(t *testing.T) {
 		t.Fatal("SIGTERM did not lower readiness")
 	}
 	families := testmetrics.Scrape(t, p.diagnostic)
-	if testmetrics.Sample(families, "weir_node_state", map[string]string{"state": "draining"}).GetGauge().GetValue() != 1 || testmetrics.Sum(families, "weir_node_drains_total") != 1 {
-		t.Fatal("drain metrics")
+	if testmetrics.Sum(families, "weir_node_ready") != 0 {
+		t.Fatal("draining node reported ready")
 	}
 	response, err := client.Get("http://" + p.diagnostic + "/livez")
 	if err != nil {

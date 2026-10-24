@@ -89,13 +89,12 @@ func (r *Runtime) Describe(ch chan<- *prometheus.Desc) { prometheus.DescribeByCo
 // batches and Natives counts running Native commands.
 type Stats struct {
 	Queued, QueuedBytes, Active, Natives int
-	Draining, Overloaded                 bool
 }
 
 func (r *Runtime) Stats() Stats {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	stats := Stats{Queued: len(r.queue), QueuedBytes: r.queueBytes, Active: r.records, Natives: r.natives, Draining: r.draining, Overloaded: r.overloaded}
+	stats := Stats{Queued: len(r.queue), QueuedBytes: r.queueBytes, Active: r.records, Natives: r.natives}
 	return stats
 }
 
@@ -108,8 +107,6 @@ func (r *Runtime) Collect(ch chan<- prometheus.Metric) {
 		"active_executions_limit": float64(r.limits.MaxInFlight),
 		"active_natives":          float64(stats.Natives),
 		"active_natives_limit":    float64(r.limits.MaxNative),
-		"draining":                boolValue(stats.Draining),
-		"overloaded":              boolValue(stats.Overloaded),
 	}
 	for name, value := range values {
 		description := prometheus.NewDesc("weir_store_"+name, "Store queue and execution state.", nil, nil)
@@ -122,11 +119,4 @@ func (r *Runtime) Collect(ch chan<- prometheus.Metric) {
 	for _, collector := range collectors {
 		collector.Collect(ch)
 	}
-}
-
-func boolValue(value bool) float64 {
-	if value {
-		return 1
-	}
-	return 0
 }

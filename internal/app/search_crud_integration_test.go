@@ -105,7 +105,7 @@ func searchCRUDRejections(t *testing.T, metrics map[string]*dto.MetricFamily) fl
 }
 
 // waitSearchCRUDIdle requires every execution, queue and session gauge to
-// return to zero and the memory latch to be clear within 5s, with no new
+// return to zero and memory overload to be clear within 5s, with no new
 // Store rejections.
 func waitSearchCRUDIdle(t *testing.T, diagnostics string, rejections float64) {
 	t.Helper()
@@ -116,7 +116,7 @@ func waitSearchCRUDIdle(t *testing.T, diagnostics string, rejections float64) {
 			t.Fatal("finite SDK sequence was rejected by the Store")
 		}
 		nonzero := make(map[string]float64)
-		for _, name := range []string{"weir_memory_latched", "weir_store_queued_operations", "weir_store_queued_bytes", "weir_store_active_executions", "weir_store_active_natives", "weir_ingress_sessions"} {
+		for _, name := range []string{"weir_memory_overloaded", "weir_store_queued_operations", "weir_store_queued_bytes", "weir_store_active_executions", "weir_store_active_natives", "weir_ingress_sessions"} {
 			if metrics[name] == nil {
 				t.Fatal("required gauge is missing", name)
 			}

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"sync"
 	"testing"
+	"time"
 )
 
 func TestEvaluateHonorsCallerCancellation(t *testing.T) {
@@ -22,10 +23,10 @@ func TestEvaluateConcurrentFailuresDoNotBlockOtherCalls(t *testing.T) {
 	for range 8 {
 		for _, source := range sources {
 			workers.Go(func() {
-				limits := DefaultLimits()
-				limits.MaxInstructions = 1_000_000
-				program := Program{Source: source, Limits: &limits}
-				if _, err := Evaluate(t.Context(), program); err == nil {
+				ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
+				defer cancel()
+				program := Program{Source: source}
+				if _, err := Evaluate(ctx, program); err == nil {
 					t.Error("invalid Lua accepted")
 				}
 			})

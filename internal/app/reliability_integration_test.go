@@ -204,7 +204,7 @@ func runLowLoadReliability(t *testing.T, probe reliabilityProbe) {
 		t.Fatal("low-load calls experienced admission rejection", rejected)
 	}
 	memory := probe.node.guard.Snapshot()
-	if memory.Latched || probe.node.stores["records"].Stats().Overloaded {
+	if memory.Overloaded {
 		t.Fatal("low-load probe left admission overloaded", memory)
 	}
 	t.Logf("omitted batching defaults=%+v; memory=%+v; final store=%+v", store.DefaultLimits(), memory, probe.node.stores["records"].Stats())

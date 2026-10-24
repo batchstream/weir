@@ -235,10 +235,9 @@ func TestEvaluateBoundsExecutionWorkAndCompilation(t *testing.T) {
 	for _, source := range sources {
 		started := time.Now()
 		program := testProgram(source)
-		limits := luaengine.DefaultLimits()
-		limits.MaxInstructions = 1_000_000
-		program.Limits = &limits
-		_, err := luaengine.Evaluate(context.Background(), program)
+		ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+		_, err := luaengine.Evaluate(ctx, program)
+		cancel()
 		if err == nil || time.Since(started) > 2*time.Second {
 			t.Fatalf("execution bound not enforced: elapsed=%s err=%v", time.Since(started), err)
 		}
@@ -248,10 +247,10 @@ func TestEvaluateBoundsExecutionWorkAndCompilation(t *testing.T) {
 func TestEvaluateCannotHideWorkExhaustionBehindAction(t *testing.T) {
 	for _, action := range []string{"keep", "delete"} {
 		program := testProgram("return function() local result = weir." + action + "(); pcall(function() while true do end end); return result end")
-		limits := luaengine.DefaultLimits()
-		limits.MaxInstructions = 1_000_000
-		program.Limits = &limits
-		if _, err := luaengine.Evaluate(context.Background(), program); err == nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+		_, err := luaengine.Evaluate(ctx, program)
+		cancel()
+		if err == nil {
 			t.Fatalf("pcall hid work exhaustion behind %s", action)
 		}
 	}

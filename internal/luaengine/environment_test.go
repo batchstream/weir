@@ -39,7 +39,7 @@ func TestEnvironmentIsolatesGlobalsLibrariesAndStringMetatable(t *testing.T) {
 	calls.Wait()
 }
 
-func TestEnvironmentExecutionAndObservationTimeArePerCall(t *testing.T) {
+func TestEnvironmentObservationTimeIsPerCall(t *testing.T) {
 	for _, operation := range []string{
 		`string.format("%080d", 1)`,
 		`table.sort({5,4,3,2,1})`,
@@ -53,19 +53,13 @@ func TestEnvironmentExecutionAndObservationTimeArePerCall(t *testing.T) {
 			var calls sync.WaitGroup
 			for index := range 24 {
 				calls.Go(func() {
-					limits := DefaultLimits()
-					restricted := index%2 == 0
-					if restricted {
-						limits.MaxInstructions = 5
-					}
 					observedAt := time.Unix(int64(index), int64(index)).UTC()
 					stamp := value.Value{Kind: value.String, Text: observedAt.Format(time.RFC3339Nano)}
 					field := value.Field{Name: "stamp", Value: stamp}
 					input := value.Value{Kind: value.Object, Fields: []value.Field{field}}
-					program := Program{Source: source, Input: input, ObservedAt: observedAt, Limits: &limits}
-					_, err := Evaluate(t.Context(), program)
-					if restricted && err == nil || !restricted && err != nil {
-						t.Errorf("restricted=%t: %v", restricted, err)
+					program := Program{Source: source, Input: input, ObservedAt: observedAt}
+					if _, err := Evaluate(t.Context(), program); err != nil {
+						t.Error(err)
 					}
 				})
 			}
