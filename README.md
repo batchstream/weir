@@ -129,22 +129,17 @@ go test ./...
 go test -race ./...
 go vet ./...
 go vet -tags=integration ./...
-python3 scripts/check_dependencies.py
-python3 -m unittest discover -s scripts -p '*_test.py'
 ```
 
-Default tests are offline. Prepare cached modules before using
-`GOWORK=off GOPROXY=off` for offline checks. `scripts/bootstrap-tools.sh` installs
-the pinned macOS arm64 toolchain and MongoDB into the ignored `.tools/`; CI
-installs its Linux toolchain and modules with `scripts/ci-tools.py`.
+Default tests need no backends.
 
 ### Integration tests
 
 Integration tests use the `integration` build tag and local fixtures:
 
 - `scripts/mongo-local.sh start` runs a single-member MongoDB 8.0.32 replica set
-  on `127.0.0.1:27028` from `.tools/`; `WEIR_MONGOD` selects another `mongod`
-  binary and `WEIR_MONGO_BIND` adds comma-separated literal, non-wildcard IP
+  on `127.0.0.1:27028`, using the `mongod` that `scripts/mongod.sh` installs;
+  `WEIR_MONGOD` selects another binary and `WEIR_MONGO_BIND` adds comma-separated literal, non-wildcard IP
   bind addresses. A running fixture is reused only when its bind matches.
 - `scripts/search-local.sh start elasticsearch|opensearch normal|overload` runs
   Elasticsearch 8.19.22 on `127.0.0.1:19200` or OpenSearch 3.3.0 on
@@ -180,10 +175,11 @@ go test -tags=integration -run '^(TestSearchRealBackendCongestion|TestSearchExpr
 
 Replica-set discovery, failover, reply-loss and read-retirement tests start three
 MongoDB members over plain and TLS connections from an explicit `mongod` 8.0.32
-binary. CI downloads the pinned Linux binary with `scripts/ci-tools.py test --mongo`.
+binary. `scripts/mongod.sh` downloads and checksums it for Linux amd64 or macOS
+arm64 into the ignored `.tools/` and prints its path.
 
 ```sh
-export WEIR_MONGO_REPLICA_INTEGRATION=1 WEIR_MONGO_REPLICA_BINARY=/absolute/path/to/mongod
+export WEIR_MONGO_REPLICA_INTEGRATION=1 WEIR_MONGO_REPLICA_BINARY=$(scripts/mongod.sh)
 go test -race -p=1 -parallel=1 -tags=integration -count=1 -timeout=10m \
   -run '^TestMongoReplica(DiscoveryOwnership|ProxyDiscoveryRecovery|CLIRecovery)$' \
   ./internal/backend/mongodb ./internal/app
@@ -215,7 +211,8 @@ WEIR_INTEGRATION=1 WEIR_SEARCH_INTEGRATION=elasticsearch WEIR_LOAD_INTEGRATION=1
 Run the load and fault tests separately so injected faults do not distort load
 measurements. `WEIR_MONGO_SECURE_INTEGRATION=1` and
 `WEIR_SEARCH_SECURE_INTEGRATION=1` enable the TLS and authentication tests, which
-start their own fixtures.
+start their own fixtures; the MongoDB one runs the `mongod` that
+`scripts/mongod.sh` installs.
 
 The [weir-tests](https://github.com/batchstream/weir-tests) repository contains
 matched direct/Weir workloads and blackbox integration. Keep generated logs and
@@ -226,23 +223,12 @@ The public schema belongs to
 
 ## Releases
 
-Build reproducible Linux and macOS amd64/arm64 archives and their `SHA256SUMS`
-from a clean commit (`--oci` also builds the Linux image locally). Packaged
-binaries report that commit as `revision` in `weir version`:
+Every push to `main` publishes the image `ghcr.io/batchstream/weir:<commit SHA>`
+for Linux amd64 and arm64. Publishing a GitHub release `vMAJOR.MINOR.PATCH` also
+publishes `ghcr.io/batchstream/weir:vMAJOR.MINOR.PATCH` and attaches Linux and
+macOS amd64/arm64 archives with their `SHA256SUMS`. `weir version` reports the
+source commit as `revision`. Build the image locally with:
 
 ```sh
-python3 scripts/package.py --output dist/local-build
+docker buildx build --build-arg REVISION=$(git rev-parse HEAD) --load -t weir .
 ```
-
-Run **Weir images** on `main` with a stable `vMAJOR.MINOR.PATCH` release
-version. It tests the source, builds the archives and the Linux amd64/arm64
-image, pushes the image to GHCR tagged with the source SHA, runs `weir version`
-from the pulled image, then tags the version and creates the GitHub release with
-the archives. Existing tags are never replaced with different content.
-Publishing a GitHub release also runs the workflow; its tag must identify
-source already merged into `main`.
-
-Use `ghcr.io/batchstream/weir:vMAJOR.MINOR.PATCH`, or pin the image digest listed
-in the release notes. A release created by another workflow with `GITHUB_TOKEN`
-must invoke the image workflow explicitly. Windows server builds are unavailable
-because the Lua dependency uses Unix process primitives.
