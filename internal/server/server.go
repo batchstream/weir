@@ -16,6 +16,7 @@ const MaxMessageBytes = 64 << 20
 // RecordStreamItems bounds the records one stream has queued or awaiting delivery.
 const RecordStreamItems = 32
 
+// Limits must start from DefaultLimits; zero values are not defaulted.
 type Limits struct {
 	MaxPendingRecords int
 	KeepaliveInterval time.Duration

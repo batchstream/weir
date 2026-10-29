@@ -2,18 +2,25 @@ package backend
 
 import (
 	"errors"
+	"io"
 	"os"
+	"syscall"
 )
 
-// ReadRegularFile reads a configured file. It refuses special files, such as
-// a FIFO, whose open could block startup.
+// ReadRegularFile reads a configured file. Opening without blocking and
+// checking the opened file refuses special files, such as a FIFO.
 func ReadRegularFile(name string) ([]byte, error) {
-	info, err := os.Stat(name)
+	file, err := os.OpenFile(name, os.O_RDONLY|syscall.O_NONBLOCK, 0)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+	info, err := file.Stat()
 	if err != nil {
 		return nil, err
 	}
 	if !info.Mode().IsRegular() {
 		return nil, errors.New("not a regular file")
 	}
-	return os.ReadFile(name)
+	return io.ReadAll(file)
 }
