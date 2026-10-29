@@ -19,6 +19,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -28,8 +29,15 @@ import (
 )
 
 const secureOwner = "weir-mongo-local1"
-const elasticImage = "docker.elastic.co/elasticsearch/elasticsearch@sha256:c2a3ed5f968be6d59c960aa0c60cfdaee667b6bc8211142021a41d0e85b43237"
-const openSearchImage = "opensearchproject/opensearch@sha256:d96afaf6cbd2a6a3695aeb2f1d48c9a16ad5c8918eb849e5cbf43475f0f8e146"
+
+// searchImages are the platform images that scripts/search-local.sh pulls. The
+// secure fixture runs them without pulling.
+var searchImages = map[string]string{
+	"elasticsearch/amd64": "docker.elastic.co/elasticsearch/elasticsearch@sha256:f1e3d88299cb0db2131fc2ab9060faefccd88fd684d11a49256ae00d7dc3c857",
+	"elasticsearch/arm64": "docker.elastic.co/elasticsearch/elasticsearch@sha256:c2a3ed5f968be6d59c960aa0c60cfdaee667b6bc8211142021a41d0e85b43237",
+	"opensearch/amd64":    "opensearchproject/opensearch@sha256:59e9e49ac00f19c2af9094e367c8e6586f7d07e6c06465c3f4c43b40934309f2",
+	"opensearch/arm64":    "opensearchproject/opensearch@sha256:d96afaf6cbd2a6a3695aeb2f1d48c9a16ad5c8918eb849e5cbf43475f0f8e146",
+}
 
 // SecureFixture owns one native TLS database. Admin is used only for bootstrap
 // and independent observation. Backend contains the restricted application pair.
@@ -47,11 +55,12 @@ type SecureFixture struct {
 func OpenSecure(t *testing.T) *SecureFixture {
 	t.Helper()
 	product := searchProduct(t)
-	suffix := fmt.Sprintf("%d-%d-%s", os.Getpid(), sequence.Add(1), randomPassword(t)[:12])
-	f := &SecureFixture{product: product, name: "weir-search-secure-" + product + "-" + suffix, image: elasticImage}
-	if product == "opensearch" {
-		f.image = openSearchImage
+	image, ok := searchImages[product+"/"+runtime.GOARCH]
+	if !ok {
+		t.Fatalf("no pinned %s image for %s", product, runtime.GOARCH)
 	}
+	suffix := fmt.Sprintf("%d-%d-%s", os.Getpid(), sequence.Add(1), randomPassword(t)[:12])
+	f := &SecureFixture{product: product, name: "weir-search-secure-" + product + "-" + suffix, image: image}
 	parent := filepath.Join(testutil.Root(t), ".testdata")
 	if err := os.MkdirAll(parent, 0700); err != nil {
 		t.Fatal("fixture parent unavailable")

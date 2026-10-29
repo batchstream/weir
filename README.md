@@ -155,7 +155,8 @@ fixtures:
   profiles.
 
 The TLS and replica-set tests start their own `mongod` processes from
-`.tools/`, and the HTTPS Search tests start their own containers.
+`.tools/`, and the HTTPS Search tests start their own containers from the
+image `scripts/search-local.sh` pulled.
 `WEIR_SEARCH_PRODUCT` selects `elasticsearch` (the default) or `opensearch`.
 Run packages one at a time, because MongoDB fault injection uses a server-global
 failpoint:
