@@ -1,88 +1,58 @@
-// Package overload samples process memory independently of database runtimes.
+// Package overload sheds new work while live memory nears the Go memory limit.
 package overload
 
 import (
 	"context"
-	"fmt"
+	"math"
 	"runtime"
+	"runtime/metrics"
 	"sync"
 	"time"
 )
 
-type Limits struct {
-	HighWatermark, LowWatermark uint64
-	SampleInterval              time.Duration
-}
-
-func DefaultLimits() Limits {
-	limits := Limits{HighWatermark: 80, LowWatermark: 70, SampleInterval: 100 * time.Millisecond}
-	return limits
-}
-
-func (limits Limits) Validate() error {
-	if limits.HighWatermark > 100 || limits.HighWatermark < 1 || limits.LowWatermark < 1 || limits.LowWatermark >= limits.HighWatermark || limits.SampleInterval <= 0 {
-		return fmt.Errorf("invalid memory pressure watermarks or sampling interval")
-	}
-	return nil
-}
+// Admission closes at 80% of the Go memory limit and reopens at or below 70%.
+const (
+	highWatermark  = 80
+	lowWatermark   = 70
+	sampleInterval = 100 * time.Millisecond
+	// collectInterval paces the collections that refresh the live heap while
+	// work is refused.
+	collectInterval = time.Second
+)
 
 type Target interface {
 	SetOverloaded(bool)
 }
 
-// Guard owns the memory sampler and exposes its last observation.
+// Guard samples live memory and tells its targets when it crosses the
+// watermarks. Without a Go memory limit it never sheds.
 type Guard struct {
-	limits        Limits
-	mu            sync.Mutex
-	targets       []Target
-	state         Snapshot
-	profile       memoryProfile
-	processBudget uint64
-	runtimeMemory *runtimeMemoryLimit
+	targets   []Target
+	samples   []metrics.Sample
+	collected time.Time
+	mu        sync.Mutex
+	state     Snapshot
 }
 
+// Snapshot is the last observation. Limit zero means no Go memory limit.
 type Snapshot struct {
-	Budget, Bytes          uint64
-	Source                 string
-	Observed, Latched      bool
-	ProcessValid           bool
-	Unknown                bool
-	Cgroup                 CgroupSnapshot
-	GoRuntimeLimit         uint64
-	GoRuntimeManaged       bool
-	RecoveryAllowance      uint64
-	RecoveryAllowanceKnown bool
+	Live, Limit uint64
+	Overloaded  bool
 }
 
-// Cgroup is the most pressured finite visible level, with its own working-set/max
-// pair (never leaf usage divided by an ancestor limit). Current remains the raw
-// charge, including reclaimable file cache. With no finite level it reports the
-// leaf usage and Finite=false. Paths never leave the sampler.
-type CgroupSnapshot struct {
-	Current, WorkingSet, Limit uint64
-	Capacity                   uint64
-	Levels                     int
-	Finite, Valid              bool
-	State                      string // not_applicable, v2, unknown
-	Scope                      string // none, leaf, ancestor
-}
-
-type observation struct {
-	bytes                  uint64
-	source                 string
-	processValid           bool
-	cgroup                 CgroupSnapshot
-	high, low              bool
-	recoveryAllowance      uint64
-	recoveryAllowanceKnown bool
-}
-
-func New(targets []Target, limits Limits) *Guard {
-	budget := processMemoryBudget()
-	state := Snapshot{Budget: budget}
-	guard := &Guard{limits: limits, targets: targets, state: state, profile: newMemoryProfile(), processBudget: budget}
+func New(targets []Target) *Guard {
+	samples := []metrics.Sample{
+		{Name: "/memory/classes/total:bytes"},
+		{Name: "/memory/classes/heap/released:bytes"},
+		{Name: "/memory/classes/heap/free:bytes"},
+		{Name: "/memory/classes/heap/unused:bytes"},
+		{Name: "/memory/classes/heap/objects:bytes"},
+		{Name: "/gc/heap/live:bytes"},
+		{Name: "/gc/gomemlimit:bytes"},
+	}
+	guard := &Guard{targets: targets, samples: samples}
 	// Publish the first observation before listeners can admit any work.
-	guard.sample(guard.profile.observe(limits))
+	guard.sample()
 	return guard
 }
 
@@ -92,80 +62,59 @@ func (g *Guard) Snapshot() Snapshot {
 	return g.state
 }
 
+// Run samples until ctx ends. It is the only caller of sample after New.
 func (g *Guard) Run(ctx context.Context) {
-	tick := time.NewTicker(g.limits.SampleInterval)
+	tick := time.NewTicker(sampleInterval)
 	defer tick.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-tick.C:
-			g.sample(g.profile.observe(g.limits))
+			g.sample()
 		}
 	}
 }
 
-func (g *Guard) sample(o observation) {
+// sample measures the memory the collector cannot reclaim: the live heap at the
+// last collection plus stacks and runtime metadata. Free heap, unused span space
+// and garbage do not count, since the collector reuses them before the limit.
+func (g *Guard) sample() {
+	// The live heap only changes at a collection. While refusing work the
+	// allocation rate drops, so collect to notice finished work promptly.
+	if g.Snapshot().Overloaded && time.Since(g.collected) >= collectInterval {
+		runtime.GC()
+		g.collected = time.Now()
+	}
+	metrics.Read(g.samples)
+	total := g.samples[0].Value.Uint64()
+	reclaimable := g.samples[1].Value.Uint64() + g.samples[2].Value.Uint64() + g.samples[3].Value.Uint64() + g.samples[4].Value.Uint64()
+	live := g.samples[5].Value.Uint64() + total - min(total, reclaimable)
+	limit := g.samples[6].Value.Uint64()
+	if limit == math.MaxInt64 {
+		limit = 0
+	}
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	limits := g.limits
-	if limits.HighWatermark == 0 {
-		limits = DefaultLimits()
+	g.observeLocked(live, limit)
+}
+
+func (g *Guard) observeLocked(live, limit uint64) {
+	overloaded := g.state.Overloaded
+	switch {
+	case limit == 0:
+		overloaded = false
+	case live >= limit/100*highWatermark:
+		overloaded = true
+	case live <= limit/100*lowWatermark:
+		overloaded = false
 	}
-	g.state.Bytes, g.state.Source, g.state.Observed = o.bytes, o.source, true
-	g.state.ProcessValid, g.state.Cgroup = o.processValid, o.cgroup
-	g.state.Unknown = !o.processValid || o.cgroup.State == "unknown"
-	g.state.Budget = g.processBudget
-	if o.cgroup.Valid && o.cgroup.Finite {
-		capacity := o.cgroup.Capacity
-		if capacity == 0 {
-			capacity = o.cgroup.Limit
-		}
-		g.state.Budget = smallerBudget(g.state.Budget, capacity)
-	}
-	g.state.RecoveryAllowanceKnown = !g.state.Unknown && g.state.Budget != 0
-	g.state.RecoveryAllowance = watermark(g.state.Budget, limits.LowWatermark, false)
-	if !g.state.Unknown && o.recoveryAllowanceKnown {
-		if !g.state.RecoveryAllowanceKnown || o.recoveryAllowance < g.state.RecoveryAllowance {
-			g.state.RecoveryAllowance = o.recoveryAllowance
-		}
-		g.state.RecoveryAllowanceKnown = true
-	}
-	g.updateRuntimeMemoryLocked(limits)
-	// Missing observations do not manufacture overload. Actual process or
-	// container pressure controls admission once a trustworthy sample exists.
-	if o.high || o.processValid && g.processBudget != 0 && o.bytes >= watermark(g.processBudget, limits.HighWatermark, true) {
-		g.state.Latched = true
-	} else if !g.state.Unknown && o.processValid && !o.high && (!o.cgroup.Valid || o.low) && (g.processBudget == 0 || o.bytes <= watermark(g.processBudget, limits.LowWatermark, false)) {
-		g.state.Latched = false
+	changed := overloaded != g.state.Overloaded
+	g.state = Snapshot{Live: live, Limit: limit, Overloaded: overloaded}
+	if !changed {
+		return
 	}
 	for _, target := range g.targets {
-		target.SetOverloaded(g.state.Latched)
+		target.SetOverloaded(overloaded)
 	}
-}
-
-// Split before multiplying, including for uint64-sized budgets.
-func watermark(n, percent uint64, ceil bool) uint64 {
-	remainder := n % 100 * percent
-	if ceil {
-		remainder += 99
-	}
-	return n/100*percent + remainder/100
-}
-
-func goBytes() uint64 {
-	var m runtime.MemStats
-	runtime.ReadMemStats(&m)
-	return m.Sys - m.HeapReleased
-}
-
-// Zero means no known limit, not a zero-byte resource allowance.
-func smallerBudget(left, right uint64) uint64 {
-	if left == 0 {
-		return right
-	}
-	if right == 0 {
-		return left
-	}
-	return min(left, right)
 }

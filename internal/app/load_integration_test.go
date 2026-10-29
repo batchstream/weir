@@ -128,9 +128,6 @@ func verifyMongoVersion(t *testing.T, fixture *testmongo.Fixture) {
 func runProcessLoad(t *testing.T, process *cliContainer, datasets []*loadDataset, duration time.Duration) {
 	t.Helper()
 	initial := process.sample(t)
-	if testmetrics.Sum(initial, "weir_memory_go_runtime_managed") != 1 {
-		t.Fatal("CLI automatic memory management was not installed")
-	}
 	for _, dataset := range datasets {
 		labels := map[string]string{"store": dataset.store}
 		limit := requireGauge(t, initial, "weir_store_active_executions_limit", labels)
@@ -350,7 +347,7 @@ func runLoadWorkload(t *testing.T, work loadWorkload) {
 				}
 			}
 			gc := metrics["go_gc_duration_seconds"].GetMetric()[0].GetSummary()
-			t.Logf("trend second=%d inflight=%d RSS=%.0f working=%.0f heap=%.0f CPU=%.4f GC=%d GC_pause=%.6f queued=%.0f active=%.0f sessions=%.0f latch=%.0f", int(time.Since(measurement).Seconds()), inFlight.Load(), testmetrics.Sum(metrics, "process_resident_memory_bytes"), testmetrics.Sum(metrics, "weir_memory_cgroup_working_set_bytes"), testmetrics.Sum(metrics, "go_memstats_heap_alloc_bytes"), testmetrics.Sum(metrics, "process_cpu_seconds_total"), gc.GetSampleCount(), gc.GetSampleSum(), testmetrics.Sum(metrics, "weir_store_queued_operations"), testmetrics.Sum(metrics, "weir_store_active_executions"), testmetrics.Sum(metrics, "weir_ingress_sessions"), testmetrics.Sum(metrics, "weir_memory_latched"))
+			t.Logf("trend second=%d inflight=%d RSS=%.0f live=%.0f heap=%.0f CPU=%.4f GC=%d GC_pause=%.6f queued=%.0f active=%.0f sessions=%.0f overloaded=%.0f", int(time.Since(measurement).Seconds()), inFlight.Load(), testmetrics.Sum(metrics, "process_resident_memory_bytes"), testmetrics.Sum(metrics, "weir_memory_live_bytes"), testmetrics.Sum(metrics, "go_memstats_heap_alloc_bytes"), testmetrics.Sum(metrics, "process_cpu_seconds_total"), gc.GetSampleCount(), gc.GetSampleSum(), testmetrics.Sum(metrics, "weir_store_queued_operations"), testmetrics.Sum(metrics, "weir_store_active_executions"), testmetrics.Sum(metrics, "weir_ingress_sessions"), testmetrics.Sum(metrics, "weir_memory_overloaded"))
 			if !burst && !time.Now().Before(burstAt) {
 				burst = true
 				expected += 256
@@ -377,7 +374,7 @@ func runLoadWorkload(t *testing.T, work loadWorkload) {
 		if rejections := loadRejections(metrics); rejections != work.rejections {
 			t.Fatal("work was rejected during final recovery", rejections-work.rejections)
 		}
-		idle := testmetrics.Sum(metrics, "weir_memory_latched") == 0 && testmetrics.Sum(metrics, "weir_memory_cgroup_working_set_bytes") <= work.process.capacity*.70
+		idle := testmetrics.Sum(metrics, "weir_memory_overloaded") == 0
 		for _, name := range []string{"weir_store_queued_operations", "weir_store_queued_bytes", "weir_store_active_executions", "weir_store_active_natives", "weir_ingress_sessions"} {
 			idle = idle && metrics[name] != nil && testmetrics.Sum(metrics, name) == 0
 		}

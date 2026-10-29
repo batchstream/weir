@@ -21,8 +21,6 @@ type Node struct {
 	registry        *prometheus.Registry
 	diagnostics     *diagnostics
 	guard           *overload.Guard
-	drains          prometheus.Counter
-	drainDuration   prometheus.Histogram
 	admission       *server.Admission
 	stores          map[string]*store.Runtime
 	listener        net.Listener
@@ -35,12 +33,6 @@ type Node struct {
 	once            sync.Once
 	closeErr        error
 	Errors          chan error
-}
-
-// ManageRuntimeMemoryLimit is an explicit process-wide opt-in for the CLI.
-// Opening an embedded Node leaves the host application's Go runtime unchanged.
-func (n *Node) ManageRuntimeMemoryLimit() func() {
-	return n.guard.ManageRuntimeMemoryLimit()
 }
 
 func (n *Node) Start(startup context.Context) error {
@@ -91,8 +83,6 @@ func (n *Node) Close(ctx context.Context) error {
 
 		n.mu.Lock()
 		n.state = "draining"
-		started := time.Now()
-		n.drains.Inc()
 		n.admission.BeginDrain()
 		n.mu.Unlock()
 
@@ -122,7 +112,6 @@ func (n *Node) Close(ctx context.Context) error {
 			_ = n.listener.Close()
 		}
 
-		n.drainDuration.Observe(time.Since(started).Seconds())
 		n.mu.Lock()
 		n.state = "closed"
 		n.mu.Unlock()

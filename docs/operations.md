@@ -15,8 +15,9 @@ listeners:
 `GET /livez` reports a running diagnostics handler. `GET /readyz` reports that
 the Node entered service and is not draining or failed. Neither endpoint tests
 backend health or workload capacity. `GET /metrics`
-exports a Node-owned Prometheus registry. Diagnostics accepts HTTP/1 GET
-requests without a body or query, with independent progress deadlines. Point
+exports a Node-owned Prometheus registry. Diagnostics serves HTTP/1 GET and HEAD
+on these three paths, closes each connection after one response and gives every
+request one-second read and write deadlines. Point
 HTTP liveness and readiness probes at these paths; `weir version` prints the
 build identity.
 
@@ -72,11 +73,10 @@ of improved capacity.
 
 | Family | Interpretation |
 | --- | --- |
-| `weir_node_state`, `weir_node_ready` | Lifecycle and readiness |
+| `weir_node_ready` | Readiness |
 | `weir_store_active_executions`, `weir_store_active_executions_limit` | Per-Store record batches and their limit |
 | `weir_store_active_natives`, `weir_store_active_natives_limit` | Per-Store running Native commands |
 | `weir_store_queued_operations`, `weir_store_queued_bytes` | Waiting work |
-| `weir_store_draining`, `weir_store_overloaded` | Store admission state |
 | `weir_store_records_total` | Final typed results: mutation effect (`applied`, `not_applied`, `not_started`, `unknown`) or read `success`/`failure` |
 | `weir_store_record_failures_total` | Final typed read/mutate results carrying `Failure`, including `APPLIED` with `Failure` |
 | `weir_store_native_completions_total` | Final Native forwarding terminal evidence (`not_started`, `response_complete`, `response_incomplete`), not backend business success, RPC status, or client receipt |
@@ -84,7 +84,7 @@ of improved capacity.
 | `weir_store_executions_total`, `weir_store_batch_operations`, `weir_store_queue_wait_seconds`, `weir_store_execution_seconds` | Adapter invocations, batch sizes, queue wait and execution time |
 | `weir_ingress_sessions`, `weir_admission_rejections_total` | Active RPCs and RPCs refused at admission |
 | `weir_watchdog_expirations_total` | RPCs ended by the input or output stall timeout |
-| `weir_memory_*` | Actual observations, capacity, overload latch and runtime policy |
+| `weir_memory_live_bytes`, `weir_memory_limit_bytes`, `weir_memory_overloaded` | Live memory, the Go memory limit and whether memory pressure refuses new work |
 | `weir_search_http_*` | Record/startup exchange attempts, elapsed time, framed records and bytes |
 
 Typed record counters are updated once at Store completion.
@@ -135,36 +135,28 @@ time. Framed request byte counts exclude headers and do not prove delivery. Lua
 evaluation time excludes external JSON decoding/encoding. Metrics use bounded
 labels without document or target identities.
 
-## Memory pressure and recovery
+## Memory pressure
 
-Capacity is the smallest trusted physical host, finite process address-space or
-visible container limit. Admission latches at 80% of capacity and recovers below
-70%. Recovery needs
-complete trusted observations. Unknown samples alone do not manufacture
-overload.
+Weir compares its live memory with the Go memory limit. Live memory is the live
+heap at the last garbage collection plus goroutine stacks and runtime metadata;
+free heap and garbage do not count, because the collector reclaims them before
+the limit. At 80% of the limit, new RPCs and records receive
+`RESOURCE_EXHAUSTED`; admission reopens at or below 70%. While refusing work,
+Weir collects garbage at most once a second so that it notices finished work
+promptly. Release builds contain no C code, so the Go runtime accounts for
+nearly all process memory.
 
-On Linux cgroup v2, each finite visible level uses its own current/limit pair.
-Validated reclaimable `inactive_file` is subtracted from `memory.current`;
-missing or inconsistent statistics retain raw usage. Metrics expose both
-`weir_memory_cgroup_current_bytes` and `weir_memory_cgroup_working_set_bytes`.
-Cgroup usage is not added to process RSS.
+`weir serve` sets the Go memory limit to 90% of the `memory.max` of its own
+cgroup v2 group, leaving the rest for memory outside the Go runtime; the
+collector then works harder before the container's hard limit is reached. A
+nonempty `GOMEMLIMIT` takes precedence, and `GOMEMLIMIT=off` disables both the
+soft limit and shedding. Weir does not read parent groups or cgroup v1, so set
+`GOMEMLIMIT` when the binding limit is elsewhere, such as a Kubernetes pod-level
+limit or a systemd slice. Without either, Weir does not shed and the OS remains
+the only boundary.
 
-The CLI owns an automatic Go soft limit of 80% of the remaining process recovery
-allowance after memory outside RSS is accounted for. Its upper bound is 56% of
-capacity. Positive targets have a 16 MiB floor capped by
-that upper bound. This encourages release of idle Go heap after allocation
-bursts. It cannot reclaim a live working set or memory outside Go.
-
-An explicitly present `GOMEMLIMIT`, including `off`, or an already finite
-runtime limit takes precedence. A later external runtime-limit change ends
-automatic ownership. Shutdown restores the previous setting only while Weir
-still owns it.
-
-Inspect `weir_memory_go_runtime_limit_bytes`, `weir_memory_go_runtime_managed`,
-`weir_memory_recovery_allowance_bytes` and
-`weir_memory_recovery_allowance_known`. Unknown or known-zero remaining
-allowance preserves the previous soft limit while actual pressure keeps
-admission closed. Use container/OS limits for the hard boundary.
+Shedding cannot reclaim a live working set. Size the container from the bounds
+in [batching](batching.md#memory-sizing) and observed document sizes.
 
 ## Slow consumers, failures and shutdown
 

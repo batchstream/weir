@@ -255,9 +255,7 @@ func (a *Adapter) prepareRecord(ctx context.Context, record *execution.Record) (
 				}
 
 				native.action = "program"
-				settings := a.options().Lua
-				luaProgram := &luaengine.Program{Limits: &settings}
-				native.program = luaProgram
+				native.program = &luaengine.Program{}
 			} else {
 				expression := v.AtomicTransform.GetBackendExpression()
 				if expression.ContentType != ExpressionContentType {

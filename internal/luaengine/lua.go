@@ -45,16 +45,7 @@ func Evaluate(ctx context.Context, program Program) (Result, error) {
 	if err != nil {
 		return empty, err
 	}
-	settings := DefaultLimits()
-	if program.Limits != nil {
-		settings = *program.Limits
-	}
-	limits := vm.Limits{
-		MaxCallDepth:    settings.MaxCallDepth,
-		MaxStackSlots:   settings.MaxStackSlots,
-		MaxInstructions: settings.MaxInstructions,
-		MinGCInterval:   -1,
-	}
+	limits := vm.Limits{MinGCInterval: -1}
 	state := vm.New(vm.WithContext(ctx), vm.WithLimits(limits))
 	defer state.Close(context.Background())
 	module := installEnvironment(state, program.ObservedAt)

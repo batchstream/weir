@@ -23,8 +23,8 @@ NotFound. Backend configuration and authentication remain local. See
 | `internal/store` | Queueing, batch selection and execution slots |
 | `internal/execution` | Prepared plans and the MongoDB/Search adapter contract |
 | `internal/backend` | Native backend encoding, execution and completion evidence |
-| `internal/luaengine` | Restricted VM, value conversion and execution limits |
-| `internal/overload` | Actual memory observations, admission hysteresis and Go soft limit |
+| `internal/luaengine` | Restricted VM and value conversion |
+| `internal/overload` | Live memory sampling, admission hysteresis and the container-derived Go memory limit |
 
 The independent `weir-protocol` module owns public schemas and shared validation.
 The independent `weir-go` SDK depends on it. Server acceptance tests consume the
@@ -98,11 +98,11 @@ most 32 outstanding records. Size the container for these
 limits and the largest documents you serve; [batching](batching.md) shows the
 calculation.
 
-Actual RSS/physical footprint and visible container working-set pressure latch
-overload admission: new work receives `RESOURCE_EXHAUSTED` until pressure falls
-below the recovery watermark. The CLI manages the Go soft limit below the
-recovery threshold, while an explicit runtime policy takes precedence.
-Container/OS memory limits remain the hard boundary.
+Memory pressure closes admission: once live memory reaches 80% of the Go memory
+limit, new work receives `RESOURCE_EXHAUSTED` until it falls to 70%. The CLI
+sets that limit to 90% of the container's cgroup v2 memory limit unless
+`GOMEMLIMIT` is set. Container/OS memory limits remain the hard boundary; see
+[operations](operations.md#memory-pressure).
 
 Lua programs run within the caller's deadline and the VM's call-depth and stack
 limits. There is no per-evaluation memory or instruction limit, so transforms

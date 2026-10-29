@@ -105,7 +105,7 @@ func TestAssemblyWithoutStoresPartialStartupAndConcurrentClose(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(node.stores) != 0 || node.guard.Snapshot().Budget == 0 {
+	if len(node.stores) != 0 || node.guard.Snapshot().Live == 0 {
 		t.Fatal("Store-less node created database state")
 	}
 	node.Start(context.Background())

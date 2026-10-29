@@ -3,14 +3,17 @@ package app
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"math/rand/v2"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -100,7 +103,7 @@ func TestDiagnosticsLifecycleIsolationAndNoSyntheticExecutions(t *testing.T) {
 	if testmetrics.Sum(other, "weir_admission_rejections_total") != 0 {
 		t.Fatal("registries shared counters")
 	}
-	if len(n.stores) != 0 || !n.guard.Snapshot().Observed {
+	if len(n.stores) != 0 || n.guard.Snapshot().Live == 0 {
 		t.Fatal("fake Runtime")
 	}
 	n.admission.SetOverloaded(false)
@@ -141,7 +144,7 @@ func TestDiagnosticsLifecycleIsolationAndNoSyntheticExecutions(t *testing.T) {
 		}
 	}
 	after := testmetrics.Registry(t, n.registry)
-	if testmetrics.Sum(after, "weir_node_drains_total") != 1 || testmetrics.Sample(after, "weir_node_state", map[string]string{"state": "closed"}).GetGauge().GetValue() != 1 {
+	if testmetrics.Sum(after, "weir_node_ready") != 0 || n.state != "closed" {
 		t.Fatal("non-monotonic close")
 	}
 	if testmetrics.Sum(after, "weir_ingress_sessions") != 0 {
@@ -173,8 +176,8 @@ func TestDiagnosticsInputCardinalityAndNoSecrets(t *testing.T) {
 		var output pb.ReadResult
 		_ = conn.Invoke(ctx, "/unknown"+nonce+"/Method", req, &output)
 		cancel()
-		if health(t, n, fmt.Sprintf("/unknown%d?credential=secret", i)) != 400 {
-			t.Fatal("query accepted")
+		if health(t, n, fmt.Sprintf("/unknown%d?credential=secret", i)) != http.StatusNotFound {
+			t.Fatal("unknown diagnostic path served")
 		}
 	}
 	after := testmetrics.Scrape(t, n.DiagnosticAddress())
@@ -218,19 +221,15 @@ func TestDiagnosticsConnectionLimitsDeadlinesAndStartupFailure(t *testing.T) {
 		sockets = append(sockets, conn)
 		_, _ = io.WriteString(conn, "GET /metrics HTTP/1.1\r\nHost: local\r\nX-Slow:")
 	}
-	until := time.Now().Add(time.Second)
-	for int(n.diagnostics.connections.Load()) != 16 {
-		if time.Now().After(until) {
-			t.Fatal("connections not occupied")
-		}
-		time.Sleep(time.Millisecond)
-	}
 	if health(t, n, "/livez") != http.StatusOK {
 		t.Fatal("slow connections blocked an independent diagnostic request")
 	}
-	time.Sleep(diagnosticTimeout + 100*time.Millisecond)
-	if int(n.diagnostics.connections.Load()) != 0 || health(t, n, "/livez") != 200 {
-		t.Fatal("slow headers retained connections")
+	// The header deadline closes every slow connection.
+	for _, conn := range sockets {
+		requireServerClosed(t, conn)
+	}
+	if health(t, n, "/livez") != http.StatusOK {
+		t.Fatal("diagnostics did not recover from slow headers")
 	}
 	// Oversized headers and body-bearing requests are bounded by the same path.
 	for _, raw := range []string{
@@ -247,7 +246,7 @@ func TestDiagnosticsConnectionLimitsDeadlinesAndStartupFailure(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if response.StatusCode != 431 && response.StatusCode != 400 {
+		if response.StatusCode != http.StatusRequestHeaderFieldsTooLarge && response.StatusCode != http.StatusMethodNotAllowed {
 			t.Fatal(response.StatusCode)
 		}
 		_ = response.Body.Close()
@@ -294,7 +293,7 @@ func TestWildcardDiagnosticsListener(t *testing.T) {
 		t.Fatal(err)
 	}
 	metrics := testmetrics.Scrape(t, "127.0.0.1:"+port)
-	if metrics["weir_diagnostic_connections"] == nil {
+	if metrics["weir_node_ready"] == nil {
 		t.Fatal("wildcard diagnostic listener did not serve metrics")
 	}
 }
@@ -318,12 +317,28 @@ func TestDiagnosticsScrapeCloseRace(t *testing.T) {
 		})
 	}
 	group.Wait()
-	if testmetrics.Sum(testmetrics.Registry(t, n.registry), "weir_node_drains_total") != 1 {
-		t.Fatal("double drain")
+	if testmetrics.Sum(testmetrics.Registry(t, n.registry), "weir_node_ready") != 0 || n.state != "closed" {
+		t.Fatal("concurrent Close left the node open")
 	}
 }
 
-type smallSendListener struct{ net.Listener }
+// requireServerClosed drains conn until the server closes it, failing if that
+// takes longer than the diagnostic deadline allows.
+func requireServerClosed(t *testing.T, conn net.Conn) {
+	t.Helper()
+	_ = conn.SetReadDeadline(time.Now().Add(diagnosticTimeout + 2*time.Second))
+	_, err := io.Copy(io.Discard, conn)
+	if errors.Is(err, os.ErrDeadlineExceeded) {
+		t.Fatal("diagnostics retained a stalled connection")
+	}
+}
+
+// smallSendListener shrinks each accepted connection's send buffer and counts
+// the connections the server has not closed yet.
+type smallSendListener struct {
+	net.Listener
+	open atomic.Int64
+}
 
 func (l *smallSendListener) Accept() (net.Conn, error) {
 	conn, err := l.Listener.Accept()
@@ -333,7 +348,20 @@ func (l *smallSendListener) Accept() (net.Conn, error) {
 	if tcp, ok := conn.(*net.TCPConn); ok {
 		_ = tcp.SetWriteBuffer(1024)
 	}
-	return conn, nil
+	l.open.Add(1)
+	tracked := &trackedConn{Conn: conn, owner: l}
+	return tracked, nil
+}
+
+type trackedConn struct {
+	net.Conn
+	owner *smallSendListener
+	once  sync.Once
+}
+
+func (c *trackedConn) Close() error {
+	c.once.Do(func() { c.owner.open.Add(-1) })
+	return c.Conn.Close()
 }
 
 func TestDiagnosticsStoppedScrapesAndConcurrentHandlersBounded(t *testing.T) {
@@ -347,7 +375,7 @@ func TestDiagnosticsStoppedScrapesAndConcurrentHandlersBounded(t *testing.T) {
 	// A bounded test collector produces enough output to exercise blocked HTTP sends.
 	opts := prometheus.GaugeOpts{Name: "weir_test_scrape_padding", Help: "Test-only bounded scrape payload."}
 	padding := prometheus.NewGaugeVec(opts, []string{"entry"})
-	for i := 0; i < 128; i++ {
+	for i := 0; i < 2048; i++ {
 		padding.WithLabelValues(fmt.Sprintf("%s%d", strings.Repeat("x", 512), i)).Set(1)
 	}
 	if err := n.registry.Register(padding); err != nil {
@@ -370,25 +398,18 @@ func TestDiagnosticsStoppedScrapesAndConcurrentHandlersBounded(t *testing.T) {
 			_, _ = io.WriteString(conn, "GET /metrics HTTP/1.1\r\nHost: local\r\n\r\n")
 			sockets = append(sockets, conn)
 		}
-		until := time.Now().Add(500 * time.Millisecond)
-		for int(n.diagnostics.handlers.Load()) != 8 {
-			if time.Now().After(until) {
-				t.Fatal("scrapes did not block at output")
-			}
-			time.Sleep(time.Millisecond)
-		}
 		time.Sleep(80 * time.Millisecond)
-		if int(n.diagnostics.handlers.Load()) != 8 {
-			t.Fatal("scrapes were not held by stopped reader")
-		}
 		started := time.Now()
 		if health(t, n, "/livez") != 200 || time.Since(started) > 200*time.Millisecond {
 			t.Fatal("blocked scrapes prevented health requests")
 		}
-		until = time.Now().Add(2 * time.Second)
-		for int(n.diagnostics.handlers.Load()) != 0 || int(n.diagnostics.connections.Load()) != 0 {
+		// The write deadline ends every scrape its reader stopped consuming.
+		// Watch the server's side: the kernel can take seconds to drain a
+		// closed socket's buffered bytes through these tiny buffers.
+		until := time.Now().Add(diagnosticTimeout + time.Second)
+		for listener.open.Load() != 0 {
 			if time.Now().After(until) {
-				t.Fatal("stopped reader retained response/handler")
+				t.Fatal("diagnostics retained a stalled scrape", listener.open.Load())
 			}
 			time.Sleep(5 * time.Millisecond)
 		}

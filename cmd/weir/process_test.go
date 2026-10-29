@@ -211,7 +211,8 @@ type cliProcess struct {
 	input          io.WriteCloser
 }
 
-func startCLI(t *testing.T, cfg app.Config, mode string) *cliProcess {
+// startCLI runs the CLI in a child process with env added to its environment.
+func startCLI(t *testing.T, cfg app.Config, mode string, env ...string) *cliProcess {
 	t.Helper()
 	t.Logf("native test runtime=%s/%s go=%s euid=%d", runtime.GOOS, runtime.GOARCH, runtime.Version(), os.Geteuid())
 	raw, err := yaml.Marshal(cfg)
@@ -239,6 +240,7 @@ func startCLI(t *testing.T, cfg app.Config, mode string) *cliProcess {
 		"WEIR_PROCESS_CHILD="+mode,
 		"WEIR_PROCESS_CONFIG="+config,
 	)
+	cmd.Env = append(cmd.Env, env...)
 	input, err := cmd.StdinPipe()
 	if err != nil {
 		t.Fatal(err)
@@ -464,6 +466,45 @@ func TestCLIStorelessServe(t *testing.T) {
 	if p.stderr.text() != "" {
 		t.Fatal("Store-less shutdown output", p.stderr.text())
 	}
+}
+
+// An explicit GOMEMLIMIT below the process's own memory makes the real CLI
+// refuse new work while readiness stays unchanged.
+func TestCLIShedsWorkAboveTheGoMemoryLimit(t *testing.T) {
+	cfg := app.Config{}
+	cfg.Listeners.Application = "127.0.0.1:0"
+	cfg.Listeners.Diagnostics = "127.0.0.1:0"
+	p := startCLI(t, cfg, "cli", "GOMEMLIMIT=1MiB")
+	addresses := listenerAddresses(t, p.line(t))
+	diagnostic := strings.TrimPrefix(p.line(t), "Diagnostics listening on ")
+	healthy(t, diagnostic, "/readyz")
+	metrics := testmetrics.Scrape(t, diagnostic)
+	if testmetrics.Sum(metrics, "weir_memory_limit_bytes") != 1<<20 || testmetrics.Sum(metrics, "weir_memory_overloaded") != 1 {
+		t.Fatal("explicit GOMEMLIMIT did not drive the overload guard")
+	}
+
+	conn, err := grpc.NewClient(
+		"passthrough:///"+addresses[0],
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithNoProxy(),
+		grpc.WithDisableRetry(),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	read := &pb.ReadRequest{Resource: "db/records/s:missing"}
+	request := testutil.RecordRequest("records", read)
+	client := pb.NewStoreServiceClient(conn)
+	if _, err := testutil.ExecuteRecord(ctx, client, request); status.Code(err) != codes.ResourceExhausted {
+		t.Fatal("memory-pressured CLI admitted work", err)
+	}
+
+	p.terminate(t, "memory-pressured node refused work")
+	reserveReleasedAddresses(t, append(addresses, diagnostic))
+	p.wait(t, 0)
 }
 
 func TestCLISignalBeforeStart(t *testing.T) {

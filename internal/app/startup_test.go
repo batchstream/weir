@@ -64,7 +64,7 @@ func TestCanceledStartNeverReadyAndClosesOnce(t *testing.T) {
 			t.Fatal("canceled or closed node became ready")
 		}
 		families := testmetrics.Registry(t, node.registry)
-		if testmetrics.Sum(families, "weir_node_drains_total") != 1 || node.state != "closed" {
+		if testmetrics.Sum(families, "weir_node_ready") != 0 || node.state != "closed" {
 			t.Fatal("partial node not closed exactly once")
 		}
 		for _, address := range []string{node.Address(), node.DiagnosticAddress()} {
