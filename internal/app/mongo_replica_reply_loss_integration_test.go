@@ -125,7 +125,6 @@ func TestMongoReplicaCLIReplyLoss(t *testing.T) {
 					if err := client.Close(); err != nil {
 						t.Fatal(err)
 					}
-					replicaClosedOwner(t, service)
 					proxy.CheckLuaLifecycleCases(t, lifecycleWatches, "CLI_actual_Wait_and_owner_zero")
 					proxy.CheckLuaCases(t, luaCases, "CLI_actual_Wait_and_owner_zero")
 					proxy.CheckLuaCommitCases(t, commitCases, "CLI_actual_Wait_and_owner_zero")

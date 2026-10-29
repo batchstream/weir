@@ -69,28 +69,6 @@ func replicaReadFacts(t *testing.T, w *testmongo.ReadWatch, phase string) {
 	}
 	t.Logf("sent_read phase=%s observation=%+v", phase, s)
 }
-func replicaReadPeer(t *testing.T, a *Adapter, peer string) *mongoConn {
-	t.Helper()
-	a.dialer.mu.Lock()
-	defer a.dialer.mu.Unlock()
-	for conn := range a.dialer.conns {
-		if conn.raw.LocalAddr().String() == peer {
-			return conn
-		}
-	}
-	t.Fatal("held read raw owner not found", peer)
-	return nil
-}
-func replicaReadRawClosed(a *Adapter, conns []*mongoConn) bool {
-	a.dialer.mu.Lock()
-	defer a.dialer.mu.Unlock()
-	for _, conn := range conns {
-		if _, exists := a.dialer.conns[conn]; exists {
-			return false
-		}
-	}
-	return a.dialer.closing == 0
-}
 func replicaReadSubmit(t *testing.T, ctx context.Context, opts replicaReadSubmitOptions) *store.Ticket {
 	t.Helper()
 	read := &pb.ReadRequest{Resource: opts.database + "/records/s:" + opts.id}
@@ -151,14 +129,12 @@ func replicaReadRuntime(t *testing.T, opts replicaReadRuntimeOptions) ([]*testmo
 	submit := replicaReadSubmitOptions{runtime: runtime, database: opts.fixture.DB, id: "runtime-cancel-read", index: 101}
 	ticket := replicaReadSubmit(t, caller, submit)
 	replicaReadBarrier(t, ordinary, false, time.Now().Add(3*time.Second))
-	findConn := replicaReadPeer(t, a, ordinary.Snapshot().FindPeer)
 	if a.client.NumberSessionsInProgress() < 1 {
 		t.Fatal("held explicit session not checked out")
 	}
 	cancelled := time.Now()
 	cancel()
 	replicaReadBarrier(t, ordinary, true, cancelled.Add(3*time.Second))
-	cleanupConn := replicaReadPeer(t, a, ordinary.Snapshot().CleanupPeer)
 	// Wait is deliberately independent of the canceled submission context: using
 	// caller here would Abandon the real retained consumer-owned ticket.
 	wait, stop := context.WithDeadline(t.Context(), cancelled.Add(3*time.Second))
@@ -172,12 +148,9 @@ func replicaReadRuntime(t *testing.T, opts replicaReadRuntimeOptions) ([]*testmo
 	if executeJoinedElapsed < 1800*time.Millisecond {
 		t.Fatal("ordinary execution cleanup lost its full independent 2s", executeJoinedElapsed)
 	}
-	ownedReadConns := []*mongoConn{findConn, cleanupConn}
-	// The pinned driver can background-read a deadline-timed-out socket for
-	// 400ms. Observe its actual raw Close inside the original 3s cancel gate.
-	for delegate.returned.Load() != executionBaseline+1 || a.client.NumberSessionsInProgress() != baseline || !replicaReadRawClosed(a, ownedReadConns) {
+	for delegate.returned.Load() != executionBaseline+1 || a.client.NumberSessionsInProgress() != baseline {
 		if time.Now().After(cancelled.Add(3 * time.Second)) {
-			t.Fatal("ordinary execution/session/exact raw join", a.client.NumberSessionsInProgress(), a.dialer.snapshot(), ordinary.Snapshot())
+			t.Fatal("ordinary execution/session join", a.client.NumberSessionsInProgress(), ordinary.Snapshot())
 		}
 		time.Sleep(time.Millisecond)
 	}
@@ -192,7 +165,7 @@ func replicaReadRuntime(t *testing.T, opts replicaReadRuntimeOptions) ([]*testmo
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Logf("sent_read case=backend_cancel cleanup_and_raw_join_elapsed=%s deadline_remaining=%s execute_join_observed=%s sessions_baseline=%d", elapsed, 3*time.Second-elapsed, executeJoinedElapsed, baseline)
+	t.Logf("sent_read case=backend_cancel cleanup_join_elapsed=%s deadline_remaining=%s execute_join_observed=%s sessions_baseline=%d", elapsed, 3*time.Second-elapsed, executeJoinedElapsed, baseline)
 
 	// A completed read, a held Lua commit and a held read share one Close.
 	readyID := "runtime-ready-read"
@@ -251,14 +224,13 @@ func replicaReadRuntime(t *testing.T, opts replicaReadRuntimeOptions) ([]*testmo
 	if delegate.entered.Load() != executionBaseline+4 || delegate.returned.Load() != executionBaseline+4 || delegate.closeEntered.Load() != 1 || delegate.closeReturned.Load() != 1 || a.client.NumberSessionsInProgress() != baseline {
 		t.Fatal("actual adapter/execute/session joins", delegate.entered.Load(), delegate.returned.Load(), delegate.closeReturned.Load(), a.client.NumberSessionsInProgress())
 	}
-	ownerZero(t, a.dialer)
 	wait, stop = context.WithTimeout(t.Context(), time.Second)
 	event, err = activeTicket.Wait(wait)
 	stop()
 	if err != nil || event.GetReadResult() == nil || event.GetReadResult().GetDocument() != nil || event.GetReadResult().GetFailure() == nil {
 		t.Fatal("retired read evidence", event, err)
 	}
-	t.Logf("sent_read phase=backend_after_close elapsed=%s sessions_baseline=%d raw_owner=%+v", elapsed, baseline, a.dialer.snapshot())
+	t.Logf("sent_read phase=backend_after_close elapsed=%s sessions_baseline=%d", elapsed, baseline)
 	wait, stop = context.WithDeadline(t.Context(), started.Add(8*time.Second))
 	luaResult := replicaLuaLifecycleReceipt(t, wait, lua)
 	if err := lua.watch.WaitLifecycleEOF(wait); err != nil {

@@ -13,7 +13,6 @@ import (
 	"time"
 )
 
-const connectionTimeout = 2 * time.Second
 const responseReadBuffer = 4096
 const maxResponseHeaderBytes = 1 << 20
 const maxInitialBody = 16 << 20
@@ -36,8 +35,6 @@ type exchange struct {
 	records       int
 	responseLimit int
 }
-
-type requestContextKey struct{}
 
 func (a *Adapter) request(ctx context.Context, call exchange) (status int, raw []byte, err error) {
 	ctx, cancel := context.WithCancel(ctx)
@@ -166,11 +163,6 @@ func (a *Adapter) request(ctx context.Context, call exchange) (status int, raw [
 
 // Backend authentication supplies defaults; Native may override end-to-end headers.
 func (a *Adapter) configureRequest(request *http.Request) {
-	// Go 1.27 Transport detaches dial cancellation using WithoutCancel, retaining
-	// values. Keep the original request lifetime for our owned DNS/TLS I/O too.
-	ctx := request.Context()
-	key := requestContextKey{}
-	*request = *request.WithContext(context.WithValue(ctx, key, ctx))
 	request.GetBody = nil
 	if connection := a.config.Connection; connection != nil && connection.Username != "" {
 		request.SetBasicAuth(connection.Username, connection.Password)

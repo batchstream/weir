@@ -47,7 +47,7 @@ Every advertised member address must be reachable from Weir. With TLS, each
 member's certificate must verify its actual hostname/IP; a seed's identity is
 not reused for other members. Each member pool creates at most two connections
 at a time, while monitors and pools can exist for multiple discovered members. Monitor
-aggregate backend demand, connection ownership and cancellation together.
+aggregate backend demand and connection counts on the database side.
 
 Keep database transition time separate from Weir's reaction: observe when the
 external replica set can serve the required primary/majority operation, then

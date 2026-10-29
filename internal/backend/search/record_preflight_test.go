@@ -28,8 +28,7 @@ func TestSearchMutationPreparationPerformsNoBackendIO(t *testing.T) {
 			lifetime, cancel := context.WithCancel(t.Context())
 			t.Cleanup(cancel)
 			client := server.Client()
-			transport := client.Transport.(*http.Transport)
-			adapter := &Adapter{config: config, dialect: ElasticsearchProduct, client: client, transport: transport, ctx: lifetime, cancel: cancel}
+			adapter := &Adapter{config: config, dialect: ElasticsearchProduct, client: client, nativeClient: client, ctx: lifetime, cancel: cancel}
 			work := batchTestPlan(t, adapter, action, "records/s:record")
 			record, err := execution.NewRecord("search", 1, work.Command)
 			if err != nil {
@@ -56,8 +55,7 @@ func TestSearchRecordPreflightBeforeAnyCommand(t *testing.T) {
 			config := Config{Store: "search", URL: server.URL}
 			lifetime, cancel := context.WithCancel(context.Background())
 			client := server.Client()
-			transport := client.Transport.(*http.Transport)
-			adapter := &Adapter{config: config, dialect: ElasticsearchProduct, client: client, transport: transport, ctx: lifetime, cancel: cancel}
+			adapter := &Adapter{config: config, dialect: ElasticsearchProduct, client: client, nativeClient: client, ctx: lifetime, cancel: cancel}
 			limits := store.DefaultLimits()
 			runtime, err := store.New(adapter, limits)
 			if err != nil {

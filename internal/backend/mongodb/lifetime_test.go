@@ -5,8 +5,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
-	"net"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -28,8 +26,7 @@ import (
 )
 
 // This seam preserves the actual driver's command/session paths. find is sent
-// before its reply is lost; killSessions blocks in a real owned net.Pipe Read,
-// not a channel that only claims raw Close woke it.
+// before its reply is lost; killSessions blocks until its cleanup context ends.
 type retirementDeployment struct {
 	*drivertest.MockDeployment
 	command        atomic.Value
@@ -37,7 +34,6 @@ type retirementDeployment struct {
 	cleanupSent    chan struct{}
 	disconnected   chan struct{}
 	endReadContext chan context.Context
-	raw            net.Conn
 	slowEnd        bool
 	disconnectErr  error
 }
@@ -83,13 +79,9 @@ func (c *retirementConnection) Write(ctx context.Context, message []byte) error 
 }
 func (c *retirementConnection) Read(ctx context.Context) ([]byte, error) {
 	switch c.command {
-	case "find":
+	case "find", "killSessions":
 		<-ctx.Done()
 		return nil, ctx.Err()
-	case "killSessions":
-		var data [1]byte
-		_, err := c.deployment.raw.Read(data[:])
-		return nil, err
 	case "endSessions":
 		if c.deployment.slowEnd {
 			if c.deployment.endReadContext != nil {
@@ -102,20 +94,6 @@ func (c *retirementConnection) Read(ctx context.Context) ([]byte, error) {
 	return c.Connection.Read(ctx)
 }
 
-func retirementRaw(t *testing.T, owner *connectionOwner) net.Conn {
-	t.Helper()
-	raw, peer := net.Pipe()
-	t.Cleanup(func() { _ = peer.Close() })
-	if err := owner.acquire(t.Context()); err != nil {
-		t.Fatal(err)
-	}
-	conn := &mongoConn{Conn: raw, raw: raw, owner: owner}
-	owner.mu.Lock()
-	owner.conns[conn] = struct{}{}
-	owner.mu.Unlock()
-	return conn
-}
-
 type retirementFixture struct {
 	adapter    *Adapter
 	deployment *retirementDeployment
@@ -124,13 +102,12 @@ type retirementFixture struct {
 
 func newRetirementFixture(t *testing.T, slow bool) retirementFixture {
 	t.Helper()
-	owner := newConnectionOwner()
 	cleanup := bson.D{{Key: "ok", Value: 1}}
 	responses := []bson.D{collectionQualificationResponse("db", "records"), cleanup}
 	if slow {
 		responses = []bson.D{cleanup, cleanup, cleanup, collectionQualificationResponse("db", "records"), cleanup}
 	}
-	deployment := &retirementDeployment{MockDeployment: drivertest.NewMockDeployment(responses...), findSent: make(chan struct{}), cleanupSent: make(chan struct{}), disconnected: make(chan struct{}), raw: retirementRaw(t, owner), slowEnd: slow}
+	deployment := &retirementDeployment{MockDeployment: drivertest.NewMockDeployment(responses...), findSent: make(chan struct{}), cleanupSent: make(chan struct{}), disconnected: make(chan struct{}), slowEnd: slow}
 	commands := &readSelectionCommands{}
 	monitor := &event.CommandMonitor{Started: func(ctx context.Context, event *event.CommandStartedEvent) {
 		deployment.command.Store(event.CommandName)
@@ -143,7 +120,7 @@ func newRetirementFixture(t *testing.T, slow bool) retirementFixture {
 		t.Fatal(err)
 	}
 	cfg := Config{Store: "mongo"}
-	adapter := &Adapter{client: client, deployment: deployment, commandMonitor: monitor, config: cfg, dialer: owner}
+	adapter := &Adapter{client: client, deployment: deployment, commandMonitor: monitor, config: cfg}
 	initializeTestLifetime(adapter)
 	t.Cleanup(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
@@ -231,7 +208,6 @@ func TestMongoDefaultRetirementSentUnknownCursor(t *testing.T) {
 			default:
 				t.Fatal("adapter disconnect worker not joined")
 			}
-			ownerZero(t, adapter.dialer)
 			if adapter.client.NumberSessionsInProgress() != 0 {
 				t.Fatal("successful Close left sessions")
 			}
@@ -345,64 +321,22 @@ func TestMongoLifetimeCancelsPreexistingSelectionAndPendingMetadata(t *testing.T
 	})
 }
 
-type retirementErrorConn struct {
-	net.Conn
-	err error
-}
-
-func (c *retirementErrorConn) Close() error {
-	_ = c.Conn.Close()
-	return c.err
-}
-
-func TestMongoRetirementPreservesActualCloseErrors(t *testing.T) {
-	for _, rawError := range []bool{false, true} {
-		t.Run(fmt.Sprint(rawError), func(t *testing.T) {
-			expected := errors.New("injected genuine retirement failure")
-			deployment := &retirementDeployment{MockDeployment: drivertest.NewMockDeployment(), disconnected: make(chan struct{})}
-			opts := options.Client()
-			opts.Deployment = deployment
-			client, err := mongo.Connect(opts)
-			if err != nil {
-				t.Fatal(err)
-			}
-			owner := newConnectionOwner()
-			adapter := &Adapter{client: client, dialer: owner}
-			initializeTestLifetime(adapter)
-			if rawError {
-				conn := retirementRaw(t, owner).(*mongoConn)
-				conn.raw = &retirementErrorConn{Conn: conn.raw, err: expected}
-			} else {
-				deployment.disconnectErr = expected
-			}
-			if err := adapter.Close(t.Context()); !errors.Is(err, expected) {
-				t.Fatal("genuine close error suppressed", err)
-			}
-			ownerZero(t, owner)
-			if err := adapter.Close(t.Context()); !errors.Is(err, expected) {
-				t.Fatal("repeat close lost original result", err)
-			}
-		})
+func TestMongoRetirementPreservesDisconnectError(t *testing.T) {
+	expected := errors.New("injected genuine retirement failure")
+	deployment := &retirementDeployment{MockDeployment: drivertest.NewMockDeployment(), disconnected: make(chan struct{}), disconnectErr: expected}
+	opts := options.Client()
+	opts.Deployment = deployment
+	client, err := mongo.Connect(opts)
+	if err != nil {
+		t.Fatal(err)
 	}
-}
-
-func TestMongoOwnerRawCloseWakesReadAndIgnoresOnlyAlreadyClosed(t *testing.T) {
-	for _, expected := range []error{nil, net.ErrClosed, io.ErrUnexpectedEOF} {
-		owner := newConnectionOwner()
-		conn := retirementRaw(t, owner).(*mongoConn)
-		conn.raw = &retirementErrorConn{Conn: conn.raw, err: expected}
-		read := make(chan error, 1)
-		go func() { var data [1]byte; _, err := conn.Read(data[:]); read <- err }()
-		owner.close()
-		if err := <-read; err == nil {
-			t.Fatal("raw close did not wake actual Read")
-		}
-		ownerZero(t, owner)
-		actual := owner.closeError()
-		genuine := expected != nil && !errors.Is(expected, net.ErrClosed)
-		if genuine && !errors.Is(actual, expected) || !genuine && actual != nil {
-			t.Fatal("incorrect close error classification", expected, actual)
-		}
+	adapter := &Adapter{client: client}
+	initializeTestLifetime(adapter)
+	if err := adapter.Close(t.Context()); !errors.Is(err, expected) {
+		t.Fatal("genuine close error suppressed", err)
+	}
+	if err := adapter.Close(t.Context()); !errors.Is(err, expected) {
+		t.Fatal("repeat close lost original result", err)
 	}
 }
 
@@ -504,50 +438,6 @@ func TestMongoClosedLifetimeNeverConfirmsLateAbort(t *testing.T) {
 	}
 	if adapter.abortProgramTransaction(session, true) {
 		t.Fatal("closed lifetime authorized retry as confirmed abort")
-	}
-}
-
-func TestMongoOwnerJoinsConcurrentRawCloseAndRetainsGenuineError(t *testing.T) {
-	owner := newConnectionOwner()
-	expected := errors.New("concurrent raw close failed")
-	conn := retirementRaw(t, owner).(*mongoConn)
-	release := make(chan struct{})
-	slow := &slowCloseConn{Conn: conn.raw, entered: make(chan struct{}), release: release}
-	conn.raw = &retirementErrorConn{Conn: slow, err: expected}
-	wrapperClosed := make(chan error, 1)
-	go func() { wrapperClosed <- conn.Close() }()
-	<-slow.entered
-	owner.stop()
-	joined := make(chan struct{})
-	go func() { owner.close(); close(joined) }()
-	select {
-	case <-joined:
-		t.Fatal("raw Close owner was not joined")
-	default:
-	}
-	close(release)
-	if err := <-wrapperClosed; !errors.Is(err, expected) {
-		t.Fatal("wrapper lost genuine error", err)
-	}
-	<-joined
-	ownerZero(t, owner)
-	if !errors.Is(owner.closeError(), expected) {
-		t.Fatal("concurrent teardown error lost", owner.closeError())
-	}
-}
-
-func TestMongoOwnerDoesNotPoisonShutdownWithHistoricalRetirementFailure(t *testing.T) {
-	owner := newConnectionOwner()
-	expected := errors.New("earlier pool retirement failure")
-	conn := retirementRaw(t, owner).(*mongoConn)
-	conn.raw = &retirementErrorConn{Conn: conn.raw, err: expected}
-	if err := conn.Close(); !errors.Is(err, expected) {
-		t.Fatal(err)
-	}
-	owner.close()
-	ownerZero(t, owner)
-	if err := owner.closeError(); err != nil {
-		t.Fatal("unrelated historical failure poisoned shutdown", err)
 	}
 }
 
@@ -657,7 +547,6 @@ func assertMongoDirectCloseBound(t *testing.T, parentTimeout time.Duration) {
 	default:
 		t.Fatal("actual Disconnect owner did not join")
 	}
-	ownerZero(t, adapter.dialer)
 	if adapter.client.NumberSessionsInProgress() != 0 {
 		t.Fatal("direct Close retained a real session owner")
 	}
@@ -669,5 +558,5 @@ func assertMongoDirectCloseBound(t *testing.T, parentTimeout time.Duration) {
 	if err != nil || len(ids) != 3 {
 		t.Fatal("endSessions did not use the three genuinely used idle session IDs", err)
 	}
-	t.Logf("actual direct Close elapsed=%s error=%v parent_timeout=%s caller_error=%v raw=%+v sessions=%d commands=%v", elapsed, closeErr, parentTimeout, caller.Err(), adapter.dialer.snapshot(), adapter.client.NumberSessionsInProgress(), names)
+	t.Logf("actual direct Close elapsed=%s error=%v parent_timeout=%s caller_error=%v sessions=%d commands=%v", elapsed, closeErr, parentTimeout, caller.Err(), adapter.client.NumberSessionsInProgress(), names)
 }

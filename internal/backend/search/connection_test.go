@@ -16,18 +16,14 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
-	"net/netip"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
-	"github.com/batchstream/weir/internal/testutil/testdns"
 )
 
 func TestSearchConnectionValidation(t *testing.T) {
@@ -167,12 +163,13 @@ func TestSearchTLSBothPathsAndTransportPolicy(t *testing.T) {
 	if end.Completion != pb.NativeCompletion_RESPONSE_COMPLETE || calls.Load() != 2 {
 		t.Fatal("native connection config missing")
 	}
-	for _, transport := range []*http.Transport{a.transport, a.nativeTransport} {
+	ordinary, native := a.client.Transport.(*http.Transport), a.nativeClient.Transport.(*http.Transport)
+	for _, transport := range []*http.Transport{ordinary, native} {
 		if transport.Proxy != nil || !transport.DisableCompression || transport.Protocols.HTTP2() || !transport.Protocols.HTTP1() {
 			t.Fatal("unsafe transport defaults")
 		}
 	}
-	if !a.nativeTransport.DisableKeepAlives || a.nativeTransport.MaxConnsPerHost != 0 || a.transport.MaxConnsPerHost != 0 {
+	if !native.DisableKeepAlives || native.MaxConnsPerHost != 0 || ordinary.MaxConnsPerHost != 0 {
 		t.Fatal("pool policy")
 	}
 
@@ -215,190 +212,6 @@ func TestSearchTLSValidationAndCAErrors(t *testing.T) {
 		})
 	}
 }
-func TestSearchDNSNameSNIAddressChangeAndBounds(t *testing.T) {
-	dns := testdns.Start(t)
-	answer := testdns.Answer{Addresses: []netip.Addr{netip.MustParseAddr("127.0.0.1")}}
-	dns.Set("search.test", answer)
-	var names atomic.Int32
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.TLS.ServerName == "search.test" {
-			names.Add(1)
-		} else {
-			t.Error("DNS name lost in SNI")
-		}
-		if !qualification(w, r) {
-			io.WriteString(w, `{}`)
-		}
-	})
-	endpoint, c := tlsEndpoint(t, handler, false)
-	_, port, _ := net.SplitHostPort(strings.TrimPrefix(endpoint.URL, "https://"))
-	cfg := Config{Store: "search", URL: "https://SEARCH.test:" + port, Connection: c, Resolver: dns.Resolver()}
-	a, err := Open(context.Background(), cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer a.Close(context.Background())
-	if names.Load() != 1 {
-		t.Fatal("qualification SNI")
-	}
-	unreachable := testdns.Answer{Addresses: []netip.Addr{netip.MustParseAddr("127.0.0.2")}}
-	dns.Set("search.test", unreachable)
-	call := exchange{path: "/probe"}
-	if _, _, err := a.request(context.Background(), call); err != nil {
-		t.Fatal("existing connection migrated on DNS change")
-	}
-	a.transport.CloseIdleConnections()
-	if _, _, err := a.request(context.Background(), call); err == nil {
-		t.Fatal("new connection ignored changed address")
-	}
-	dns.Set("search.test", answer)
-	if _, _, err := a.request(context.Background(), call); err != nil {
-		t.Fatal("new independent request did not recover")
-	}
-	a.transport.CloseIdleConnections()
-	wrong := cfg
-	wrong.URL = "https://wrong.test:" + port
-	dns.Set("wrong.test", answer)
-	rejected, err := Open(context.Background(), wrong)
-	if err == nil || rejected != nil {
-		t.Fatal("hostname mismatch accepted")
-	}
-	for _, mode := range []string{"too-many", "excessive-message", "timeout", "nxdomain"} {
-		t.Run(mode, func(t *testing.T) {
-			a.transport.CloseIdleConnections()
-			bad := testdns.Answer{}
-			switch mode {
-			case "too-many", "excessive-message":
-				n := 9
-				if mode == "excessive-message" {
-					n = 1000
-					bad.TCP = true
-				}
-				for i := 0; i < n; i++ {
-					bad.Addresses = append(bad.Addresses, netip.MustParseAddr("127.0.0.1"))
-				}
-			case "timeout":
-				bad.Drop = true
-			}
-			dns.Set("search.test", bad)
-			// Keep functional DNS results separate from the cancellation probe.
-			var ctx context.Context
-			var cancel context.CancelFunc
-			if mode == "timeout" {
-				ctx, cancel = context.WithTimeout(t.Context(), 80*time.Millisecond)
-			} else {
-				ctx, cancel = context.WithCancel(t.Context())
-			}
-			defer cancel()
-			before := time.Now()
-			_, _, err := a.request(ctx, call)
-			valid := mode == "too-many" || mode == "excessive-message"
-			if (err == nil) != valid {
-				t.Fatal("DNS size, failure or cancellation semantics", mode, err)
-			}
-			if mode == "timeout" && time.Since(before) > time.Second {
-				t.Fatal("DNS cancellation delayed")
-			}
-			// net/http detaches dial cancellation; Close must synchronously join it.
-			before = time.Now()
-			_ = a.Close(context.Background())
-			if time.Since(before) > time.Second || searchOwned(a.dialer) != 0 {
-				t.Fatal("DNS Close leaked lookup")
-			}
-			dns.Set("search.test", answer)
-			a, err = Open(context.Background(), cfg)
-			if err != nil {
-				t.Fatal(err)
-			}
-			a.transport.CloseIdleConnections()
-		})
-	}
-	_ = a.Close(context.Background())
-	t.Logf("DNS ordinary A/AAAA=%d/%d TCP=%d; hostname/SNI retained; new calls re-resolve; Close joins I/O", dns.A.Load(), dns.AAAA.Load(), dns.TCP.Load())
-}
-
-func TestSearchTLSHandshakePoolCloseBound(t *testing.T) {
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer listener.Close()
-	var mu sync.Mutex
-	var sockets []net.Conn
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		for {
-			c, err := listener.Accept()
-			if err != nil {
-				return
-			}
-			mu.Lock()
-			sockets = append(sockets, c)
-			mu.Unlock()
-		}
-	}()
-	defer func() {
-		_ = listener.Close()
-		<-done
-		mu.Lock()
-		defer mu.Unlock()
-		for _, c := range sockets {
-			_ = c.Close()
-		}
-	}()
-	before := runtime.NumGoroutine()
-	for round := 0; round < 8; round++ {
-		ctx, cancel := context.WithCancel(context.Background())
-		tlsConfig := &tls.Config{MinVersion: tls.VersionTLS12}
-		d := &connectionDialer{ctx: ctx, tlsConfig: tlsConfig, conns: make(map[*searchConn]struct{})}
-		var workers sync.WaitGroup
-		for i := 0; i < 16; i++ {
-			workers.Go(func() {
-				conn, err := d.dial(context.Background(), "tcp", listener.Addr().String())
-				if conn != nil {
-					_ = conn.Close()
-				}
-				if err == nil {
-					t.Error("silent peer completed handshake")
-				}
-			})
-		}
-		until := time.Now().Add(time.Second)
-		for searchOwned(d) < 16 && time.Now().Before(until) {
-			time.Sleep(time.Millisecond)
-		}
-		if searchOwned(d) != 16 {
-			t.Fatal("handshake capacity exceeded")
-		}
-		start := time.Now()
-		cancel()
-		d.close()
-		workers.Wait()
-		if time.Since(start) > time.Second || searchOwned(d) != 0 {
-			t.Fatal("Close did not join handshake and release slots")
-		}
-		d.close()
-	}
-	ctx, cancel := context.WithCancel(context.Background())
-	config := &tls.Config{MinVersion: tls.VersionTLS12}
-	d := &connectionDialer{ctx: ctx, tlsConfig: config, conns: make(map[*searchConn]struct{})}
-	start := time.Now()
-	conn, dialErr := d.dial(context.Background(), "tcp", listener.Addr().String())
-	elapsed := time.Since(start)
-	cancel()
-	d.close()
-	if conn != nil || dialErr == nil || elapsed < 1500*time.Millisecond || elapsed > 3*time.Second || searchOwned(d) != 0 {
-		t.Fatal("hard handshake deadline", elapsed)
-	}
-	t.Logf("silent TLS peer with no caller deadline: handshake terminated in %s", elapsed)
-	time.Sleep(50 * time.Millisecond)
-	if runtime.NumGoroutine() > before+6 {
-		t.Fatal("repeated canceled handshake goroutine growth")
-	}
-	t.Logf("8 rounds x 16 attempts: max 3 concurrent handshakes; Close <1s; goroutines before=%d after=%d", before, runtime.NumGoroutine())
-}
-
 func TestSearchTLSNoRedirectCredentialLeak(t *testing.T) {
 	var leaked atomic.Int32
 	target := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { leaked.Add(1) }))
@@ -472,10 +285,4 @@ func TestSearchLargeTrustStoreAndCredentials(t *testing.T) {
 	connection.CAFile, connection.Username, connection.Password = caFile, username, password
 	adapter := openTestTLS(t, endpoint.URL, connection)
 	defer adapter.Close(context.Background())
-}
-
-func searchOwned(dialer *connectionDialer) int {
-	dialer.mu.Lock()
-	defer dialer.mu.Unlock()
-	return dialer.owned
 }

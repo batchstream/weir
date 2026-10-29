@@ -137,13 +137,11 @@ func TestMongoDriverAuthenticationOptions(t *testing.T) {
 	if err := ValidateConfig(cfg); err != nil {
 		t.Fatal(err)
 	}
-	dialer := newConnectionOwner()
-	defer dialer.close()
 	profile, err := parseConfig(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
-	opts, err := connectionOptions(cfg, dialer, profile)
+	opts, err := connectionOptions(cfg, profile)
 	if err != nil {
 		t.Fatal("explicit driver authentication failed without backend access", err)
 	}
@@ -154,8 +152,8 @@ func TestMongoDriverAuthenticationOptions(t *testing.T) {
 	if opts.GetURI() != "" {
 		t.Fatal("explicit driver options must not retain or reparse the raw URI")
 	}
-	if opts.TLSConfig != nil || dialer.tlsConfig == nil || dialer.tlsConfig.InsecureSkipVerify || dialer.tlsConfig.ServerName != "" {
-		t.Fatal("bounded dialer must retain verified TLS ownership")
+	if opts.TLSConfig == nil || opts.TLSConfig.InsecureSkipVerify || opts.TLSConfig.ServerName != "" {
+		t.Fatal("driver must verify each member's own certificate")
 	}
 }
 
@@ -164,14 +162,12 @@ func TestMongoDriverUnauthenticatedOptions(t *testing.T) {
 	if err := ValidateConfig(cfg); err != nil {
 		t.Fatal(err)
 	}
-	dialer := newConnectionOwner()
-	defer dialer.close()
 	profile, err := parseConfig(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
-	opts, err := connectionOptions(cfg, dialer, profile)
-	if err != nil || opts.Auth != nil || opts.TLSConfig != nil || dialer.tlsConfig != nil {
+	opts, err := connectionOptions(cfg, profile)
+	if err != nil || opts.Auth != nil || opts.TLSConfig != nil {
 		t.Fatal("unauthenticated driver profile must not inject credentials or TLS", err)
 	}
 }
@@ -197,9 +193,7 @@ func TestMongoReplicaProfiles(t *testing.T) {
 		if !reflect.DeepEqual(profile.hosts, tc.hosts) || profile.replicaSet != tc.set || profile.direct != tc.direct {
 			t.Fatal("profile mismatch", profile)
 		}
-		dialer := newConnectionOwner()
-		opts, err := connectionOptions(cfg, dialer, profile)
-		dialer.close()
+		opts, err := connectionOptions(cfg, profile)
 		if err != nil || !reflect.DeepEqual(opts.Hosts, tc.hosts) || opts.Direct == nil || *opts.Direct != tc.direct {
 			t.Fatal("driver profile mismatch", err)
 		}

@@ -121,7 +121,7 @@ func replicaLuaTopologyBegin(t *testing.T, opts replicaLuaRuntimeOptions, transi
 func replicaLuaTopologyRecovery(t *testing.T, ctx context.Context, opts replicaLuaRuntimeOptions, transition string) string {
 	t.Helper()
 	id := "runtime-lua-topology-" + transition + "-new-work"
-	prepared := ownerMutation(t, opts.delegate.Adapter, opts.fixture.DB, id)
+	prepared := putPlan(t, opts.delegate.Adapter, opts.fixture.DB, id)
 	record, err := execution.NewRecord("mongo", 999, prepared.Command)
 	if err != nil {
 		t.Fatal(err)

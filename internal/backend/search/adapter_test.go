@@ -3,11 +3,13 @@ package search
 import (
 	"context"
 	"fmt"
-	"github.com/batchstream/weir/internal/backend"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/batchstream/weir/internal/backend"
 
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 	"github.com/batchstream/weir/internal/execution"
@@ -82,12 +84,12 @@ func TestResponseAndRequestLimits(t *testing.T) {
 			})
 			server := httptest.NewServer(handler)
 			defer server.Close()
-			transport := newTransport(connectionTimeout, backend.DefaultOptions().IdleTimeout)
+			transport := newTransport(time.Second, backend.DefaultOptions().IdleTimeout)
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 			client := &http.Client{Transport: transport, CheckRedirect: noRedirect}
 			cfg := Config{URL: server.URL}
-			a := &Adapter{dialect: ElasticsearchProduct, config: cfg, transport: transport, client: client, ctx: ctx, cancel: cancel}
+			a := &Adapter{dialect: ElasticsearchProduct, config: cfg, client: client, nativeClient: client, ctx: ctx, cancel: cancel}
 			defer a.Close(context.Background())
 			call := exchange{path: "/"}
 			_, _, err := a.request(ctx, call)

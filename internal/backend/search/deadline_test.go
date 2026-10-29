@@ -140,12 +140,12 @@ func TestCallerDeadlineAcceptsAcknowledgementAfterTwoSeconds(t *testing.T) {
 	}
 }
 
-func TestConnectedBackendDeadlineIsUnknownAndReleasesConnection(t *testing.T) {
+func TestConnectedBackendDeadlineIsUnknown(t *testing.T) {
 	for _, body := range []bool{false, true} {
 		t.Run(map[bool]string{false: "headers", true: "body"}[body], func(t *testing.T) {
 			writeStarted := make(chan struct{})
 			backend := &deadlineBackend{stall: true, bodyDelay: body, writeStarted: writeStarted}
-			adapter, runtime := deadlineRuntime(t, backend)
+			_, runtime := deadlineRuntime(t, backend)
 			prepared := deadlineMutation(t, runtime, "put")
 			caller, stopCaller := context.WithTimeout(t.Context(), time.Second)
 			defer stopCaller()
@@ -172,13 +172,6 @@ func TestConnectedBackendDeadlineIsUnknownAndReleasesConnection(t *testing.T) {
 			mutation := result.GetMutationResult()
 			if caller.Err() != context.DeadlineExceeded || mutation.GetOutcome() != pb.MutationOutcome_UNKNOWN || mutation.GetFailure().GetCode() != pb.FailureCode_DEADLINE_EXCEEDED || mutation.GetFailure().GetMessage() != "backend write deadline exceeded; acknowledgement unavailable" || backend.writes.Load() != 1 {
 				t.Fatal("deadline lost the sent-write uncertainty or cause", mutation, backend.writes.Load())
-			}
-			until := time.Now().Add(time.Second)
-			for searchOwned(adapter.dialer) != 0 && time.Now().Before(until) {
-				time.Sleep(time.Millisecond)
-			}
-			if searchOwned(adapter.dialer) != 0 {
-				t.Fatal("aborted request retained its connection")
 			}
 		})
 	}

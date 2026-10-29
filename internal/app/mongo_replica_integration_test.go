@@ -5,8 +5,6 @@ package app
 import (
 	"context"
 	"fmt"
-	"regexp"
-	"strconv"
 	"testing"
 	"time"
 
@@ -162,7 +160,6 @@ func TestMongoReplicaCLIRecovery(t *testing.T) {
 			if err := client.Close(); err != nil {
 				t.Error(err)
 			}
-			replicaClosedOwner(t, service)
 			t.Logf("TLS=%t same_PID=%d focused lifecycle gates passed", secure, pid)
 		})
 	}
@@ -324,22 +321,4 @@ func replicaCLIIdle(t *testing.T, service *process, deadline time.Time) {
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-}
-
-func replicaClosedOwner(t *testing.T, service *process) {
-	t.Helper()
-	pattern := regexp.MustCompile(`backend_connections_closed backend=mongo store=mongo owned=(\d+) peak=(\d+) dialing=(\d+) closing=(\d+) acquired=(\d+) released=(\d+)`)
-	matches := pattern.FindAllStringSubmatch(service.stderr.String(), -1)
-	if len(matches) != 1 {
-		t.Fatal("missing final connection-owner evidence")
-	}
-	match := matches[0]
-	if match[1] != "0" || match[3] != "0" || match[4] != "0" || match[5] != match[6] {
-		t.Fatal("final connection ownership not zero", match[1:])
-	}
-	peak, _ := strconv.Atoi(match[2])
-	if peak < 4 {
-		t.Fatal("three member topology/data sockets not observed")
-	}
-	t.Logf("final_connection_owner owned=%s peak=%s dialing=%s closing=%s acquired=%s released=%s", match[1], match[2], match[3], match[4], match[5], match[6])
 }

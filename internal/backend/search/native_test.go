@@ -277,7 +277,7 @@ func TestNativeHTTPSyntheticFraming(t *testing.T) {
 			})
 			backend := httptest.NewServer(handler)
 			defer backend.Close()
-			transport := newTransport(connectionTimeout, backendcfg.DefaultOptions().IdleTimeout)
+			transport := newTransport(time.Second, backendcfg.DefaultOptions().IdleTimeout)
 			transport.DisableKeepAlives = true
 			defer transport.CloseIdleConnections()
 			client := &http.Client{Transport: transport, CheckRedirect: noRedirect}
@@ -364,7 +364,7 @@ func TestNativeHTTPExplicitCongestion(t *testing.T) {
 			})
 			backend := httptest.NewServer(handler)
 			defer backend.Close()
-			transport := newTransport(connectionTimeout, backendcfg.DefaultOptions().IdleTimeout)
+			transport := newTransport(time.Second, backendcfg.DefaultOptions().IdleTimeout)
 			transport.DisableKeepAlives = true
 			defer transport.CloseIdleConnections()
 			client := &http.Client{Transport: transport, CheckRedirect: noRedirect}
@@ -422,7 +422,7 @@ func TestNativeHTTPDoesNotQualifyTarget(t *testing.T) {
 			})
 			backend := httptest.NewServer(handler)
 			defer backend.Close()
-			transport := newTransport(connectionTimeout, backendcfg.DefaultOptions().IdleTimeout)
+			transport := newTransport(time.Second, backendcfg.DefaultOptions().IdleTimeout)
 			defer transport.CloseIdleConnections()
 			client := &http.Client{Transport: transport, CheckRedirect: noRedirect}
 			cfg := Config{Store: "search", URL: backend.URL}
