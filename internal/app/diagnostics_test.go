@@ -13,6 +13,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -332,7 +333,12 @@ func requireServerClosed(t *testing.T, conn net.Conn) {
 	}
 }
 
-type smallSendListener struct{ net.Listener }
+// smallSendListener shrinks each accepted connection's send buffer and counts
+// the connections the server has not closed yet.
+type smallSendListener struct {
+	net.Listener
+	open atomic.Int64
+}
 
 func (l *smallSendListener) Accept() (net.Conn, error) {
 	conn, err := l.Listener.Accept()
@@ -342,7 +348,20 @@ func (l *smallSendListener) Accept() (net.Conn, error) {
 	if tcp, ok := conn.(*net.TCPConn); ok {
 		_ = tcp.SetWriteBuffer(1024)
 	}
-	return conn, nil
+	l.open.Add(1)
+	tracked := &trackedConn{Conn: conn, owner: l}
+	return tracked, nil
+}
+
+type trackedConn struct {
+	net.Conn
+	owner *smallSendListener
+	once  sync.Once
+}
+
+func (c *trackedConn) Close() error {
+	c.once.Do(func() { c.owner.open.Add(-1) })
+	return c.Conn.Close()
 }
 
 func TestDiagnosticsStoppedScrapesAndConcurrentHandlersBounded(t *testing.T) {
@@ -385,8 +404,16 @@ func TestDiagnosticsStoppedScrapesAndConcurrentHandlersBounded(t *testing.T) {
 			t.Fatal("blocked scrapes prevented health requests")
 		}
 		// The write deadline ends every scrape its reader stopped consuming.
+		// Watch the server's side: the kernel can take seconds to drain a
+		// closed socket's buffered bytes through these tiny buffers.
+		until := time.Now().Add(diagnosticTimeout + time.Second)
+		for listener.open.Load() != 0 {
+			if time.Now().After(until) {
+				t.Fatal("diagnostics retained a stalled scrape", listener.open.Load())
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
 		for _, conn := range sockets {
-			requireServerClosed(t, conn)
 			_ = conn.Close()
 		}
 		if health(t, n, "/livez") != 200 {
