@@ -13,22 +13,27 @@ import (
 
 // SetContainerMemoryLimit gives the Go runtime a soft memory limit of 90% of
 // the process's cgroup v2 memory.max, leaving room for memory outside the Go
-// heap. An explicit GOMEMLIMIT, including off, takes precedence. It returns the
-// limit it set, or zero when it set none.
-func SetContainerMemoryLimit() uint64 {
-	if _, set := os.LookupEnv("GOMEMLIMIT"); set {
-		return 0
+// runtime. A nonempty GOMEMLIMIT, including off, takes precedence.
+func SetContainerMemoryLimit() {
+	if os.Getenv("GOMEMLIMIT") != "" {
+		return
 	}
-	limit := containerMemoryLimit(os.DirFS("/")) / 10 * 9
+	limit := goMemoryLimit(os.DirFS("/"))
 	if limit == 0 {
-		return 0
+		return
 	}
 	debug.SetMemoryLimit(int64(limit))
+}
+
+// goMemoryLimit is 90% of the container limit, or zero without one.
+func goMemoryLimit(root fs.FS) uint64 {
+	limit := containerMemoryLimit(root) / 10 * 9
 	return limit
 }
 
 // containerMemoryLimit reads the memory.max of the process's own cgroup v2
-// group. It returns zero when the limit is unset, unreadable or on cgroup v1.
+// group. It returns zero when the limit is unset, unreadable or on cgroup v1,
+// and does not consult parent groups.
 func containerMemoryLimit(root fs.FS) uint64 {
 	membership, err := fs.ReadFile(root, "proc/self/cgroup")
 	if err != nil {
@@ -42,7 +47,7 @@ func containerMemoryLimit(root fs.FS) uint64 {
 			break
 		}
 	}
-	if !strings.HasPrefix(group, "/") {
+	if !strings.HasPrefix(group, "/") || strings.Contains(group, "..") {
 		return 0
 	}
 	raw, err := fs.ReadFile(root, path.Join("sys/fs/cgroup", group, "memory.max"))

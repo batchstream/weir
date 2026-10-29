@@ -58,7 +58,7 @@ func (n *Node) Collect(ch chan<- prometheus.Metric) {
 		name, help string
 		value      float64
 	}{
-		{"used_bytes", "Memory the Go runtime holds from the OS at the last sample.", float64(memory.Used)},
+		{"live_bytes", "Live heap at the last collection plus stacks and runtime metadata.", float64(memory.Live)},
 		{"limit_bytes", "Go memory limit the overload guard compares with; zero means none.", float64(memory.Limit)},
 		{"overloaded", "Whether memory pressure is refusing new work.", overloaded},
 	} {

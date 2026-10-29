@@ -103,7 +103,7 @@ func TestDiagnosticsLifecycleIsolationAndNoSyntheticExecutions(t *testing.T) {
 	if testmetrics.Sum(other, "weir_admission_rejections_total") != 0 {
 		t.Fatal("registries shared counters")
 	}
-	if len(n.stores) != 0 || n.guard.Snapshot().Used == 0 {
+	if len(n.stores) != 0 || n.guard.Snapshot().Live == 0 {
 		t.Fatal("fake Runtime")
 	}
 	n.admission.SetOverloaded(false)
@@ -375,7 +375,7 @@ func TestDiagnosticsStoppedScrapesAndConcurrentHandlersBounded(t *testing.T) {
 	// A bounded test collector produces enough output to exercise blocked HTTP sends.
 	opts := prometheus.GaugeOpts{Name: "weir_test_scrape_padding", Help: "Test-only bounded scrape payload."}
 	padding := prometheus.NewGaugeVec(opts, []string{"entry"})
-	for i := 0; i < 128; i++ {
+	for i := 0; i < 2048; i++ {
 		padding.WithLabelValues(fmt.Sprintf("%s%d", strings.Repeat("x", 512), i)).Set(1)
 	}
 	if err := n.registry.Register(padding); err != nil {

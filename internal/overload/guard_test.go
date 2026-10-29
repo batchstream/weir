@@ -2,20 +2,25 @@ package overload
 
 import (
 	"math"
+	"runtime"
 	"runtime/debug"
 	"testing"
 	"testing/fstest"
+	"time"
 )
 
 type guardTarget struct{ calls []bool }
 
 func (t *guardTarget) SetOverloaded(value bool) { t.calls = append(t.calls, value) }
 
+// sink keeps churned allocations on the heap.
+var sink []byte
+
 func TestGuardHysteresis(t *testing.T) {
 	target := &guardTarget{}
 	guard := &Guard{targets: []Target{target}}
 	for _, step := range []struct {
-		used, limit uint64
+		live, limit uint64
 		want        bool
 	}{
 		{100, 1000, false},
@@ -26,8 +31,8 @@ func TestGuardHysteresis(t *testing.T) {
 		{900, 0, false}, // removing the limit reopens admission
 		{2000, 0, false},
 	} {
-		guard.observeLocked(step.used, step.limit)
-		if got := guard.Snapshot(); got.Overloaded != step.want || got.Used != step.used || got.Limit != step.limit {
+		guard.observeLocked(step.live, step.limit)
+		if got := guard.Snapshot(); got.Overloaded != step.want || got.Live != step.live || got.Limit != step.limit {
 			t.Fatal(got, step)
 		}
 	}
@@ -49,7 +54,7 @@ func TestGuardSamplesTheGoMemoryLimit(t *testing.T) {
 	target := &guardTarget{}
 	targets := []Target{target}
 	guard := New(targets)
-	if got := guard.Snapshot(); got.Used == 0 || got.Limit != 0 || got.Overloaded {
+	if got := guard.Snapshot(); got.Live == 0 || got.Limit != 0 || got.Overloaded {
 		t.Fatal("unlimited runtime", got)
 	}
 	// A limit below current use closes admission on the next sample.
@@ -62,6 +67,74 @@ func TestGuardSamplesTheGoMemoryLimit(t *testing.T) {
 	guard.sample()
 	if got := guard.Snapshot(); got.Overloaded || len(target.calls) != 2 {
 		t.Fatal("restored limit", got)
+	}
+}
+
+// Garbage and free heap the collector keeps between cycles must not count:
+// with the default GOGC they reach about twice the live heap.
+func TestGuardShedsOnLiveMemoryNotGarbage(t *testing.T) {
+	const limit = 128 << 20
+	prior := debug.SetMemoryLimit(limit)
+	defer debug.SetMemoryLimit(prior)
+	runtime.GC()
+	guard := New(nil)
+
+	held := make([][]byte, 0, 112)
+	for range 48 {
+		held = append(held, make([]byte, 1<<20))
+	}
+	for range 400 {
+		sink = make([]byte, 1<<20)
+		guard.sample()
+		if got := guard.Snapshot(); got.Overloaded {
+			t.Fatal("garbage above a 48 MiB live heap closed admission", got)
+		}
+	}
+
+	for range 64 {
+		held = append(held, make([]byte, 1<<20))
+	}
+	runtime.GC()
+	guard.sample()
+	if got := guard.Snapshot(); !got.Overloaded {
+		t.Fatal("a 112 MiB live heap kept admission open", got)
+	}
+	runtime.KeepAlive(held)
+
+	// Once the work's memory is garbage, the guard collects to notice.
+	deadline := time.Now().Add(3 * collectInterval)
+	for guard.Snapshot().Overloaded {
+		if time.Now().After(deadline) {
+			t.Fatal("admission stayed closed after live memory was released", guard.Snapshot())
+		}
+		time.Sleep(10 * time.Millisecond)
+		guard.sample()
+	}
+}
+
+func TestGoMemoryLimitLeavesTenPercentOfTheContainer(t *testing.T) {
+	files := fstest.MapFS{
+		"proc/self/cgroup":         {Data: []byte("0::/\n")},
+		"sys/fs/cgroup/memory.max": {Data: []byte("1000000000\n")},
+	}
+	if got := goMemoryLimit(files); got != 900000000 {
+		t.Fatal(got)
+	}
+	empty := fstest.MapFS{}
+	if got := goMemoryLimit(empty); got != 0 {
+		t.Fatal(got)
+	}
+}
+
+func TestExplicitGOMEMLIMITTakesPrecedence(t *testing.T) {
+	prior := debug.SetMemoryLimit(math.MaxInt64)
+	defer debug.SetMemoryLimit(prior)
+	for _, value := range []string{"off", "1GiB"} {
+		t.Setenv("GOMEMLIMIT", value)
+		SetContainerMemoryLimit()
+		if got := debug.SetMemoryLimit(-1); got != math.MaxInt64 {
+			t.Fatal(value, got)
+		}
 	}
 }
 
@@ -82,6 +155,18 @@ func TestContainerMemoryLimit(t *testing.T) {
 		{"unlimited", fstest.MapFS{
 			"proc/self/cgroup":         {Data: []byte("0::/\n")},
 			"sys/fs/cgroup/memory.max": {Data: []byte("max\n")},
+		}, 0},
+		{"zero", fstest.MapFS{
+			"proc/self/cgroup":         {Data: []byte("0::/\n")},
+			"sys/fs/cgroup/memory.max": {Data: []byte("0\n")},
+		}, 0},
+		{"malformed", fstest.MapFS{
+			"proc/self/cgroup":         {Data: []byte("0::/\n")},
+			"sys/fs/cgroup/memory.max": {Data: []byte("512M\n")},
+		}, 0},
+		{"parent path", fstest.MapFS{
+			"proc/self/cgroup":         {Data: []byte("0::/../\n")},
+			"sys/fs/cgroup/memory.max": {Data: []byte("536870912\n")},
 		}, 0},
 		{"cgroup v1", fstest.MapFS{
 			"proc/self/cgroup": {Data: []byte("12:memory:/docker/abc\n1:name=systemd:/docker/abc\n")},

@@ -527,7 +527,7 @@ func processFaultSlowIO(t *testing.T, suite *processFaultSuite, backend processF
 		if err != nil || elapsed > 3*time.Second {
 			t.Fatal("single slow IO starved healthy work or exceeded 3s", backend.store, kind, elapsed, err)
 		}
-		t.Logf("one_held_IO backend=%s healthy_method=%s elapsed=%s active=%.0f RSS=%.0f Go=%.0f overloaded=0", backend.store, kind, elapsed, storeActive(metrics), testmetrics.Sum(metrics, "process_resident_memory_bytes"), testmetrics.Sum(metrics, "weir_memory_used_bytes"))
+		t.Logf("one_held_IO backend=%s healthy_method=%s elapsed=%s active=%.0f RSS=%.0f live=%.0f overloaded=0", backend.store, kind, elapsed, storeActive(metrics), testmetrics.Sum(metrics, "process_resident_memory_bytes"), testmetrics.Sum(metrics, "weir_memory_live_bytes"))
 	}
 	select {
 	case <-gate.ack:

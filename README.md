@@ -105,9 +105,9 @@ Full queues apply backpressure until dispatch or caller cancellation.
 Static queue, batch, stream and 64 MiB message limits bound memory use. Native
 commands bypass the Store queue and run in their own pool of 64 per Store, so
 slow Native consumers never hold the queue space or slots of typed reads and
-mutations. New work is refused while Go memory is above 80% of the Go memory
-limit, which the CLI sets to 90% of the container's memory limit. Container/OS
-limits provide the hard memory boundary.
+mutations. New work is refused while live memory is above 80% of the Go memory
+limit, which the CLI sets to 90% of the container's cgroup v2 memory limit
+unless `GOMEMLIMIT` is set. Container/OS limits provide the hard memory boundary.
 
 The application listener uses plaintext gRPC on an isolated network. Backend
 authentication stays local. In Kubernetes, expose the replicas through a headless

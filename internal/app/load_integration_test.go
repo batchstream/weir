@@ -347,7 +347,7 @@ func runLoadWorkload(t *testing.T, work loadWorkload) {
 				}
 			}
 			gc := metrics["go_gc_duration_seconds"].GetMetric()[0].GetSummary()
-			t.Logf("trend second=%d inflight=%d RSS=%.0f Go=%.0f heap=%.0f CPU=%.4f GC=%d GC_pause=%.6f queued=%.0f active=%.0f sessions=%.0f overloaded=%.0f", int(time.Since(measurement).Seconds()), inFlight.Load(), testmetrics.Sum(metrics, "process_resident_memory_bytes"), testmetrics.Sum(metrics, "weir_memory_used_bytes"), testmetrics.Sum(metrics, "go_memstats_heap_alloc_bytes"), testmetrics.Sum(metrics, "process_cpu_seconds_total"), gc.GetSampleCount(), gc.GetSampleSum(), testmetrics.Sum(metrics, "weir_store_queued_operations"), testmetrics.Sum(metrics, "weir_store_active_executions"), testmetrics.Sum(metrics, "weir_ingress_sessions"), testmetrics.Sum(metrics, "weir_memory_overloaded"))
+			t.Logf("trend second=%d inflight=%d RSS=%.0f live=%.0f heap=%.0f CPU=%.4f GC=%d GC_pause=%.6f queued=%.0f active=%.0f sessions=%.0f overloaded=%.0f", int(time.Since(measurement).Seconds()), inFlight.Load(), testmetrics.Sum(metrics, "process_resident_memory_bytes"), testmetrics.Sum(metrics, "weir_memory_live_bytes"), testmetrics.Sum(metrics, "go_memstats_heap_alloc_bytes"), testmetrics.Sum(metrics, "process_cpu_seconds_total"), gc.GetSampleCount(), gc.GetSampleSum(), testmetrics.Sum(metrics, "weir_store_queued_operations"), testmetrics.Sum(metrics, "weir_store_active_executions"), testmetrics.Sum(metrics, "weir_ingress_sessions"), testmetrics.Sum(metrics, "weir_memory_overloaded"))
 			if !burst && !time.Now().Before(burstAt) {
 				burst = true
 				expected += 256

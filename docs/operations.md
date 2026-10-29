@@ -15,8 +15,9 @@ listeners:
 `GET /livez` reports a running diagnostics handler. `GET /readyz` reports that
 the Node entered service and is not draining or failed. Neither endpoint tests
 backend health or workload capacity. `GET /metrics`
-exports a Node-owned Prometheus registry. Diagnostics accepts HTTP/1 GET
-requests without a body or query, with independent progress deadlines. Point
+exports a Node-owned Prometheus registry. Diagnostics serves HTTP/1 GET and HEAD
+on these three paths, closes each connection after one response and gives every
+request one-second read and write deadlines. Point
 HTTP liveness and readiness probes at these paths; `weir version` prints the
 build identity.
 
@@ -83,7 +84,7 @@ of improved capacity.
 | `weir_store_executions_total`, `weir_store_batch_operations`, `weir_store_queue_wait_seconds`, `weir_store_execution_seconds` | Adapter invocations, batch sizes, queue wait and execution time |
 | `weir_ingress_sessions`, `weir_admission_rejections_total` | Active RPCs and RPCs refused at admission |
 | `weir_watchdog_expirations_total` | RPCs ended by the input or output stall timeout |
-| `weir_memory_used_bytes`, `weir_memory_limit_bytes`, `weir_memory_overloaded` | Go memory, the Go memory limit and whether memory pressure refuses new work |
+| `weir_memory_live_bytes`, `weir_memory_limit_bytes`, `weir_memory_overloaded` | Live memory, the Go memory limit and whether memory pressure refuses new work |
 | `weir_search_http_*` | Record/startup exchange attempts, elapsed time, framed records and bytes |
 
 Typed record counters are updated once at Store completion.
@@ -136,17 +137,23 @@ labels without document or target identities.
 
 ## Memory pressure
 
-Weir compares the memory the Go runtime holds from the OS with the Go memory
-limit. At 80% of the limit, new RPCs and records receive `RESOURCE_EXHAUSTED`;
-admission reopens below 70%. Weir runs no C code, so Go memory covers the
-process apart from its executable and kernel buffers.
+Weir compares its live memory with the Go memory limit. Live memory is the live
+heap at the last garbage collection plus goroutine stacks and runtime metadata;
+free heap and garbage do not count, because the collector reclaims them before
+the limit. At 80% of the limit, new RPCs and records receive
+`RESOURCE_EXHAUSTED`; admission reopens at or below 70%. While refusing work,
+Weir collects garbage at most once a second so that it notices finished work
+promptly. Release builds contain no C code, so the Go runtime accounts for
+nearly all process memory.
 
-`weir serve` sets the Go memory limit to 90% of its cgroup v2 `memory.max`,
-leaving the rest for memory outside the Go heap. The garbage collector then
-works harder before the container's hard limit is reached. Set `GOMEMLIMIT` to
-choose the limit yourself; `GOMEMLIMIT=off` disables both the soft limit and
-shedding. Without a container limit or `GOMEMLIMIT`, for example on cgroup v1
-or an unlimited host, Weir does not shed, and the OS remains the only boundary.
+`weir serve` sets the Go memory limit to 90% of the `memory.max` of its own
+cgroup v2 group, leaving the rest for memory outside the Go runtime; the
+collector then works harder before the container's hard limit is reached. A
+nonempty `GOMEMLIMIT` takes precedence, and `GOMEMLIMIT=off` disables both the
+soft limit and shedding. Weir does not read parent groups or cgroup v1, so set
+`GOMEMLIMIT` when the binding limit is elsewhere, such as a Kubernetes pod-level
+limit or a systemd slice. Without either, Weir does not shed and the OS remains
+the only boundary.
 
 Shedding cannot reclaim a live working set. Size the container from the bounds
 in [batching](batching.md#memory-sizing) and observed document sizes.
