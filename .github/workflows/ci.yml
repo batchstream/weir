@@ -9,21 +9,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: weir-ci-${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
-
-defaults:
-  run:
-    shell: bash
-
-env:
-  GOENV: 'off'
-  GOWORK: 'off'
-  GOTOOLCHAIN: local
-  GOFLAGS: -mod=readonly
-  GOPROXY: 'off'
-  GOSUMDB: 'off'
-  PYTHONDONTWRITEBYTECODE: '1'
 
 jobs:
   test:
@@ -32,26 +19,29 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.sha }}
           persist-credentials: false
-      - name: Prepare fixed native SDK and public modules
-        run: python3 scripts/ci-tools.py test
-      - name: Native CGO0 default tests
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: Modules are tidy
+        run: go mod tidy -diff
+      - name: Vet
         run: |
-          python3 scripts/check_dependencies.py
-          CGO_ENABLED=0 timeout 12m go test -count=1 -timeout=180s ./...
-      - name: Native CGO1 race tests
-        run: CGO_ENABLED=1 timeout 12m go test -race -count=1 -timeout=180s ./...
-      - name: Node retirement and process stop integration tests
+          go vet ./...
+          go vet -tags=integration ./...
+      - name: The server binary does not import the SDK
         run: |
-          CGO_ENABLED=1 timeout 2m go test -p=1 -parallel=1 -tags=integration -count=1 -timeout=90s -run '^(TestProcessStop(TerminalMeasurements|OnceConcurrent)|TestOfflineRetirement(NodeJoinsDefaultOwners|SIGTERMActualNode))$' -v ./internal/app
-          CGO_ENABLED=1 timeout 2m go test -race -p=1 -parallel=1 -tags=integration -count=1 -timeout=90s -run '^(TestProcessStop(TerminalMeasurements|OnceConcurrent)|TestOfflineRetirement(NodeJoinsDefaultOwners|SIGTERMActualNode))$' -v ./internal/app
-      - name: Static vet and script tests
+          sdk=$(go list -deps -f '{{with .Module}}{{if eq .Path "github.com/batchstream/weir-go"}}{{$.ImportPath}}{{end}}{{end}}' ./cmd/weir)
+          echo "$sdk"
+          test -z "$sdk"
+      - name: Tests
+        run: CGO_ENABLED=0 go test -count=1 -timeout=180s ./...
+      - name: Race tests
+        run: go test -race -count=1 -timeout=180s ./...
+      - name: Process stop integration tests
         run: |
-          CGO_ENABLED=0 go vet ./...
-          CGO_ENABLED=0 go vet -tags=integration ./...
-          python3 -m unittest discover -v -s scripts -p '*_test.py'
-          git diff --exit-code
+          go test -p=1 -parallel=1 -tags=integration -count=1 -timeout=90s -run '^(TestProcessStop(TerminalMeasurements|OnceConcurrent)|TestOfflineRetirement(NodeJoinsDefaultOwners|SIGTERMActualNode))$' -v ./internal/app
+          go test -race -p=1 -parallel=1 -tags=integration -count=1 -timeout=90s -run '^(TestProcessStop(TerminalMeasurements|OnceConcurrent)|TestOfflineRetirement(NodeJoinsDefaultOwners|SIGTERMActualNode))$' -v ./internal/app
 
   search-integration:
     name: search-integration-${{ matrix.product }}
@@ -61,24 +51,22 @@ jobs:
         product: [elasticsearch, opensearch]
     runs-on: ubuntu-24.04
     timeout-minutes: 20
+    env:
+      WEIR_SEARCH_INTEGRATION: ${{ matrix.product }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
-      - name: Prepare fixed native SDK and public modules
-        run: python3 scripts/ci-tools.py test
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
       - name: Start local ${{ matrix.product }} fixture with normal capacity
         run: scripts/search-local.sh start ${{ matrix.product }} normal
       - name: Search backend and CLI integration tests
-        env:
-          WEIR_SEARCH_INTEGRATION: ${{ matrix.product }}
         run: |
           go test -p=1 -tags=integration -count=1 -timeout=10m -skip '^(TestSearchRealBackendCongestion|TestSearchExpressionRealCapacity)$' ./internal/backend/search
           go test -tags=integration -count=1 -timeout=5m -run '^TestProcessSearchCRUD$' -v ./internal/app
       - name: Search capacity-rejection tests with the overload fixture
-        env:
-          WEIR_SEARCH_INTEGRATION: ${{ matrix.product }}
         run: |
           scripts/search-local.sh stop ${{ matrix.product }}
           scripts/search-local.sh start ${{ matrix.product }} overload
@@ -98,17 +86,17 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
-      - name: Prepare fixed native SDK, public modules and MongoDB
-        run: python3 scripts/ci-tools.py test --mongo
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
       - name: Start local MongoDB and ${{ matrix.product }} fixtures
         run: |
           docker pull busybox:1.37.0
           # CLI containers reach mongod through the Docker bridge gateway.
           gateway=$(docker network inspect bridge --format '{{(index .IPAM.Config 0).Gateway}}')
           test -n "$gateway"
-          WEIR_MONGOD="$WEIR_MONGO_REPLICA_BINARY" WEIR_MONGO_BIND="$gateway" scripts/mongo-local.sh start
+          WEIR_MONGO_BIND="$gateway" scripts/mongo-local.sh start
           scripts/search-local.sh start ${{ matrix.product }} normal
       - name: CLI fault and short load tests
         env:
@@ -131,17 +119,21 @@ jobs:
   native-mongo-replica:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
+    env:
+      CGO_ENABLED: '1'
+      WEIR_MONGO_REPLICA_INTEGRATION: '1'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
-      - name: Prepare fixed native SDK, public modules and MongoDB
-        run: python3 scripts/ci-tools.py test --mongo
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: Install mongod
+        run: |
+          binary=$(scripts/mongod.sh)
+          echo "WEIR_MONGO_REPLICA_BINARY=$binary" >> "$GITHUB_ENV"
       - name: MongoDB replica-set discovery, reply loss and read retirement
-        env:
-          CGO_ENABLED: '1'
-          WEIR_MONGO_REPLICA_INTEGRATION: '1'
         run: |
           go test -race -p=1 -parallel=1 -tags=integration -count=1 -timeout=10m \
             -run '^TestMongoReplica(DiscoveryOwnership|ProxyDiscoveryRecovery|CLIRecovery)$' -v \

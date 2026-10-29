@@ -1,12 +1,11 @@
 #!/bin/sh
 # Creates/restarts only this script's fixture replica set; never adopts unmarked data.
-# WEIR_MONGOD overrides the mongod binary. WEIR_MONGO_BIND adds comma-separated
-# literal IP addresses to the default loopback bind, e.g. the Docker bridge
-# gateway on a Linux CI runner. Empty and wildcard entries are refused.
+# WEIR_MONGOD overrides the mongod that scripts/mongod.sh installs. WEIR_MONGO_BIND
+# adds comma-separated literal IP addresses to the default loopback bind, e.g. the
+# Docker bridge gateway on a Linux CI runner. Empty and wildcard entries are refused.
 set -euf
 cd "$(dirname "$0")/.."
 root="$PWD/.testdata/mongo-local"
-binary=${WEIR_MONGOD:-"$PWD/.tools/mongodb-macos-aarch64--8.0.32/bin/mongod"}
 owner='weir-mongo-local mongodb-8.0.32 port-27028'
 
 valid_ipv4() {
@@ -45,6 +44,7 @@ fi
 
 case "${1:-start}" in
  start)
+  binary=${WEIR_MONGOD:-$(scripts/mongod.sh)}
   test -x "$binary"
   if [ -e "$root" ]; then
    test -f "$root/.weir-owner"

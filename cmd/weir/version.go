@@ -7,7 +7,8 @@ import (
 	"runtime/debug"
 )
 
-// revision is the source commit, set by scripts/package.py with -X main.revision.
+// revision is the source commit. Image and release builds set it with
+// -X main.revision; other builds report the revision go build records.
 var revision string
 
 type versionIdentity struct {
@@ -28,7 +29,7 @@ func printVersion(output io.Writer) error {
 	}
 
 	if info, ok := debug.ReadBuildInfo(); ok {
-		// go build records module and VCS details when available; packaged builds use the injected revision.
+		// go build records module and VCS details when available; an injected revision wins.
 		if info.Main.Version != "" && info.Main.Version != "(devel)" {
 			identity.Version = info.Main.Version
 		}
