@@ -55,6 +55,19 @@ func TestSearchPrepareRejectsUnsupportedInputs(t *testing.T) {
 	if string(work.Backend.(*plan).source) != string(document.Data) {
 		t.Fatal("source modified")
 	}
+	// An empty source would leave a bulk action line without its source line.
+	for _, data := range [][]byte{nil, []byte(" "), []byte(`[]`)} {
+		empty := &pb.Document{ContentType: "application/json", Data: data}
+		mutation.Action = &pb.MutateRequest_Put{Put: empty}
+		if _, failure := prepareTestRecord(a, op); failure.GetCode() != pb.FailureCode_INVALID_ARGUMENT {
+			t.Fatal("Put without a JSON object source accepted", string(data), failure)
+		}
+	}
+	deletion := &pb.MutateRequest_Delete{Delete: &pb.Empty{}}
+	mutation.Action = deletion
+	if _, failure := prepareTestRecord(a, op); failure != nil {
+		t.Fatal("Delete without a source rejected", failure)
+	}
 	program := &pb.LuaTransform{Source: []byte("return function(current, incoming) return weir.keep() end")}
 	programForm := &pb.Transform_Lua{Lua: program}
 	transform := &pb.Transform{Form: programForm}
