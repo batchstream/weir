@@ -104,7 +104,11 @@ func OpenReplica(t *testing.T, opts ReplicaOptions) *Replica {
 		}
 		f.start(t, binary, i)
 	}
+	// replSetInitiate contacts every member, so each must be listening first.
 	first := f.connect(t, 0, false)
+	for i := 1; i < len(f.members); i++ {
+		f.connect(t, i, false)
+	}
 	initiate := bson.D{{Key: "replSetInitiate", Value: f.configuration()}}
 	if err := first.Database("admin").RunCommand(startup, initiate).Err(); err != nil {
 		t.Fatal("owned replica initialization", err)
