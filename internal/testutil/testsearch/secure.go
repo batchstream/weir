@@ -329,7 +329,7 @@ func (f *SecureFixture) configuration(t *testing.T, adminPass, appPass string) {
 	if err != nil {
 		t.Fatal("fixture password hashing")
 	}
-	common := "cluster.name: " + f.name + "\nnode.name: weir-node\nnetwork.host: 0.0.0.0\ndiscovery.type: single-node\naction.auto_create_index: false\nthread_pool.write.size: 1\nthread_pool.write.queue_size: 1\n"
+	common := "cluster.name: " + f.name + "\nnode.name: weir-node\nnetwork.host: 0.0.0.0\ndiscovery.type: single-node\naction.auto_create_index: false\nindices.breaker.total.use_real_memory: false\n"
 	if f.product == "elasticsearch" {
 		f.write(t, "elasticsearch.yml", common+`xpack.security.enabled: true
 xpack.security.autoconfiguration.enabled: false
