@@ -46,13 +46,7 @@ type SecureFixture struct {
 
 func OpenSecure(t *testing.T) *SecureFixture {
 	t.Helper()
-	product := os.Getenv("WEIR_SEARCH_SECURE_INTEGRATION")
-	if product == "" {
-		t.Skip("native HTTPS/Basic requires WEIR_SEARCH_SECURE_INTEGRATION=elasticsearch|opensearch")
-	}
-	if product != "elasticsearch" && product != "opensearch" {
-		t.Fatal("invalid secure Search product")
-	}
+	product := searchProduct(t)
 	suffix := fmt.Sprintf("%d-%d-%s", os.Getpid(), sequence.Add(1), randomPassword(t)[:12])
 	f := &SecureFixture{product: product, name: "weir-search-secure-" + product + "-" + suffix, image: elasticImage}
 	if product == "opensearch" {

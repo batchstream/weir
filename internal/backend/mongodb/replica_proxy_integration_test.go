@@ -4,7 +4,6 @@ package mongodb
 
 import (
 	"context"
-	"os"
 	"testing"
 	"time"
 
@@ -24,9 +23,6 @@ import (
 // Focused discovery and stable held-reply driver ownership; transaction
 // uncertainty and CLI lifecycle are covered by the internal/app replica tests.
 func TestMongoReplicaProxyDiscoveryRecovery(t *testing.T) {
-	if os.Getenv("WEIR_MONGO_REPLICA_INTEGRATION") != "1" {
-		t.Skip("explicit owned replica integration opt-in")
-	}
 	for _, secure := range []bool{false, true} {
 		name := "plain"
 		if secure {

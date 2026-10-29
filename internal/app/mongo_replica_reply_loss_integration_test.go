@@ -7,7 +7,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
-	"os"
 	"testing"
 	"time"
 
@@ -45,9 +44,6 @@ type replyLossReceipt struct {
 }
 
 func TestMongoReplicaCLIReplyLoss(t *testing.T) {
-	if os.Getenv("WEIR_MONGO_REPLICA_INTEGRATION") != "1" {
-		t.Skip("explicit owned replica integration opt-in")
-	}
 	// This is the ordinary CLI, not an in-process adapter or test-only server.
 	binary := buildWeirBinary(t)
 	for _, secure := range []bool{false, true} {

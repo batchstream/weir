@@ -7,21 +7,17 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
-	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/base64"
-	"encoding/hex"
 	"encoding/pem"
 	"errors"
 	"fmt"
-	"io"
 	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -63,10 +59,7 @@ type Replica struct {
 
 func OpenReplica(t *testing.T, opts ReplicaOptions) *Replica {
 	t.Helper()
-	if os.Getenv("WEIR_MONGO_REPLICA_INTEGRATION") != "1" {
-		t.Fatal("owned replica tests require WEIR_MONGO_REPLICA_INTEGRATION=1")
-	}
-	binary := replicaBinary(t)
+	binary := mongodBinary(t)
 	parent := filepath.Join(testutil.Root(t), ".testdata")
 	if err := os.MkdirAll(parent, 0700); err != nil {
 		t.Fatal(err)
@@ -158,46 +151,6 @@ func OpenReplica(t *testing.T, opts ReplicaOptions) *Replica {
 	f.URI = f.SeedURI(f.Addresses())
 	t.Logf("owned external MongoDB 8.0.32 replica root=%s TLS=%t members=%v", root, f.secure, f.Addresses())
 	return f
-}
-
-func replicaBinary(t *testing.T) string {
-	t.Helper()
-	name := os.Getenv("WEIR_MONGO_REPLICA_BINARY")
-	if !filepath.IsAbs(name) {
-		t.Fatal("explicit absolute pinned native MongoDB binary required")
-	}
-	expected, size := "", int64(0)
-	switch runtime.GOOS + "/" + runtime.GOARCH {
-	case "darwin/arm64":
-		expected, size = "440012d251e0ba135f519e4e8b178e5f406d4ce2c98fdbb15766363187ae57c1", 189751584
-	case "linux/amd64":
-		expected, size = "15c7caf565edeaca228c76fbe6c4503b1cff7ae6517f344cc555552423b3209a", 222890240
-	default:
-		t.Fatal("no pinned native MongoDB fixture for this platform")
-	}
-	info, err := os.Lstat(name)
-	if err != nil || !info.Mode().IsRegular() || info.Size() != size {
-		t.Fatal("pinned MongoDB binary identity mismatch")
-	}
-	file, err := os.Open(name)
-	if err != nil {
-		t.Fatal("cannot open explicit MongoDB binary")
-	}
-	hash := sha256.New()
-	_, copyErr := io.Copy(hash, file)
-	closeErr := file.Close()
-	if copyErr != nil || closeErr != nil || hex.EncodeToString(hash.Sum(nil)) != expected {
-		t.Fatal("pinned MongoDB binary digest mismatch")
-	}
-	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
-	defer cancel()
-	version := exec.CommandContext(ctx, name, "--version")
-	output, err := version.Output()
-	if err != nil || !strings.HasPrefix(string(output), "db version v8.0.32\n") {
-		t.Fatal("native MongoDB 8.0.32 preflight failed")
-	}
-	t.Logf("native Mongo preflight binary=%s SHA256=%s PID=%d wait_complete=true exit_code=%d", name, expected, version.Process.Pid, version.ProcessState.ExitCode())
-	return name
 }
 
 func (f *Replica) Addresses() []string {

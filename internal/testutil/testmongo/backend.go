@@ -1,6 +1,6 @@
 //go:build integration
 
-// Package testmongo is explicit opt-in test infrastructure, never linked into Weir.
+// Package testmongo is integration test infrastructure, never linked into Weir.
 package testmongo
 
 import (
@@ -22,8 +22,9 @@ const plainURI = "mongodb://127.0.0.1:27028/?directConnection=true&serverMonitor
 var sequence atomic.Uint64
 
 // Fixture carries the application connection and independent administrative
-// observer together. Only Open chooses the opt-in profile; consumers never fall
-// back to another database or consult a process-global registry.
+// observer together. Open uses the scripts/mongo-local.sh replica set and
+// OpenSecure starts a private TLS server; consumers never fall back to another
+// database or consult a process-global registry.
 type Fixture struct {
 	Admin                *mongo.Client
 	DB, URI              string
@@ -32,13 +33,6 @@ type Fixture struct {
 
 func Open(t *testing.T) *Fixture {
 	t.Helper()
-	if os.Getenv("WEIR_MONGO_PROFILE") == "tls" {
-		fixture := OpenSecure(t)
-		return &fixture.Fixture
-	}
-	if os.Getenv("WEIR_INTEGRATION") != "1" {
-		t.Fatal("integration requires WEIR_INTEGRATION=1 and scripts/mongo-local.sh start; not silently skipped")
-	}
 	opts := options.Client().ApplyURI(plainURI).SetRetryReads(false).SetRetryWrites(false).SetMaxAdaptiveRetries(0).SetMaxPoolSize(8).SetServerSelectionTimeout(time.Second)
 	client, err := mongo.Connect(opts)
 	if err != nil {
@@ -52,7 +46,7 @@ func Open(t *testing.T) *Fixture {
 	}
 	if err := client.Database("admin").RunCommand(ctx, cmd).Decode(&hello); err != nil || hello.Set != "weir_local" {
 		_ = client.Disconnect(ctx)
-		t.Fatalf("wrong/missing isolated replica set: %+v %v", hello, err)
+		t.Fatalf("no weir_local replica set at %s; run scripts/mongo-local.sh start: %+v %v", plainURI, hello, err)
 	}
 	db := fmt.Sprintf("weir_test_%d_%d", os.Getpid(), sequence.Add(1))
 	if err := client.Database(db).CreateCollection(ctx, "records"); err != nil {

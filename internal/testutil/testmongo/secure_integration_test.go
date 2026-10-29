@@ -5,7 +5,6 @@ package testmongo
 import (
 	"context"
 	"errors"
-	"os"
 	"testing"
 	"time"
 
@@ -15,9 +14,6 @@ import (
 )
 
 func TestSecureMongoFixture(t *testing.T) {
-	if os.Getenv("WEIR_MONGO_SECURE_INTEGRATION") != "1" {
-		t.Skip("secure MongoDB fixture is explicit opt-in")
-	}
 	fixture := OpenSecure(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()

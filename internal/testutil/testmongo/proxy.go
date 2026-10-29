@@ -204,6 +204,11 @@ func (p *Proxy) URI() string {
 	return p.uri
 }
 
+// Secure reports whether the proxy speaks TLS to MongoDB.
+func (p *Proxy) Secure() bool {
+	return p.clientTLS != nil
+}
+
 func (p *Proxy) Events() []WireEvent {
 	p.mu.Lock()
 	defer p.mu.Unlock()

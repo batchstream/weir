@@ -38,21 +38,17 @@ jobs:
         run: CGO_ENABLED=0 go test -count=1 -timeout=180s ./...
       - name: Race tests
         run: go test -race -count=1 -timeout=180s ./...
-      - name: Process stop integration tests
-        run: |
-          go test -p=1 -parallel=1 -tags=integration -count=1 -timeout=90s -run '^(TestProcessStop(TerminalMeasurements|OnceConcurrent)|TestOfflineRetirement(NodeJoinsDefaultOwners|SIGTERMActualNode))$' -v ./internal/app
-          go test -race -p=1 -parallel=1 -tags=integration -count=1 -timeout=90s -run '^(TestProcessStop(TerminalMeasurements|OnceConcurrent)|TestOfflineRetirement(NodeJoinsDefaultOwners|SIGTERMActualNode))$' -v ./internal/app
 
-  search-integration:
-    name: search-integration-${{ matrix.product }}
+  integration:
+    name: integration-${{ matrix.product }}
     strategy:
       fail-fast: false
       matrix:
         product: [elasticsearch, opensearch]
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 50
     env:
-      WEIR_SEARCH_INTEGRATION: ${{ matrix.product }}
+      WEIR_SEARCH_PRODUCT: ${{ matrix.product }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -60,20 +56,25 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
-      - name: Start local ${{ matrix.product }} fixture with normal capacity
-        run: scripts/search-local.sh start ${{ matrix.product }} normal
-      - name: Search backend and CLI integration tests
+      - name: Start local MongoDB and ${{ matrix.product }} fixtures
         run: |
-          go test -p=1 -tags=integration -count=1 -timeout=10m -skip '^(TestSearchRealBackendCongestion|TestSearchExpressionRealCapacity)$' ./internal/backend/search
-          go test -tags=integration -count=1 -timeout=5m -run '^TestProcessSearchCRUD$' -v ./internal/app
+          scripts/mongo-local.sh start
+          scripts/search-local.sh start ${{ matrix.product }} normal
+      - name: Integration tests
+        # failCommand is server-global even when scoped by appName, so packages run one at a time.
+        run: go test -race -p=1 -tags=integration -count=1 -timeout=40m -skip '^(TestSearchRealBackendCongestion|TestSearchExpressionRealCapacity)$' ./...
       - name: Search capacity-rejection tests with the overload fixture
         run: |
           scripts/search-local.sh stop ${{ matrix.product }}
           scripts/search-local.sh start ${{ matrix.product }} overload
           go test -tags=integration -count=1 -timeout=5m -run '^(TestSearchRealBackendCongestion|TestSearchExpressionRealCapacity)$' -v ./internal/backend/search
-      - name: Stop local ${{ matrix.product }} fixture
+      - name: Stop local fixtures
         if: always()
-        run: scripts/search-local.sh stop ${{ matrix.product }}
+        run: |
+          status=0
+          scripts/search-local.sh stop ${{ matrix.product }} || status=1
+          scripts/mongo-local.sh stop || status=1
+          exit "$status"
 
   process-integration:
     name: process-integration-${{ matrix.product }}
@@ -83,6 +84,8 @@ jobs:
         product: [elasticsearch, opensearch]
     runs-on: ubuntu-24.04
     timeout-minutes: 25
+    env:
+      WEIR_SEARCH_PRODUCT: ${{ matrix.product }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -100,8 +103,6 @@ jobs:
           scripts/search-local.sh start ${{ matrix.product }} normal
       - name: CLI fault and short load tests
         env:
-          WEIR_INTEGRATION: '1'
-          WEIR_SEARCH_INTEGRATION: ${{ matrix.product }}
           WEIR_FAULT_INTEGRATION: '1'
           WEIR_LOAD_INTEGRATION: '1'
           WEIR_LOAD_MEASUREMENT: 1m
@@ -115,30 +116,3 @@ jobs:
           scripts/search-local.sh stop ${{ matrix.product }} || status=1
           scripts/mongo-local.sh stop || status=1
           exit "$status"
-
-  native-mongo-replica:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    env:
-      CGO_ENABLED: '1'
-      WEIR_MONGO_REPLICA_INTEGRATION: '1'
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: go.mod
-      - name: Install mongod
-        run: |
-          binary=$(scripts/mongod.sh)
-          echo "WEIR_MONGO_REPLICA_BINARY=$binary" >> "$GITHUB_ENV"
-      - name: MongoDB replica-set discovery, reply loss and read retirement
-        run: |
-          go test -race -p=1 -parallel=1 -tags=integration -count=1 -timeout=10m \
-            -run '^TestMongoReplica(DiscoveryOwnership|ProxyDiscoveryRecovery|CLIRecovery)$' -v \
-            ./internal/backend/mongodb ./internal/app
-          go test -race -p=1 -parallel=1 -tags=integration -count=1 -timeout=10m \
-            -run '^TestMongoReplicaCLIReplyLoss$/^plain$' -v ./internal/app
-          go test -race -p=1 -parallel=1 -tags=integration -count=1 -timeout=10m \
-            -run '^TestMongoReplicaCLIReplyLoss$/^tls$' -v ./internal/app

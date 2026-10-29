@@ -22,7 +22,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strconv"
-	"strings"
 	"sync/atomic"
 	"syscall"
 	"testing"
@@ -58,9 +57,6 @@ var secureFixtureSequence atomic.Uint64
 
 func OpenSecure(t *testing.T) *SecureFixture {
 	t.Helper()
-	if os.Getenv("WEIR_MONGO_SECURE_INTEGRATION") != "1" {
-		t.Fatal("secure integration requires WEIR_MONGO_SECURE_INTEGRATION=1")
-	}
 	startup, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 	defer cancel()
 	fixture := &SecureFixture{startup: startup}
@@ -247,14 +243,7 @@ func (fixture *SecureFixture) randomSecret(t *testing.T) string {
 
 func (fixture *SecureFixture) startMongo(t *testing.T) {
 	t.Helper()
-	projectDirectory := testutil.Root(t)
-	// scripts/mongod.sh installs the pinned binary here.
-	binary := filepath.Join(projectDirectory, ".tools", "mongodb-8.0.32", "bin", "mongod")
-	version := exec.CommandContext(fixture.startup, binary, "--version")
-	versionOutput, err := version.Output()
-	if err != nil || !strings.Contains(string(versionOutput), "v8.0.32") {
-		t.Fatal("the pinned MongoDB 8.0.32 fixture binary is unavailable")
-	}
+	binary := mongodBinary(t)
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal("cannot reserve MongoDB fixture port")

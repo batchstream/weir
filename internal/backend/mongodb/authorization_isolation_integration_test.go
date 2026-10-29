@@ -4,7 +4,6 @@ package mongodb
 
 import (
 	"context"
-	"os"
 	"reflect"
 	"sync"
 	"testing"
@@ -16,9 +15,6 @@ import (
 )
 
 func TestMongoCrossNamespaceAuthorizationIsolationPersistsAllowedWrites(t *testing.T) {
-	if os.Getenv("WEIR_MONGO_SECURE_INTEGRATION") != "1" {
-		t.Skip("secure profile opt-in")
-	}
 	fixture := testmongo.OpenSecure(t)
 	if err := fixture.Admin.Database(fixture.DB).CreateCollection(t.Context(), "denied"); err != nil {
 		t.Fatal(err)

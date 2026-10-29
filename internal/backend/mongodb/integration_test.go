@@ -73,54 +73,68 @@ func connectionCount(t *testing.T, client *mongo.Client) int {
 }
 
 func TestAcknowledgedOrdinaryBatchReplyLostIsNotReplayed(t *testing.T) {
-	backend := testmongo.Open(t)
-	native, db := backend.Admin, backend.DB
-	proxy := testmongo.StartProxy(t, backend)
-	proxy.DropCommand = "bulkWrite"
-	proxy.DropRemaining.Store(1)
-	o := adapterTestOptions{fixture: backend, uri: proxy.URI()}
-	a := testAdapter(t, o)
-	var plans []*execution.Plan
-	for _, id := range []string{"one", "two"} {
-		doc := bson.D{{Key: "_id", Value: id}, {Key: "n", Value: int64(1)}}
-		raw, _ := bson.Marshal(doc)
-		d := &pb.Document{ContentType: "application/bson", Data: raw}
-		action := &pb.MutateRequest_Create{Create: d}
-		m := &pb.MutateRequest{Resource: db + "/records/s:" + id, Action: action}
-		opOperation := &pb.Command_Mutate{Mutate: m}
-		opCommand := &pb.Command{Operation: opOperation}
-		op := &pb.ExecuteRequest{Index: 1, Command: opCommand}
-		p, f := prepareTestRecord(a, op)
-		if f != nil {
-			t.Fatal(f)
+	// The TLS run also proves SCRAM reauthenticates on the replacement connection.
+	for _, secure := range []bool{false, true} {
+		name := "plain"
+		if secure {
+			name = "tls"
 		}
-		plans = append(plans, p)
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
-	results := a.executeRecords(ctx, plans)
-	for _, r := range results {
-		if r.GetMutationResult().Outcome != pb.MutationOutcome_UNKNOWN {
-			t.Fatal(r)
-		}
-	}
-	verifyReconnectRead(t, a, proxy, db+"/records/s:one")
-	inserts := 0
-	for _, e := range proxy.Events() {
-		if e.Command == "bulkWrite" {
-			inserts++
-			if !e.Acknowledged || !e.Dropped {
-				t.Fatal("not a dropped successful reply", e)
+		t.Run(name, func(t *testing.T) {
+			var backend *testmongo.Fixture
+			if secure {
+				backend = &testmongo.OpenSecure(t).Fixture
+			} else {
+				backend = testmongo.Open(t)
 			}
-		}
-	}
-	if inserts != 1 {
-		t.Fatal("ordinary mutation replayed", inserts)
-	}
-	filter := bson.D{}
-	n, err := native.Database(db).Collection("records").CountDocuments(ctx, filter)
-	if err != nil || n != 2 {
-		t.Fatal("real writes must persist", n, err)
+			native, db := backend.Admin, backend.DB
+			proxy := testmongo.StartProxy(t, backend)
+			proxy.DropCommand = "bulkWrite"
+			proxy.DropRemaining.Store(1)
+			o := adapterTestOptions{fixture: backend, uri: proxy.URI()}
+			a := testAdapter(t, o)
+			var plans []*execution.Plan
+			for _, id := range []string{"one", "two"} {
+				doc := bson.D{{Key: "_id", Value: id}, {Key: "n", Value: int64(1)}}
+				raw, _ := bson.Marshal(doc)
+				d := &pb.Document{ContentType: "application/bson", Data: raw}
+				action := &pb.MutateRequest_Create{Create: d}
+				m := &pb.MutateRequest{Resource: db + "/records/s:" + id, Action: action}
+				opOperation := &pb.Command_Mutate{Mutate: m}
+				opCommand := &pb.Command{Operation: opOperation}
+				op := &pb.ExecuteRequest{Index: 1, Command: opCommand}
+				p, f := prepareTestRecord(a, op)
+				if f != nil {
+					t.Fatal(f)
+				}
+				plans = append(plans, p)
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+			defer cancel()
+			results := a.executeRecords(ctx, plans)
+			for _, r := range results {
+				if r.GetMutationResult().Outcome != pb.MutationOutcome_UNKNOWN {
+					t.Fatal(r)
+				}
+			}
+			verifyReconnectRead(t, a, proxy, db+"/records/s:one")
+			inserts := 0
+			for _, e := range proxy.Events() {
+				if e.Command == "bulkWrite" {
+					inserts++
+					if !e.Acknowledged || !e.Dropped {
+						t.Fatal("not a dropped successful reply", e)
+					}
+				}
+			}
+			if inserts != 1 {
+				t.Fatal("ordinary mutation replayed", inserts)
+			}
+			filter := bson.D{}
+			n, err := native.Database(db).Collection("records").CountDocuments(ctx, filter)
+			if err != nil || n != 2 {
+				t.Fatal("real writes must persist", n, err)
+			}
+		})
 	}
 }
 
