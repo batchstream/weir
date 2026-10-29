@@ -5,7 +5,6 @@ package mongodb
 import (
 	"context"
 	"net"
-	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -15,9 +14,6 @@ import (
 )
 
 func TestMongoReplicaDiscoveryOwnership(t *testing.T) {
-	if os.Getenv("WEIR_MONGO_REPLICA_INTEGRATION") != "1" {
-		t.Skip("explicit owned replica integration opt-in")
-	}
 	for _, secure := range []bool{false, true} {
 		name := "plain"
 		if secure {

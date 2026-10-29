@@ -9,7 +9,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -358,9 +357,6 @@ func luaRPCSearchProxy(t *testing.T, backend *testsearch.Backend, observer *luaR
 }
 
 func TestRouteSearchLuaRPCsShareOCCBatchWithoutDocumentMetadata(t *testing.T) {
-	if os.Getenv("WEIR_SEARCH_INTEGRATION") == "" {
-		t.Fatal("Lua RPC acceptance requires an explicit owned Search fixture profile")
-	}
 	backend := testsearch.Open(t)
 	// Fourteen Lua sources fit one pre-read chunk even at the legal 2 MiB
 	// per-source bound. The hot-URI test separately keeps sixteen callers.
@@ -452,9 +448,6 @@ func TestRouteMongoLuaSameURIRPCsPreserveAppliedIncrements(t *testing.T) {
 }
 
 func TestRouteSearchLuaSameURIRPCsPreserveAppliedIncrements(t *testing.T) {
-	if os.Getenv("WEIR_SEARCH_INTEGRATION") == "" {
-		t.Fatal("Lua RPC acceptance requires an explicit owned Search fixture profile")
-	}
 	backend := testsearch.Open(t)
 	code, raw := backend.Do(t, "PUT", "/"+backend.Index+"/_doc/counter", `{"n":0,"marker":"untouched"}`)
 	if code != http.StatusCreated {

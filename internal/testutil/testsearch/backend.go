@@ -26,19 +26,29 @@ type Backend struct {
 	Client                     *http.Client
 }
 
+// searchProduct returns WEIR_SEARCH_PRODUCT, which defaults to elasticsearch.
+func searchProduct(t *testing.T) string {
+	t.Helper()
+	product := os.Getenv("WEIR_SEARCH_PRODUCT")
+	switch product {
+	case "":
+		return "elasticsearch"
+	case "elasticsearch", "opensearch":
+		return product
+	}
+	t.Fatalf("WEIR_SEARCH_PRODUCT=%q; want elasticsearch or opensearch", product)
+	return ""
+}
+
 func Open(t *testing.T) *Backend {
 	t.Helper()
 	var endpoint, profile string
-	product := os.Getenv("WEIR_SEARCH_INTEGRATION")
+	product := searchProduct(t)
 	switch product {
 	case "elasticsearch":
 		endpoint, profile = "http://127.0.0.1:19200", "elasticsearch-8.19.22"
 	case "opensearch":
 		endpoint, profile = "http://127.0.0.1:19202", "opensearch-3.3.0"
-	case "":
-		t.Skip("Search real-backend suite requires explicit WEIR_SEARCH_INTEGRATION=elasticsearch|opensearch")
-	default:
-		t.Fatal("invalid search integration profile")
 	}
 	transport := &http.Transport{Proxy: nil, MaxConnsPerHost: 8, MaxIdleConnsPerHost: 8, DisableCompression: true}
 	client := &http.Client{

@@ -35,7 +35,7 @@ func TestMongoLuaBusinessFunctionCreatesMissingRecord(t *testing.T) {
 	if failure != nil {
 		t.Fatal(failure)
 	}
-	results := adapter.executePrograms(t.Context(), []*execution.Plan{work})
+	results := adapter.ExecuteRecords(t.Context(), []*execution.Plan{work})
 	if len(results) != 1 || results[0].GetMutationResult().Outcome != pb.MutationOutcome_APPLIED || results[0].GetMutationResult().Failure != nil {
 		t.Fatal("business function did not create", results)
 	}

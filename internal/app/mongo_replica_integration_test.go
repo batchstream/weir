@@ -5,7 +5,6 @@ package app
 import (
 	"context"
 	"fmt"
-	"os"
 	"regexp"
 	"strconv"
 	"testing"
@@ -21,9 +20,6 @@ import (
 // TestMongoReplicaCLIRecovery checks that one CLI process recovers across
 // replica-set topology changes over plain and TLS connections.
 func TestMongoReplicaCLIRecovery(t *testing.T) {
-	if os.Getenv("WEIR_MONGO_REPLICA_INTEGRATION") != "1" {
-		t.Skip("explicit owned replica integration opt-in")
-	}
 	binary := buildWeirBinary(t)
 	for _, secure := range []bool{false, true} {
 		name := "plain"

@@ -47,9 +47,6 @@ func secureNode(t *testing.T, cfg Config) *Node {
 }
 
 func TestMongoTLSApplicationAssemblyAllOperations(t *testing.T) {
-	if os.Getenv("WEIR_MONGO_SECURE_INTEGRATION") != "1" {
-		t.Skip("secure profile opt-in")
-	}
 	fixture := testmongo.OpenSecure(t)
 	mongo := mongoFixtureStore(t, "mongo", fixture.URI)
 	valueDirectory := t.TempDir()

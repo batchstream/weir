@@ -19,6 +19,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -28,8 +29,15 @@ import (
 )
 
 const secureOwner = "weir-mongo-local1"
-const elasticImage = "docker.elastic.co/elasticsearch/elasticsearch@sha256:c2a3ed5f968be6d59c960aa0c60cfdaee667b6bc8211142021a41d0e85b43237"
-const openSearchImage = "opensearchproject/opensearch@sha256:d96afaf6cbd2a6a3695aeb2f1d48c9a16ad5c8918eb849e5cbf43475f0f8e146"
+
+// searchImages are the platform images that scripts/search-local.sh pulls. The
+// secure fixture runs them without pulling.
+var searchImages = map[string]string{
+	"elasticsearch/amd64": "docker.elastic.co/elasticsearch/elasticsearch@sha256:f1e3d88299cb0db2131fc2ab9060faefccd88fd684d11a49256ae00d7dc3c857",
+	"elasticsearch/arm64": "docker.elastic.co/elasticsearch/elasticsearch@sha256:c2a3ed5f968be6d59c960aa0c60cfdaee667b6bc8211142021a41d0e85b43237",
+	"opensearch/amd64":    "opensearchproject/opensearch@sha256:59e9e49ac00f19c2af9094e367c8e6586f7d07e6c06465c3f4c43b40934309f2",
+	"opensearch/arm64":    "opensearchproject/opensearch@sha256:d96afaf6cbd2a6a3695aeb2f1d48c9a16ad5c8918eb849e5cbf43475f0f8e146",
+}
 
 // SecureFixture owns one native TLS database. Admin is used only for bootstrap
 // and independent observation. Backend contains the restricted application pair.
@@ -46,18 +54,13 @@ type SecureFixture struct {
 
 func OpenSecure(t *testing.T) *SecureFixture {
 	t.Helper()
-	product := os.Getenv("WEIR_SEARCH_SECURE_INTEGRATION")
-	if product == "" {
-		t.Skip("native HTTPS/Basic requires WEIR_SEARCH_SECURE_INTEGRATION=elasticsearch|opensearch")
-	}
-	if product != "elasticsearch" && product != "opensearch" {
-		t.Fatal("invalid secure Search product")
+	product := searchProduct(t)
+	image, ok := searchImages[product+"/"+runtime.GOARCH]
+	if !ok {
+		t.Fatalf("no pinned %s image for %s", product, runtime.GOARCH)
 	}
 	suffix := fmt.Sprintf("%d-%d-%s", os.Getpid(), sequence.Add(1), randomPassword(t)[:12])
-	f := &SecureFixture{product: product, name: "weir-search-secure-" + product + "-" + suffix, image: elasticImage}
-	if product == "opensearch" {
-		f.image = openSearchImage
-	}
+	f := &SecureFixture{product: product, name: "weir-search-secure-" + product + "-" + suffix, image: image}
 	parent := filepath.Join(testutil.Root(t), ".testdata")
 	if err := os.MkdirAll(parent, 0700); err != nil {
 		t.Fatal("fixture parent unavailable")
@@ -326,7 +329,7 @@ func (f *SecureFixture) configuration(t *testing.T, adminPass, appPass string) {
 	if err != nil {
 		t.Fatal("fixture password hashing")
 	}
-	common := "cluster.name: " + f.name + "\nnode.name: weir-node\nnetwork.host: 0.0.0.0\ndiscovery.type: single-node\naction.auto_create_index: false\nthread_pool.write.size: 1\nthread_pool.write.queue_size: 1\n"
+	common := "cluster.name: " + f.name + "\nnode.name: weir-node\nnetwork.host: 0.0.0.0\ndiscovery.type: single-node\naction.auto_create_index: false\nindices.breaker.total.use_real_memory: false\n"
 	if f.product == "elasticsearch" {
 		f.write(t, "elasticsearch.yml", common+`xpack.security.enabled: true
 xpack.security.autoconfiguration.enabled: false
@@ -434,8 +437,15 @@ func (f *SecureFixture) docker(t *testing.T, limit time.Duration, args ...string
 			t.Fatal("cannot retain fixture bootstrap diagnostic")
 		}
 	}
+	if err != nil && args[0] == "exec" {
+		t.Fatalf("fixture Docker step exec failed; see %s", filepath.Join(f.Root, "bootstrap.log"))
+	}
+	// Only run output is shown: logs may hold unredacted credentials.
+	if err != nil && args[0] == "run" {
+		t.Fatalf("fixture Docker run failed: %s", strings.TrimSpace(string(output)))
+	}
 	if err != nil {
-		t.Fatalf("fixture Docker step %s failed (details retained without credentials)", args[0])
+		t.Fatalf("fixture Docker step %s failed", args[0])
 	}
 	return string(output)
 }

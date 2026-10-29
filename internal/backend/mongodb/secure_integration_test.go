@@ -5,7 +5,6 @@ package mongodb
 import (
 	"context"
 	"net/url"
-	"os"
 	"runtime"
 	"strings"
 	"testing"
@@ -18,9 +17,6 @@ import (
 )
 
 func TestMongoSCRAMTLSProductionOpen(t *testing.T) {
-	if os.Getenv("WEIR_MONGO_SECURE_INTEGRATION") != "1" {
-		t.Skip("secure profile opt-in")
-	}
 	fixture := testmongo.OpenSecure(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
@@ -87,9 +83,6 @@ func TestMongoSCRAMTLSProductionOpen(t *testing.T) {
 }
 
 func TestMongoSCRAMTLSRepeatedFailureAndClose(t *testing.T) {
-	if os.Getenv("WEIR_MONGO_SECURE_INTEGRATION") != "1" {
-		t.Skip("secure profile opt-in")
-	}
 	fixture := testmongo.OpenSecure(t)
 	baseline := connectionCount(t, fixture.Admin)
 	goroutines := runtime.NumGoroutine()
@@ -136,12 +129,9 @@ func TestMongoSCRAMTLSRepeatedFailureAndClose(t *testing.T) {
 }
 
 func TestMongoSCRAMTLS391NoReplay(t *testing.T) {
-	if os.Getenv("WEIR_MONGO_PROFILE") != "tls" {
-		t.Skip("full TLS suite opt-in")
-	}
 	for _, kind := range []string{"ordinary", "expression", "write_error"} {
 		t.Run(kind, func(t *testing.T) {
-			backend := testmongo.Open(t)
+			backend := &testmongo.OpenSecure(t).Fixture
 			native, db := backend.Admin, backend.DB
 			proxy := testmongo.StartProxy(t, backend)
 			cfg := Config{URI: proxy.URI(), Store: "mongo"}
@@ -220,7 +210,7 @@ func verifyReconnectRead(t *testing.T, adapter *Adapter, proxy *testmongo.Proxy,
 			sasl++
 		}
 	}
-	if os.Getenv("WEIR_MONGO_PROFILE") == "tls" && sasl < 2 {
+	if proxy.Secure() && sasl < 2 {
 		t.Fatal("SCRAM reconnect not observed", sasl)
 	}
 	t.Logf("post-loss production Read recovered; SASL continuation commands=%d (excluded from business counts)", sasl)

@@ -135,12 +135,15 @@ Default tests need no backends.
 
 ### Integration tests
 
-Integration tests use the `integration` build tag and local fixtures:
+Integration tests use the `integration` build tag, Docker and these local
+fixtures:
 
-- `scripts/mongo-local.sh start` runs a single-member MongoDB 8.0.32 replica set
-  on `127.0.0.1:27028`, using the `mongod` that `scripts/mongod.sh` installs;
-  `WEIR_MONGOD` selects another binary and `WEIR_MONGO_BIND` adds comma-separated literal, non-wildcard IP
-  bind addresses. A running fixture is reused only when its bind matches.
+- `scripts/mongod.sh` downloads MongoDB 8.0.32 for Ubuntu 24.04 amd64 or macOS
+  arm64 into the ignored `.tools/`, checks its SHA-256 and prints its path.
+- `scripts/mongo-local.sh start` runs a single-member replica set from that
+  `mongod` on `127.0.0.1:27028`. `WEIR_MONGOD` selects another binary and
+  `WEIR_MONGO_BIND` adds comma-separated literal, non-wildcard IP bind
+  addresses. A running fixture is reused only when its bind matches.
 - `scripts/search-local.sh start elasticsearch|opensearch normal|overload` runs
   Elasticsearch 8.19.22 on `127.0.0.1:19200` or OpenSearch 3.3.0 on
   `127.0.0.1:19202` in Docker. Use `normal` capacity for ordinary runs; the
@@ -151,40 +154,21 @@ Integration tests use the `integration` build tag and local fixtures:
   and needs about 2 GiB of Docker memory. Stop the fixture before changing
   profiles.
 
+The TLS and replica-set tests start their own `mongod` processes from the same
+binary. The HTTPS Search tests start their own 1.5 GiB container from the image
+`scripts/search-local.sh` pulled, so the whole suite needs about 3.5 GiB of
+Docker memory. `WEIR_SEARCH_PRODUCT` selects `elasticsearch` (the default) or
+`opensearch`.
+Run packages one at a time, because MongoDB fault injection uses a server-global
+failpoint:
+
 ```sh
 scripts/mongo-local.sh start
 scripts/search-local.sh start elasticsearch normal
-WEIR_SEARCH_INTEGRATION=elasticsearch scripts/test-integration.sh -skip '^(TestSearchRealBackendCongestion|TestSearchExpressionRealCapacity)$'
-```
-
-`scripts/test-integration.sh` sets `WEIR_INTEGRATION=1` and serializes packages
-because MongoDB fault injection uses a server-global failpoint. Search tests that
-need no MongoDB run on their own, as in CI:
-
-```sh
-scripts/search-local.sh start opensearch normal
-export WEIR_SEARCH_INTEGRATION=opensearch
-go test -p=1 -tags=integration -skip '^(TestSearchRealBackendCongestion|TestSearchExpressionRealCapacity)$' ./internal/backend/search
-go test -tags=integration -run '^TestProcessSearchCRUD$' ./internal/app
-scripts/search-local.sh stop opensearch
-scripts/search-local.sh start opensearch overload
+go test -p=1 -tags=integration -timeout=15m -skip '^(TestSearchRealBackendCongestion|TestSearchExpressionRealCapacity)$' ./...
+scripts/search-local.sh stop elasticsearch
+scripts/search-local.sh start elasticsearch overload
 go test -tags=integration -run '^(TestSearchRealBackendCongestion|TestSearchExpressionRealCapacity)$' ./internal/backend/search
-```
-
-### Replica-set tests
-
-Replica-set discovery, failover, reply-loss and read-retirement tests start three
-MongoDB members over plain and TLS connections from an explicit `mongod` 8.0.32
-binary. `scripts/mongod.sh` downloads and checksums it for Linux amd64 or macOS
-arm64 into the ignored `.tools/` and prints its path.
-
-```sh
-export WEIR_MONGO_REPLICA_INTEGRATION=1 WEIR_MONGO_REPLICA_BINARY=$(scripts/mongod.sh)
-go test -race -p=1 -parallel=1 -tags=integration -count=1 -timeout=10m \
-  -run '^TestMongoReplica(DiscoveryOwnership|ProxyDiscoveryRecovery|CLIRecovery)$' \
-  ./internal/backend/mongodb ./internal/app
-go test -race -p=1 -parallel=1 -tags=integration -count=1 -timeout=20m \
-  -run '^TestMongoReplicaCLIReplyLoss$' ./internal/app
 ```
 
 ### Load and fault tests
@@ -194,8 +178,7 @@ These tests cross-compile the Linux CLI and run it in a CPU- and memory-limited
 through `host.docker.internal`. On Linux Docker Engine, also bind mongod to the
 bridge gateway, as CI does:
 `WEIR_MONGO_BIND=$(docker network inspect bridge --format '{{(index .IPAM.Config 0).Gateway}}')`.
-Each needs `WEIR_INTEGRATION=1`, `WEIR_SEARCH_INTEGRATION` when it uses Search,
-and its own opt-in:
+Each has its own opt-in:
 
 | Opt-in | Test |
 | --- | --- |
@@ -204,15 +187,11 @@ and its own opt-in:
 
 ```sh
 docker pull busybox:1.37.0
-WEIR_INTEGRATION=1 WEIR_SEARCH_INTEGRATION=elasticsearch WEIR_LOAD_INTEGRATION=1 \
-  go test -tags=integration -count=1 -timeout=20m -run '^TestProcessLoad$' -v ./internal/app
+WEIR_LOAD_INTEGRATION=1 go test -tags=integration -count=1 -timeout=20m -run '^TestProcessLoad$' -v ./internal/app
 ```
 
 Run the load and fault tests separately so injected faults do not distort load
-measurements. `WEIR_MONGO_SECURE_INTEGRATION=1` and
-`WEIR_SEARCH_SECURE_INTEGRATION=1` enable the TLS and authentication tests, which
-start their own fixtures; the MongoDB one runs the `mongod` that
-`scripts/mongod.sh` installs.
+measurements.
 
 The [weir-tests](https://github.com/batchstream/weir-tests) repository contains
 matched direct/Weir workloads and blackbox integration. Keep generated logs and
