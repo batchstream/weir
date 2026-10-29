@@ -98,7 +98,7 @@ Native request formats, and the [Lua guide](docs/lua.md) for transforms.
 ## Batching and operation
 
 Each Store defaults to a waiting queue of 1024 operations / 32 MiB, batches of
-128 operations / 4 MiB, a 20 ms write collection window and 16 active executions.
+128 operations / 4 MiB, a 1 ms write collection window and 16 active executions.
 Reads combine already queued compatible reads without waiting for new arrivals.
 Full queues apply backpressure until dispatch or caller cancellation.
 
