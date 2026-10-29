@@ -151,7 +151,7 @@ func TestMongoReplicaProxyDiscoveryRecovery(t *testing.T) {
 			proxy.CheckLuaCommitCases(t, commitCases, "backend_actual_runtime_Close")
 			replicaFinalReplyLoss(t, heldOptions, watches)
 			for _, watch := range readWatches {
-				replicaReadFacts(t, watch, "backend_parent_product_owner_zero")
+				replicaReadFacts(t, watch, "backend_parent_after_close")
 				ctx, cancel := context.WithTimeout(t.Context(), time.Second)
 				err := watch.CloseHeldRelays(ctx)
 				cancel()

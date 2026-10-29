@@ -179,13 +179,17 @@ func TestSearchTLSValidationAndCAErrors(t *testing.T) {
 	endpoint, c := tlsEndpoint(t, handler, false)
 	_, other := tlsEndpoint(t, handler, false)
 	expired, expiredC := tlsEndpoint(t, handler, true)
-	for _, mode := range []string{"wrong-ca", "expired", "missing-ca", "oversize-ca", "malformed-ca", "directory-ca", "system-roots"} {
+	for _, mode := range []string{"wrong-ca", "wrong-host", "expired", "missing-ca", "oversize-ca", "malformed-ca", "directory-ca", "system-roots"} {
 		t.Run(mode, func(t *testing.T) {
 			connection := *c
 			cfg := Config{Store: "search", URL: endpoint.URL, Connection: &connection}
 			switch mode {
 			case "wrong-ca":
 				connection.CAFile = other.CAFile
+			case "wrong-host":
+				// The certificate names search.test and loopback IPs, not localhost.
+				_, port, _ := net.SplitHostPort(strings.TrimPrefix(endpoint.URL, "https://"))
+				cfg.URL = "https://localhost:" + port
 			case "expired":
 				cfg.URL = expired.URL
 				cfg.Connection = expiredC

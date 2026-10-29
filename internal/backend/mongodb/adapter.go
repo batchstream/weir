@@ -191,7 +191,7 @@ func (a *Adapter) Close(ctx context.Context) error {
 		ctx, cancel := context.WithTimeout(ctx, a.options().CleanupTimeout)
 		defer cancel()
 		// Canceling the lifetime aborts in-flight commands, whose connections
-		// the driver then closes, before Disconnect ends idle sessions.
+		// the driver closes. Disconnect then ends idle sessions and the pools.
 		a.cancelLifetime()
 		if a.client != nil {
 			a.closeErr = a.client.Disconnect(ctx)

@@ -125,12 +125,12 @@ func TestMongoReplicaCLIReplyLoss(t *testing.T) {
 					if err := client.Close(); err != nil {
 						t.Fatal(err)
 					}
-					proxy.CheckLuaLifecycleCases(t, lifecycleWatches, "CLI_actual_Wait_and_owner_zero")
-					proxy.CheckLuaCases(t, luaCases, "CLI_actual_Wait_and_owner_zero")
-					proxy.CheckLuaCommitCases(t, commitCases, "CLI_actual_Wait_and_owner_zero")
+					proxy.CheckLuaLifecycleCases(t, lifecycleWatches, "CLI_actual_Wait")
+					proxy.CheckLuaCases(t, luaCases, "CLI_actual_Wait")
+					proxy.CheckLuaCommitCases(t, commitCases, "CLI_actual_Wait")
 					replyLossOracles(t, lifetime, "after_actual_CLI_exit")
 					for _, watch := range readWatches {
-						replicaCLIReadFacts(t, watch, "parent_actual_Wait_and_product_owner_zero")
+						replicaCLIReadFacts(t, watch, "parent_actual_Wait")
 						ctx, cancel := context.WithTimeout(t.Context(), time.Second)
 						err := watch.CloseHeldRelays(ctx)
 						cancel()
