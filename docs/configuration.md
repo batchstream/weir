@@ -91,7 +91,9 @@ are `replicaSet`, `directConnection`, `serverMonitoringMode=poll`, `authSource`,
 `authMechanism=SCRAM-SHA-256` and `tls=true`. Authentication requires the
 `authentication` block, explicit SCRAM-SHA-256, `authSource` and TLS; TLS options
 require credentials. Custom CAs belong in `tls.ca_file`, not in the URI.
-Verification uses each actual member's hostname/IP, not the seed's name. All
+Verification uses each actual member's hostname/IP, not the seed's name. OCSP
+follows the MongoDB driver: a stapled or responder answer of revoked fails the
+connection, while an unreachable responder does not. All
 discovered addresses must be reachable and covered by their member certificates
 when TLS is enabled.
 

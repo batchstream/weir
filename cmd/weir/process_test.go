@@ -443,7 +443,7 @@ func TestCLISignalAtFirstListener(t *testing.T) {
 	diagnostic := strings.TrimPrefix(p.line(t), "Diagnostics listening on ")
 	reserveReleasedAddresses(t, append(addresses, diagnostic))
 	p.wait(t, 0)
-	if !strings.Contains(p.stdout.text(), "Diagnostics listening on ") || !strings.Contains(p.stderr.text(), "owned=0") {
+	if !strings.Contains(p.stdout.text(), "Diagnostics listening on ") || p.stderr.text() != "" {
 		t.Fatal("output contract", p.stdout.text(), p.stderr.text())
 	}
 	b.idle(t)

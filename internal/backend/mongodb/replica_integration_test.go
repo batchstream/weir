@@ -10,10 +10,13 @@ import (
 	"testing"
 	"time"
 
+	pb "github.com/batchstream/weir-protocol/api/weir/v1"
+	"github.com/batchstream/weir/internal/execution"
 	"github.com/batchstream/weir/internal/testutil/testmongo"
+	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
-func TestMongoReplicaDiscoveryOwnership(t *testing.T) {
+func TestMongoReplicaDiscovery(t *testing.T) {
 	for _, secure := range []bool{false, true} {
 		name := "plain"
 		if secure {
@@ -38,11 +41,7 @@ func TestMongoReplicaDiscoveryOwnership(t *testing.T) {
 				t.Fatal("production secondary seed discovery", err)
 			}
 			t.Cleanup(func() { _ = adapter.Close(context.Background()) })
-			ownerMutation(t, adapter, fixture.DB, "prepared")
-			snapshot := adapter.dialer.snapshot()
-			if snapshot.Owned < 2 {
-				t.Fatal("missing monitor/data ownership", snapshot)
-			}
+			putPlan(t, adapter, fixture.DB, "prepared")
 			bad := cfg
 			bad.URI = strings.Replace(cfg.URI, fixture.SetName, "wrong_set", 1)
 			replicaRejected(t, bad)
@@ -85,10 +84,8 @@ func TestMongoReplicaDiscoveryOwnership(t *testing.T) {
 			}
 			closers.Wait()
 			if time.Since(start) > 5*time.Second {
-				t.Fatal("final ownership exceeded 5s")
+				t.Fatal("close exceeded 5s")
 			}
-			ownerZero(t, adapter.dialer)
-			t.Logf("three-member %s production discovery, wrong profiles, cancellation and final owner zero; peak=%d acquired=%d", name, adapter.dialer.snapshot().Peak, adapter.dialer.snapshot().Acquired)
 		})
 	}
 }
@@ -108,4 +105,24 @@ func replicaRejected(t *testing.T, cfg Config) {
 			t.Fatal("failed Open was unbounded or exposed configuration")
 		}
 	}
+}
+
+func putPlan(t *testing.T, a *Adapter, database, id string) *execution.Plan {
+	t.Helper()
+	doc := bson.D{{Key: "_id", Value: id}, {Key: "n", Value: 1}}
+	raw, err := bson.Marshal(doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := &pb.Document{ContentType: "application/bson", Data: raw}
+	put := &pb.MutateRequest_Put{Put: body}
+	req := &pb.MutateRequest{Resource: database + "/records/s:" + id, Action: put}
+	opOperation := &pb.Command_Mutate{Mutate: req}
+	opCommand := &pb.Command{Operation: opOperation}
+	op := &pb.ExecuteRequest{Index: 1, Command: opCommand}
+	plan, failure := prepareTestRecord(a, op)
+	if failure != nil {
+		t.Fatal(failure)
+	}
+	return plan
 }

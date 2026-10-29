@@ -9,7 +9,6 @@ import (
 	"io"
 	"net"
 	"net/http"
-	"net/netip"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -18,7 +17,6 @@ import (
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 	"github.com/batchstream/weir/internal/execution"
 	"github.com/batchstream/weir/internal/store"
-	"github.com/batchstream/weir/internal/testutil/testdns"
 	"github.com/batchstream/weir/internal/testutil/testsearch"
 )
 
@@ -51,27 +49,19 @@ func TestSecureSearchQualification(t *testing.T) {
 	fixture := testsearch.OpenSecure(t)
 	b := fixture.Backend
 	a := secureAdapter(t, b)
-	t.Run("native-database-DNS-SNI", func(t *testing.T) {
-		dns := testdns.Start(t)
-		answer := testdns.Answer{Addresses: []netip.Addr{netip.MustParseAddr("127.0.0.1")}}
-		dns.Set("search.test", answer)
+	t.Run("hostname-SNI", func(t *testing.T) {
 		_, port, _ := net.SplitHostPort(strings.TrimPrefix(b.URL, "https://"))
 		cfg := secureConfig(b)
-		cfg.URL = "https://search.test:" + port
-		cfg.Resolver = dns.Resolver()
+		cfg.URL = "https://localhost:" + port
 		a, err := Open(context.Background(), cfg)
 		if err != nil {
-			t.Fatal("native DB DNS/SAN connection", err)
+			t.Fatal("hostname SAN connection", err)
 		}
 		defer a.Close(context.Background())
 		call := exchange{path: "/"}
 		if status, _, err := a.request(context.Background(), call); err != nil || status != 200 {
-			t.Fatal("native DNS read")
+			t.Fatal("hostname read")
 		}
-		if dns.A.Load() == 0 || dns.AAAA.Load() == 0 {
-			t.Fatal("expected real DNS A/AAAA")
-		}
-		t.Log("native database Open and independent read through search.test with standard SAN/SNI and owned loopback DNS")
 	})
 	t.Run("direct-operations", func(t *testing.T) {
 		for _, action := range []string{"put", "replace", "delete", "create"} {
@@ -291,8 +281,8 @@ func secureReplyFault(t *testing.T, fixture *testsearch.SecureFixture, operation
 				t.Fatal(waitErr)
 			}
 			replies = []*pb.Event{reply}
-			if searchOwned(a.dialer) != 0 || time.Since(start) > time.Second {
-				t.Fatal("drain leaked a socket", searchOwned(a.dialer), time.Since(start))
+			if time.Since(start) > time.Second {
+				t.Fatal("drain exceeded its bound", time.Since(start))
 			}
 		} else {
 			replies = a.executeRecords(context.Background(), works)

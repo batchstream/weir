@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	backendcfg "github.com/batchstream/weir/internal/backend"
 
@@ -183,7 +184,7 @@ func TestNativeHTTPPreservesCompressedResponse(t *testing.T) {
 	})
 	backend := httptest.NewServer(handler)
 	defer backend.Close()
-	transport := newTransport(connectionTimeout, backendcfg.DefaultOptions().IdleTimeout)
+	transport := newTransport(time.Second, backendcfg.DefaultOptions().IdleTimeout)
 	transport.DisableKeepAlives = true
 	defer transport.CloseIdleConnections()
 	client := &http.Client{Transport: transport, CheckRedirect: noRedirect}
@@ -212,7 +213,7 @@ func TestNativeHTTPRedirectCannotSelectAnotherBackend(t *testing.T) {
 	})
 	backend := httptest.NewServer(handler)
 	defer backend.Close()
-	transport := newTransport(connectionTimeout, backendcfg.DefaultOptions().IdleTimeout)
+	transport := newTransport(time.Second, backendcfg.DefaultOptions().IdleTimeout)
 	transport.DisableKeepAlives = true
 	defer transport.CloseIdleConnections()
 	client := &http.Client{Transport: transport, CheckRedirect: noRedirect}

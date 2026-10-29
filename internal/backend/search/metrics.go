@@ -3,7 +3,6 @@ package search
 import (
 	"context"
 	"errors"
-	"log/slog"
 	"net/http"
 	"sync"
 	"time"
@@ -122,19 +121,6 @@ func (a *Adapter) Describe(ch chan<- *prometheus.Desc) {
 	a.metrics.httpRecords.Describe(ch)
 	a.metrics.httpBytes.Describe(ch)
 	a.metrics.luaDuration.Describe(ch)
-	for _, name := range []string{"owned", "peak", "acquired", "released"} {
-		ch <- connectionMetricDescription(name)
-	}
-}
-
-func connectionMetricDescription(name string) *prometheus.Desc {
-	description := prometheus.NewDesc(
-		"weir_backend_connections_"+name,
-		"Local backend connection ownership from DNS to raw Close completion; excludes remote tails and separate OCSP I/O.",
-		nil,
-		nil,
-	)
-	return description
 }
 
 func (a *Adapter) Collect(ch chan<- prometheus.Metric) {
@@ -144,39 +130,4 @@ func (a *Adapter) Collect(ch chan<- prometheus.Metric) {
 	a.metrics.httpRecords.Collect(ch)
 	a.metrics.httpBytes.Collect(ch)
 	a.metrics.luaDuration.Collect(ch)
-	d := a.dialer
-	values := map[string]float64{"owned": 0, "peak": 0, "acquired": 0, "released": 0}
-	if d != nil {
-		d.mu.Lock()
-		values["owned"] = float64(d.owned)
-		values["peak"] = float64(d.peak)
-		values["acquired"] = float64(d.acquired)
-		values["released"] = float64(d.released)
-		d.mu.Unlock()
-	}
-	for name, value := range values {
-		desc := connectionMetricDescription(name)
-		ch <- prometheus.MustNewConstMetric(desc, prometheus.GaugeValue, value)
-	}
-}
-
-func (a *Adapter) logConnections() {
-	d := a.dialer
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	slog.Info(
-		"backend_connections_closed",
-		"backend",
-		"search",
-		"store",
-		a.config.Store,
-		"owned",
-		d.owned,
-		"peak",
-		d.peak,
-		"acquired",
-		d.acquired,
-		"released",
-		d.released,
-	)
 }

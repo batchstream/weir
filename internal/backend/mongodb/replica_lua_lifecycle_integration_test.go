@@ -96,8 +96,6 @@ func replicaLuaLifecycleCancel(t *testing.T, opts replicaLuaRuntimeOptions) []*t
 	base := opts.delegate.returned.Load()
 	canceled := replicaLuaLifecycleStart(t, opts, testmongo.LuaCancelSnapshot)
 	replicaLuaRunning(t, opts, 1)
-	canceledRaw := replicaReadPeer(t, opts.delegate.Adapter, canceled.watch.Snapshot().FindPeer)
-	ownedRaw := []*mongoConn{canceledRaw}
 	peer := replicaLuaLifecycleStart(t, opts, testmongo.LuaHealthyPeer)
 	if s := peer.watch.Snapshot(); s.Attempt[0].FindForwarded != 0 || s.Attempt[0].CommitRequests != 0 {
 		t.Fatal("healthy peer must still be held when cancellation fires", s)
@@ -118,7 +116,7 @@ func replicaLuaLifecycleCancel(t *testing.T, opts replicaLuaRuntimeOptions) []*t
 	if result.GetOutcome() != pb.MutationOutcome_NOT_APPLIED || result.GetFailure().GetCode() != pb.FailureCode_CANCELLED {
 		t.Fatal("canceled snapshot truthful result", result)
 	}
-	for opts.delegate.returned.Load() != base+2 || opts.delegate.client.NumberSessionsInProgress() != 0 || !replicaReadRawClosed(opts.delegate.Adapter, ownedRaw) {
+	for opts.delegate.returned.Load() != base+2 || opts.delegate.client.NumberSessionsInProgress() != 0 {
 		if wait.Err() != nil {
 			t.Fatal("Lua cancellation actual execution/session join", wait.Err())
 		}

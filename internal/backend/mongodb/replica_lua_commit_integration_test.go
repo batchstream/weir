@@ -117,7 +117,7 @@ func replicaLuaCommitRuntime(t *testing.T, opts replicaLuaRuntimeOptions, abortC
 		}
 		recovery, stop := context.WithDeadline(t.Context(), usable.Add(5*time.Second))
 		newID := id + "-new-work"
-		prepared := ownerMutation(t, opts.delegate.Adapter, opts.fixture.DB, newID)
+		prepared := putPlan(t, opts.delegate.Adapter, opts.fixture.DB, newID)
 		newRecord, err := execution.NewRecord("mongo", uint64(801+i), prepared.Command)
 		if err != nil {
 			t.Fatal(err)

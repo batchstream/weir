@@ -149,10 +149,9 @@ func TestMongoReplicaProxyDiscoveryRecovery(t *testing.T) {
 			proxy.CheckLuaLifecycleCases(t, lifecycleWatches, "backend_actual_runtime_Close")
 			proxy.CheckLuaCases(t, luaCases, "backend_actual_runtime_Close")
 			proxy.CheckLuaCommitCases(t, commitCases, "backend_actual_runtime_Close")
-			ownerZero(t, adapter.dialer)
 			replicaFinalReplyLoss(t, heldOptions, watches)
 			for _, watch := range readWatches {
-				replicaReadFacts(t, watch, "backend_parent_product_owner_zero")
+				replicaReadFacts(t, watch, "backend_parent_after_close")
 				ctx, cancel := context.WithTimeout(t.Context(), time.Second)
 				err := watch.CloseHeldRelays(ctx)
 				cancel()
@@ -188,7 +187,7 @@ type replicaProxyWorkOptions struct {
 func replicaProxyWork(t *testing.T, ctx context.Context, opts replicaProxyWorkOptions) {
 	t.Helper()
 	adapter, fixture, id := opts.adapter, opts.fixture, opts.id
-	work := ownerMutation(t, adapter, fixture.DB, id)
+	work := putPlan(t, adapter, fixture.DB, id)
 	plans := []*execution.Plan{work}
 	results := adapter.executeRecords(ctx, plans)
 	if len(results) != 1 || results[0].GetMutationResult().GetOutcome() != pb.MutationOutcome_APPLIED || results[0].GetMutationResult().GetFailure() != nil {

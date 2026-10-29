@@ -40,7 +40,6 @@ type Config struct {
 
 type Adapter struct {
 	maxDocumentBytes int
-	dialer           *connectionOwner
 	client           *mongo.Client
 	deployment       driver.Deployment
 	commandMonitor   *event.CommandMonitor
@@ -85,15 +84,7 @@ func Open(ctx context.Context, cfg Config) (*Adapter, error) {
 		cfg.MaxConnecting = DefaultMaxConnecting
 	}
 
-	dialer := newConnectionOwner()
-	dialer.timeout = settings.ConnectTimeout
-	complete := false
-	defer func() {
-		if !complete {
-			dialer.close()
-		}
-	}()
-	opts, err := connectionOptions(cfg, dialer, profile)
+	opts, err := connectionOptions(cfg, profile)
 	if err != nil {
 		return nil, err
 	}
@@ -137,7 +128,6 @@ func Open(ctx context.Context, cfg Config) (*Adapter, error) {
 	a := &Adapter{
 		lifetime:       lifetime,
 		cancelLifetime: cancelLifetime,
-		dialer:         dialer,
 		client:         client,
 		deployment:     deployment,
 		commandMonitor: opts.Monitor,
@@ -151,7 +141,6 @@ func Open(ctx context.Context, cfg Config) (*Adapter, error) {
 		cancel()
 		return nil, err
 	}
-	complete = true
 	return a, nil
 }
 
@@ -201,16 +190,11 @@ func (a *Adapter) Close(ctx context.Context) error {
 		// extending the absolute retirement deadline supplied by Runtime.
 		ctx, cancel := context.WithTimeout(ctx, a.options().CleanupTimeout)
 		defer cancel()
+		// Canceling the lifetime aborts in-flight commands, whose connections
+		// the driver closes. Disconnect then ends idle sessions and the pools.
 		a.cancelLifetime()
-		if a.dialer != nil {
-			// Stop admission, wake blocked reads, and join raw transport retirement
-			// before Disconnect tries its best-effort session cleanup.
-			a.dialer.close()
-			a.closeErr = a.dialer.closeError()
-			a.logConnections()
-		}
 		if a.client != nil {
-			a.closeErr = errors.Join(a.closeErr, a.client.Disconnect(ctx))
+			a.closeErr = a.client.Disconnect(ctx)
 		}
 	})
 	return a.closeErr

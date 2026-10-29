@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"net"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -30,22 +29,17 @@ type Config struct {
 	URL     string
 
 	Connection *Connection
-	// Resolver optionally supplies a standard DNS I/O dependency; app uses system configuration.
-	Resolver *net.Resolver
 }
 
 type Adapter struct {
-	dialer          *connectionDialer
-	config          Config
-	dialect         string
-	client          *http.Client
-	transport       *http.Transport
-	nativeTransport *http.Transport
-	nativeClient    *http.Client
-	ctx             context.Context
-	cancel          context.CancelFunc
-	once            sync.Once
-	metrics         searchMetrics
+	config       Config
+	dialect      string
+	client       *http.Client
+	nativeClient *http.Client
+	ctx          context.Context
+	cancel       context.CancelFunc
+	once         sync.Once
+	metrics      searchMetrics
 }
 
 type plan struct {
@@ -106,33 +100,19 @@ func Open(ctx context.Context, cfg Config) (*Adapter, error) {
 		return nil, err
 	}
 	lifetime, cancel := context.WithCancel(context.Background())
-	dialer := &connectionDialer{
-		ctx:       lifetime,
-		timeout:   settings.ConnectTimeout,
-		resolver:  cfg.Resolver,
-		tlsConfig: tlsConfig,
-		conns:     make(map[*searchConn]struct{}),
-	}
 	transport := newTransport(settings.ConnectTimeout, settings.IdleTimeout)
-	transport.DialContext = dialer.dial
-	transport.DialTLSContext = dialer.dial
 	transport.TLSClientConfig = tlsConfig
 	client := &http.Client{Transport: transport, CheckRedirect: noRedirect}
 	nativeTransport := newTransport(settings.ConnectTimeout, settings.IdleTimeout)
-	nativeTransport.DialContext = dialer.dial
-	nativeTransport.DialTLSContext = dialer.dial
 	nativeTransport.TLSClientConfig = tlsConfig
 	nativeTransport.DisableKeepAlives = true
 	nativeClient := &http.Client{Transport: nativeTransport, CheckRedirect: noRedirect}
 	a := &Adapter{
-		dialer:          dialer,
-		config:          cfg,
-		client:          client,
-		transport:       transport,
-		nativeTransport: nativeTransport,
-		nativeClient:    nativeClient,
-		ctx:             lifetime,
-		cancel:          cancel,
+		config:       cfg,
+		client:       client,
+		nativeClient: nativeClient,
+		ctx:          lifetime,
+		cancel:       cancel,
 	}
 	if err := a.qualify(ctx); err != nil {
 		_ = a.Close(ctx)
@@ -141,17 +121,13 @@ func Open(ctx context.Context, cfg Config) (*Adapter, error) {
 	return a, nil
 }
 
+// Close cancels in-flight exchanges, whose connections net/http then closes,
+// and closes idle connections.
 func (a *Adapter) Close(context.Context) error {
 	a.once.Do(func() {
 		a.cancel()
-		if a.dialer != nil {
-			a.dialer.close()
-			a.logConnections()
-		}
-		a.transport.CloseIdleConnections()
-		if a.nativeTransport != nil {
-			a.nativeTransport.CloseIdleConnections()
-		}
+		a.client.CloseIdleConnections()
+		a.nativeClient.CloseIdleConnections()
 	})
 	return nil
 }

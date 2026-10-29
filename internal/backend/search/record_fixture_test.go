@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 	"github.com/batchstream/weir/internal/backend"
@@ -27,7 +28,7 @@ func testHTTPAdapter(t *testing.T, handler http.HandlerFunc) *Adapter {
 	t.Helper()
 	server := httptest.NewServer(handler)
 	t.Cleanup(server.Close)
-	transport := newTransport(connectionTimeout, backend.DefaultOptions().IdleTimeout)
+	transport := newTransport(time.Second, backend.DefaultOptions().IdleTimeout)
 	t.Cleanup(transport.CloseIdleConnections)
 	client := &http.Client{Transport: transport, CheckRedirect: noRedirect}
 	config := Config{Store: "search", URL: server.URL}
