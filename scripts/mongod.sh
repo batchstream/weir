@@ -16,7 +16,7 @@ case "$(uname -s)/$(uname -m)" in
  *) echo "no pinned mongod $version for $(uname -s)/$(uname -m)" >&2; exit 1;;
 esac
 install="$PWD/.tools/mongodb-$version"
-if [ ! -x "$install/bin/mongod" ]; then
+if [ ! -e "$install" ]; then
  mkdir -p .tools
  work=$(mktemp -d "$install.XXXXXX")
  trap 'rm -rf "$work"' EXIT
