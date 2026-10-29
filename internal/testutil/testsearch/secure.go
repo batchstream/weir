@@ -440,8 +440,12 @@ func (f *SecureFixture) docker(t *testing.T, limit time.Duration, args ...string
 	if err != nil && args[0] == "exec" {
 		t.Fatalf("fixture Docker step exec failed; see %s", filepath.Join(f.Root, "bootstrap.log"))
 	}
+	// Only run output is shown: logs may hold unredacted credentials.
+	if err != nil && args[0] == "run" {
+		t.Fatalf("fixture Docker run failed: %s", strings.TrimSpace(string(output)))
+	}
 	if err != nil {
-		t.Fatalf("fixture Docker step %s failed: %s", args[0], strings.TrimSpace(string(output)))
+		t.Fatalf("fixture Docker step %s failed", args[0])
 	}
 	return string(output)
 }
