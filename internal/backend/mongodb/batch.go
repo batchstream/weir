@@ -450,6 +450,9 @@ func encodeBulkWrite(writes []bulkWrite, namespaces []namespace) bsoncore.Docume
 	size := 256
 	for _, write := range writes {
 		size += len(write.plan.document) + 128
+		if id, ok := write.plan.id.(string); ok {
+			size += len(id)
+		}
 	}
 	for _, target := range namespaces {
 		size += len(target.database) + len(target.collection) + 32
@@ -508,6 +511,9 @@ func appendIDFilter(dst []byte, id any) []byte {
 		dst = bsoncore.AppendInt64Element(dst, "_id", v)
 	case bson.ObjectID:
 		dst = bsoncore.AppendObjectIDElement(dst, "_id", v)
+	default:
+		// An empty filter would match an arbitrary document.
+		panic("unsupported MongoDB record identity")
 	}
 	dst, _ = bsoncore.AppendDocumentEnd(dst, filter)
 	return dst

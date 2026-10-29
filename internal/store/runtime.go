@@ -337,8 +337,8 @@ type selection struct {
 	ordered map[resourceKey]struct{}
 }
 
-// reset readies the scratch state for one scan; it keeps maps and the slices
-// of groups that were not handed to a batch.
+// reset empties the scratch state after a scan so it retains no tickets; it
+// keeps the maps and the slices of groups that were not handed to a batch.
 func (s *selection) reset() {
 	for _, g := range s.groups[:s.used] {
 		clear(g.items)
@@ -347,10 +347,6 @@ func (s *selection) reset() {
 		clear(g.resources)
 	}
 	s.used = 0
-	if s.byKey == nil {
-		s.byKey = make(map[groupKey]*group)
-		s.ordered = make(map[resourceKey]struct{})
-	}
 	clear(s.byKey)
 	clear(s.ordered)
 }
@@ -360,7 +356,8 @@ func (s *selection) group(key groupKey) *group {
 		return g
 	}
 	if s.used == len(s.groups) {
-		s.groups = append(s.groups, &group{})
+		g := &group{}
+		s.groups = append(s.groups, g)
 	}
 	g := s.groups[s.used]
 	s.used++
@@ -376,7 +373,11 @@ func (r *Runtime) selectLocked(now time.Time) ([]*Ticket, time.Time) {
 		return nil, wakeAt
 	}
 	s := &r.selection
-	s.reset()
+	if s.byKey == nil {
+		s.byKey = make(map[groupKey]*group)
+		s.ordered = make(map[resourceKey]struct{})
+	}
+	defer s.reset()
 	for _, t := range r.queue {
 		plan := t.plan
 		mutation := plan.Command.GetMutate() != nil

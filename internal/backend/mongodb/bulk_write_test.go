@@ -40,7 +40,8 @@ func TestBulkWriteEncodingMatchesTheNativeCommand(t *testing.T) {
 		{Key: "writeConcern", Value: bson.D{{Key: "w", Value: "majority"}}},
 	}
 	want := bsonDocument(t, command)
-	got := encodeBulkWrite(writes, []namespace{records, audit})
+	namespaces := []namespace{records, audit}
+	got := encodeBulkWrite(writes, namespaces)
 	if !bytes.Equal(got, want) {
 		t.Fatalf("encoded bulkWrite differs\n got %v\nwant %v", bson.Raw(got), bson.Raw(want))
 	}
