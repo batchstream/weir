@@ -1,4 +1,4 @@
-// Package backend holds runtime settings shared by the native adapters.
+// Package backend holds settings and helpers shared by the native adapters.
 package backend
 
 import "time"

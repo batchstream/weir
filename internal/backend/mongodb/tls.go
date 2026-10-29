@@ -4,14 +4,11 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
-	"io"
-	"os"
 	"time"
 
+	"github.com/batchstream/weir/internal/backend"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 )
-
-var errTLSProfile = errors.New("invalid MongoDB TLS profile")
 
 // The profile must be parsed before any trust-file or network access. The
 // driver verifies each member's certificate, including OCSP.
@@ -45,26 +42,9 @@ func connectionOptions(cfg Config, profile connectionProfile) (*options.ClientOp
 }
 
 func mongoRoots(name string) (*x509.CertPool, error) {
-	// Reject special files before Open, which could otherwise block on a FIFO.
-	info, err := os.Stat(name)
+	data, err := backend.ReadRegularFile(name)
 	if err != nil {
 		return nil, errors.New("MongoDB CA file unavailable")
-	}
-	if !info.Mode().IsRegular() {
-		return nil, errTLSProfile
-	}
-	file, err := os.Open(name)
-	if err != nil {
-		return nil, errors.New("MongoDB CA file unavailable")
-	}
-	defer file.Close()
-	info, err = file.Stat()
-	if err != nil || !info.Mode().IsRegular() {
-		return nil, errTLSProfile
-	}
-	data, err := io.ReadAll(file)
-	if err != nil {
-		return nil, errTLSProfile
 	}
 	roots := x509.NewCertPool()
 	if !roots.AppendCertsFromPEM(data) {
