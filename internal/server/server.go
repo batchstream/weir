@@ -4,13 +4,10 @@ package server
 import (
 	"time"
 
-	"github.com/batchstream/weir-protocol/api/protocol"
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 	"github.com/batchstream/weir/internal/store"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/keepalive"
-	"google.golang.org/grpc/status"
 )
 
 // MaxMessageBytes bounds every request and response message.
@@ -19,6 +16,7 @@ const MaxMessageBytes = 64 << 20
 // RecordStreamItems bounds the records one stream has queued or awaiting delivery.
 const RecordStreamItems = 32
 
+// Limits must start from DefaultLimits; zero values are not defaulted.
 type Limits struct {
 	MaxPendingRecords int
 	KeepaliveInterval time.Duration
@@ -37,13 +35,6 @@ func DefaultLimits() Limits {
 	return limits
 }
 
-func (l Limits) Validate() error {
-	if l.Stall <= 0 || l.Handshake < 0 || l.Idle < 0 || l.MaxPendingRecords < 0 || l.KeepaliveInterval < 0 || l.KeepaliveInterval > 0 && l.KeepaliveInterval < time.Second || l.KeepaliveTimeout < 0 || l.MaxConnectionAge < 0 {
-		return status.Error(codes.InvalidArgument, "invalid transport configuration")
-	}
-	return nil
-}
-
 type Config struct {
 	Stores    map[string]*store.Runtime
 	Limits    Limits
@@ -59,41 +50,10 @@ type Server struct {
 	serving   chan struct{}
 }
 
-func New(cfg Config) (*Server, error) {
+func New(cfg Config) *Server {
 	l := cfg.Limits
-	defaults := DefaultLimits()
-	if l.Handshake == 0 {
-		l.Handshake = defaults.Handshake
-	}
-	if l.MaxPendingRecords == 0 {
-		l.MaxPendingRecords = defaults.MaxPendingRecords
-	}
-	if l.KeepaliveInterval == 0 {
-		l.KeepaliveInterval = defaults.KeepaliveInterval
-	}
-	if l.KeepaliveTimeout == 0 {
-		l.KeepaliveTimeout = defaults.KeepaliveTimeout
-	}
-	if l.MaxConnectionAge == 0 {
-		l.MaxConnectionAge = defaults.MaxConnectionAge
-	}
-	if err := l.Validate(); err != nil {
-		return nil, err
-	}
-	if cfg.Admission == nil {
-		return nil, status.Error(codes.InvalidArgument, "missing admission")
-	}
-	stores := make(map[string]*store.Runtime, len(cfg.Stores))
-	seen := make(map[*store.Runtime]bool)
-	for name, runtime := range cfg.Stores {
-		if !protocol.ValidStoreName(name) || runtime == nil || seen[runtime] {
-			return nil, status.Error(codes.InvalidArgument, "invalid or aliased Store")
-		}
-		stores[name] = runtime
-		seen[runtime] = true
-	}
 	s := &Server{
-		stores:    stores,
+		stores:    cfg.Stores,
 		admission: cfg.Admission,
 		limits:    l,
 		metrics:   newTransportMetrics(),
@@ -112,5 +72,5 @@ func New(cfg Config) (*Server, error) {
 	}
 	s.grpc = grpc.NewServer(options...)
 	pb.RegisterStoreServiceServer(s.grpc, s)
-	return s, nil
+	return s
 }

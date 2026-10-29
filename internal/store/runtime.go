@@ -35,7 +35,7 @@ func DefaultLimits() Limits {
 
 func (limits Limits) Validate() error {
 	if limits.QueueOperations < 1 || limits.QueueBytes < 1 ||
-		limits.BatchOperations < 1 || limits.BatchBytes < 1 || limits.MaxInFlight < 0 || limits.MaxNative < 0 || limits.CleanupTimeout < 0 || limits.BatchWait < 0 {
+		limits.BatchOperations < 1 || limits.BatchBytes < 1 || limits.MaxInFlight < 0 || limits.MaxNative < 1 || limits.CleanupTimeout <= 0 || limits.BatchWait < 0 {
 		return fmt.Errorf("invalid batch, execution or queue bounds")
 	}
 	return nil
@@ -103,12 +103,6 @@ func New(adapter execution.Adapter, limits Limits) (*Runtime, error) {
 		defer cancel()
 		_ = adapter.Close(cleanup)
 		return nil, err
-	}
-	if limits.CleanupTimeout == 0 {
-		limits.CleanupTimeout = DefaultLimits().CleanupTimeout
-	}
-	if limits.MaxNative == 0 {
-		limits.MaxNative = DefaultLimits().MaxNative
 	}
 	runtime := &Runtime{
 		adapter:     adapter,

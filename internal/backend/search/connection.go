@@ -4,16 +4,15 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
-	"io"
 	"net"
 	"net/netip"
 	"net/url"
-	"os"
 	"strconv"
 	"strings"
 	"unicode/utf8"
 
 	"github.com/batchstream/weir-protocol/api/protocol"
+	"github.com/batchstream/weir/internal/backend"
 )
 
 // Connection is static backend client configuration, never caller identity.
@@ -110,21 +109,7 @@ func connectionTLS(cfg Config) (*tls.Config, error) {
 		return config, nil
 	}
 	invalid := errors.New("Search CA file unavailable or invalid")
-	name := cfg.Connection.CAFile
-	info, err := os.Stat(name)
-	if err != nil || !info.Mode().IsRegular() {
-		return nil, invalid
-	}
-	file, err := os.Open(name)
-	if err != nil {
-		return nil, invalid
-	}
-	defer file.Close()
-	info, err = file.Stat()
-	if err != nil || !info.Mode().IsRegular() {
-		return nil, invalid
-	}
-	data, err := io.ReadAll(file)
+	data, err := backend.ReadRegularFile(cfg.Connection.CAFile)
 	if err != nil {
 		return nil, invalid
 	}

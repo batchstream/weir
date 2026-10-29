@@ -34,9 +34,6 @@ func ValidateConfig(cfg Config) error {
 
 func parseConfig(cfg Config) (connectionProfile, error) {
 	var profile connectionProfile
-	if cfg.MaxConnecting > uint64(^uint(0)>>1) {
-		return profile, errors.New("MongoDB connection worker count exceeds platform capacity")
-	}
 	if !protocol.ValidStoreName(cfg.Store) {
 		return profile, errors.New("invalid MongoDB Store")
 	}

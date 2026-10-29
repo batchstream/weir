@@ -250,7 +250,7 @@ func TestMongoIndependentRPCDuplicateReadsKeepCallerIsolationAndSharedResults(t 
 	}
 }
 
-func TestMongoLargeBatchSplitsAtNativeBoundaryWithConfiguredConnectionWorkers(t *testing.T) {
+func TestMongoLargeBatchSplitsAtNativeBoundary(t *testing.T) {
 	fixture := testmongo.Open(t)
 	var calls, largest atomic.Int32
 	monitor := &event.CommandMonitor{Started: func(_ context.Context, e *event.CommandStartedEvent) {
@@ -262,7 +262,7 @@ func TestMongoLargeBatchSplitsAtNativeBoundaryWithConfiguredConnectionWorkers(t 
 	proxy := testmongo.StartProxy(t, fixture)
 	proxy.Monitor = monitor
 	settings := backend.DefaultOptions()
-	cfg := Config{URI: proxy.URI(), Store: "mongo", Options: &settings, MaxConnecting: 32}
+	cfg := Config{URI: proxy.URI(), Store: "mongo", Options: &settings}
 	adapter, err := Open(t.Context(), cfg)
 	if err != nil {
 		t.Fatal(err)

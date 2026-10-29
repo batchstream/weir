@@ -143,12 +143,10 @@ func startTestServer(t *testing.T, opts testServerOptions) (*Server, string) {
 		opts.admission = NewAdmission()
 	}
 	cfg := Config{Stores: opts.stores, Limits: opts.limits, Admission: opts.admission}
-	srv, err := New(cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
+	srv := New(cfg)
 	listener := opts.listener
 	if listener == nil {
+		var err error
 		listener, err = net.Listen("tcp", "127.0.0.1:0")
 		if err != nil {
 			t.Fatal(err)

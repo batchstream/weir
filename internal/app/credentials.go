@@ -2,12 +2,12 @@ package app
 
 import (
 	"errors"
-	"io"
-	"os"
 	"path/filepath"
 	"strings"
 	"unicode"
 	"unicode/utf8"
+
+	"github.com/batchstream/weir/internal/backend"
 )
 
 func (c Credentials) validateSources() error {
@@ -64,22 +64,8 @@ func resolveCredentialValue(value, filename, directory string) (string, error) {
 	if !filepath.IsAbs(filename) {
 		filename = filepath.Join(directory, filename)
 	}
-	info, err := os.Stat(filename)
-	if err != nil || !info.Mode().IsRegular() {
-		return "", errors.New("credential file unavailable")
-	}
-	file, err := os.Open(filename)
+	raw, err := backend.ReadRegularFile(filename)
 	if err != nil {
-		return "", errors.New("credential file unavailable")
-	}
-	info, err = file.Stat()
-	if err != nil || !info.Mode().IsRegular() {
-		_ = file.Close()
-		return "", errors.New("credential file unavailable")
-	}
-	raw, readErr := io.ReadAll(file)
-	closeErr := file.Close()
-	if readErr != nil || closeErr != nil {
 		return "", errors.New("credential file unavailable")
 	}
 	text := strings.TrimSuffix(string(raw), "\n")

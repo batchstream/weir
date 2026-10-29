@@ -93,11 +93,7 @@ func newRetirementNode(t *testing.T, failure error) retirementNodeFixture {
 	}
 	node.stores["records"] = runtime
 	serverCfg := server.Config{Stores: node.stores, Limits: server.DefaultLimits(), Admission: node.admission}
-	endpointServer, err := server.New(serverCfg)
-	if err != nil {
-		t.Fatal(err)
-	}
-	node.server = endpointServer
+	node.server = server.New(serverCfg)
 	t.Cleanup(func() {
 		if err := node.Close(context.Background()); !errors.Is(err, failure) {
 			t.Error(err)
