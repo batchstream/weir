@@ -11,6 +11,7 @@ func TestBulkEntryMatchesEncodedMetadataAndCompactSource(t *testing.T) {
 	seq, term := int64(41), int64(3)
 	current := &getReply{Found: &found, Seq: &seq, Term: &term}
 	source := []byte("{\"a\": 1,\n \"b\": [true]}")
+	spaced := []byte(` { "a" :	"x\u0026<y>",  "b": [ 1 , 2 ] } `)
 	cases := []struct {
 		native  *plan
 		current *getReply
@@ -19,9 +20,10 @@ func TestBulkEntryMatchesEncodedMetadataAndCompactSource(t *testing.T) {
 		{native: &plan{index: "records", id: "b", action: "replace", source: source}, current: current},
 		{native: &plan{index: "records", id: "c", action: "expression", source: []byte(`{"script":{"source":"ctx._source.n++"}}`)}, current: current},
 		{native: &plan{index: "records", id: "d\"\\é", action: "delete"}, current: current},
+		{native: &plan{index: "a&b", id: "<x>\u2028", action: "put", source: spaced}},
 	}
 	for _, c := range cases {
-		want := legacyBulkEntry(t, c.native, c.current)
+		want := referenceBulkEntry(t, c.native, c.current)
 		got := appendBulkEntry(nil, c.native, c.current)
 		if !bytes.Equal(got, want) {
 			t.Fatalf("bulk entry differs\n got %q\nwant %q", got, want)
@@ -29,8 +31,9 @@ func TestBulkEntryMatchesEncodedMetadataAndCompactSource(t *testing.T) {
 	}
 }
 
-// legacyBulkEntry is the reflective framing the direct encoder replaces.
-func legacyBulkEntry(t *testing.T, native *plan, current *getReply) []byte {
+// referenceBulkEntry frames an entry through maps, reflection and
+// json.Compact as an independent oracle.
+func referenceBulkEntry(t *testing.T, native *plan, current *getReply) []byte {
 	t.Helper()
 	metadata := map[string]any{"_index": native.index, "_id": native.id}
 	action := native.bulkAction()

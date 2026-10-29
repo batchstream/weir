@@ -7,6 +7,8 @@ import (
 	"encoding/json/jsontext"
 	"net/url"
 	"strconv"
+	"strings"
+	"unicode/utf8"
 
 	"github.com/batchstream/weir-protocol/api/protocol"
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
@@ -270,15 +272,15 @@ func (b *recordBatch) appendWrite(work *execution.Plan, position int, current *g
 }
 
 // appendBulkEntry frames one bulk action line, with metadata keys in sorted
-// order, and its source line.
+// order, and its compacted source line.
 func appendBulkEntry(dst []byte, native *plan, current *getReply) []byte {
 	action := native.bulkAction()
 	dst = append(dst, `{"`...)
 	dst = append(dst, action...)
 	dst = append(dst, `":{"_id":`...)
-	dst, _ = jsontext.AppendQuote(dst, native.id)
+	dst = appendJSONString(dst, native.id)
 	dst = append(dst, `,"_index":`...)
-	dst, _ = jsontext.AppendQuote(dst, native.index)
+	dst = appendJSONString(dst, native.index)
 	if current != nil && *current.Found {
 		dst = append(dst, `,"if_primary_term":`...)
 		dst = strconv.AppendInt(dst, *current.Term, 10)
@@ -294,18 +296,24 @@ func appendBulkEntry(dst []byte, native *plan, current *getReply) []byte {
 	if native.source == nil {
 		return dst
 	}
-	// Only line breaks would split an NDJSON entry; validated JSON can hold
-	// them only as whitespace, which compaction removes.
-	if bytes.IndexByte(native.source, '\n') < 0 && bytes.IndexByte(native.source, '\r') < 0 {
-		dst = append(dst, native.source...)
-		return append(dst, '\n')
-	}
-	var compact bytes.Buffer
-	if err := json.Compact(&compact, native.source); err != nil {
+	// The options are those of json.Compact, so stored sources keep their
+	// strings and escapes but lose insignificant whitespace.
+	dst, err := jsontext.AppendFormat(dst, native.source, jsontext.AllowDuplicateNames(true), jsontext.AllowInvalidUTF8(true), jsontext.PreserveRawStrings(true))
+	if err != nil {
 		panic("validated source changed")
 	}
-	dst = append(dst, compact.Bytes()...)
 	return append(dst, '\n')
+}
+
+// appendJSONString quotes s as json.Marshal does, including its HTML-safe
+// escapes, without reflection in the common case.
+func appendJSONString(dst []byte, s string) []byte {
+	if !utf8.ValidString(s) || strings.ContainsAny(s, "<>&\u2028\u2029") {
+		encoded, _ := json.Marshal(s)
+		return append(dst, encoded...)
+	}
+	dst, _ = jsontext.AppendQuote(dst, s)
+	return dst
 }
 
 func (b *recordBatch) flush() {
