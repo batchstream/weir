@@ -3,7 +3,11 @@ package search
 import (
 	"bytes"
 	"encoding/json"
+	"strings"
 	"testing"
+
+	pb "github.com/batchstream/weir-protocol/api/weir/v1"
+	"github.com/batchstream/weir/internal/execution"
 )
 
 func TestBulkEntryMatchesEncodedMetadataAndCompactSource(t *testing.T) {
@@ -20,14 +24,29 @@ func TestBulkEntryMatchesEncodedMetadataAndCompactSource(t *testing.T) {
 		{native: &plan{index: "records", id: "b", action: "replace", source: source}, current: current},
 		{native: &plan{index: "records", id: "c", action: "expression", source: []byte(`{"script":{"source":"ctx._source.n++"}}`)}, current: current},
 		{native: &plan{index: "records", id: "d\"\\é", action: "delete"}, current: current},
-		{native: &plan{index: "a&b", id: "<x>\u2028", action: "put", source: spaced}},
+		{native: &plan{index: "a&b", id: "<x>\u2028", action: "index", source: spaced}},
 	}
 	for _, c := range cases {
 		want := referenceBulkEntry(t, c.native, c.current)
-		got := appendBulkEntry(nil, c.native, c.current)
-		if !bytes.Equal(got, want) {
+		got, err := appendBulkEntry(nil, c.native, c.current)
+		if err != nil || !bytes.Equal(got, want) {
 			t.Fatalf("bulk entry differs\n got %q\nwant %q", got, want)
 		}
+	}
+}
+
+func TestBulkEntryTooDeepFailsTheRecordInsteadOfTheProcess(t *testing.T) {
+	deep := strings.Repeat(`{"x":`, 10000) + "{}" + strings.Repeat("}", 10000)
+	native := &plan{index: "records", id: "a", action: "index", source: []byte(deep)}
+	mutation := &pb.MutateRequest{Resource: "records/s:a"}
+	operation := &pb.Command_Mutate{Mutate: mutation}
+	command := &pb.Command{Operation: operation}
+	work := &execution.Plan{Command: command, Backend: native}
+	batch := &recordBatch{results: make([]*pb.Event, 1)}
+	batch.appendWrite(work, 0, nil)
+	failure := batch.results[0].GetMutationResult().GetFailure()
+	if failure.GetCode() != pb.FailureCode_INVALID_ARGUMENT || len(batch.pending) != 0 || batch.request.Len() != 0 {
+		t.Fatal("unframeable source reached the bulk body or lost its failure", failure)
 	}
 }
 

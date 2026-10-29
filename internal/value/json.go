@@ -161,6 +161,9 @@ func jsonTokenValue(token any) (Value, error) {
 	}
 }
 
+// MaxJSONDepth is the deepest container nesting that JSON decoders accept.
+const MaxJSONDepth = 10000
+
 func EncodeJSON(ctx context.Context, v Value) ([]byte, error) {
 	if v.Kind != Object {
 		return nil, fmt.Errorf("JSON document must be an object")
@@ -192,6 +195,10 @@ func appendJSON(ctx context.Context, output *bytes.Buffer, v Value) error {
 		v := frame.node
 		if v.Kind == Object || v.Kind == Array {
 			if !frame.open {
+				// Only containers stay on the stack while their children encode.
+				if len(stack) > MaxJSONDepth {
+					return fmt.Errorf("JSON nesting exceeds %d levels", MaxJSONDepth)
+				}
 				if v.Kind == Object {
 					output.WriteByte('{')
 				} else {

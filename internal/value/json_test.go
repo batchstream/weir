@@ -2,6 +2,7 @@ package value
 
 import (
 	"bytes"
+	"encoding/json/jsontext"
 	"testing"
 )
 
@@ -47,4 +48,25 @@ func redecodeMismatch(got, want Value) bool {
 		}
 	}
 	return false
+}
+
+func TestEncodeJSONStopsAtTheDecoderNestingLimit(t *testing.T) {
+	for _, depth := range []int{MaxJSONDepth, MaxJSONDepth + 1} {
+		// depth nested objects: {"x":{"x":...{}}}
+		root := Value{Kind: Object}
+		for range depth - 1 {
+			field := Field{Name: "x", Value: root}
+			root = Value{Kind: Object, Fields: []Field{field}}
+		}
+		encoded, err := EncodeJSON(t.Context(), root)
+		if depth > MaxJSONDepth {
+			if err == nil {
+				t.Fatal("encoded JSON deeper than decoders accept")
+			}
+			continue
+		}
+		if err != nil || !jsontext.Value(encoded).IsValid() {
+			t.Fatal("JSON at the nesting limit was not encoded as decodable JSON", err)
+		}
+	}
 }

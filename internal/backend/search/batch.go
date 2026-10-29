@@ -255,7 +255,12 @@ func (b *recordBatch) appendWrite(work *execution.Plan, position int, current *g
 	if len(b.pending) != 0 && b.pending[0].work.Backend.(*plan).waitUntilVisible != native.waitUntilVisible {
 		b.flush()
 	}
-	entry := appendBulkEntry(b.entry[:0], native, current)
+	entry, err := appendBulkEntry(b.entry[:0], native, current)
+	if err != nil {
+		failure := protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "Search source cannot be framed as one NDJSON line")
+		b.results[position] = execution.FailedEvent(work.Command, pb.MutationOutcome_NOT_APPLIED, failure)
+		return
+	}
 	b.entry = entry
 	settings := b.adapter.options()
 	window := min(settings.BatchBytes, settings.ExchangeBytes)
@@ -273,7 +278,7 @@ func (b *recordBatch) appendWrite(work *execution.Plan, position int, current *g
 
 // appendBulkEntry frames one bulk action line, with metadata keys in sorted
 // order, and its compacted source line.
-func appendBulkEntry(dst []byte, native *plan, current *getReply) []byte {
+func appendBulkEntry(dst []byte, native *plan, current *getReply) ([]byte, error) {
 	action := native.bulkAction()
 	dst = append(dst, `{"`...)
 	dst = append(dst, action...)
@@ -294,15 +299,16 @@ func appendBulkEntry(dst []byte, native *plan, current *getReply) []byte {
 	}
 	dst = append(dst, "}}\n"...)
 	if native.source == nil {
-		return dst
+		return dst, nil
 	}
 	// The options are those of json.Compact, so stored sources keep their
 	// strings and escapes but lose insignificant whitespace.
 	dst, err := jsontext.AppendFormat(dst, native.source, jsontext.AllowDuplicateNames(true), jsontext.AllowInvalidUTF8(true), jsontext.PreserveRawStrings(true))
 	if err != nil {
-		panic("validated source changed")
+		return nil, err
 	}
-	return append(dst, '\n')
+	dst = append(dst, '\n')
+	return dst, nil
 }
 
 // appendJSONString quotes s as json.Marshal does, including its HTML-safe
