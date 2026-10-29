@@ -58,6 +58,8 @@ type Runtime struct {
 	space, nativeSpace chan struct{}
 	wake               chan struct{}
 	done               chan struct{}
+	// selection is selectLocked's scratch state, reused under mu.
+	selection selection
 
 	closeOnce sync.Once
 	closeErr  error
@@ -78,6 +80,7 @@ type Ticket struct {
 	session  *Session
 	emit     execution.Emit
 	queuedAt time.Time
+	started  bool
 	event    *pb.Event
 	done     chan struct{}
 }
@@ -327,6 +330,41 @@ type group struct {
 	resources map[string]struct{}
 }
 
+type selection struct {
+	groups  []*group
+	used    int
+	byKey   map[groupKey]*group
+	ordered map[resourceKey]struct{}
+}
+
+// reset empties the scratch state after a scan so it retains no tickets; it
+// keeps the maps and the slices of groups that were not handed to a batch.
+func (s *selection) reset() {
+	for _, g := range s.groups[:s.used] {
+		clear(g.items)
+		g.items = g.items[:0]
+		g.bytes, g.full = 0, false
+		clear(g.resources)
+	}
+	s.used = 0
+	clear(s.byKey)
+	clear(s.ordered)
+}
+
+func (s *selection) group(key groupKey) *group {
+	if g := s.byKey[key]; g != nil {
+		return g
+	}
+	if s.used == len(s.groups) {
+		g := &group{}
+		s.groups = append(s.groups, g)
+	}
+	g := s.groups[s.used]
+	s.used++
+	s.byKey[key] = g
+	return g
+}
+
 // selectLocked scans the queue in FIFO order, groups compatible records and
 // returns the oldest ready group while a record slot is free.
 func (r *Runtime) selectLocked(now time.Time) ([]*Ticket, time.Time) {
@@ -334,9 +372,12 @@ func (r *Runtime) selectLocked(now time.Time) ([]*Ticket, time.Time) {
 	if r.limits.MaxInFlight > 0 && r.records >= r.limits.MaxInFlight {
 		return nil, wakeAt
 	}
-	var groups []*group
-	byKey := make(map[groupKey]*group)
-	var ordered map[resourceKey]struct{}
+	s := &r.selection
+	if s.byKey == nil {
+		s.byKey = make(map[groupKey]*group)
+		s.ordered = make(map[resourceKey]struct{})
+	}
+	defer s.reset()
 	for _, t := range r.queue {
 		plan := t.plan
 		mutation := plan.Command.GetMutate() != nil
@@ -344,21 +385,13 @@ func (r *Runtime) selectLocked(now time.Time) ([]*Ticket, time.Time) {
 			// The oldest queued mutation of a session's resource runs first,
 			// and only after the previous one finished.
 			key := resourceKey{session: t.session, resource: plan.Key}
-			if _, waiting := ordered[key]; waiting || r.keys[key] != nil {
+			if _, waiting := s.ordered[key]; waiting || r.keys[key] != nil {
 				continue
 			}
-			if ordered == nil {
-				ordered = make(map[resourceKey]struct{})
-			}
-			ordered[key] = struct{}{}
+			s.ordered[key] = struct{}{}
 		}
 		key := groupKey{batch: plan.BatchKey, read: plan.Command.GetRead() != nil}
-		g := byKey[key]
-		if g == nil {
-			g = &group{}
-			groups = append(groups, g)
-			byKey[key] = g
-		}
+		g := s.group(key)
 		if _, duplicate := g.resources[plan.Key]; mutation && duplicate {
 			continue
 		}
@@ -375,11 +408,14 @@ func (r *Runtime) selectLocked(now time.Time) ([]*Ticket, time.Time) {
 			g.resources[plan.Key] = struct{}{}
 		}
 	}
-	for _, g := range groups {
+	for _, g := range s.groups[:s.used] {
 		at := r.readyAt(g, now)
 		if !now.Before(at) {
+			// The batch owns the returned slice.
+			items := g.items
+			g.items = nil
 			var ready time.Time
-			return g.items, ready
+			return items, ready
 		}
 		if wakeAt.IsZero() || at.Before(wakeAt) {
 			wakeAt = at
@@ -407,9 +443,8 @@ func (r *Runtime) readyAt(g *group, now time.Time) time.Time {
 }
 
 func (r *Runtime) startLocked(items []*Ticket, now time.Time) {
-	selected := make(map[*Ticket]struct{}, len(items))
 	for _, t := range items {
-		selected[t] = struct{}{}
+		t.started = true
 		r.queueBytes -= t.plan.Bytes
 		if t.session != nil && t.plan.Command.GetMutate() != nil {
 			key := resourceKey{session: t.session, resource: t.plan.Key}
@@ -419,7 +454,7 @@ func (r *Runtime) startLocked(items []*Ticket, now time.Time) {
 	}
 	kept := r.queue[:0]
 	for _, t := range r.queue {
-		if _, started := selected[t]; !started {
+		if !t.started {
 			kept = append(kept, t)
 		}
 	}

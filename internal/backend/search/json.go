@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"encoding/json/jsontext"
 	"errors"
 	"io"
 	"strconv"
@@ -12,12 +13,23 @@ import (
 
 var errJSON = errors.New("invalid JSON")
 
-// The standard library validates syntax without materializing tokens. The
-// walk then checks duplicate keys, decoding only
-// escaped object keys. Scalar strings and numbers retain their wire spelling.
+const smallJSONBytes = 64 << 10
+
+// validateJSON accepts RFC 7493 JSON: valid UTF-8 and escapes, and unique
+// object names. Above 64 KiB, the standard library validates syntax without
+// materializing tokens while observing cancellation, and a walk then checks
+// duplicate keys, decoding only escaped object keys.
 func validateJSON(ctx context.Context, raw []byte) error {
 	if err := ctx.Err(); err != nil {
 		return err
+	}
+	// Records and replies are usually small; one pass checks them without
+	// allocating.
+	if len(raw) <= smallJSONBytes {
+		if !jsontext.Value(raw).IsValid() {
+			return errJSON
+		}
+		return nil
 	}
 	// encoding/json accepts unpaired surrogate escapes by replacing them. Reject
 	// them before either the backend or a decoder can silently change a string.

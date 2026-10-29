@@ -4,7 +4,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"encoding/json/jsontext"
 	"net/url"
+	"strconv"
+	"strings"
+	"unicode/utf8"
 
 	"github.com/batchstream/weir-protocol/api/protocol"
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
@@ -228,6 +232,7 @@ type recordBatch struct {
 	results  []*pb.Event
 	attempts []int
 	request  bytes.Buffer
+	entry    []byte
 	pending  []recordWrite
 	retry    []int
 	barriers map[string][]int
@@ -250,45 +255,65 @@ func (b *recordBatch) appendWrite(work *execution.Plan, position int, current *g
 	if len(b.pending) != 0 && b.pending[0].work.Backend.(*plan).waitUntilVisible != native.waitUntilVisible {
 		b.flush()
 	}
-	metadata := map[string]any{"_index": native.index, "_id": native.id}
-	action := native.bulkAction()
-	switch native.action {
-	case "expression":
-		metadata["retry_on_conflict"] = 0
-	case "replace":
-		metadata["pipeline"] = "_none"
-	default:
-		if action != "delete" {
-			metadata["pipeline"] = "_none"
-		}
-	}
-	if current != nil && *current.Found {
-		metadata["if_seq_no"] = *current.Seq
-		metadata["if_primary_term"] = *current.Term
-	}
-	header := map[string]any{action: metadata}
-	encoded, _ := json.Marshal(header)
-	var entry bytes.Buffer
-	entry.Write(encoded)
-	entry.WriteByte('\n')
-	if native.source != nil {
-		if err := json.Compact(&entry, native.source); err != nil {
-			panic("validated source changed")
-		}
-		entry.WriteByte('\n')
-	}
+	entry := appendBulkEntry(b.entry[:0], native, current)
+	b.entry = entry
 	settings := b.adapter.options()
 	window := min(settings.BatchBytes, settings.ExchangeBytes)
-	if b.request.Len()+entry.Len() > window {
+	if b.request.Len()+len(entry) > window {
 		b.flush()
 	}
 	start := b.request.Len()
-	b.request.Write(entry.Bytes())
+	b.request.Write(entry)
 	pending := recordWrite{work: work, position: position, start: start, end: b.request.Len()}
 	b.pending = append(b.pending, pending)
 	if b.request.Len() >= window {
 		b.flush()
 	}
+}
+
+// appendBulkEntry frames one bulk action line, with metadata keys in sorted
+// order, and its compacted source line.
+func appendBulkEntry(dst []byte, native *plan, current *getReply) []byte {
+	action := native.bulkAction()
+	dst = append(dst, `{"`...)
+	dst = append(dst, action...)
+	dst = append(dst, `":{"_id":`...)
+	dst = appendJSONString(dst, native.id)
+	dst = append(dst, `,"_index":`...)
+	dst = appendJSONString(dst, native.index)
+	if current != nil && *current.Found {
+		dst = append(dst, `,"if_primary_term":`...)
+		dst = strconv.AppendInt(dst, *current.Term, 10)
+		dst = append(dst, `,"if_seq_no":`...)
+		dst = strconv.AppendInt(dst, *current.Seq, 10)
+	}
+	if native.action == "expression" {
+		dst = append(dst, `,"retry_on_conflict":0`...)
+	} else if action != "delete" {
+		dst = append(dst, `,"pipeline":"_none"`...)
+	}
+	dst = append(dst, "}}\n"...)
+	if native.source == nil {
+		return dst
+	}
+	// The options are those of json.Compact, so stored sources keep their
+	// strings and escapes but lose insignificant whitespace.
+	dst, err := jsontext.AppendFormat(dst, native.source, jsontext.AllowDuplicateNames(true), jsontext.AllowInvalidUTF8(true), jsontext.PreserveRawStrings(true))
+	if err != nil {
+		panic("validated source changed")
+	}
+	return append(dst, '\n')
+}
+
+// appendJSONString quotes s as json.Marshal does, including its HTML-safe
+// escapes, without reflection in the common case.
+func appendJSONString(dst []byte, s string) []byte {
+	if !utf8.ValidString(s) || strings.ContainsAny(s, "<>&\u2028\u2029") {
+		encoded, _ := json.Marshal(s)
+		return append(dst, encoded...)
+	}
+	dst, _ = jsontext.AppendQuote(dst, s)
+	return dst
 }
 
 func (b *recordBatch) flush() {
