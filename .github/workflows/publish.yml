@@ -9,10 +9,6 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: false
-
 jobs:
   image:
     if: github.repository == 'batchstream/weir'
@@ -58,6 +54,7 @@ jobs:
 
   archives:
     if: github.repository == 'batchstream/weir' && github.event_name == 'release'
+    needs: image
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
@@ -71,17 +68,20 @@ jobs:
           go-version-file: go.mod
       - name: Build archives
         run: |
+          dist=$RUNNER_TEMP/dist
           for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64; do
             name=weir-${target%/*}-${target#*/}
-            mkdir -p "dist/$name/config"
-            CGO_ENABLED=0 GOOS=${target%/*} GOARCH=${target#*/} \
-              go build -trimpath -ldflags "-buildid= -X main.revision=$GITHUB_SHA" -o "dist/$name/weir" ./cmd/weir
-            cp README.md "dist/$name/"
-            cp config/weir.reference.yaml "dist/$name/config/"
-            tar -czf "dist/$name.tar.gz" -C "dist/$name" weir README.md config
+            mkdir -p "$dist/$name/config"
+            CGO_ENABLED=0 GOOS=${target%/*} GOARCH=${target#*/} go build -trimpath -buildvcs=false \
+              -ldflags "-buildid= -X main.revision=$GITHUB_SHA" -o "$dist/$name/weir" ./cmd/weir
+            cp README.md "$dist/$name/"
+            cp config/weir.reference.yaml "$dist/$name/config/"
+            tar -czf "$dist/$name.tar.gz" --owner=0 --group=0 --numeric-owner -C "$dist/$name" weir README.md config
           done
-          cd dist && sha256sum weir-*.tar.gz > SHA256SUMS
+          cd "$dist" && sha256sum weir-*.tar.gz > SHA256SUMS
       - name: Attach archives to the release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload "$GITHUB_REF_NAME" dist/weir-*.tar.gz dist/SHA256SUMS --repo "$GITHUB_REPOSITORY"
+        run: |
+          gh release upload "$GITHUB_REF_NAME" "$RUNNER_TEMP"/dist/weir-*.tar.gz "$RUNNER_TEMP/dist/SHA256SUMS" \
+            --repo "$GITHUB_REPOSITORY"

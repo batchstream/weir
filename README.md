@@ -211,7 +211,8 @@ WEIR_INTEGRATION=1 WEIR_SEARCH_INTEGRATION=elasticsearch WEIR_LOAD_INTEGRATION=1
 Run the load and fault tests separately so injected faults do not distort load
 measurements. `WEIR_MONGO_SECURE_INTEGRATION=1` and
 `WEIR_SEARCH_SECURE_INTEGRATION=1` enable the TLS and authentication tests, which
-start their own fixtures.
+start their own fixtures; the MongoDB one runs the `mongod` that
+`scripts/mongod.sh` installs.
 
 The [weir-tests](https://github.com/batchstream/weir-tests) repository contains
 matched direct/Weir workloads and blackbox integration. Keep generated logs and
@@ -229,5 +230,5 @@ macOS amd64/arm64 archives with their `SHA256SUMS`. `weir version` reports the
 source commit as `revision`. Build the image locally with:
 
 ```sh
-docker buildx build --build-arg REVISION=$(git rev-parse HEAD) -t weir .
+docker buildx build --build-arg REVISION=$(git rev-parse HEAD) --load -t weir .
 ```

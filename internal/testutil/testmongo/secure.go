@@ -248,7 +248,8 @@ func (fixture *SecureFixture) randomSecret(t *testing.T) string {
 func (fixture *SecureFixture) startMongo(t *testing.T) {
 	t.Helper()
 	projectDirectory := testutil.Root(t)
-	binary := filepath.Join(projectDirectory, ".tools", "mongodb-macos-aarch64--8.0.32", "bin", "mongod")
+	// scripts/mongod.sh installs the pinned binary here.
+	binary := filepath.Join(projectDirectory, ".tools", "mongodb-8.0.32", "bin", "mongod")
 	version := exec.CommandContext(fixture.startup, binary, "--version")
 	versionOutput, err := version.Output()
 	if err != nil || !strings.Contains(string(versionOutput), "v8.0.32") {

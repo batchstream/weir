@@ -26,4 +26,8 @@ if [ ! -x "$install/bin/mongod" ]; then
  tar -xzf "$work/mongodb.tgz" -C "$work/install" --strip-components=1
  mv "$work/install" "$install"
 fi
+if [ ! -x "$install/bin/mongod" ]; then
+ echo "$install has no mongod; remove it and run $0 again" >&2
+ exit 1
+fi
 printf '%s\n' "$install/bin/mongod"
