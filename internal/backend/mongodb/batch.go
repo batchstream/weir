@@ -329,8 +329,8 @@ func (a *Adapter) executeWrites(ctx context.Context, plans []*execution.Plan) []
 	results := make([]*pb.Event, len(plans))
 	active := make([]*execution.Plan, 0, len(plans))
 	positions := make([]int, 0, len(plans))
-	ops := make(bson.A, 0, len(plans))
-	namespaces := make(bson.A, 0)
+	writes := make([]bulkWrite, 0, len(plans))
+	var namespaces []namespace
 	namespaceIndexes := make(map[namespace]int32)
 	for i, p := range plans {
 		if result := unstarted(ctx, p); result != nil {
@@ -339,66 +339,35 @@ func (a *Adapter) executeWrites(ctx context.Context, plans []*execution.Plan) []
 		}
 
 		n := p.Backend.(*plan)
-		namespaceIndex, exists := namespaceIndexes[n.target]
-		if !exists {
-			namespaceIndex = int32(len(namespaces))
-			namespaceIndexes[n.target] = namespaceIndex
-			info := bson.D{{Key: "ns", Value: n.target.String()}}
-			namespaces = append(namespaces, info)
-		}
-		filter := bson.D{{Key: "_id", Value: n.id}}
-		var op bson.D
 		switch n.action {
-		case "create":
-			op = bson.D{{Key: "insert", Value: namespaceIndex}, {Key: "document", Value: n.document}}
-		case "put", "replace", "expression":
-			op = bson.D{
-				{Key: "update", Value: namespaceIndex},
-				{Key: "filter", Value: filter},
-				{Key: "updateMods", Value: n.document},
-				{Key: "multi", Value: false},
-				{Key: "upsert", Value: n.action == "put"},
-			}
-		case "delete":
-			op = bson.D{{Key: "delete", Value: namespaceIndex}, {Key: "filter", Value: filter}, {Key: "multi", Value: false}}
+		case "create", "put", "replace", "expression", "delete":
 		default:
 			results[i] = execution.FailedEvent(p.Command, pb.MutationOutcome_NOT_STARTED, protocol.Fail(pb.FailureCode_INTERNAL, "unsupported prepared operation"))
 			continue
 		}
+		namespaceIndex, exists := namespaceIndexes[n.target]
+		if !exists {
+			namespaceIndex = int32(len(namespaces))
+			namespaceIndexes[n.target] = namespaceIndex
+			namespaces = append(namespaces, n.target)
+		}
 		active = append(active, p)
 		positions = append(positions, i)
-		ops = append(ops, op)
+		write := bulkWrite{plan: n, namespace: namespaceIndex}
+		writes = append(writes, write)
 	}
 	if len(active) == 0 {
 		return results
 	}
 
-	concern := bson.D{{Key: "w", Value: "majority"}}
-	cursorOpts := bson.D{{Key: "batchSize", Value: int32(len(active))}}
-	var command any = bson.D{
-		{Key: "bulkWrite", Value: int32(1)},
-		{Key: "ops", Value: ops},
-		{Key: "nsInfo", Value: namespaces},
-		{Key: "ordered", Value: false},
-		{Key: "errorsOnly", Value: false},
-		{Key: "cursor", Value: cursorOpts},
-		{Key: "writeConcern", Value: concern},
-	}
-	encoded, marshalErr := bson.Marshal(command)
-	if marshalErr != nil || len(plans) > 1 && len(encoded) > a.commandBytes() {
-		if marshalErr == nil && len(plans) > 1 {
-			middle := len(plans) / 2
-			copy(results[:middle], a.executeWrites(ctx, plans[:middle]))
-			copy(results[middle:], a.executeWrites(ctx, plans[middle:]))
-			return results
-		}
-		failure := protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "encoded write exceeds MongoDB native BSON command boundary")
-		for i, work := range active {
-			results[positions[i]] = execution.FailedEvent(work.Command, pb.MutationOutcome_NOT_STARTED, failure)
-		}
+	encoded := encodeBulkWrite(writes, namespaces)
+	if len(plans) > 1 && len(encoded) > a.commandBytes() {
+		middle := len(plans) / 2
+		copy(results[:middle], a.executeWrites(ctx, plans[:middle]))
+		copy(results[middle:], a.executeWrites(ctx, plans[middle:]))
 		return results
 	}
-	command = bson.Raw(encoded)
+	var command any = bson.Raw(encoded)
 	state := &writeBatch{plans: active, results: make([]*pb.MutationResult, len(active))}
 	session, err := a.client.StartSession()
 	if err != nil {
@@ -468,6 +437,80 @@ func (a *Adapter) executeWrites(ctx context.Context, plans []*execution.Plan) []
 		results[positions[i]] = event
 	}
 	return results
+}
+
+type bulkWrite struct {
+	plan      *plan
+	namespace int32
+}
+
+// encodeBulkWrite builds the native bulkWrite command in one pre-sized buffer;
+// reflective encoding would copy every document through a growing buffer.
+func encodeBulkWrite(writes []bulkWrite, namespaces []namespace) bsoncore.Document {
+	size := 256
+	for _, write := range writes {
+		size += len(write.plan.document) + 128
+	}
+	for _, target := range namespaces {
+		size += len(target.database) + len(target.collection) + 32
+	}
+	command, dst := bsoncore.AppendDocumentStart(make([]byte, 0, size))
+	dst = bsoncore.AppendInt32Element(dst, "bulkWrite", 1)
+	ops, dst := bsoncore.AppendArrayElementStart(dst, "ops")
+	for i, write := range writes {
+		var op int32
+		op, dst = bsoncore.AppendDocumentElementStart(dst, strconv.Itoa(i))
+		n := write.plan
+		switch n.action {
+		case "create":
+			dst = bsoncore.AppendInt32Element(dst, "insert", write.namespace)
+			dst = bsoncore.AppendDocumentElement(dst, "document", n.document)
+		case "put", "replace", "expression":
+			dst = bsoncore.AppendInt32Element(dst, "update", write.namespace)
+			dst = appendIDFilter(dst, n.id)
+			dst = bsoncore.AppendDocumentElement(dst, "updateMods", n.document)
+			dst = bsoncore.AppendBooleanElement(dst, "multi", false)
+			dst = bsoncore.AppendBooleanElement(dst, "upsert", n.action == "put")
+		case "delete":
+			dst = bsoncore.AppendInt32Element(dst, "delete", write.namespace)
+			dst = appendIDFilter(dst, n.id)
+			dst = bsoncore.AppendBooleanElement(dst, "multi", false)
+		}
+		dst, _ = bsoncore.AppendDocumentEnd(dst, op)
+	}
+	dst, _ = bsoncore.AppendArrayEnd(dst, ops)
+	infos, dst := bsoncore.AppendArrayElementStart(dst, "nsInfo")
+	for i, target := range namespaces {
+		var info int32
+		info, dst = bsoncore.AppendDocumentElementStart(dst, strconv.Itoa(i))
+		dst = bsoncore.AppendStringElement(dst, "ns", target.String())
+		dst, _ = bsoncore.AppendDocumentEnd(dst, info)
+	}
+	dst, _ = bsoncore.AppendArrayEnd(dst, infos)
+	dst = bsoncore.AppendBooleanElement(dst, "ordered", false)
+	dst = bsoncore.AppendBooleanElement(dst, "errorsOnly", false)
+	cursor, dst := bsoncore.AppendDocumentElementStart(dst, "cursor")
+	dst = bsoncore.AppendInt32Element(dst, "batchSize", int32(len(writes)))
+	dst, _ = bsoncore.AppendDocumentEnd(dst, cursor)
+	concern, dst := bsoncore.AppendDocumentElementStart(dst, "writeConcern")
+	dst = bsoncore.AppendStringElement(dst, "w", "majority")
+	dst, _ = bsoncore.AppendDocumentEnd(dst, concern)
+	dst, _ = bsoncore.AppendDocumentEnd(dst, command)
+	return dst
+}
+
+func appendIDFilter(dst []byte, id any) []byte {
+	filter, dst := bsoncore.AppendDocumentElementStart(dst, "filter")
+	switch v := id.(type) {
+	case string:
+		dst = bsoncore.AppendStringElement(dst, "_id", v)
+	case int64:
+		dst = bsoncore.AppendInt64Element(dst, "_id", v)
+	case bson.ObjectID:
+		dst = bsoncore.AppendObjectIDElement(dst, "_id", v)
+	}
+	dst, _ = bsoncore.AppendDocumentEnd(dst, filter)
+	return dst
 }
 
 type writeBatch struct {
