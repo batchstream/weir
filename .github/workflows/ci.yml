@@ -62,7 +62,7 @@ jobs:
           scripts/search-local.sh start ${{ matrix.product }} normal
       - name: Integration tests
         # failCommand is server-global even when scoped by appName, so packages run one at a time.
-        run: go test -race -p=1 -tags=integration -count=1 -timeout=40m -skip '^(TestSearchRealBackendCongestion|TestSearchExpressionRealCapacity)$' ./...
+        run: go test -race -p=1 -tags=integration -count=1 -timeout=15m -skip '^(TestSearchRealBackendCongestion|TestSearchExpressionRealCapacity)$' ./...
       - name: Search capacity-rejection tests with the overload fixture
         run: |
           scripts/search-local.sh stop ${{ matrix.product }}

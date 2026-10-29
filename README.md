@@ -154,17 +154,18 @@ fixtures:
   and needs about 2 GiB of Docker memory. Stop the fixture before changing
   profiles.
 
-The TLS and replica-set tests start their own `mongod` processes from
-`.tools/`, and the HTTPS Search tests start their own containers from the
-image `scripts/search-local.sh` pulled.
-`WEIR_SEARCH_PRODUCT` selects `elasticsearch` (the default) or `opensearch`.
+The TLS and replica-set tests start their own `mongod` processes from the same
+binary. The HTTPS Search tests start their own 1.5 GiB container from the image
+`scripts/search-local.sh` pulled, so the whole suite needs about 3.5 GiB of
+Docker memory. `WEIR_SEARCH_PRODUCT` selects `elasticsearch` (the default) or
+`opensearch`.
 Run packages one at a time, because MongoDB fault injection uses a server-global
 failpoint:
 
 ```sh
 scripts/mongo-local.sh start
 scripts/search-local.sh start elasticsearch normal
-go test -p=1 -tags=integration -timeout=40m -skip '^(TestSearchRealBackendCongestion|TestSearchExpressionRealCapacity)$' ./...
+go test -p=1 -tags=integration -timeout=15m -skip '^(TestSearchRealBackendCongestion|TestSearchExpressionRealCapacity)$' ./...
 scripts/search-local.sh stop elasticsearch
 scripts/search-local.sh start elasticsearch overload
 go test -tags=integration -run '^(TestSearchRealBackendCongestion|TestSearchExpressionRealCapacity)$' ./internal/backend/search

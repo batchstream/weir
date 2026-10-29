@@ -437,8 +437,11 @@ func (f *SecureFixture) docker(t *testing.T, limit time.Duration, args ...string
 			t.Fatal("cannot retain fixture bootstrap diagnostic")
 		}
 	}
+	if err != nil && args[0] == "exec" {
+		t.Fatalf("fixture Docker step exec failed; see %s", filepath.Join(f.Root, "bootstrap.log"))
+	}
 	if err != nil {
-		t.Fatalf("fixture Docker step %s failed (details retained without credentials)", args[0])
+		t.Fatalf("fixture Docker step %s failed: %s", args[0], strings.TrimSpace(string(output)))
 	}
 	return string(output)
 }
