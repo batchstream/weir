@@ -70,10 +70,7 @@ func open(ctx context.Context, cfg Config, transport server.Limits) (*Node, erro
 		return nil, errors.New("listener startup failed")
 	}
 	options := server.Config{Stores: node.stores, Limits: transport, Admission: admission}
-	node.server, err = server.New(options)
-	if err != nil {
-		return nil, err
-	}
+	node.server = server.New(options)
 
 	node.guard = overload.New(overloadTargets)
 	if err := node.registerMetrics(); err != nil {

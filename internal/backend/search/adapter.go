@@ -85,9 +85,6 @@ func Open(ctx context.Context, cfg Config) (*Adapter, error) {
 	if cfg.Options != nil {
 		settings = *cfg.Options
 	}
-	if err := settings.Validate(); err != nil {
-		return nil, err
-	}
 	cfg.Options = &settings
 
 	cfg.URL, _ = canonicalURL(cfg.URL)

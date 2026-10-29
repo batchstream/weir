@@ -25,17 +25,13 @@ import (
 	"go.mongodb.org/mongo-driver/v2/x/mongo/driver/topology"
 )
 
-// DefaultMaxConnecting matches the native driver connection creation default.
-const DefaultMaxConnecting uint64 = 2
-
 type Config struct {
-	Options       *backend.Options
-	MaxConnecting uint64
-	URI           string
-	Store         string
-	Username      string
-	CAFile        string
-	Password      string
+	Options  *backend.Options
+	URI      string
+	Store    string
+	Username string
+	CAFile   string
+	Password string
 }
 
 type Adapter struct {
@@ -76,13 +72,7 @@ func Open(ctx context.Context, cfg Config) (*Adapter, error) {
 	if cfg.Options != nil {
 		settings = *cfg.Options
 	}
-	if err := settings.Validate(); err != nil {
-		return nil, err
-	}
 	cfg.Options = &settings
-	if cfg.MaxConnecting == 0 {
-		cfg.MaxConnecting = DefaultMaxConnecting
-	}
 
 	opts, err := connectionOptions(cfg, profile)
 	if err != nil {
@@ -90,7 +80,6 @@ func Open(ctx context.Context, cfg Config) (*Adapter, error) {
 	}
 	opts.SetAppName("weir:" + cfg.Store).
 		SetMaxPoolSize(0).
-		SetMaxConnecting(cfg.MaxConnecting).
 		SetMinPoolSize(0).
 		SetRetryWrites(false).
 		SetRetryReads(false).

@@ -46,10 +46,7 @@ func startRouteAcceptanceNode(t testing.TB, opts routeAcceptanceNodeOptions) *ro
 	}
 	admission := NewAdmission()
 	config := Config{Stores: map[string]*store.Runtime{"records": local}, Limits: opts.limits, Admission: admission}
-	srv, err := New(config)
-	if err != nil {
-		t.Fatal(err)
-	}
+	srv := New(config)
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
