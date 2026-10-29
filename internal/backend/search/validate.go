@@ -44,7 +44,7 @@ func (a *Adapter) validateRecord(ctx context.Context, work *execution.Plan) *pb.
 		} else if failure := prepareExpression(ctx, transform.GetBackendExpression()); failure != nil {
 			return failure
 		}
-	} else if len(raw) != 0 && (!object(raw) || validateJSON(ctx, raw) != nil) {
+	} else if native.action != "delete" && (!object(raw) || validateJSON(ctx, raw) != nil) {
 		if ctx.Err() != nil {
 			return protocol.ContextFailure(ctx)
 		}
