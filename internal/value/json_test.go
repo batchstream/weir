@@ -51,7 +51,7 @@ func redecodeMismatch(got, want Value) bool {
 }
 
 func TestEncodeJSONStopsAtTheDecoderNestingLimit(t *testing.T) {
-	for _, depth := range []int{MaxJSONDepth, MaxJSONDepth + 1} {
+	for _, depth := range []int{maxJSONDepth, maxJSONDepth + 1} {
 		// depth nested objects: {"x":{"x":...{}}}
 		root := Value{Kind: Object}
 		for range depth - 1 {
@@ -59,7 +59,7 @@ func TestEncodeJSONStopsAtTheDecoderNestingLimit(t *testing.T) {
 			root = Value{Kind: Object, Fields: []Field{field}}
 		}
 		encoded, err := EncodeJSON(t.Context(), root)
-		if depth > MaxJSONDepth {
+		if depth > maxJSONDepth {
 			if err == nil {
 				t.Fatal("encoded JSON deeper than decoders accept")
 			}

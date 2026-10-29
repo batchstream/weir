@@ -42,11 +42,12 @@ func TestBulkEntryTooDeepFailsTheRecordInsteadOfTheProcess(t *testing.T) {
 	operation := &pb.Command_Mutate{Mutate: mutation}
 	command := &pb.Command{Operation: operation}
 	work := &execution.Plan{Command: command, Backend: native}
-	batch := &recordBatch{results: make([]*pb.Event, 1)}
+	adapter := &Adapter{}
+	batch := &recordBatch{adapter: adapter, results: make([]*pb.Event, 1)}
 	batch.appendWrite(work, 0, nil)
-	failure := batch.results[0].GetMutationResult().GetFailure()
-	if failure.GetCode() != pb.FailureCode_INVALID_ARGUMENT || len(batch.pending) != 0 || batch.request.Len() != 0 {
-		t.Fatal("unframeable source reached the bulk body or lost its failure", failure)
+	result := batch.results[0].GetMutationResult()
+	if result.GetOutcome() != pb.MutationOutcome_NOT_APPLIED || result.GetFailure().GetCode() != pb.FailureCode_INVALID_ARGUMENT || len(batch.pending) != 0 || batch.request.Len() != 0 {
+		t.Fatal("unframeable source reached the bulk body or lost its failure", result)
 	}
 }
 
