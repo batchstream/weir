@@ -19,7 +19,7 @@ NotFound. Backend configuration and authentication remain local. See
 | --- | --- |
 | `cmd/weir` | CLI, signals and process lifecycle |
 | `internal/app` | Configuration, resource assembly, diagnostics and Node shutdown |
-| `internal/server` | StoreService, transport admission and ordered publication |
+| `internal/server` | StoreService, transport admission and per-record admission and publication |
 | `internal/store` | Queueing, batch selection and execution slots |
 | `internal/execution` | Prepared plans and the MongoDB/Search adapter contract |
 | `internal/backend` | Native backend encoding, execution and completion evidence |
@@ -35,9 +35,9 @@ repository.
 
 Execute is a finite bidirectional stream selecting one Store and one operation
 kind. Each Read/Mutate request carries one resource and a consecutive one-based
-ordinal. Receiving and ordered publication proceed concurrently through a bounded
-per-stream ticket window, defaulting to 32 records. The server does not retain a
-whole-call request/result table.
+ordinal. Receiving and publication proceed concurrently: each result is sent as
+its record completes, and a stream holds at most the protocol's 32 records
+without results. The server does not retain a whole-call request/result table.
 
 Validated records enter one Store scheduler. It combines compatible records from
 one or several streams using count and byte targets. Reads and mutations form

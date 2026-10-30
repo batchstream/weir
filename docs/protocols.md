@@ -1,6 +1,6 @@
 # Protocol
 
-The public contract is [store.proto](https://github.com/batchstream/weir-protocol/blob/v0.15.0/api/weir/v1/store.proto),
+The public contract is [store.proto](https://github.com/batchstream/weir-protocol/blob/v0.16.0/api/weir/v1/store.proto),
 package weir.v1. Clients connect to a Weir application address and name the
 Store in each request. A server that does not host the named Store fails the RPC
 with NotFound.
@@ -68,4 +68,4 @@ schemas, generated Go bindings and shared validation. Both Weir and
 The SDK has no dependency on the server, and the server binary does not use the
 SDK; only server tests consume it. Clients in other languages can generate the
 public schema and implement load balancing and typed completion handling. Weir
-uses protocol v0.15.0 and Go SDK v0.17.0.
+uses protocol v0.16.0 and Go SDK v0.18.0.
