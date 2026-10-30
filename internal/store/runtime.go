@@ -143,7 +143,16 @@ func (r *Runtime) NewStreamSession(results chan<- Result) *Session {
 	return session
 }
 
+// PrepareRecord refuses a record while the Store drains or the process is
+// overloaded, as Submit does, so a record on a stream that outlives the
+// Store's adapter is refused rather than prepared by a closed adapter.
 func (r *Runtime) PrepareRecord(ctx context.Context, record *execution.Record) (*execution.Plan, *pb.Failure) {
+	r.mu.Lock()
+	refusal := r.refusalLocked()
+	r.mu.Unlock()
+	if refusal != nil {
+		return nil, refusal
+	}
 	plan, failure := r.adapter.PrepareRecord(ctx, record)
 	if failure != nil {
 		r.metrics.rejections.WithLabelValues("prepare").Inc()
@@ -190,18 +199,26 @@ func (r *Runtime) SubmitNative(ctx context.Context, plan *execution.Plan, emit e
 	return r.enqueue(ctx, ticket)
 }
 
+// refusalLocked reports why the Store refuses new work, if it does.
+func (r *Runtime) refusalLocked() *pb.Failure {
+	if r.draining || r.closed {
+		r.metrics.rejections.WithLabelValues("draining").Inc()
+		return protocol.Fail(pb.FailureCode_UNAVAILABLE, "store draining")
+	}
+	if r.overloaded {
+		r.metrics.rejections.WithLabelValues("overload").Inc()
+		return protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "process overloaded")
+	}
+	return nil
+}
+
 func (r *Runtime) enqueue(ctx context.Context, ticket *Ticket) (*Ticket, *pb.Failure) {
 	native := ticket.plan.Command.GetNative() != nil
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	for {
-		if r.draining || r.closed {
-			r.metrics.rejections.WithLabelValues("draining").Inc()
-			return nil, protocol.Fail(pb.FailureCode_UNAVAILABLE, "store draining")
-		}
-		if r.overloaded {
-			r.metrics.rejections.WithLabelValues("overload").Inc()
-			return nil, protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "process overloaded")
+		if refusal := r.refusalLocked(); refusal != nil {
+			return nil, refusal
 		}
 		if ctx.Err() != nil {
 			return nil, protocol.ContextFailure(ctx)
