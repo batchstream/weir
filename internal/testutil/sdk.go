@@ -62,7 +62,7 @@ func MutateRecords(ctx context.Context, client pb.StoreServiceClient, store stri
 func recordResponses(ctx context.Context, client pb.StoreServiceClient, store string, commands []*pb.Command) ([]*pb.ExecuteResponse, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	stream, err := client.Execute(ctx)
+	stream, err := Execute(ctx, client)
 	if err != nil {
 		return nil, err
 	}

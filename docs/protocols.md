@@ -1,6 +1,6 @@
 # Protocol
 
-The public contract is [store.proto](https://github.com/batchstream/weir-protocol/blob/v0.16.0/api/weir/v1/store.proto),
+The public contract is [store.proto](https://github.com/batchstream/weir-protocol/blob/v0.17.0/api/weir/v1/store.proto),
 package weir.v1. Clients connect to a Weir application address and name the
 Store in each request. A server that does not host the named Store fails the RPC
 with NotFound.
@@ -11,6 +11,11 @@ with NotFound.
 
 Execute accepts typed records, open Native forwarding and wait-until-visible
 mutations on one finite stream.
+
+Each gRPC message carries one or more requests or responses in stream order:
+ExecuteRequests on input and ExecuteResponses on output. Each is handled exactly
+as if it came in a message of its own, so a sender packs everything it has
+ready into one message rather than paying for a message per record.
 
 ExecuteRequest contains store_name, a consecutive one-based index and Command.
 Commands select one ReadRequest, MutateRequest or NativeRequest; a
@@ -23,9 +28,10 @@ and a body content type. Shared validation checks envelopes while each adapter
 interprets its content type and bytes.
 
 ExecuteResponse contains index and Event. Each record result is emitted as soon
-as its record completes, so results arrive in completion order and clients match
-them by index. A record the server cannot admit, such as one its adapter rejects
-or one sent while the Store drains, receives its own NOT_STARTED result. A
+as its record completes, together with any other result already waiting, so
+results arrive in completion order and clients match them by index. A record the
+server cannot admit, such as one its adapter rejects or one sent while the Store
+drains, receives its own NOT_STARTED result. A
 request that fails validation, changes the Store or kind, breaks the index
 sequence or cancels a record not yet sent ends the stream with INVALID_ARGUMENT,
 after the results of records already admitted. `timeout_micros` bounds one
@@ -68,4 +74,4 @@ schemas, generated Go bindings and shared validation. Both Weir and
 The SDK has no dependency on the server, and the server binary does not use the
 SDK; only server tests consume it. Clients in other languages can generate the
 public schema and implement load balancing and typed completion handling. Weir
-uses protocol v0.16.0 and Go SDK v0.18.0.
+uses protocol v0.17.0 and Go SDK v0.19.0.

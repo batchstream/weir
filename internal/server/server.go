@@ -14,6 +14,14 @@ import (
 // MaxMessageBytes bounds every request and response message.
 const MaxMessageBytes = 64 << 20
 
+// Fixed flow-control windows: each stream may have streamWindowBytes of input
+// in flight and each connection connectionWindowBytes, the largest window
+// gRPC's bandwidth estimation grows to.
+const (
+	streamWindowBytes     = 1 << 20
+	connectionWindowBytes = 16 << 20
+)
+
 // RecordStreamItems bounds the records one stream has queued or awaiting
 // delivery; clients rely on the protocol window.
 const RecordStreamItems = protocol.RecordWindow
@@ -72,6 +80,10 @@ func New(cfg Config) *Server {
 		grpc.KeepaliveParams(keepaliveParameters),
 		grpc.WaitForHandlers(true),
 		grpc.ConnectionTimeout(l.Handshake),
+		// Fixed flow-control windows turn off gRPC's bandwidth estimation,
+		// which pings a client every round trip while data flows.
+		grpc.InitialWindowSize(streamWindowBytes),
+		grpc.InitialConnWindowSize(connectionWindowBytes),
 	}
 	s.grpc = grpc.NewServer(options...)
 	pb.RegisterStoreServiceServer(s.grpc, s)
