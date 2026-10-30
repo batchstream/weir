@@ -22,19 +22,20 @@ MongoDB with `w:majority`):
 
 | Concurrent writers | MongoDB ops/s, direct → Weir | Elasticsearch ops/s, direct → Weir |
 | --: | --- | --- |
-| 64 | 7.8k → 9.9k (1.3×) | 9.5k → 9.0k (0.95×) |
-| 256 | 6.1k → 13.7k (2.2×) | 24.3k → 23.8k (0.98×) |
-| 1,024 | 5.2k → 12.2k (2.3×) | 23.6k → 57.9k (2.5×) |
-| 2,048 | 5.0k → 12.6k (2.5×) | 21.8k → 70.8k (3.3×) |
+| 64 | 7.7k → 9.6k (1.2×) | 9.3k → 9.1k (0.97×) |
+| 256 | 6.0k → 14.0k (2.3×) | 22.6k → 24.6k (1.1×) |
+| 1,024 | 5.0k → 11.5k (2.3×) | 22.3k → 62.6k (2.8×) |
+| 2,048 | 4.7k → 12.4k (2.7×) | 20.6k → 86.1k (4.2×) |
 
 At 2,048 writers, direct writes held about 2,100 database connections against
-about 20 for one Weir Store, and median latency was 3.4–3.7× lower. Database CPU
-per write fell to 22–43% of the direct cost. Counting Weir's own CPU (about one
-core for MongoDB, five at 70k Elasticsearch writes/s), total CPU per write fell
-by a third or more for MongoDB; for Elasticsearch it was higher and broke even
-only at 2,048 writers. With few writers, throughput stays close to direct writes
-and median latency can rise by up to 2 ms; the gain grows with the number of
-concurrent writers. The workload tools live in
+about 20 for one Weir Store, and median latency was 3.7–5.2× lower. Across
+writer counts, database CPU per write fell to 21–44% of the direct cost.
+Counting Weir's own CPU (about half a core for MongoDB, three and a half at 86k
+Elasticsearch writes/s), total CPU per write fell by about half for MongoDB; for
+Elasticsearch it was higher at 64 writers, about equal at 256 and 27–37% lower
+from 1,024. With few writers, throughput stays close to direct writes and median
+latency can rise by up to 3 ms; the gain grows with the number of concurrent
+writers. The workload tools live in
 [weir-tests](https://github.com/batchstream/weir-tests).
 
 ## Build and run
