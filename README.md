@@ -8,6 +8,35 @@ Clients connect to one Weir address and name the Store in each request. Every
 server behind the address hosts the same Stores, so servers share nothing and
 scale by adding replicas. Each server runs one process, including Lua evaluation.
 
+## Why Weir
+
+Fleets of workers, such as distributed crawlers, often write each result as its
+own request, and every worker process keeps its own connection pool. Routed
+through Weir, those writers share a small set of backend connections per Store,
+and their concurrent single-record writes become native MongoDB `bulkWrite` and
+Search `_bulk` calls.
+
+On EKS, 16 client processes sent single 1 KiB upserts to a 2-vCPU database,
+directly or through one Weir server on its own node (medians of three rounds,
+MongoDB with `w:majority`):
+
+| Concurrent writers | MongoDB ops/s, direct → Weir | Elasticsearch ops/s, direct → Weir |
+| --: | --- | --- |
+| 64 | 7.8k → 9.9k (1.3×) | 9.5k → 9.0k (0.95×) |
+| 256 | 6.1k → 13.7k (2.2×) | 24.3k → 23.8k (0.98×) |
+| 1,024 | 5.2k → 12.2k (2.3×) | 23.6k → 57.9k (2.5×) |
+| 2,048 | 5.0k → 12.6k (2.5×) | 21.8k → 70.8k (3.3×) |
+
+At 2,048 writers, direct writes held about 2,100 database connections against
+about 20 for one Weir Store, and median latency was 3.4–3.7× lower. Database CPU
+per write fell to 22–43% of the direct cost. Counting Weir's own CPU (about one
+core for MongoDB, five at 70k Elasticsearch writes/s), total CPU per write fell
+by a third or more for MongoDB; for Elasticsearch it was higher and broke even
+only at 2,048 writers. With few writers, throughput stays close to direct writes
+and median latency can rise by up to 2 ms; the gain grows with the number of
+concurrent writers. The workload tools live in
+[weir-tests](https://github.com/batchstream/weir-tests).
+
 ## Build and run
 
 Requires Go **1.27.1**. Server builds support Linux and macOS on amd64 and arm64.
@@ -98,7 +127,7 @@ Native request formats, and the [Lua guide](docs/lua.md) for transforms.
 ## Batching and operation
 
 Each Store defaults to a waiting queue of 1024 operations / 32 MiB, batches of
-128 operations / 4 MiB, a 20 ms write collection window and 16 active executions.
+128 operations / 4 MiB, a 1 ms write collection window and 16 active executions.
 Reads combine already queued compatible reads without waiting for new arrivals.
 Full queues apply backpressure until dispatch or caller cancellation.
 

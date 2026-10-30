@@ -15,7 +15,7 @@ request -> bounded Store queue -> compatible batch -> backend -> ordered result
 | Queue bytes | 32 MiB (fixed) | Waiting input and scheduler metadata |
 | `batching.max_operations` | 128 | Selected records per batch |
 | `batching.max_bytes` | 4 MiB | Input estimate and final Search NDJSON aggregation target |
-| `batching.max_wait` | 20 ms | Maximum write collection age; explicit `0s` disables collection |
+| `batching.max_wait` | 1 ms | Maximum write collection age; explicit `0s` disables collection |
 | `batching.max_in_flight` | 16 | Simultaneous backend executions |
 | Exchange bytes | 32 MiB (fixed) | Adapter request/response grouping target |
 
@@ -87,6 +87,9 @@ membership varies with arrivals and available capacity.
 ## Workload calibration
 
 Start with defaults and vary count, bytes, wait and concurrency independently.
+The short default wait adds at most about 1 ms to an isolated write. Under
+sustained concurrency, compatible writes accumulate while all execution slots
+are busy, so batch size follows backend execution time rather than the wait.
 Increasing `max_operations` cannot create compatible arrivals. Longer collection
 can reduce backend calls while increasing latency; more execution slots can keep
 the backend busy while increasing small concurrent requests and retained memory.

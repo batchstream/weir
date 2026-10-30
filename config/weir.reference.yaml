@@ -63,10 +63,10 @@ stores:
       max_operations: 128
       # Request bytes per execution. Default: 4MiB. A larger record runs alone.
       max_bytes: 4MiB
-      # Wait for more writes after the oldest one arrives. Default: 20ms;
+      # Wait for more writes after the oldest one arrives. Default: 1ms;
       # 0s executes immediately. Full batches, reads, Native commands, drain and
       # shorter caller deadlines do not wait.
-      max_wait: 20ms
+      max_wait: 1ms
       # Concurrent backend executions per Store, including Search visibility
       # waits. Default: 16. Native commands use a separate limit of 64.
       max_in_flight: 16

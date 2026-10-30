@@ -57,7 +57,7 @@ and exactly one `mongodb` or `search` backend.
 | `tls.ca_file` | system roots | Custom CA bundle |
 | `batching.max_operations` | 128 | Records per backend execution |
 | `batching.max_bytes` | 4 MiB | Request bytes per execution; one larger record runs alone |
-| `batching.max_wait` | `20ms` | Write collection window; explicit `0s` executes immediately |
+| `batching.max_wait` | `1ms` | Write collection window; explicit `0s` executes immediately |
 | `batching.max_in_flight` | 16 | Concurrent backend executions per Store |
 
 The waiting queue holds 1024 operations / 32 MiB, and Native commands run in
