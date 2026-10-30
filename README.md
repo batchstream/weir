@@ -88,7 +88,7 @@ authentication and per-member TLS requirements.
 The SDK is an independent module, [weir-go](https://github.com/batchstream/weir-go).
 
 ```sh
-go get github.com/batchstream/weir-go@v0.17.0
+go get github.com/batchstream/weir-go@v0.18.0
 ```
 
 ```go

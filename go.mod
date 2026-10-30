@@ -3,7 +3,7 @@ module github.com/batchstream/weir
 go 1.27.1
 
 require (
-	github.com/batchstream/weir-go v0.17.0
+	github.com/batchstream/weir-go v0.18.0
 	github.com/batchstream/weir-protocol v0.16.0
 	github.com/iceisfun/golua v1.1.1
 	github.com/prometheus/client_golang v1.23.2
