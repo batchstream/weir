@@ -43,6 +43,8 @@ jobs:
           build-args: REVISION=${{ github.sha }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          sbom: true
+          provenance: mode=max
           push: true
       - name: Smoke-run the published image
         env:
