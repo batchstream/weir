@@ -91,8 +91,8 @@ func TestProcessFaults(t *testing.T) {
 	if err != nil {
 		t.Fatal("SDK client", err)
 	}
-	t.Cleanup(func() { _ = client.Close() })
 	suite := processFaultSuite{process: process, client: client, pid: processFaultPID(t, process)}
+	t.Cleanup(func() { _ = suite.client.Close() })
 	backends := []processFaultBackend{
 		{store: "mongo", root: mongo.DB + "/records", media: "application/bson", mongo: mongo, mongoProxy: mongoProxy},
 		{store: "search", root: search.Index, media: "application/json", search: search, searchProxy: searchProxy},
@@ -295,7 +295,7 @@ func processFaultHealthy(t *testing.T, suite *processFaultSuite, backend process
 		t.Logf("baseline backend=%s method=%s elapsed=%s", backend.store, kind, elapsed)
 	}
 	processFaultCRUD(t, suite, backend, "baseline-crud")
-	processFaultIdle(t, suite.process, 3*time.Second)
+	processFaultIdle(t, suite, 3*time.Second)
 }
 
 func processFaultArm(backend processFaultBackend, id, mode string) *processFaultGate {
@@ -452,7 +452,7 @@ func processFaultLostAck(t *testing.T, suite *processFaultSuite, backend process
 	if n != 1 || backend.search != nil && actualVersion != version+1 || counts.writes != 1 || counts.acks != 1 || counts.drops != 1 {
 		t.Fatal("non-idempotent mutation replay or missing ack-loss evidence", n, actualVersion, version, counts)
 	}
-	processFaultIdle(t, suite.process, 3*time.Second)
+	processFaultIdle(t, suite, 3*time.Second)
 	t.Logf("ack_loss backend=%s method=%s elapsed=%s oracle_n=%d version_before=%d version_after=%d writes=%d acks=%d drops=%d", backend.store, mode, time.Since(start), n, version, actualVersion, counts.writes, counts.acks, counts.drops)
 }
 
@@ -487,7 +487,7 @@ func processFaultCancelAfterAck(t *testing.T, suite *processFaultSuite, backend 
 	case <-time.After(3 * time.Second):
 		t.Fatal("caller cancellation exceeded 3s")
 	}
-	processFaultIdle(t, suite.process, max(0, 3*time.Second-time.Since(start)))
+	processFaultIdle(t, suite, max(0, 3*time.Second-time.Since(start)))
 	gate.close()
 	time.Sleep(200 * time.Millisecond)
 	n, actualVersion := processFaultOracle(t, backend, id)
@@ -544,7 +544,7 @@ func processFaultSlowIO(t *testing.T, suite *processFaultSuite, backend processF
 	case <-time.After(3 * time.Second):
 		t.Fatal("held IO caller did not cancel")
 	}
-	processFaultIdle(t, suite.process, max(0, 3*time.Second-time.Since(cancelled)))
+	processFaultIdle(t, suite, max(0, 3*time.Second-time.Since(cancelled)))
 	gate.close()
 	t.Logf("held_IO_cancel backend=%s elapsed=%s", backend.store, time.Since(cancelled))
 }
@@ -597,7 +597,7 @@ func processFaultUnavailable(t *testing.T, suite *processFaultSuite, backend pro
 	if actualPID != suite.pid {
 		t.Fatal("recovery replaced the service process", suite.pid, actualPID)
 	}
-	processFaultIdle(t, suite.process, 3*time.Second)
+	processFaultIdle(t, suite, 3*time.Second)
 	t.Logf("proxy_recovered backend=%s elapsed=%s PID=%s", backend.store, time.Since(start), suite.pid)
 }
 
@@ -655,13 +655,31 @@ func processFaultCRUD(t *testing.T, suite *processFaultSuite, backend processFau
 	}
 }
 
-func processFaultIdle(t *testing.T, process *cliContainer, bound time.Duration) {
+// processFaultIdle waits for every work gauge to return to zero within bound.
+// The suite's Client keeps idle shared streams open, so Store work must drain
+// first with the Client still connected; the Client is then replaced and its
+// sessions must end within the same bound.
+func processFaultIdle(t *testing.T, suite *processFaultSuite, bound time.Duration) {
 	t.Helper()
-	start := time.Now()
+	deadline := time.Now().Add(bound)
+	work := []string{"weir_store_active_executions", "weir_store_active_natives", "weir_store_queued_operations", "weir_store_queued_bytes", "weir_memory_overloaded"}
+	processFaultZero(t, suite.process, work, deadline)
+	_ = suite.client.Close()
+	client, err := weirclient.New(suite.process.address)
+	if err != nil {
+		t.Fatal("SDK client", err)
+	}
+	suite.client = client
+	sessions := []string{"weir_ingress_sessions"}
+	processFaultZero(t, suite.process, sessions, deadline)
+}
+
+func processFaultZero(t *testing.T, process *cliContainer, names []string, deadline time.Time) {
+	t.Helper()
 	for {
 		metrics := process.sample(t)
 		nonzero := make(map[string]float64)
-		for _, name := range []string{"weir_store_active_executions", "weir_store_active_natives", "weir_store_queued_operations", "weir_store_queued_bytes", "weir_ingress_sessions", "weir_memory_overloaded"} {
+		for _, name := range names {
 			if metrics[name] == nil {
 				t.Fatal("missing cleanup gauge", name)
 			}
@@ -669,8 +687,8 @@ func processFaultIdle(t *testing.T, process *cliContainer, bound time.Duration) 
 				nonzero[name] = value
 			}
 		}
-		if time.Since(start) >= bound {
-			t.Fatal("work failed its fixed cleanup bound", time.Since(start), nonzero)
+		if !time.Now().Before(deadline) {
+			t.Fatal("work failed its fixed cleanup bound", time.Since(deadline), nonzero)
 		}
 		if len(nonzero) == 0 {
 			return
