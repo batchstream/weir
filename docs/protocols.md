@@ -32,15 +32,15 @@ after the results of records already admitted. `timeout_micros` bounds one
 record from when the server reads it: a record still queued when it expires
 fails with DEADLINE_EXCEEDED, NOT_STARTED for a mutation. A request carrying
 only `store_name` and `cancel_index` cancels that earlier record alone; the
-record still receives its own result. One goroutine reads requests while
-another queues records in stream order, so a full Store queue never delays a
-cancel request, and a record still waiting to be queued reports at once. Each
-stream has room for the protocol's 32 records without results; the server
-reads one record beyond that and then waits for a result to free room. Native
-emits typed events at index 1 and require a valid terminal Event plus final gRPC
-OK. Receiving and publication run concurrently. The Store scheduler aggregates compatible records within and across
-clients. Clients send and receive concurrently to permit backpressure in both
-directions.
+record still receives its own result. One goroutine reads requests while another
+queues records in stream order, so a full Store queue never delays a cancel
+request, and a record still waiting to be queued reports at once. Each stream
+has room for the protocol's 32 records without results; the server reads one
+record beyond that and then waits for a result to free room. Native emits typed
+events at index 1 and requires a valid terminal Event plus final gRPC OK.
+Receiving and publication run concurrently. The Store scheduler aggregates
+compatible records within and across clients. Clients send and receive
+concurrently to permit backpressure in both directions.
 
 Request envelopes reject unknown fields, enum values and operation variants,
 because ignoring an unrecognized write condition or command option could change

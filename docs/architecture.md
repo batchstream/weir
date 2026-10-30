@@ -48,12 +48,12 @@ Active execution slots return when backend execution finishes. See
 
 Same-resource mutations within a stream execute in input order. Each plan keeps
 its own record context, bounded by the record's timeout, its stream and any
-cancel request naming it, and each
-result returns to the stream that submitted it under its ordinal, so equal
-ordinals in different RPCs cannot collide. A stream sends each result when its
-record completes. Canceling one record leaves other batch members active.
-Shared execution uses the latest participating deadline; an unbounded record
-keeps it unbounded. Canceling every record stops shared backend work.
+cancel request naming it, and each result returns to the stream that submitted
+it under its ordinal, so equal ordinals in different RPCs cannot collide. A
+stream sends each result when its record completes. Canceling one record leaves
+other batch members active. Shared execution uses the latest participating
+deadline; an unbounded record keeps it unbounded. Canceling every record stops
+shared backend work.
 
 Native is a singleton invocation that bypasses the record queue and execution
 slots. Each Store runs at most 64 Native commands; further ones wait for a free
