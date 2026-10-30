@@ -77,15 +77,17 @@ func recordResponses(ctx context.Context, client pb.StoreServiceClient, store st
 		}
 		sent <- stream.CloseSend()
 	}()
-	var responses []*pb.ExecuteResponse
+	// Results arrive in completion order; they are returned in input order.
+	responses := make([]*pb.ExecuteResponse, len(commands))
+	received := 0
 	for {
 		response, err := stream.Recv()
 		if err == io.EOF {
 			if err := <-sent; err != nil {
 				return nil, err
 			}
-			if len(responses) != len(commands) {
-				return nil, fmt.Errorf("received %d record results, expected %d", len(responses), len(commands))
+			if received != len(commands) {
+				return nil, fmt.Errorf("received %d record results, expected %d", received, len(commands))
 			}
 			return responses, nil
 		}
@@ -95,9 +97,10 @@ func recordResponses(ctx context.Context, client pb.StoreServiceClient, store st
 		if err := protocol.ValidateExecuteResponse(response); err != nil {
 			return nil, err
 		}
-		if response.Index != uint64(len(responses)+1) {
-			return nil, errors.New("nonconsecutive record result index")
+		if response.Index > uint64(len(commands)) || responses[response.Index-1] != nil {
+			return nil, errors.New("unexpected or duplicated record result index")
 		}
-		responses = append(responses, response)
+		responses[response.Index-1] = response
+		received++
 	}
 }

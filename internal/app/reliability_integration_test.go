@@ -194,6 +194,10 @@ func runLowLoadReliability(t *testing.T, probe reliabilityProbe) {
 			return
 		}
 	}
+	// Closing the Client ends the streams its single-record calls share.
+	if err := client.Close(); err != nil {
+		t.Fatal(err)
+	}
 	budgetWait(t, "low-load SDK resources drained", func() bool {
 		stats := probe.node.stores["records"].Stats()
 		metrics := testmetrics.Gather(t, probe.node.admission)
