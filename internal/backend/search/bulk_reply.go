@@ -38,8 +38,8 @@ type bulkReply struct {
 // decodeBulkReply reads a validated 200 _bulk reply in one pass. It requires
 // errors and took, and exactly one item per work: an object whose only name is
 // the work's action, naming the work's index and id. errors must be set
-// exactly when an item failed. Names match exactly, and a name that differs
-// from a known one only in case rejects the reply. Null reads as absent, and a
+// exactly when an item failed. Names match exactly, and an escaped name or one
+// that differs from a known name only in case rejects the reply. Null reads as absent, and a
 // value of another type rejects the reply.
 func decodeBulkReply(raw []byte, works []*execution.Plan) (bulkReply, bool) {
 	reply := bulkReply{}
@@ -222,8 +222,12 @@ func readError(decoder *jsontext.Decoder, item *bulkItem) bool {
 }
 
 // skipUnknown skips the value of an unknown name. A name that differs from one
-// of known only in case is ambiguous evidence and rejects the reply.
+// of known only in case, or any escaped name, may spell a known name and
+// rejects the reply.
 func skipUnknown(decoder *jsontext.Decoder, name []byte, known ...string) bool {
+	if bytes.IndexByte(name, '\\') >= 0 {
+		return false
+	}
 	unquoted := string(name[1 : len(name)-1])
 	for _, candidate := range known {
 		if strings.EqualFold(unquoted, candidate) {
