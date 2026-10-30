@@ -4,6 +4,7 @@ package server
 import (
 	"time"
 
+	"github.com/batchstream/weir-protocol/api/protocol"
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 	"github.com/batchstream/weir/internal/store"
 	"google.golang.org/grpc"
@@ -13,12 +14,14 @@ import (
 // MaxMessageBytes bounds every request and response message.
 const MaxMessageBytes = 64 << 20
 
-// RecordStreamItems bounds the records one stream has queued or awaiting delivery.
-const RecordStreamItems = 32
+// RecordStreamItems bounds the records one stream has queued or awaiting
+// delivery; clients rely on the protocol window.
+const RecordStreamItems = protocol.RecordWindow
 
 // Limits must start from DefaultLimits; zero values are not defaulted.
 type Limits struct {
-	MaxPendingRecords int
+	// recordWindow is the protocol's stream window; only tests shrink it.
+	recordWindow      int
 	KeepaliveInterval time.Duration
 	KeepaliveTimeout  time.Duration
 	Stall             time.Duration
@@ -31,7 +34,7 @@ type Limits struct {
 }
 
 func DefaultLimits() Limits {
-	limits := Limits{MaxPendingRecords: RecordStreamItems, KeepaliveInterval: 30 * time.Second, KeepaliveTimeout: 5 * time.Second, Stall: 30 * time.Second, Handshake: 5 * time.Second, Idle: time.Minute, MaxConnectionAge: 5 * time.Minute}
+	limits := Limits{recordWindow: RecordStreamItems, KeepaliveInterval: 30 * time.Second, KeepaliveTimeout: 5 * time.Second, Stall: 30 * time.Second, Handshake: 5 * time.Second, Idle: time.Minute, MaxConnectionAge: 5 * time.Minute}
 	return limits
 }
 
