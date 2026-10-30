@@ -36,8 +36,8 @@ repository.
 Execute is a finite bidirectional stream selecting one Store and one operation
 kind. Each Read/Mutate request carries one resource and a consecutive one-based
 ordinal. Receiving and publication proceed concurrently: each result is sent as
-its record completes, and a stream holds at most the protocol's 32 records
-without results. The server does not retain a whole-call request/result table.
+its record completes, packed into one message with any other result already
+waiting, and a stream holds at most the protocol's 32 records without results. The server does not retain a whole-call request/result table.
 
 Validated records enter one Store scheduler. It combines compatible records from
 one or several streams using count and byte targets. Reads and mutations form
@@ -115,8 +115,11 @@ The application listener serves only StoreService, over plaintext gRPC on an
 isolated network. A stalled input or output
 cancels only its RPC after the stall timeout: the handler and its Store work end
 at once, but gRPC keeps the stream's last unsent message until the client reads
-it or the connection closes. Keepalive pings and the idle and handshake timeouts
-close unresponsive connections. Every connection ends with GOAWAY after about
+it or the connection closes. HTTP/2 flow control uses fixed windows of 1 MiB per
+stream and 16 MiB per connection rather than gRPC's bandwidth estimation, which
+pings each client every round trip while data flows. Keepalive pings and the
+idle and handshake timeouts close unresponsive connections. Every connection
+ends with GOAWAY after about
 five minutes so clients re-resolve their address; running streams finish first.
 Confirmed write evidence remains valid.
 
