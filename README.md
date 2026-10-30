@@ -12,8 +12,8 @@ scale by adding replicas. Each server runs one process, including Lua evaluation
 
 Fleets of workers, such as distributed crawlers, often write each result as its
 own request, and every worker process keeps its own connection pool. Routed
-through Weir, those writers share a few backend connections per server, and
-their concurrent single-record writes become native MongoDB `bulkWrite` and
+through Weir, those writers share a small set of backend connections per Store,
+and their concurrent single-record writes become native MongoDB `bulkWrite` and
 Search `_bulk` calls.
 
 On EKS, 16 client processes sent single 1 KiB upserts to a 2-vCPU database,
@@ -27,13 +27,15 @@ MongoDB with `w:majority`):
 | 1,024 | 5.2k → 12.2k (2.3×) | 23.6k → 57.9k (2.5×) |
 | 2,048 | 5.0k → 12.6k (2.5×) | 21.8k → 70.8k (3.3×) |
 
-At 2,048 writers, direct writes held about 2,100 database connections and Weir
-about 20, and median latency was about 3.5× lower through Weir. Across the runs,
-database CPU per write fell to between a quarter and a half of the direct cost.
-Weir itself used about one core for MongoDB and five cores at 70k Elasticsearch
-writes/s. While the database still has headroom, throughput stays close to
-direct writes; the gain grows once direct writes saturate it. The workload tools
-live in [weir-tests](https://github.com/batchstream/weir-tests).
+At 2,048 writers, direct writes held about 2,100 database connections against
+about 20 for one Weir Store, and median latency was 3.4–3.7× lower. Database CPU
+per write fell to 22–43% of the direct cost. Counting Weir's own CPU (about one
+core for MongoDB, five at 70k Elasticsearch writes/s), total CPU per write fell
+by a third or more for MongoDB; for Elasticsearch it was higher and broke even
+only at 2,048 writers. With few writers, throughput stays close to direct writes
+and median latency can rise by up to 2 ms; the gain grows with the number of
+concurrent writers. The workload tools live in
+[weir-tests](https://github.com/batchstream/weir-tests).
 
 ## Build and run
 

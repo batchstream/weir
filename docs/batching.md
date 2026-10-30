@@ -87,12 +87,12 @@ membership varies with arrivals and available capacity.
 ## Workload calibration
 
 Start with defaults and vary count, bytes, wait and concurrency independently.
-The short default wait keeps sparse traffic close to direct latency; under
-concurrency, batches fill, or arrivals accumulate behind busy execution slots,
-well before it ends. Increasing `max_operations` cannot create compatible
-arrivals. Longer collection can reduce backend calls while increasing latency;
-more execution slots can keep the backend busy while increasing small concurrent
-requests and retained memory.
+The short default wait adds at most about 1 ms to an isolated write. Under
+sustained concurrency, compatible writes accumulate while all execution slots
+are busy, so batch size follows backend execution time rather than the wait.
+Increasing `max_operations` cannot create compatible arrivals. Longer collection
+can reduce backend calls while increasing latency; more execution slots can keep
+the backend busy while increasing small concurrent requests and retained memory.
 Query-visible Search writes include refresh waits in their execution slots.
 
 Compare equivalent native and Weir traffic with matching durability, visibility,
