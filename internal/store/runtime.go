@@ -69,6 +69,14 @@ type Runtime struct {
 // one at a time, in submission order.
 type Session struct {
 	runtime *Runtime
+	// results, when set, receives each record's final event as it completes.
+	results chan<- Result
+}
+
+// Result is the final event of one record submitted to a stream session.
+type Result struct {
+	Index uint64
+	Event *pb.Event
 }
 
 // Ticket is one queued operation. Wait returns its final event.
@@ -127,7 +135,24 @@ func (r *Runtime) NewSession() *Session {
 	return session
 }
 
+// NewStreamSession returns a session that reports each record's final event to
+// results in completion order. results must have room for every record the
+// stream has submitted and not yet received; completion never waits for it.
+func (r *Runtime) NewStreamSession(results chan<- Result) *Session {
+	session := &Session{runtime: r, results: results}
+	return session
+}
+
+// PrepareRecord refuses a record while the Store drains or the process is
+// overloaded, as Submit does, so a record on a stream that outlives the
+// Store's adapter is refused rather than prepared by a closed adapter.
 func (r *Runtime) PrepareRecord(ctx context.Context, record *execution.Record) (*execution.Plan, *pb.Failure) {
+	r.mu.Lock()
+	refusal := r.refusalLocked()
+	r.mu.Unlock()
+	if refusal != nil {
+		return nil, refusal
+	}
 	plan, failure := r.adapter.PrepareRecord(ctx, record)
 	if failure != nil {
 		r.metrics.rejections.WithLabelValues("prepare").Inc()
@@ -137,6 +162,7 @@ func (r *Runtime) PrepareRecord(ctx context.Context, record *execution.Record) (
 		return nil, protocol.Fail(pb.FailureCode_INTERNAL, "invalid prepared record")
 	}
 	plan.Bytes = max(plan.Bytes, record.Bytes())
+	plan.Index = record.Index()
 	return plan, nil
 }
 
@@ -173,18 +199,26 @@ func (r *Runtime) SubmitNative(ctx context.Context, plan *execution.Plan, emit e
 	return r.enqueue(ctx, ticket)
 }
 
+// refusalLocked reports why the Store refuses new work, if it does.
+func (r *Runtime) refusalLocked() *pb.Failure {
+	if r.draining || r.closed {
+		r.metrics.rejections.WithLabelValues("draining").Inc()
+		return protocol.Fail(pb.FailureCode_UNAVAILABLE, "store draining")
+	}
+	if r.overloaded {
+		r.metrics.rejections.WithLabelValues("overload").Inc()
+		return protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "process overloaded")
+	}
+	return nil
+}
+
 func (r *Runtime) enqueue(ctx context.Context, ticket *Ticket) (*Ticket, *pb.Failure) {
 	native := ticket.plan.Command.GetNative() != nil
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	for {
-		if r.draining || r.closed {
-			r.metrics.rejections.WithLabelValues("draining").Inc()
-			return nil, protocol.Fail(pb.FailureCode_UNAVAILABLE, "store draining")
-		}
-		if r.overloaded {
-			r.metrics.rejections.WithLabelValues("overload").Inc()
-			return nil, protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "process overloaded")
+		if refusal := r.refusalLocked(); refusal != nil {
+			return nil, refusal
 		}
 		if ctx.Err() != nil {
 			return nil, protocol.ContextFailure(ctx)
@@ -611,6 +645,15 @@ func (r *Runtime) completeLocked(t *Ticket, event *pb.Event) {
 	r.metrics.observe(t.plan.Command, event)
 	t.cancel()
 	close(t.done)
+	if t.session == nil || t.session.results == nil {
+		return
+	}
+	result := Result{Index: t.plan.Index, Event: event}
+	select {
+	case t.session.results <- result:
+	default:
+		panic("stream session results exceed their reserved capacity")
+	}
 }
 
 func (r *Runtime) SetOverloaded(value bool) {

@@ -17,7 +17,9 @@ type Plan struct {
 	// BatchKey groups compatible records into one adapter invocation.
 	BatchKey string
 	// Bytes is the request size used for queue and batch bounds.
-	Bytes   int
+	Bytes int
+	// Index is the record's one-based ordinal in its stream.
+	Index   uint64
 	Context context.Context
 	Backend any
 }

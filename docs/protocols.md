@@ -1,6 +1,6 @@
 # Protocol
 
-The public contract is [store.proto](https://github.com/batchstream/weir-protocol/blob/v0.15.0/api/weir/v1/store.proto),
+The public contract is [store.proto](https://github.com/batchstream/weir-protocol/blob/v0.16.0/api/weir/v1/store.proto),
 package weir.v1. Clients connect to a Weir application address and name the
 Store in each request. A server that does not host the named Store fails the RPC
 with NotFound.
@@ -22,12 +22,25 @@ a resource and an opaque request Document; NativeHead carries optional metadata
 and a body content type. Shared validation checks envelopes while each adapter
 interprets its content type and bytes.
 
-ExecuteResponse contains index and Event. Record results are emitted individually
-in ordinal order. Native emits typed events at index 1 and require a valid
-terminal Event plus final gRPC OK. Receiving and publication run concurrently
-through a bounded ticket queue. The Store scheduler aggregates compatible records
-within and across clients. Clients send and receive concurrently to permit
-backpressure in both directions.
+ExecuteResponse contains index and Event. Each record result is emitted as soon
+as its record completes, so results arrive in completion order and clients match
+them by index. A record the server cannot admit, such as one its adapter rejects
+or one sent while the Store drains, receives its own NOT_STARTED result. A
+request that fails validation, changes the Store or kind, breaks the index
+sequence or cancels a record not yet sent ends the stream with INVALID_ARGUMENT,
+after the results of records already admitted. `timeout_micros` bounds one
+record from when the server reads it: a record still queued when it expires
+fails with DEADLINE_EXCEEDED, NOT_STARTED for a mutation. A request carrying
+only `store_name` and `cancel_index` cancels that earlier record alone; the
+record still receives its own result. One goroutine reads requests while another
+queues records in stream order, so a full Store queue never delays a cancel
+request, and a record still waiting to be queued reports at once. Each stream
+has room for the protocol's 32 records without results; the server reads one
+record beyond that and then waits for a result to free room. Native emits typed
+events at index 1 and requires a valid terminal Event plus final gRPC OK.
+Receiving and publication run concurrently. The Store scheduler aggregates
+compatible records within and across clients. Clients send and receive
+concurrently to permit backpressure in both directions.
 
 Request envelopes reject unknown fields, enum values and operation variants,
 because ignoring an unrecognized write condition or command option could change
@@ -55,4 +68,4 @@ schemas, generated Go bindings and shared validation. Both Weir and
 The SDK has no dependency on the server, and the server binary does not use the
 SDK; only server tests consume it. Clients in other languages can generate the
 public schema and implement load balancing and typed completion handling. Weir
-uses protocol v0.15.0 and Go SDK v0.17.0.
+uses protocol v0.16.0 and Go SDK v0.18.0.

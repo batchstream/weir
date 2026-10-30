@@ -88,7 +88,7 @@ authentication and per-member TLS requirements.
 The SDK is an independent module, [weir-go](https://github.com/batchstream/weir-go).
 
 ```sh
-go get github.com/batchstream/weir-go@v0.17.0
+go get github.com/batchstream/weir-go@v0.18.0
 ```
 
 ```go
@@ -116,9 +116,12 @@ for _, result := range results {
 }
 ```
 
-Read and Mutate publish indexed results in input order. Stream variants accept
-incremental producers and consumers. Same-resource mutations within a stream
-execute in input order; Mutate is not an application transaction. Unconfirmed
+Read and Mutate publish each indexed result as its record completes; the
+collecting calls return results in input order. Stream variants accept
+incremental producers and consumers. Single-record Client calls share a bounded
+set of long-lived streams, so concurrent callers in one process pay for few
+gRPC streams. Same-resource mutations within a stream execute in input order;
+Mutate is not an application transaction. Unconfirmed
 writes after transport failure remain indeterminate and are never automatically
 replayed. `QUERY_VISIBLE` requests completion visible to subsequent queries.
 See [payload contracts](docs/payloads.md) for resources, mutation outcomes and

@@ -602,6 +602,26 @@ func TestOverloadAndDrainRejectSubmissions(t *testing.T) {
 	close(release)
 }
 
+func TestRefusingRuntimeRefusesRecordsBeforeTheAdapterPreparesThem(t *testing.T) {
+	record, err := execution.NewRecord("records", 1, readPlan("database/collection/s:a").Command)
+	if err != nil {
+		t.Fatal(err)
+	}
+	overloaded := open(t, &fakeAdapter{}, limits(nil))
+	overloaded.SetOverloaded(true)
+	if _, failure := overloaded.PrepareRecord(t.Context(), record); failure.GetCode() != pb.FailureCode_RESOURCE_EXHAUSTED {
+		t.Fatal("overloaded runtime prepared a record", failure)
+	}
+	// A stream can outlive its Store's adapter during shutdown.
+	closed := open(t, &fakeAdapter{}, limits(nil))
+	if err := closed.Close(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if _, failure := closed.PrepareRecord(t.Context(), record); failure.GetCode() != pb.FailureCode_UNAVAILABLE {
+		t.Fatal("closed runtime prepared a record", failure)
+	}
+}
+
 func TestQueuedCancellationCompletesNotStarted(t *testing.T) {
 	adapter := &fakeAdapter{started: make(chan []*execution.Plan, 8)}
 	release := make(chan struct{})

@@ -183,7 +183,7 @@ func (adapter *orderedRecordAdapter) ExecuteRecords(ctx context.Context, plans [
 	}
 	return adapter.recordAdapter.ExecuteRecords(ctx, plans)
 }
-func TestRecordStreamPublishesFIFOAfterOutOfOrderBackendCompletion(t *testing.T) {
+func TestRecordStreamPublishesEachResultWhenItsRecordCompletes(t *testing.T) {
 	gate := make(chan struct{})
 	defer func() {
 		select {
@@ -232,20 +232,18 @@ func TestRecordStreamPublishesFIFOAfterOutOfOrderBackendCompletion(t *testing.T)
 			responses <- response
 		}
 	}()
-	select {
-	case response := <-responses:
-		t.Fatal("later completion bypassed first record", response)
-	default:
-	}
-	close(gate)
-	for index := uint64(1); index <= 2; index++ {
+	// The second record's result must not wait behind the blocked first one.
+	for _, index := range []uint64{2, 1} {
 		select {
 		case response := <-responses:
 			if response.Index != index {
-				t.Fatal("response reordered", response)
+				t.Fatal("result waited for an earlier record", response)
 			}
 		case <-ctx.Done():
 			t.Fatal("response publication stalled")
+		}
+		if index == 2 {
+			close(gate)
 		}
 	}
 	if err := <-done; err != io.EOF {
@@ -346,11 +344,14 @@ func TestRecordStreamInvalidQueuedTailPublishesAdmittedPrefix(t *testing.T) {
 		t.Fatal("valid prefix was not admitted")
 	}
 	close(gate)
-	for index := uint64(1); index <= 2; index++ {
+	// Results arrive in completion order.
+	seen := make(map[uint64]bool)
+	for range 2 {
 		response, err := stream.Recv()
-		if err != nil || response.Index != index {
+		if err != nil || response.Index < 1 || response.Index > 2 || seen[response.Index] {
 			t.Fatal("invalid tail erased an admitted prefix result", response, err)
 		}
+		seen[response.Index] = true
 	}
 	if _, err := stream.Recv(); status.Code(err) != codes.InvalidArgument {
 		t.Fatal("invalid tail accepted", err)
@@ -386,7 +387,7 @@ func TestRecordInputStopsAtCountBoundBehindSlowOutput(t *testing.T) {
 		t.Run(fmt.Sprint(window), func(t *testing.T) {
 			_, local := localStore(t, "records")
 			transport := DefaultLimits()
-			transport.MaxPendingRecords = window
+			transport.recordWindow = window
 			opts := testServerOptions{stores: map[string]*store.Runtime{"records": local}, limits: transport}
 			server, _ := startTestServer(t, opts)
 			ctx, cancel := context.WithCancel(t.Context())
@@ -394,15 +395,18 @@ func TestRecordInputStopsAtCountBoundBehindSlowOutput(t *testing.T) {
 			stream := &blockedOutputStream{ctx: ctx}
 			done := make(chan error, 1)
 			go func() { done <- server.Execute(stream) }()
+			// The server reads one record past its window, which waits for a
+			// credit, so a cancel request behind a full window is still read.
+			bound := uint64(window) + 1
 			deadline := time.Now().Add(time.Second)
-			for stream.received.Load() < uint64(window) {
+			for stream.received.Load() < bound {
 				if time.Now().After(deadline) {
 					t.Fatal("pipeline did not fill its bounded count", stream.received.Load())
 				}
 				time.Sleep(time.Millisecond)
 			}
 			time.Sleep(50 * time.Millisecond)
-			if received := stream.received.Load(); received != uint64(window) {
+			if received := stream.received.Load(); received != bound {
 				t.Fatal("slow output did not pause request input", received)
 			}
 			cancel()
