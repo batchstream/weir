@@ -40,7 +40,7 @@ writers. The workload tools live in
 
 ## Build and run
 
-Requires Go **1.27.1**. Server builds support Linux and macOS on amd64 and arm64.
+Requires Go **1.27.3**. Server builds support Linux and macOS on amd64 and arm64.
 Typed operations require existing collections or indices. MongoDB requires an
 ordinary replica set and the native client `bulkWrite` command; Lua transforms
 also require transactions. Native commands can provision backend resources.
