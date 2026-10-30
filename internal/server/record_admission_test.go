@@ -10,6 +10,7 @@ import (
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 	"github.com/batchstream/weir/internal/execution"
 	"github.com/batchstream/weir/internal/store"
+	"github.com/batchstream/weir/internal/testutil"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -42,7 +43,7 @@ func recordResults(t *testing.T, client pb.StoreServiceClient, requests []*pb.Ex
 	t.Helper()
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
-	stream, err := client.Execute(ctx)
+	stream, err := testutil.Execute(ctx, client)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -127,7 +128,7 @@ func TestRecordStreamCancelReleasesOnlyItsRecordEvenWithAFullWindow(t *testing.T
 	client := routeAcceptanceClient(t, node.address)
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
-	stream, err := client.Execute(ctx)
+	stream, err := testutil.Execute(ctx, client)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -186,7 +187,7 @@ func TestRecordStreamCancelMustNameAnEarlierRecord(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 			defer cancel()
-			stream, err := client.Execute(ctx)
+			stream, err := testutil.Execute(ctx, client)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -226,7 +227,7 @@ func TestRecordStreamCancelIsReadWhileTheStoreQueueIsFull(t *testing.T) {
 	client := routeAcceptanceClient(t, node.address)
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
-	stream, err := client.Execute(ctx)
+	stream, err := testutil.Execute(ctx, client)
 	if err != nil {
 		t.Fatal(err)
 	}

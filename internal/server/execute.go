@@ -16,23 +16,29 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/proto"
 )
 
-type executeStream = grpc.BidiStreamingServer[pb.ExecuteRequest, pb.ExecuteResponse]
+type executeStream = grpc.BidiStreamingServer[pb.ExecuteRequests, pb.ExecuteResponses]
 
 var errNativeOutputClosed = errors.New("Native response no longer deliverable")
 
 // Execute serves one record stream or one Native command. Records are queued
-// as they arrive and each result is sent as soon as its record completes.
+// as they arrive and each result is sent as soon as its record completes,
+// together with any other result already waiting.
 func (s *Server) Execute(stream executeStream) error {
-	request, err := s.receive(stream)
+	message, err := s.receive(stream)
 	if err == io.EOF {
 		return status.Error(codes.InvalidArgument, "empty execution stream")
 	}
 	if err != nil {
 		return err
 	}
+	if err := protocol.ValidateExecuteRequests(message); err != nil {
+		return status.Error(codes.InvalidArgument, err.Error())
+	}
+	request := message.Requests[0]
 	if err := protocol.ValidateExecuteRequest(request); err != nil {
 		return status.Error(codes.InvalidArgument, err.Error())
 	}
@@ -45,6 +51,9 @@ func (s *Server) Execute(stream executeStream) error {
 		return status.Error(codes.NotFound, "Store is not hosted here")
 	}
 	if commandKind(request.Command) == "native" {
+		if len(message.Requests) != 1 {
+			return status.Error(codes.InvalidArgument, "Native requires exactly one request")
+		}
 		_, err = s.receive(stream)
 		if err != io.EOF {
 			if err != nil {
@@ -54,17 +63,17 @@ func (s *Server) Execute(stream executeStream) error {
 		}
 		return s.executeNative(stream, runtime, request.Command)
 	}
-	return s.executeRecords(stream, runtime, request)
+	return s.executeRecords(stream, runtime, message)
 }
 
-// receive reads one request; a client that sends nothing within Stall loses the RPC.
-func (s *Server) receive(stream executeStream) (*pb.ExecuteRequest, error) {
+// receive reads one message; a client that sends nothing within Stall loses the RPC.
+func (s *Server) receive(stream executeStream) (*pb.ExecuteRequests, error) {
 	timer := time.AfterFunc(s.limits.Stall, func() { s.cancelRPC(stream.Context(), "input") })
 	defer timer.Stop()
 	return stream.Recv()
 }
 
-func (s *Server) executeRecords(stream executeStream, runtime *store.Runtime, first *pb.ExecuteRequest) error {
+func (s *Server) executeRecords(stream executeStream, runtime *store.Runtime, first *pb.ExecuteRequests) error {
 	ctx, cancel := context.WithCancel(stream.Context())
 	window := s.limits.recordWindow
 	// Each credit reserves room for one record's result until it is sent.
@@ -113,11 +122,11 @@ func (s *Server) executeRecords(stream executeStream, runtime *store.Runtime, fi
 	for sent != end.admitted {
 		select {
 		case result := <-results:
-			if err := records.deliver(result); err != nil {
+			delivered, err := records.deliver(result)
+			sent += delivered
+			if err != nil {
 				return err
 			}
-			records.delivered(result.Index)
-			sent++
 		case end = <-received:
 			received = nil
 		case <-stream.Context().Done():
@@ -148,8 +157,9 @@ type recordStream struct {
 	admissions chan *admission
 	results    chan store.Result
 	// output cancels the RPC when one Send blocks for Stall; only the
-	// delivering goroutine arms it.
+	// delivering goroutine arms it and uses packed.
 	output *time.Timer
+	packed []*pb.ExecuteResponse
 
 	mu         sync.Mutex
 	waiting    bool
@@ -170,38 +180,47 @@ type admission struct {
 	claimed atomic.Bool
 }
 
-// receive reads requests until input ends. Each record takes a credit when it
-// is read, so a client within the window never waits to send a cancel request.
-func (r *recordStream) receive(ctx context.Context, first *pb.ExecuteRequest) receiveEnd {
-	storeName, kind := first.StoreName, commandKind(first.Command)
-	request := first
+// receive reads requests until input ends, each exactly as if it came in a
+// message of its own. Each record takes a credit when it is read, so a client
+// within the window never waits to send a cancel request.
+func (r *recordStream) receive(ctx context.Context, first *pb.ExecuteRequests) receiveEnd {
+	storeName, kind := first.Requests[0].StoreName, commandKind(first.Requests[0].Command)
+	requests := first.Requests
+	// Execute validated the stream's first request.
+	validated := true
 	var index uint64
 	for {
 		end := receiveEnd{admitted: index}
-		if request == nil {
-			var err error
-			request, err = r.next()
+		if len(requests) == 0 {
+			message, err := r.next()
 			if err == io.EOF {
 				return end
-			}
-			if err == nil {
-				err = protocol.ValidateExecuteRequest(request)
-				if err != nil {
-					err = status.Error(codes.InvalidArgument, err.Error())
-				}
 			}
 			if err != nil {
 				end.err = err
 				return end
 			}
+			if err := protocol.ValidateExecuteRequests(message); err != nil {
+				end.err = status.Error(codes.InvalidArgument, err.Error())
+				return end
+			}
+			requests = message.Requests
 		}
+		request := requests[0]
+		requests = requests[1:]
+		if !validated {
+			if err := protocol.ValidateExecuteRequest(request); err != nil {
+				end.err = status.Error(codes.InvalidArgument, err.Error())
+				return end
+			}
+		}
+		validated = false
 		if request.CancelIndex != 0 {
 			if request.StoreName != storeName || request.CancelIndex > index {
 				end.err = status.Error(codes.InvalidArgument, "cancel requests must name an earlier record of the stream")
 				return end
 			}
 			r.cancelRecord(request.CancelIndex)
-			request = nil
 			continue
 		}
 		index++
@@ -229,7 +248,6 @@ func (r *recordStream) receive(ctx context.Context, first *pb.ExecuteRequest) re
 		r.watchLocked()
 		r.mu.Unlock()
 		r.admissions <- next
-		request = nil
 	}
 }
 
@@ -277,7 +295,7 @@ func (r *recordStream) cancelRecord(index uint64) {
 	}
 }
 
-func (r *recordStream) next() (*pb.ExecuteRequest, error) {
+func (r *recordStream) next() (*pb.ExecuteRequests, error) {
 	r.mu.Lock()
 	r.waiting = true
 	r.watchLocked()
@@ -411,44 +429,98 @@ func nativeFailure(failure *pb.Failure) *pb.Event {
 
 // send delivers one response; a client that stops reading for Stall loses the RPC.
 func (s *Server) send(stream executeStream, index uint64, event *pb.Event) error {
-	response, err := executeResponse(index, event)
+	response, _, err := executeResponse(index, event)
 	if err != nil {
 		return err
 	}
 	timer := time.AfterFunc(s.limits.Stall, func() { s.cancelRPC(stream.Context(), "output") })
 	defer timer.Stop()
-	return sendResponse(stream, response)
+	message := &pb.ExecuteResponses{Responses: []*pb.ExecuteResponse{response}}
+	return sendResponses(stream, message)
 }
 
-// deliver sends one record result with the stream's reusable stall timer.
-func (r *recordStream) deliver(result store.Result) error {
-	response, err := executeResponse(result.Index, result.Event)
-	if err != nil {
-		return err
+// deliver sends result together with every result already waiting, in as few
+// messages as fit, and reports how many results it sent.
+func (r *recordStream) deliver(result store.Result) (uint64, error) {
+	var sent uint64
+	packed, bytes := r.packed[:0], 0
+	for {
+		response, size, err := executeResponse(result.Index, result.Event)
+		if err != nil {
+			// Results packed before an invalid one still leave first.
+			if len(packed) > 0 && r.sendPacked(packed) == nil {
+				sent += uint64(len(packed))
+			}
+			return sent, err
+		}
+		if len(packed) > 0 && bytes+size > MaxMessageBytes {
+			if err := r.sendPacked(packed); err != nil {
+				return sent, err
+			}
+			sent += uint64(len(packed))
+			packed, bytes = packed[:0], 0
+		}
+		packed = append(packed, response)
+		bytes += size
+		select {
+		case result = <-r.results:
+			continue
+		default:
+		}
+		break
 	}
+	err := r.sendPacked(packed)
+	if err == nil {
+		sent += uint64(len(packed))
+	}
+	clear(packed)
+	r.packed = packed[:0]
+	return sent, err
+}
+
+// sendPacked sends responses in one message with the stream's reusable stall
+// timer, then releases their records.
+func (r *recordStream) sendPacked(responses []*pb.ExecuteResponse) error {
 	if r.output == nil {
 		r.output = time.AfterFunc(r.server.limits.Stall, func() { r.server.cancelRPC(r.stream.Context(), "output") })
 	} else {
 		r.output.Reset(r.server.limits.Stall)
 	}
-	err = sendResponse(r.stream, response)
+	message := &pb.ExecuteResponses{Responses: responses}
+	err := sendResponses(r.stream, message)
 	r.output.Stop()
-	return err
+	if err != nil {
+		return err
+	}
+	for _, response := range responses {
+		r.delivered(response.Index)
+	}
+	return nil
 }
 
-func executeResponse(index uint64, event *pb.Event) (*pb.ExecuteResponse, error) {
+// executeResponse builds one validated response and reports its size within
+// an ExecuteResponses message. A result too large for a message of its own
+// becomes a failure.
+func executeResponse(index uint64, event *pb.Event) (*pb.ExecuteResponse, int, error) {
 	response := &pb.ExecuteResponse{Index: index, Event: event}
-	if proto.Size(response) > MaxMessageBytes {
+	size := packedSize(response)
+	if size > MaxMessageBytes {
 		response.Event = oversized(event)
+		size = packedSize(response)
 	}
 	if err := protocol.ValidateExecuteResponse(response); err != nil {
-		return nil, status.Error(codes.Internal, err.Error())
+		return nil, 0, status.Error(codes.Internal, err.Error())
 	}
-	return response, nil
+	return response, size, nil
 }
 
-func sendResponse(stream executeStream, response *pb.ExecuteResponse) error {
-	if err := stream.Send(response); err != nil {
+// packedSize is the bytes one response takes in an ExecuteResponses message.
+func packedSize(response *pb.ExecuteResponse) int {
+	return protowire.SizeTag(1) + protowire.SizeBytes(proto.Size(response))
+}
+
+func sendResponses(stream executeStream, message *pb.ExecuteResponses) error {
+	if err := stream.Send(message); err != nil {
 		return err
 	}
 	if err := stream.Context().Err(); err != nil {

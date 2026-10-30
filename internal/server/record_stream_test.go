@@ -37,7 +37,7 @@ func TestRecordStreamLongInputWithLargeResults(t *testing.T) {
 	_, client := testClient(t, address)
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
-	stream, err := client.Execute(ctx)
+	stream, err := testutil.Execute(ctx, client)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -74,7 +74,7 @@ func TestRecordStreamInvalidLaterFramePreservesPublishedResults(t *testing.T) {
 			opts := testServerOptions{stores: map[string]*store.Runtime{"records": local}}
 			server, address := startTestServer(t, opts)
 			_, client := testClient(t, address)
-			stream, err := client.Execute(t.Context())
+			stream, err := testutil.Execute(t.Context(), client)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -122,7 +122,7 @@ func TestRecordStreamIndexedOperationFailureDoesNotStopLaterResults(t *testing.T
 	opts := testServerOptions{stores: map[string]*store.Runtime{"records": local}}
 	server, address := startTestServer(t, opts)
 	_, client := testClient(t, address)
-	stream, err := client.Execute(t.Context())
+	stream, err := testutil.Execute(t.Context(), client)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -201,7 +201,7 @@ func TestRecordStreamPublishesEachResultWhenItsRecordCompletes(t *testing.T) {
 	client := routeAcceptanceClient(t, node.address)
 	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
 	defer cancel()
-	stream, err := client.Execute(ctx)
+	stream, err := testutil.Execute(ctx, client)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -270,7 +270,7 @@ func TestRecordStreamSingleRequestDoesNotExpireWhileBackendWorks(t *testing.T) {
 	client := routeAcceptanceClient(t, node.address)
 	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
 	defer cancel()
-	stream, err := client.Execute(ctx)
+	stream, err := testutil.Execute(ctx, client)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -321,7 +321,7 @@ func TestRecordStreamInvalidQueuedTailPublishesAdmittedPrefix(t *testing.T) {
 	client := routeAcceptanceClient(t, node.address)
 	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
 	defer cancel()
-	stream, err := client.Execute(ctx)
+	stream, err := testutil.Execute(ctx, client)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -369,15 +369,16 @@ type blockedOutputStream struct {
 
 func (stream *blockedOutputStream) Context() context.Context { return stream.ctx }
 
-func (stream *blockedOutputStream) Recv() (*pb.ExecuteRequest, error) {
+func (stream *blockedOutputStream) Recv() (*pb.ExecuteRequests, error) {
 	index := stream.received.Add(1)
 	if index > 100 {
 		return nil, io.EOF
 	}
-	return readFrame(index, testRequest()), nil
+	message := &pb.ExecuteRequests{Requests: []*pb.ExecuteRequest{readFrame(index, testRequest())}}
+	return message, nil
 }
 
-func (stream *blockedOutputStream) Send(*pb.ExecuteResponse) error {
+func (stream *blockedOutputStream) Send(*pb.ExecuteResponses) error {
 	<-stream.ctx.Done()
 	return status.FromContextError(stream.ctx.Err()).Err()
 }
@@ -435,7 +436,7 @@ func TestRecordStreamCancellationKeepsOtherRPCOnSharedConnection(t *testing.T) {
 	defer cancel()
 	firstCtx, stopFirst := context.WithCancel(ctx)
 	defer stopFirst()
-	first, err := client.Execute(firstCtx)
+	first, err := testutil.Execute(firstCtx, client)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -448,7 +449,7 @@ func TestRecordStreamCancellationKeepsOtherRPCOnSharedConnection(t *testing.T) {
 	case <-ctx.Done():
 		t.Fatal("first RPC did not start")
 	}
-	second, err := client.Execute(ctx)
+	second, err := testutil.Execute(ctx, client)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -511,7 +512,7 @@ func TestExecuteRejectsUnknownFields(t *testing.T) {
 	_, client := testClient(t, address)
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
-	stream, err := client.Execute(ctx)
+	stream, err := testutil.Execute(ctx, client)
 	if err != nil {
 		t.Fatal(err)
 	}

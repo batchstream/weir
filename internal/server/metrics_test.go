@@ -13,6 +13,7 @@ import (
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 	"github.com/batchstream/weir/internal/backend/search"
 	"github.com/batchstream/weir/internal/store"
+	"github.com/batchstream/weir/internal/testutil"
 	"github.com/batchstream/weir/internal/testutil/testmetrics"
 	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/grpc/codes"
@@ -82,7 +83,7 @@ func TestNativeCompletionMetricsAreIndependentOfRPCAndHTTPStatus(t *testing.T) {
 			operation := &pb.Command_Native{Native: native}
 			command := &pb.Command{Operation: operation}
 			request := &pb.ExecuteRequest{StoreName: "records", Index: 1, Command: command}
-			stream, err := client.Execute(ctx)
+			stream, err := testutil.Execute(ctx, client)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -150,7 +151,7 @@ func TestRPCMetricsReportInvalidStream(t *testing.T) {
 	_, client := testClient(t, address)
 	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
 	defer cancel()
-	stream, err := client.Execute(ctx)
+	stream, err := testutil.Execute(ctx, client)
 	if err != nil {
 		t.Fatal(err)
 	}

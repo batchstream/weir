@@ -151,17 +151,22 @@ func (response *nativeHealthyResponse) validateBody() error {
 		if size > uint64(len(body)-5) {
 			return fmt.Errorf("healthy reply has a truncated gRPC message")
 		}
-		message := &pb.ExecuteResponse{}
+		message := &pb.ExecuteResponses{}
 		if err := proto.Unmarshal(body[5:5+int(size)], message); err != nil {
 			return fmt.Errorf("healthy reply protobuf: %w", err)
 		}
-		if err := protocol.ValidateExecuteResponse(message); err != nil {
+		if err := protocol.ValidateExecuteResponses(message); err != nil {
 			return fmt.Errorf("healthy reply protocol: %w", err)
 		}
-		if count >= len(want) || message.Index != 1 || !proto.Equal(message.Event, want[count]) {
-			return fmt.Errorf("healthy reply has an unexpected event at position %d: %v", count, message)
+		for _, response := range message.Responses {
+			if err := protocol.ValidateExecuteResponse(response); err != nil {
+				return fmt.Errorf("healthy reply protocol: %w", err)
+			}
+			if count >= len(want) || response.Index != 1 || !proto.Equal(response.Event, want[count]) {
+				return fmt.Errorf("healthy reply has an unexpected event at position %d: %v", count, response)
+			}
+			count++
 		}
-		count++
 		body = body[5+int(size):]
 	}
 	if count != len(want) {
@@ -343,7 +348,8 @@ func sendFlowControlledRequest(t *testing.T, opts flowControlledRequest) {
 		t.Fatal(err)
 	}
 	request := &pb.ExecuteRequest{StoreName: "records", Index: 1, Command: opts.command}
-	raw, err := proto.Marshal(request)
+	message := &pb.ExecuteRequests{Requests: []*pb.ExecuteRequest{request}}
+	raw, err := proto.Marshal(message)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -504,7 +510,8 @@ func TestNativeOutputStallsHoldOnlyNativeSlots(t *testing.T) {
 func nativeHealthyReplyBytes(t *testing.T, messages []*pb.ExecuteResponse) []byte {
 	t.Helper()
 	var body []byte
-	for _, message := range messages {
+	for _, response := range messages {
+		message := &pb.ExecuteResponses{Responses: []*pb.ExecuteResponse{response}}
 		raw, err := proto.Marshal(message)
 		if err != nil {
 			t.Fatal(err)

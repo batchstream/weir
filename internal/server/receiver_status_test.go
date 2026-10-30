@@ -26,11 +26,11 @@ type receiverStatusStream struct {
 	entered chan struct{}
 }
 
-func (stream *receiverStatusStream) Recv() (*pb.ExecuteRequest, error) {
+func (stream *receiverStatusStream) Recv() (*pb.ExecuteRequests, error) {
 	if stream.request != nil {
-		request := stream.request
+		message := &pb.ExecuteRequests{Requests: []*pb.ExecuteRequest{stream.request}}
 		stream.request = nil
-		return request, nil
+		return message, nil
 	}
 	if stream.block {
 		close(stream.entered)
@@ -40,7 +40,7 @@ func (stream *receiverStatusStream) Recv() (*pb.ExecuteRequest, error) {
 	return nil, io.EOF
 }
 
-func (stream *receiverStatusStream) Send(*pb.ExecuteResponse) error {
+func (stream *receiverStatusStream) Send(*pb.ExecuteResponses) error {
 	<-stream.entered
 	return status.Error(codes.Internal, "output failed")
 }

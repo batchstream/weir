@@ -16,6 +16,7 @@ import (
 	weirclient "github.com/batchstream/weir-go"
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 	"github.com/batchstream/weir/internal/store"
+	"github.com/batchstream/weir/internal/testutil"
 	"github.com/batchstream/weir/internal/testutil/testmetrics"
 	"github.com/batchstream/weir/internal/testutil/testmongo"
 	"github.com/batchstream/weir/internal/testutil/testsearch"
@@ -296,7 +297,7 @@ func cancelReliabilityStreams(t *testing.T, probe reliabilityProbe) {
 	client := processClient(t, probe.node.Address())
 	for range 32 {
 		ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
-		stream, err := client.Execute(ctx)
+		stream, err := testutil.Execute(ctx, client)
 		if err != nil {
 			cancel()
 			t.Fatal(err)

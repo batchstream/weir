@@ -8,6 +8,7 @@ import (
 
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 	"github.com/batchstream/weir/internal/store"
+	"github.com/batchstream/weir/internal/testutil"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/connectivity"
 	"google.golang.org/grpc/status"
@@ -48,7 +49,7 @@ func TestRPCExpiryKeepsSharedConnectionAndMutation(t *testing.T) {
 				firstContext, stopFirst = context.WithTimeout(ctx, 250*time.Millisecond)
 				defer stopFirst()
 			}
-			first, err := client.Execute(firstContext)
+			first, err := testutil.Execute(firstContext, client)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -99,7 +100,7 @@ func TestRPCExpiryKeepsSharedConnectionAndMutation(t *testing.T) {
 					}
 				}
 			}()
-			second, err := client.Execute(ctx)
+			second, err := testutil.Execute(ctx, client)
 			if err != nil {
 				t.Fatal(err)
 			}
