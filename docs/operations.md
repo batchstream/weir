@@ -181,13 +181,15 @@ A Store keeps refusing records before queueing them. `overload` means memory
 pressure refused records on streams that were already admitted; see
 WeirMemoryPressure. `prepare` means records name a resource or carry a body the
 Store cannot use, which points to a client bug. A full queue does not reject:
-it holds senders back, which shows as WeirQueueWaitHigh.
+it holds senders back before their records are queued, which shows as
+`weir_store_queued_operations` staying at its bound rather than in queue wait.
 
 ### WeirUnknownOutcomes
 
 Mutations keep ending without proof of whether they were applied, usually
-because backend connections fail or time out mid-write. Check backend health,
-elections and network paths. Clients must reconcile each UNKNOWN mutation by
+because backend connections fail or time out mid-write, or because client
+deadlines or cancellations end writes that were already sent. Check backend
+health, elections, network paths and client deadlines. Clients must reconcile each UNKNOWN mutation by
 reading the record before retrying it, never replay it blindly
 ([failures](#slow-consumers-failures-and-shutdown)).
 
@@ -195,16 +197,22 @@ reading the record before retrying it, never replay it blindly
 
 More than 5% of a Store's records end with a Failure. This includes mutations
 the backend rejected, failed reads and APPLIED mutations whose visibility
-barrier failed. Read the failure messages in client logs to tell a client bug,
-such as a mapping conflict or validation error, from a backend fault.
+barrier failed. Conditional writes fail by design: a replace or expression on a
+missing record, a duplicate key, a write conflict or a validation rule. If those
+are the application's expected results, this threshold does not fit that
+Store. Otherwise read the failure messages in client logs to tell a client bug
+from a backend fault.
 
 ### WeirQueueWaitHigh
 
 Records of a Store wait more than a second before dispatch at the 99th
-percentile, so its execution slots stay busy. Compare
-`weir_store_execution_seconds` and `weir_store_active_executions` with their
-limit: slow backend executions mean the database is the bottleneck, and more
-Weir replicas add backend demand without adding capacity.
+percentile. Compare `weir_store_execution_seconds` and
+`weir_store_active_executions` with their limit. Busy slots with slow
+executions mean the database is the bottleneck, and more Weir replicas add
+backend demand without adding capacity. Free slots mean records wait for
+earlier mutations of the same resource: one stream's mutations of a resource
+run one at a time, so a client that keeps rewriting the same records queues
+behind itself.
 
 ### WeirWatchdogExpirations
 
