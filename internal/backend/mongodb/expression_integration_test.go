@@ -273,7 +273,7 @@ func TestMongoExpressionCancellationLedgerAndDrain(t *testing.T) {
 			inc := bson.D{{Key: "$inc", Value: bson.D{{Key: "n", Value: int64(1)}}}}
 			p := mongoExpression(t, a, db, inc)
 			runtime.SetOverloaded(true)
-			if _, failure := runtime.Submit(context.Background(), p, nil); failure.GetCode() != pb.FailureCode_RESOURCE_EXHAUSTED {
+			if _, failure := runtime.Submit(context.Background(), p, nil); failure.GetCode() != pb.FailureCode_UNAVAILABLE {
 				t.Fatal(failure)
 			}
 			runtime.SetOverloaded(false)

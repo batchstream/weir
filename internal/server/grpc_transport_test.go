@@ -30,7 +30,7 @@ func TestTapAdmitsOnlyServedMethodsWhileAccepting(t *testing.T) {
 		t.Fatal("admitted RPC cannot be ended exactly once", accepted.Err())
 	}
 	server.admission.SetOverloaded(true)
-	if _, err := server.admitRPC(t.Context(), execute); status.Code(err) != codes.ResourceExhausted {
+	if _, err := server.admitRPC(t.Context(), execute); status.Code(err) != codes.Unavailable {
 		t.Fatal("overloaded process admitted an RPC", err)
 	}
 	server.admission.SetOverloaded(false)

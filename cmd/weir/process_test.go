@@ -498,7 +498,7 @@ func TestCLIShedsWorkAboveTheGoMemoryLimit(t *testing.T) {
 	read := &pb.ReadRequest{Resource: "db/records/s:missing"}
 	request := testutil.RecordRequest("records", read)
 	client := pb.NewStoreServiceClient(conn)
-	if _, err := testutil.ExecuteRecord(ctx, client, request); status.Code(err) != codes.ResourceExhausted {
+	if _, err := testutil.ExecuteRecord(ctx, client, request); status.Code(err) != codes.Unavailable {
 		t.Fatal("memory-pressured CLI admitted work", err)
 	}
 

@@ -43,7 +43,7 @@ func (a *Admission) check() error {
 	}
 	if a.overloaded.Load() {
 		a.rejections.WithLabelValues("overload").Inc()
-		return status.Error(codes.ResourceExhausted, "process overloaded")
+		return status.Error(codes.Unavailable, "process overloaded")
 	}
 	return nil
 }
