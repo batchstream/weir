@@ -182,17 +182,17 @@ pressure refused records on streams that were already admitted; see
 WeirMemoryPressure. `prepare` means records name a resource or carry a body the
 Store cannot use, which points to a client bug. A full queue does not reject:
 it holds senders back before their records are queued, which shows as
-`weir_store_queued_operations` or `weir_store_queued_bytes` staying at its
-bound rather than in queue wait.
+`weir_store_queued_operations` or `weir_store_queued_bytes` staying near the
+Store's queue bounds rather than in queue wait.
 
 ### WeirUnknownOutcomes
 
 Mutations keep ending without proof of whether they were applied, usually
 because backend connections fail or time out mid-write, or because client
 deadlines or cancellations end writes that were already sent. Check backend
-health, elections, network paths and client deadlines. Clients must reconcile each UNKNOWN mutation by
-reading the record before retrying it, never replay it blindly
-([failures](#slow-consumers-failures-and-shutdown)).
+health, elections, network paths and client deadlines. Clients must reconcile
+each UNKNOWN mutation by reading the record before retrying it, never replay it
+blindly ([failures](#slow-consumers-failures-and-shutdown)).
 
 ### WeirRecordFailures
 
