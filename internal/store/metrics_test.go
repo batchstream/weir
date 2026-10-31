@@ -63,10 +63,13 @@ func TestMetricsCountFinalOutcomes(t *testing.T) {
 			t.Fatal(check.name, check.labels, got)
 		}
 	}
-	// The Native ran as its own invocation but is not a record batch.
+	// The Native is timed on its own, not as a record batch.
 	for _, name := range []string{"weir_store_batch_operations", "weir_store_execution_seconds"} {
 		if got := testmetrics.Count(families, name); got != 2 {
 			t.Fatal(name, "counted", got, "record batches")
 		}
+	}
+	if got := testmetrics.Count(families, "weir_store_native_seconds"); got != 1 {
+		t.Fatal("Native calls timed", got)
 	}
 }

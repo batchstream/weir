@@ -76,6 +76,7 @@ of improved capacity.
 | `weir_node_ready` | Readiness |
 | `weir_store_active_executions`, `weir_store_active_executions_limit` | Per-Store record batches and their limit |
 | `weir_store_active_natives`, `weir_store_active_natives_limit` | Per-Store running Native commands |
+| `weir_store_native_seconds` | Native call time, including response delivery to the client |
 | `weir_store_queued_operations`, `weir_store_queued_bytes` | Waiting work |
 | `weir_store_records_total` | Final typed results: mutation effect (`applied`, `not_applied`, `not_started`, `unknown`) or read `success`/`failure` |
 | `weir_store_record_failures_total` | Final typed read/mutate results carrying `Failure`, including `APPLIED` with `Failure` |
