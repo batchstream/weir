@@ -17,7 +17,7 @@ func newRuntimeMetrics() runtimeMetrics {
 	rejectOptions := prometheus.CounterOpts{Name: "weir_store_rejections_total", Help: "Operations refused before queueing."}
 	queueOptions := prometheus.HistogramOpts{Name: "weir_store_queue_wait_seconds", Help: "Record time from queueing to dispatch.", Buckets: []float64{.001, .01, .1, 1, 10}}
 	durationOptions := prometheus.HistogramOpts{Name: "weir_store_execution_seconds", Help: "Record batch execution time.", Buckets: []float64{.001, .01, .1, 1, 10}}
-	nativeDurationOptions := prometheus.HistogramOpts{Name: "weir_store_native_seconds", Help: "Native call time, including response delivery.", Buckets: []float64{.001, .01, .1, 1, 10}}
+	nativeDurationOptions := prometheus.HistogramOpts{Name: "weir_store_native_seconds", Help: "Native call time, including sending the response on the RPC stream.", Buckets: []float64{.001, .01, .1, 1, 10}}
 	batchOptions := prometheus.HistogramOpts{Name: "weir_store_batch_operations", Help: "Records per record batch.", Buckets: prometheus.ExponentialBuckets(1, 2, 11)}
 	metrics := runtimeMetrics{
 		records:           prometheus.NewCounterVec(recordOptions, []string{"operation", "outcome"}),
