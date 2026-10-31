@@ -7,7 +7,6 @@ import (
 
 type runtimeMetrics struct {
 	records, failures, nativeCompletions, rejections *prometheus.CounterVec
-	executions                                       prometheus.Counter
 	queueWait, duration, batch                       prometheus.Histogram
 }
 
@@ -16,16 +15,14 @@ func newRuntimeMetrics() runtimeMetrics {
 	failureOptions := prometheus.CounterOpts{Name: "weir_store_record_failures_total", Help: "Final record results carrying a Failure, including applied mutations."}
 	nativeOptions := prometheus.CounterOpts{Name: "weir_store_native_completions_total", Help: "Final Native completion evidence; not backend business success or client receipt."}
 	rejectOptions := prometheus.CounterOpts{Name: "weir_store_rejections_total", Help: "Operations refused before queueing."}
-	execOptions := prometheus.CounterOpts{Name: "weir_store_executions_total", Help: "Adapter invocations."}
 	queueOptions := prometheus.HistogramOpts{Name: "weir_store_queue_wait_seconds", Help: "Record time from queueing to dispatch.", Buckets: []float64{.001, .01, .1, 1, 10}}
-	durationOptions := prometheus.HistogramOpts{Name: "weir_store_execution_seconds", Help: "Adapter invocation duration, including Native response delivery.", Buckets: []float64{.001, .01, .1, 1, 10}}
-	batchOptions := prometheus.HistogramOpts{Name: "weir_store_batch_operations", Help: "Operations per adapter invocation.", Buckets: []float64{1, 2, 4, 8, 16, 128}}
+	durationOptions := prometheus.HistogramOpts{Name: "weir_store_execution_seconds", Help: "Record batch execution time.", Buckets: []float64{.001, .01, .1, 1, 10}}
+	batchOptions := prometheus.HistogramOpts{Name: "weir_store_batch_operations", Help: "Records per record batch.", Buckets: prometheus.ExponentialBuckets(1, 2, 11)}
 	metrics := runtimeMetrics{
 		records:           prometheus.NewCounterVec(recordOptions, []string{"operation", "outcome"}),
 		failures:          prometheus.NewCounterVec(failureOptions, []string{"operation"}),
 		nativeCompletions: prometheus.NewCounterVec(nativeOptions, []string{"completion"}),
 		rejections:        prometheus.NewCounterVec(rejectOptions, []string{"reason"}),
-		executions:        prometheus.NewCounter(execOptions),
 		queueWait:         prometheus.NewHistogram(queueOptions),
 		duration:          prometheus.NewHistogram(durationOptions),
 		batch:             prometheus.NewHistogram(batchOptions),
@@ -115,7 +112,7 @@ func (r *Runtime) Collect(ch chan<- prometheus.Metric) {
 	if collector, ok := r.adapter.(prometheus.Collector); ok {
 		collector.Collect(ch)
 	}
-	collectors := []prometheus.Collector{r.metrics.records, r.metrics.failures, r.metrics.nativeCompletions, r.metrics.rejections, r.metrics.executions, r.metrics.queueWait, r.metrics.duration, r.metrics.batch}
+	collectors := []prometheus.Collector{r.metrics.records, r.metrics.failures, r.metrics.nativeCompletions, r.metrics.rejections, r.metrics.queueWait, r.metrics.duration, r.metrics.batch}
 	for _, collector := range collectors {
 		collector.Collect(ch)
 	}

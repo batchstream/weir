@@ -95,7 +95,7 @@ func TestDiagnosticsLifecycleIsolationAndNoSyntheticExecutions(t *testing.T) {
 		if testmetrics.Sum(after, "weir_admission_rejections_total") != testmetrics.Sum(before, "weir_admission_rejections_total") {
 			t.Fatal("scrape increased business counters")
 		}
-		if after["weir_store_executions_total"] != nil {
+		if after["weir_store_batch_operations"] != nil {
 			t.Fatal("a node without Stores created Runtime metrics")
 		}
 	}

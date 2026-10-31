@@ -95,7 +95,6 @@ func (a *Adapter) request(ctx context.Context, call exchange) (status int, raw [
 	if call.mutation && ctx.Err() != nil {
 		return 0, nil, errWriteNotSent
 	}
-	a.metrics.initialize()
 	started := time.Now()
 	defer func() {
 		observation := httpObservation{call: call, request: request, duration: time.Since(started), status: status, err: err}

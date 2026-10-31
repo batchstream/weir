@@ -55,13 +55,18 @@ func TestMetricsCountFinalOutcomes(t *testing.T) {
 		{"weir_store_records_total", map[string]string{"operation": "mutate", "outcome": "applied"}, 1},
 		{"weir_store_native_completions_total", map[string]string{"completion": "response_complete"}, 1},
 		{"weir_store_rejections_total", map[string]string{"reason": "overload"}, 1},
-		{"weir_store_executions_total", nil, 3},
 		{"weir_store_active_executions_limit", nil, 3},
 		{"weir_store_queued_operations", nil, 0},
 	}
 	for _, check := range checks {
 		if got := counter(families, check.name, check.labels); got != check.value {
 			t.Fatal(check.name, check.labels, got)
+		}
+	}
+	// The Native ran as its own invocation but is not a record batch.
+	for _, name := range []string{"weir_store_batch_operations", "weir_store_execution_seconds"} {
+		if got := testmetrics.Count(families, name); got != 2 {
+			t.Fatal(name, "counted", got, "record batches")
 		}
 	}
 }

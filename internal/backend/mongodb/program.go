@@ -10,7 +10,6 @@ import (
 	"github.com/batchstream/weir-protocol/api/protocol"
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 	"github.com/batchstream/weir/internal/execution"
-	"github.com/batchstream/weir/internal/luaengine"
 	"github.com/batchstream/weir/internal/value"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
@@ -395,7 +394,7 @@ func (a *Adapter) transformPrograms(ctx context.Context, batch *programBatch, po
 	writePositions := make([]int, 0, len(positions))
 	for i, position := range positions {
 		work := batch.plans[position]
-		write, result := transformProgram(ctx, work, documents[i])
+		write, result := a.transformProgram(ctx, work, documents[i])
 		if result != nil {
 			batch.results[position] = result
 		} else {
@@ -406,7 +405,7 @@ func (a *Adapter) transformPrograms(ctx context.Context, batch *programBatch, po
 	return writes, writePositions
 }
 
-func transformProgram(ctx context.Context, work *execution.Plan, raw bson.Raw) (*execution.Plan, *pb.MutationResult) {
+func (a *Adapter) transformProgram(ctx context.Context, work *execution.Plan, raw bson.Raw) (*execution.Plan, *pb.MutationResult) {
 	if failure := programCallerFailure(ctx, work); failure != nil {
 		return nil, protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, failure)
 	}
@@ -462,7 +461,7 @@ func transformProgram(ctx context.Context, work *execution.Plan, raw bson.Raw) (
 		}
 		program.Input = decoded
 	}
-	transformed, transformErr := luaengine.Evaluate(ctx, program)
+	transformed, transformErr := a.lua.Evaluate(ctx, program)
 	if failure := programCallerFailure(ctx, work); failure != nil {
 		return nil, protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, failure)
 	}

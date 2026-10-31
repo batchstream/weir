@@ -45,6 +45,7 @@ type Adapter struct {
 	lifetime         context.Context
 	cancelLifetime   context.CancelFunc
 	targets          targetCache
+	lua              *luaengine.Metrics
 }
 
 type plan struct {
@@ -121,6 +122,7 @@ func Open(ctx context.Context, cfg Config) (*Adapter, error) {
 		deployment:     deployment,
 		commandMonitor: opts.Monitor,
 		config:         cfg,
+		lua:            luaengine.NewMetrics(),
 	}
 	a.targets.entries = make(map[namespace]*targetCheck)
 	a.targets.capacity = settings.MetadataCacheEntries
