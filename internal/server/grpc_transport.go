@@ -52,6 +52,6 @@ func (s *Server) observeStream(service any, stream grpc.ServerStream, _ *grpc.St
 	s.admission.activeRPCs.Add(1)
 	defer s.admission.activeRPCs.Add(-1)
 	err := handler(service, stream)
-	s.metrics.rpcs.WithLabelValues("execute", statusLabel(err)).Inc()
+	s.metrics.rpcs.WithLabelValues(statusLabel(err)).Inc()
 	return err
 }

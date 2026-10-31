@@ -134,7 +134,7 @@ func TestNativeCompletionMetricsAreIndependentOfRPCAndHTTPStatus(t *testing.T) {
 				if testmetrics.Sum(families, "weir_store_records_total") != 0 || testmetrics.Sum(families, "weir_store_record_failures_total") != 0 {
 					t.Fatal("opaque Native response polluted typed business metrics")
 				}
-				labels = map[string]string{"method": "execute", "status": "ok"}
+				labels = map[string]string{"status": "ok"}
 				rpc := testmetrics.Gather(t, server)
 				if testmetrics.Sample(rpc, "weir_rpc_completions_total", labels).GetCounter().GetValue() != 1 {
 					t.Fatal("Native terminal evidence was confused with RPC status")
@@ -178,7 +178,7 @@ func TestRPCMetricsReportInvalidStream(t *testing.T) {
 		t.Fatal(err)
 	}
 	metrics := testmetrics.Registry(t, registry)
-	labels := map[string]string{"method": "execute", "status": "non_ok"}
+	labels := map[string]string{"status": "non_ok"}
 	if testmetrics.Sample(metrics, "weir_rpc_completions_total", labels).GetCounter().GetValue() != 1 {
 		t.Fatal("native RPC failure missing from completion status metrics")
 	}

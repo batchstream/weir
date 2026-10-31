@@ -119,6 +119,7 @@ func TestBulkFramingUsesSmallerConfiguredByteWindow(t *testing.T) {
 			settings := backend.DefaultOptions()
 			settings.BatchBytes, settings.ExchangeBytes = tc.batch, tc.exchange
 			adapter.config.Options = &settings
+			adapter.metrics = newSearchMetrics()
 			registry := prometheus.NewPedanticRegistry()
 			if err := registry.Register(adapter); err != nil {
 				t.Fatal(err)

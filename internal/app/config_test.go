@@ -237,7 +237,7 @@ func TestUnhostedStoreIsNotFound(t *testing.T) {
 		t.Fatal("unserved method was not refused", err)
 	}
 	families := testmetrics.Registry(t, node.registry)
-	labels := map[string]string{"method": "execute", "status": "non_ok"}
+	labels := map[string]string{"status": "non_ok"}
 	if metric := testmetrics.Sample(families, "weir_rpc_completions_total", labels); metric.GetCounter().GetValue() != 1 {
 		t.Fatal("rejected RPC was not counted", metric)
 	}

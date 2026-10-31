@@ -31,18 +31,18 @@ type transportMetrics struct {
 func newTransportMetrics() transportMetrics {
 	rpcOpts := prometheus.CounterOpts{
 		Name: "weir_rpc_completions_total",
-		Help: "gRPC handler completion status; not client delivery acknowledgement.",
+		Help: "Execute RPC completions by status; not client delivery acknowledgement.",
 	}
 	watchOpts := prometheus.CounterOpts{
 		Name: "weir_watchdog_expirations_total",
 		Help: "RPCs canceled because input or output made no progress within the stall timeout.",
 	}
 	m := transportMetrics{
-		rpcs:      prometheus.NewCounterVec(rpcOpts, []string{"method", "status"}),
+		rpcs:      prometheus.NewCounterVec(rpcOpts, []string{"status"}),
 		watchdogs: prometheus.NewCounterVec(watchOpts, []string{"phase"}),
 	}
 	for _, label := range metricStatuses {
-		m.rpcs.WithLabelValues("execute", label)
+		m.rpcs.WithLabelValues(label)
 	}
 	for _, phase := range []string{"input", "output"} {
 		m.watchdogs.WithLabelValues(phase)

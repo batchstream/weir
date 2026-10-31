@@ -94,6 +94,15 @@ func Sum(families map[string]*dto.MetricFamily, name string) float64 {
 	return sum
 }
 
+// Count totals the observations of a histogram family.
+func Count(families map[string]*dto.MetricFamily, name string) uint64 {
+	var count uint64
+	for _, metric := range families[name].GetMetric() {
+		count += metric.GetHistogram().GetSampleCount()
+	}
+	return count
+}
+
 func Series(families map[string]*dto.MetricFamily) int {
 	count := 0
 	for _, family := range families {

@@ -76,13 +76,15 @@ of improved capacity.
 | `weir_node_ready` | Readiness |
 | `weir_store_active_executions`, `weir_store_active_executions_limit` | Per-Store record batches and their limit |
 | `weir_store_active_natives`, `weir_store_active_natives_limit` | Per-Store running Native commands |
+| `weir_store_native_seconds` | Native call time, including sending the response on the RPC stream; not proof of client receipt |
 | `weir_store_queued_operations`, `weir_store_queued_bytes` | Waiting work |
 | `weir_store_records_total` | Final typed results: mutation effect (`applied`, `not_applied`, `not_started`, `unknown`) or read `success`/`failure` |
 | `weir_store_record_failures_total` | Final typed read/mutate results carrying `Failure`, including `APPLIED` with `Failure` |
 | `weir_store_native_completions_total` | Final Native forwarding terminal evidence (`not_started`, `response_complete`, `response_incomplete`), not backend business success, RPC status, or client receipt |
 | `weir_store_rejections_total` | Preparation, draining and overload denials, not completed records |
-| `weir_store_executions_total`, `weir_store_batch_operations`, `weir_store_queue_wait_seconds`, `weir_store_execution_seconds` | Adapter invocations, batch sizes, queue wait and execution time |
-| `weir_ingress_sessions`, `weir_admission_rejections_total` | Active RPCs and RPCs refused at admission |
+| `weir_store_batch_operations`, `weir_store_queue_wait_seconds`, `weir_store_execution_seconds` | Record batch sizes, queue wait and record batch execution time; Natives are excluded |
+| `weir_lua_evaluation_seconds` | Lua evaluation time by `outcome` (`success`, `error`, `timeout`, `canceled`), for both backends |
+| `weir_ingress_sessions`, `weir_rpc_completions_total`, `weir_admission_rejections_total` | Active RPCs, completed RPCs by `status` and RPCs refused at admission |
 | `weir_watchdog_expirations_total` | RPCs ended by the input or output stall timeout |
 | `weir_memory_live_bytes`, `weir_memory_limit_bytes`, `weir_memory_overloaded` | Live memory, the Go memory limit and whether memory pressure refuses new work |
 | `weir_search_http_*` | Record/startup exchange attempts, elapsed time, framed records and bytes |
@@ -132,8 +134,9 @@ Search HTTP metrics include failed attempts and exclude Native relay. HTTP
 success does not prove every bulk item succeeded. Bulk elapsed time includes
 `refresh=wait_for`; concurrent durations overlap and cannot be summed as wall
 time. Framed request byte counts exclude headers and do not prove delivery. Lua
-evaluation time excludes external JSON decoding/encoding. Metrics use bounded
-labels without document or target identities.
+evaluation time includes compilation and document conversion, not the backend's
+own decoding or encoding. Metrics use bounded labels without document or target
+identities.
 
 ## Alerts
 

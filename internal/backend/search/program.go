@@ -8,7 +8,6 @@ import (
 	"github.com/batchstream/weir-protocol/api/protocol"
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 	"github.com/batchstream/weir/internal/execution"
-	"github.com/batchstream/weir/internal/luaengine"
 	"github.com/batchstream/weir/internal/value"
 )
 
@@ -40,10 +39,7 @@ func (a *Adapter) evaluateProgram(ctx context.Context, work *execution.Plan, cur
 		}
 		program.Input = input
 	}
-	a.metrics.initialize()
-	started := time.Now()
-	transformed, err := luaengine.Evaluate(ctx, program)
-	a.metrics.observeLua(time.Since(started), err)
+	transformed, err := a.lua.Evaluate(ctx, program)
 	if err != nil {
 		return nil, execution.LuaFailure(ctx, err)
 	}

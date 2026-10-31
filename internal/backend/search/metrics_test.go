@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -55,6 +54,7 @@ func TestSearchMetricsMeasureActualRecordRequestsAndLua(t *testing.T) {
 		t.Run(map[bool]string{false: "default", true: "visible"}[visible], func(t *testing.T) {
 			fixture := &visibilityFixture{}
 			adapter := visibilityAdapter(t, fixture)
+			adapter.metrics, adapter.lua = newSearchMetrics(), luaengine.NewMetrics()
 			registry := prometheus.NewPedanticRegistry()
 			if err := registry.Register(adapter); err != nil {
 				t.Fatal(err)
@@ -102,7 +102,7 @@ func TestSearchMetricsMeasureActualRecordRequestsAndLua(t *testing.T) {
 				}
 			}
 			labels := map[string]string{"outcome": "success"}
-			lua := searchMetric(t, families["weir_search_lua_evaluation_duration_seconds"], labels).GetHistogram()
+			lua := searchMetric(t, families["weir_lua_evaluation_seconds"], labels).GetHistogram()
 			if lua.GetSampleCount() != 2 || lua.GetSampleSum() <= 0 {
 				t.Fatal("Lua evaluation not measured once per actual call", lua)
 			}
@@ -134,7 +134,7 @@ func TestSearchHTTPMetricsClassifyFailuresAndBoundLabels(t *testing.T) {
 			server := httptest.NewServer(handler)
 			defer server.Close()
 			config := Config{URL: server.URL}
-			adapter := &Adapter{config: config, client: server.Client(), ctx: context.Background()}
+			adapter := &Adapter{config: config, client: server.Client(), ctx: context.Background(), metrics: newSearchMetrics()}
 			registry := prometheus.NewPedanticRegistry()
 			if err := registry.Register(adapter); err != nil {
 				t.Fatal(err)
@@ -186,7 +186,7 @@ func TestSearchHTTPMetricsCountTransportFailure(t *testing.T) {
 	client := server.Client()
 	server.Close()
 	config := Config{URL: server.URL}
-	adapter := &Adapter{config: config, client: client, ctx: context.Background()}
+	adapter := &Adapter{config: config, client: client, ctx: context.Background(), metrics: newSearchMetrics()}
 	registry := prometheus.NewPedanticRegistry()
 	if err := registry.Register(adapter); err != nil {
 		t.Fatal(err)
@@ -224,7 +224,7 @@ func TestSearchHTTPMetricsCountCancellationAfterDispatchOnly(t *testing.T) {
 			server := httptest.NewServer(handler)
 			defer server.Close()
 			config := Config{URL: server.URL}
-			adapter := &Adapter{config: config, client: server.Client(), ctx: context.Background()}
+			adapter := &Adapter{config: config, client: server.Client(), ctx: context.Background(), metrics: newSearchMetrics()}
 			registry := prometheus.NewPedanticRegistry()
 			if err := registry.Register(adapter); err != nil {
 				t.Fatal(err)
@@ -271,38 +271,8 @@ func TestSearchHTTPMetricsCountCancellationAfterDispatchOnly(t *testing.T) {
 	}
 }
 
-func TestSearchMetricsConcurrentFirstUseAndCollection(t *testing.T) {
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _, _ = io.WriteString(w, `{}`) })
-	server := httptest.NewServer(handler)
-	defer server.Close()
-	config := Config{URL: server.URL}
-	adapter := &Adapter{config: config, client: server.Client(), ctx: context.Background()}
-	registry := prometheus.NewPedanticRegistry()
-	var group sync.WaitGroup
-	for i := 0; i < 8; i++ {
-		group.Go(func() {
-			call := exchange{path: "/records", operation: "metadata"}
-			_, _, err := adapter.request(t.Context(), call)
-			if err != nil {
-				t.Error(err)
-			}
-		})
-	}
-	if err := registry.Register(adapter); err != nil {
-		t.Fatal(err)
-	}
-	_ = searchMetricFamilies(t, registry)
-	group.Wait()
-	families := searchMetricFamilies(t, registry)
-	labels := map[string]string{"operation": "metadata", "outcome": "success", "visibility": "none"}
-	metric := searchMetric(t, families["weir_search_http_requests_total"], labels)
-	if metric.GetCounter().GetValue() != 8 {
-		t.Fatal("concurrent first calls lost samples", metric)
-	}
-}
-
 func TestSearchLuaMetricsExcludeSourceDecodingAndClassifyFailures(t *testing.T) {
-	adapter := &Adapter{}
+	adapter := &Adapter{lua: luaengine.NewMetrics()}
 	registry := prometheus.NewPedanticRegistry()
 	if err := registry.Register(adapter); err != nil {
 		t.Fatal(err)
@@ -336,13 +306,13 @@ func TestSearchLuaMetricsExcludeSourceDecodingAndClassifyFailures(t *testing.T) 
 			_, _ = adapter.evaluateProgram(tc.context, work, current)
 			families := searchMetricFamilies(t, registry)
 			if tc.outcome == "" {
-				if families["weir_search_lua_evaluation_duration_seconds"] != nil {
+				if families["weir_lua_evaluation_seconds"] != nil {
 					t.Fatal("source decode failure counted as Lua engine work")
 				}
 				return
 			}
 			labels := map[string]string{"outcome": tc.outcome}
-			metric := searchMetric(t, families["weir_search_lua_evaluation_duration_seconds"], labels)
+			metric := searchMetric(t, families["weir_lua_evaluation_seconds"], labels)
 			if metric.GetHistogram().GetSampleCount() != 1 {
 				t.Fatal("Lua evaluation missing or counted twice", metric)
 			}

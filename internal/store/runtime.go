@@ -564,7 +564,13 @@ var errInvalidNativeEvent = errors.New("adapter emitted an invalid Native event"
 func (r *Runtime) execute(b *batch) {
 	started := time.Now()
 	events := r.run(b)
-	r.metrics.duration.Observe(time.Since(started).Seconds())
+	elapsed := time.Since(started).Seconds()
+	if b.native() {
+		r.metrics.native.Observe(elapsed)
+	} else {
+		r.metrics.duration.Observe(elapsed)
+		r.metrics.batch.Observe(float64(len(b.items)))
+	}
 	for _, stop := range b.stops {
 		stop()
 	}
@@ -592,8 +598,6 @@ func (r *Runtime) execute(b *batch) {
 
 // run invokes the adapter and returns one valid final event per item.
 func (r *Runtime) run(b *batch) []*pb.Event {
-	r.metrics.executions.Inc()
-	r.metrics.batch.Observe(float64(len(b.items)))
 	first := b.items[0]
 	if b.native() {
 		emit := func(event *pb.Event) error {

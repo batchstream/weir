@@ -39,7 +39,8 @@ type Adapter struct {
 	ctx          context.Context
 	cancel       context.CancelFunc
 	once         sync.Once
-	metrics      searchMetrics
+	metrics      *searchMetrics
+	lua          *luaengine.Metrics
 }
 
 type plan struct {
@@ -110,6 +111,8 @@ func Open(ctx context.Context, cfg Config) (*Adapter, error) {
 		nativeClient: nativeClient,
 		ctx:          lifetime,
 		cancel:       cancel,
+		metrics:      newSearchMetrics(),
+		lua:          luaengine.NewMetrics(),
 	}
 	if err := a.qualify(ctx); err != nil {
 		_ = a.Close(ctx)

@@ -36,7 +36,8 @@ func TestLuaUnchangedBSONSkipsMongoWrite(t *testing.T) {
 			program := &luaengine.Program{Source: tc.source}
 			native := &plan{id: "item", program: program}
 			work := &execution.Plan{Backend: native, Context: t.Context()}
-			write, result := transformProgram(t.Context(), work, raw)
+			adapter := &Adapter{}
+			write, result := adapter.transformProgram(t.Context(), work, raw)
 			if tc.unchanged {
 				if write != nil || result.GetOutcome() != pb.MutationOutcome_APPLIED || result.GetFailure() != nil {
 					t.Fatal("unchanged BSON was not a successful no-op", write, result)
