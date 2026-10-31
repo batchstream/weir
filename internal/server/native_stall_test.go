@@ -530,7 +530,7 @@ func TestNativeHealthyResponseRejectsFalseBusinessSuccess(t *testing.T) {
 	readEvent := &pb.Event{Value: readValue}
 	read := &pb.ExecuteResponse{Index: 1, Event: readEvent}
 	wrongIndex := &pb.ExecuteResponse{Index: 2, Event: readEvent}
-	failure := protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "synthetic refusal")
+	failure := protocol.Fail(pb.FailureCode_UNAVAILABLE, "synthetic refusal")
 	failedRead := protocol.ReadFailure(failure)
 	failedReadValue := &pb.Event_ReadResult{ReadResult: failedRead}
 	failedReadEvent := &pb.Event{Value: failedReadValue}

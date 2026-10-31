@@ -207,7 +207,7 @@ func (r *Runtime) refusalLocked() *pb.Failure {
 	}
 	if r.overloaded {
 		r.metrics.rejections.WithLabelValues("overload").Inc()
-		return protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "process overloaded")
+		return protocol.Fail(pb.FailureCode_UNAVAILABLE, "process overloaded")
 	}
 	return nil
 }

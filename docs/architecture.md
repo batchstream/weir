@@ -101,8 +101,11 @@ limits and the largest documents you serve; [batching](batching.md) shows the
 calculation.
 
 Memory pressure closes admission: once live memory reaches 80% of the Go memory
-limit, new work receives `RESOURCE_EXHAUSTED` until it falls to 70%. The CLI
-sets that limit to 90% of the container's cgroup v2 memory limit unless
+limit, new RPCs end with gRPC `UNAVAILABLE` before any request is read and new
+records receive NOT_STARTED with Failure `UNAVAILABLE`, as during a drain, until
+it falls to 70%. A NOT_STARTED record may be sent again. `UNAVAILABLE` alone
+does not show that work never began: UNKNOWN outcomes and broken connections
+carry it too. The CLI sets that limit to 90% of the container's cgroup v2 memory limit unless
 `GOMEMLIMIT` is set. Container/OS memory limits remain the hard boundary; see
 [operations](operations.md#memory-pressure).
 

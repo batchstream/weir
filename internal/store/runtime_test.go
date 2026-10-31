@@ -588,10 +588,10 @@ func TestOverloadAndDrainRejectSubmissions(t *testing.T) {
 	}()
 	time.Sleep(20 * time.Millisecond)
 	runtime.SetOverloaded(true)
-	if failure := <-blocked; failure.GetCode() != pb.FailureCode_RESOURCE_EXHAUSTED {
+	if failure := <-blocked; failure.GetCode() != pb.FailureCode_UNAVAILABLE {
 		t.Fatal("waiting submitter ignored overload", failure)
 	}
-	if _, failure := runtime.Submit(t.Context(), readPlan("d"), nil); failure.GetCode() != pb.FailureCode_RESOURCE_EXHAUSTED {
+	if _, failure := runtime.Submit(t.Context(), readPlan("d"), nil); failure.GetCode() != pb.FailureCode_UNAVAILABLE {
 		t.Fatal("overloaded runtime admitted work", failure)
 	}
 	runtime.SetOverloaded(false)
@@ -609,7 +609,7 @@ func TestRefusingRuntimeRefusesRecordsBeforeTheAdapterPreparesThem(t *testing.T)
 	}
 	overloaded := open(t, &fakeAdapter{}, limits(nil))
 	overloaded.SetOverloaded(true)
-	if _, failure := overloaded.PrepareRecord(t.Context(), record); failure.GetCode() != pb.FailureCode_RESOURCE_EXHAUSTED {
+	if _, failure := overloaded.PrepareRecord(t.Context(), record); failure.GetCode() != pb.FailureCode_UNAVAILABLE {
 		t.Fatal("overloaded runtime prepared a record", failure)
 	}
 	// A stream can outlive its Store's adapter during shutdown.
