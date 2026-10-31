@@ -59,7 +59,7 @@ stream ended by the output stall timeout keeps its last unsent message until the
 client reads it or disconnects. Every message is at most 64 MiB. Real documents
 are usually much smaller than these limits, so size the container from observed
 document sizes and the peak number of open streams. When live memory crosses the overload
-watermark, new work receives `RESOURCE_EXHAUSTED` until it recovers; see
+watermark, new work receives `UNAVAILABLE` until it recovers; see
 [operations](operations.md).
 
 ## Backend grouping

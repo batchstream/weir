@@ -101,7 +101,8 @@ limits and the largest documents you serve; [batching](batching.md) shows the
 calculation.
 
 Memory pressure closes admission: once live memory reaches 80% of the Go memory
-limit, new work receives `RESOURCE_EXHAUSTED` until it falls to 70%. The CLI
+limit, new work receives `UNAVAILABLE` until it falls to 70%, which clients
+may send again because it never began. The CLI
 sets that limit to 90% of the container's cgroup v2 memory limit unless
 `GOMEMLIMIT` is set. Container/OS memory limits remain the hard boundary; see
 [operations](operations.md#memory-pressure).

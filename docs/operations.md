@@ -160,7 +160,7 @@ ServiceMonitor select the Pod. Other alerts are blind to that replica meanwhile.
 
 ### WeirMemoryPressure
 
-A replica keeps refusing new work with `RESOURCE_EXHAUSTED` because live memory
+A replica keeps refusing new work with `UNAVAILABLE` because live memory
 reached 80% of its limit ([Memory pressure](#memory-pressure)). Compare
 `weir_memory_live_bytes` with the in-flight work: large documents, slow
 consumers holding results or Native responses keep memory live. Raise the
@@ -228,7 +228,7 @@ Weir compares its live memory with the Go memory limit. Live memory is the live
 heap at the last garbage collection plus goroutine stacks and runtime metadata;
 free heap and garbage do not count, because the collector reclaims them before
 the limit. At 80% of the limit, new RPCs and records receive
-`RESOURCE_EXHAUSTED`; admission reopens at or below 70%. While refusing work,
+`UNAVAILABLE`, as during a drain; admission reopens at or below 70%. While refusing work,
 Weir collects garbage at most once a second so that it notices finished work
 promptly. Release builds contain no C code, so the Go runtime accounts for
 nearly all process memory.
