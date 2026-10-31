@@ -135,6 +135,93 @@ time. Framed request byte counts exclude headers and do not prove delivery. Lua
 evaluation time excludes external JSON decoding/encoding. Metrics use bounded
 labels without document or target identities.
 
+## Alerts
+
+The [weir-charts](https://github.com/batchstream/weir-charts) PrometheusRule
+alerts on one Store group, selected by its `namespace` and `weir_group` labels.
+Rejections during a drain never alert; a single failover burst stays below the
+ten-minute thresholds. A replica is not Ready only while it starts, for at most
+30 seconds, or drains, so Pod restarts and crash loops are left to the cluster's
+Kubernetes alerts.
+
+### WeirGroupUnavailable
+
+Prometheus sees no Ready replica of the group, so every call to its Stores fails
+or the group runs unobserved. Check the Pods and their events. A replica that
+never becomes Ready logs why startup failed: the configuration, a credential
+file, or a backend it could not qualify within 30 seconds. If the Pods are
+Ready, the scrape path is broken; see WeirScrapeFailing.
+
+### WeirScrapeFailing
+
+Prometheus cannot read `/metrics` from a replica. Check that `metrics.ingress`
+admits the scraper under the NetworkPolicy, and that the metrics Service and
+ServiceMonitor select the Pod. Other alerts are blind to that replica meanwhile.
+
+### WeirMemoryPressure
+
+A replica keeps refusing new work with `RESOURCE_EXHAUSTED` because live memory
+reached 80% of its limit ([Memory pressure](#memory-pressure)). Compare
+`weir_memory_live_bytes` with the in-flight work: large documents, slow
+consumers holding results or Native responses keep memory live. Raise the
+memory limit from the [batching bounds](batching.md#memory-sizing), add
+replicas, or slow the clients down.
+
+### WeirAdmissionRejections
+
+The group keeps refusing whole RPCs. `overload` means memory pressure; see
+WeirMemoryPressure. `execute` means calls name a Store the group does not host:
+a client points at the wrong group, or a Store was removed before its clients.
+`method` means clients call a method Weir does not serve, which points to a
+client built against another protocol.
+
+### WeirStoreRejections
+
+A Store keeps refusing records before queueing them. `overload` means memory
+pressure refused records on streams that were already admitted; see
+WeirMemoryPressure. `prepare` means records name a resource or carry a body the
+Store cannot use, which points to a client bug. A full queue does not reject:
+it holds senders back before their records are queued, which shows as
+`weir_store_queued_operations` or `weir_store_queued_bytes` staying near the
+Store's queue bounds rather than in queue wait.
+
+### WeirUnknownOutcomes
+
+Mutations keep ending without proof of whether they were applied, usually
+because backend connections fail or time out mid-write, or because client
+deadlines or cancellations end writes that were already sent. Check backend
+health, elections, network paths and client deadlines. Clients must reconcile
+each UNKNOWN mutation by reading the record before retrying it, never replay it
+blindly ([failures](#slow-consumers-failures-and-shutdown)).
+
+### WeirRecordFailures
+
+More than 5% of a Store's records end with a Failure. This includes mutations
+the backend rejected, failed reads and APPLIED mutations whose visibility
+barrier failed. Conditional writes fail by design: a replace or expression on a
+missing record, a duplicate key, a write conflict or a validation rule. If those
+are the application's expected results, this threshold does not fit that
+Store. Otherwise read the failure messages in client logs to tell a client bug
+from a backend fault.
+
+### WeirQueueWaitHigh
+
+Records of a Store wait more than a second before dispatch at the 99th
+percentile. Compare `weir_store_execution_seconds` and
+`weir_store_active_executions` with their limit. Busy slots with slow
+executions mean the database is the bottleneck, and more Weir replicas add
+backend demand without adding capacity. Free slots mean records wait for
+earlier mutations of the same resource: one stream's mutations of a resource
+run one at a time, so a client that keeps rewriting the same records queues
+behind itself.
+
+### WeirWatchdogExpirations
+
+Weir keeps ending RPCs whose input or output made no progress for the stall
+timeout. `output` means clients stopped reading results; `input` means clients
+opened a stream and stopped sending. Both usually point to blocked client
+workers. The ended streams' unconfirmed mutations are UNKNOWN.
+
 ## Memory pressure
 
 Weir compares its live memory with the Go memory limit. Live memory is the live
