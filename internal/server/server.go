@@ -32,9 +32,13 @@ type Limits struct {
 	recordWindow      int
 	KeepaliveInterval time.Duration
 	KeepaliveTimeout  time.Duration
-	Stall             time.Duration
-	Handshake         time.Duration
-	Idle              time.Duration
+	// KeepaliveMinPing is the shortest interval the server accepts between a
+	// client's keepalive pings, with or without streams; faster pings end the
+	// connection. Clients ping to find a server they can no longer reach.
+	KeepaliveMinPing time.Duration
+	Stall            time.Duration
+	Handshake        time.Duration
+	Idle             time.Duration
 	// MaxConnectionAge ends each client connection with GOAWAY after roughly
 	// this age. Streams already running finish first; the client reconnects
 	// and re-resolves its address, which spreads load onto new replicas.
@@ -42,7 +46,7 @@ type Limits struct {
 }
 
 func DefaultLimits() Limits {
-	limits := Limits{recordWindow: RecordStreamItems, KeepaliveInterval: 30 * time.Second, KeepaliveTimeout: 5 * time.Second, Stall: 30 * time.Second, Handshake: 5 * time.Second, Idle: time.Minute, MaxConnectionAge: 5 * time.Minute}
+	limits := Limits{recordWindow: RecordStreamItems, KeepaliveInterval: 30 * time.Second, KeepaliveTimeout: 5 * time.Second, KeepaliveMinPing: 5 * time.Second, Stall: 30 * time.Second, Handshake: 5 * time.Second, Idle: time.Minute, MaxConnectionAge: 5 * time.Minute}
 	return limits
 }
 
@@ -71,6 +75,7 @@ func New(cfg Config) *Server {
 		serving:   make(chan struct{}),
 	}
 	keepaliveParameters := keepalive.ServerParameters{Time: l.KeepaliveInterval, Timeout: l.KeepaliveTimeout, MaxConnectionIdle: l.Idle, MaxConnectionAge: l.MaxConnectionAge}
+	keepalivePolicy := keepalive.EnforcementPolicy{MinTime: l.KeepaliveMinPing, PermitWithoutStream: true}
 	options := []grpc.ServerOption{
 		grpc.MaxRecvMsgSize(MaxMessageBytes),
 		grpc.MaxSendMsgSize(MaxMessageBytes),
@@ -78,6 +83,7 @@ func New(cfg Config) *Server {
 		grpc.InTapHandle(s.admitRPC),
 		grpc.ChainStreamInterceptor(s.observeStream),
 		grpc.KeepaliveParams(keepaliveParameters),
+		grpc.KeepaliveEnforcementPolicy(keepalivePolicy),
 		grpc.WaitForHandlers(true),
 		grpc.ConnectionTimeout(l.Handshake),
 		// Fixed flow-control windows turn off gRPC's bandwidth estimation,
