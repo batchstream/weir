@@ -207,6 +207,26 @@ are the application's expected results, this threshold does not fit that
 Store. Otherwise read the failure messages in client logs to tell a client bug
 from a backend fault.
 
+### WeirNativeFailures
+
+More than 5% of a Store's Native calls end without a complete response.
+Natives are counted apart from records, so a group that mostly forwards Natives
+raises no record alert when its backend fails. A complete response never counts
+here, whatever its HTTP status, because Weir does not interpret Native results.
+
+`response_incomplete` calls started but did not receive a complete response:
+the backend was unreachable or dropped the connection, a deadline or
+cancellation ended the call before or during the response, or the client
+stopped reading. Such a command may have taken effect. Check backend health and
+network paths first, then client deadlines.
+
+`not_started` calls ended before Weir sent them, so the backend never saw them.
+The request was malformed (an invalid HTTP/1.1 head or Content-Length, invalid
+BSON or a missing `$db`), or, rarely, a cancellation, deadline or shutdown
+landed just as the call was dispatched. A Native whose caller gives up while
+waiting for a free Native slot is not counted. A lasting `not_started` rate
+means clients send invalid Natives; read the failure messages in client logs.
+
 ### WeirQueueWaitHigh
 
 Records of a Store wait more than a second before dispatch at the 99th
