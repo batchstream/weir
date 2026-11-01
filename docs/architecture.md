@@ -121,7 +121,9 @@ at once, but gRPC keeps the stream's last unsent message until the client reads
 it or the connection closes. HTTP/2 flow control uses fixed windows of 1 MiB per
 stream and 16 MiB per connection rather than gRPC's bandwidth estimation, which
 pings each client every round trip while data flows. Keepalive pings and the
-idle and handshake timeouts close unresponsive connections. Every connection
+idle and handshake timeouts close unresponsive connections. Clients may ping as
+often as every 5 seconds, with or without streams, to find a server they can no
+longer reach; faster pings end the connection. Every connection
 ends with GOAWAY after about
 five minutes so clients re-resolve their address; running streams finish first.
 Confirmed write evidence remains valid.

@@ -218,3 +218,92 @@ func TestPartialHTTP2DataFrameCannotRetainConnection(t *testing.T) {
 		t.Fatal("partial HTTP/2 frame executed a record")
 	}
 }
+
+// Clients ping to find a server they can no longer reach, so pings at the
+// accepted interval must keep even an idle connection open, while faster ones
+// still end it.
+func TestKeepalivePingsAtTheAcceptedInterval(t *testing.T) {
+	for _, mode := range []string{"accepted", "too-fast"} {
+		t.Run(mode, func(t *testing.T) {
+			_, local := localStore(t, "records")
+			limits := DefaultLimits()
+			limits.Stall = time.Second
+			limits.KeepaliveMinPing = 20 * time.Millisecond
+			opts := testServerOptions{stores: map[string]*store.Runtime{"records": local}, limits: limits}
+			_, address := startTestServer(t, opts)
+			conn, err := net.DialTimeout("tcp", address, time.Second)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer conn.Close()
+			_ = conn.SetDeadline(time.Now().Add(3 * time.Second))
+			if _, err := io.WriteString(conn, http2.ClientPreface); err != nil {
+				t.Fatal(err)
+			}
+			framer := http2.NewFramer(conn, conn)
+			if err := framer.WriteSettings(); err != nil {
+				t.Fatal(err)
+			}
+			spacing := 40 * time.Millisecond
+			if mode == "too-fast" {
+				spacing = time.Millisecond
+			}
+			frames := make(chan http2.Frame, 64)
+			go func() {
+				defer close(frames)
+				for {
+					frame, err := framer.ReadFrame()
+					if err != nil {
+						return
+					}
+					if settings, ok := frame.(*http2.SettingsFrame); ok && settings.IsAck() {
+						continue
+					}
+					frames <- frame
+				}
+			}()
+			acks := 0
+			const pings = 6
+			for sent := 0; sent < pings; sent++ {
+				var data [8]byte
+				data[0] = byte(sent)
+				if err := framer.WritePing(false, data); err != nil {
+					break
+				}
+				time.Sleep(spacing)
+			}
+			deadline := time.After(time.Second)
+			for {
+				select {
+				case frame, ok := <-frames:
+					if !ok {
+						if mode == "accepted" {
+							t.Fatalf("connection ended after %d of %d ping acks", acks, pings)
+						}
+						return
+					}
+					switch frame := frame.(type) {
+					case *http2.PingFrame:
+						acks++
+						if mode == "accepted" && acks == pings {
+							return
+						}
+					case *http2.GoAwayFrame:
+						if mode == "accepted" {
+							t.Fatalf("server sent GOAWAY %v %q after %d ping acks", frame.ErrCode, frame.DebugData(), acks)
+						}
+						if frame.ErrCode != http2.ErrCodeEnhanceYourCalm {
+							t.Fatalf("GOAWAY code %v, want ENHANCE_YOUR_CALM", frame.ErrCode)
+						}
+						return
+					}
+				case <-deadline:
+					if mode == "too-fast" {
+						t.Fatalf("server accepted %d pings sent %v apart", acks, spacing)
+					}
+					t.Fatalf("got %d of %d ping acks", acks, pings)
+				}
+			}
+		})
+	}
+}
