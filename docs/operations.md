@@ -221,11 +221,11 @@ stopped reading. Such a command may have taken effect. Check backend health and
 network paths first, then client deadlines.
 
 `not_started` calls ended before Weir sent them, so the backend never saw them.
-Either the request was malformed (an invalid HTTP/1.1 head or Content-Length,
-invalid BSON or a missing `$db`), or a cancellation, deadline or server
-shutdown ended the call while it waited. Client logs tell the two apart:
-invalid requests are client bugs, and cancellations point to deadlines shorter
-than the queue wait.
+The request was malformed (an invalid HTTP/1.1 head or Content-Length, invalid
+BSON or a missing `$db`), or, rarely, a cancellation, deadline or shutdown
+landed just as the call was dispatched. A Native whose caller gives up while
+waiting for a free Native slot is not counted. A lasting `not_started` rate
+means clients send invalid Natives; read the failure messages in client logs.
 
 ### WeirQueueWaitHigh
 
