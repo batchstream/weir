@@ -59,8 +59,8 @@ need not wait for writes. Each limit starts at `max_in_flight` and moves between
   held one back, the backend is queueing and the limit halves. A window lasts
   at least 10 ms, one typical execution time and 8 executions, so a few slower
   records, such as reads of a large document, do not decide it. Executions
-  whose callers all left, whose records all failed, or that waited for a Search
-  refresh to make writes query-visible do not count.
+  whose callers all left, whose records all failed before their deadline, or
+  that waited for a Search refresh to make writes query-visible do not count.
 - While executions stay under four times their baseline, the limit grows by
   half a batch per window, or by half its value below one.
 - Below one, the Store runs one batch at a time and leaves the backend idle in
@@ -87,23 +87,23 @@ for a few more execution times, and at most about a second more, once the limit
 falls below one. The limit grows back once executions return to their
 baseline.
 
-A replica that starts while its backend queues sees only slow executions. So
-at the same wall-clock instants on every replica, a Store that kept record
-batches running through the previous interval, or whose limit held one back in
-it, pauses all its record batches, mutations and reads alike, for twice the
-longer of their typical execution times, from 20 ms to 1 second. It then sends
-one batch of each operation within one more such time, at most 250 ms, and
-resumes. With every busy replica paused the backend empties, and those batches
-renew the baselines. Records arriving meanwhile
-wait for the pause to end. The interval is 10 seconds, doubled until the pause
-takes at most 2.5% of it: a Store whose executions typically take 300 ms probes
-every 40 seconds. Replicas that choose neighboring intervals still pause
-together at the longer one's instants. A backend that does not empty within a
-second still runs the probe faster than its queue, and the lower limit that
-follows shortens the next pause's wait. Keep replica clocks synchronized with
-NTP so their pauses overlap.
-Baselines expire after one to two intervals, and at least 15 seconds, so a
-backend that became slower for good regains its limit.
+A replica that starts while its backend queues sees only slow executions. So at
+the same wall-clock instants on every replica, a Store that kept record batches
+running through the previous interval, or whose limit held one back in it,
+pauses all its record batches, mutations and reads alike. A Store that has not
+probed yet pauses as soon as it runs batches. The pause lasts twice the longer
+typical execution time of the operations that ran in the interval, from 20 ms to
+1 second. The Store then sends one batch of each operation within one more such
+time, at most 250 ms, and resumes. With every busy replica paused the backend
+empties, and those batches renew the baselines. Records arriving meanwhile wait
+for the pause to end. The interval is 10 seconds, doubled until the pause takes
+at most 2.5% of it: a Store whose executions typically take 300 ms probes every
+40 seconds. Replicas that choose neighboring intervals still pause together at
+the longer one's instants. A backend that does not empty within a second still
+runs the probe faster than its queue, and the lower limit that follows shortens
+the next pause's wait. Keep replica clocks synchronized with NTP so their pauses
+overlap. Baselines expire after one to two intervals, and at least 15 seconds,
+so a backend that became slower for good regains its limit.
 
 `weir_store_adaptive_executions_limit` and `weir_store_execution_latency_ratio`
 show each limit and the last window's median ratio, with an `operation` label of

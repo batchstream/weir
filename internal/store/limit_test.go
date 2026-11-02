@@ -343,6 +343,13 @@ func newProbeStore(now time.Time, interval time.Duration) *probeStore {
 	return s
 }
 
+// ran records that executions of an operation, typically this long, ran
+// until a time.
+func (s *probeStore) ran(op operation, typical time.Duration, until time.Time) {
+	s.limits[op].typical = typical
+	s.limits[op].lastSeen = until
+}
+
 // probed walks an interval as the runtime does, waking when a pause ends, and
 // returns when each operation sent its probe batches.
 func (s *probeStore) probed(t *testing.T, start time.Time) [2][]time.Time {
@@ -374,9 +381,8 @@ func TestProbesPauseEveryReplicaTogether(t *testing.T) {
 	replicas := make([]*probeStore, 3)
 	for i := range replicas {
 		replicas[i] = newProbeStore(start, interval)
-		limit := &replicas[i].limits[operationMutate]
-		limit.typical = time.Duration(i+1) * 10 * time.Millisecond
-		limit.holdBack(start.Add(-interval / 2))
+		replicas[i].ran(operationMutate, time.Duration(i+1)*10*time.Millisecond, start)
+		replicas[i].limits[operationMutate].holdBack(start.Add(-interval / 2))
 	}
 	// Every replica that held a batch back pauses at the start of the interval.
 	for i, replica := range replicas {
@@ -400,14 +406,14 @@ func TestProbesPauseEveryReplicaTogether(t *testing.T) {
 	// A replica that held nothing back in the previous interval does not pause.
 	next := start.Add(interval)
 	idle := newProbeStore(start, interval)
-	idle.limits[operationMutate].typical = 10 * time.Millisecond
+	idle.ran(operationMutate, 10*time.Millisecond, start)
 	idle.limits[operationMutate].holdBack(start.Add(-interval / 2))
 	if gate, _ := idle.probes.gate(operationMutate, next); gate != gateOpen {
 		t.Fatal("a replica that held nothing back for an interval paused")
 	}
 	// One whose executions outlast the longest pause still pauses, within it.
 	slow := newProbeStore(start, interval)
-	slow.limits[operationMutate].typical = 2 * probeDrainMax
+	slow.ran(operationMutate, 2*probeDrainMax, start)
 	slow.limits[operationMutate].holdBack(start.Add(-interval / 2))
 	gate, until := slow.probes.gate(operationMutate, start)
 	if gate != gateClosed || until.After(start.Add(probeDrainMax+probeWindowMax)) {
@@ -420,9 +426,9 @@ func TestProbesPauseEveryReplicaTogether(t *testing.T) {
 func TestAPauseEmptiesTheBackendOfEveryOperation(t *testing.T) {
 	start := time.Unix(1_000_000, 0)
 	s := newProbeStore(start, time.Second)
-	s.limits[operationMutate].typical = 80 * time.Millisecond
+	s.ran(operationMutate, 80*time.Millisecond, start)
 	s.limits[operationMutate].holdBack(start.Add(-time.Second / 2))
-	s.limits[operationRead].typical = 5 * time.Millisecond
+	s.ran(operationRead, 5*time.Millisecond, start)
 	drain := 2 * s.limits[operationMutate].typical
 	for op := range s.limits {
 		if gate, _ := s.probes.gate(operation(op), start.Add(drain-time.Millisecond)); gate != gateClosed {
@@ -436,13 +442,41 @@ func TestAPauseEmptiesTheBackendOfEveryOperation(t *testing.T) {
 	}
 }
 
+// An operation that stopped keeps its last typical execution time, which must
+// not lengthen the pauses of the one still running.
+func TestAnOperationThatStoppedDoesNotLengthenPauses(t *testing.T) {
+	start := time.Unix(1_000_000, 0).Truncate(8 * probeInterval)
+	s := newProbeStore(start.Add(-20*probeInterval), probeInterval)
+	s.probes.share = probeShare
+	s.ran(operationRead, 800*time.Millisecond, start.Add(-10*probeInterval))
+	s.ran(operationMutate, 5*time.Millisecond, start)
+	s.limits[operationMutate].holdBack(start.Add(-probeInterval / 2))
+	gate, until := s.probes.gate(operationMutate, start)
+	if gate != gateClosed || until.After(start.Add(probeDrainMin+probeWindowMin)) || s.probes.every != probeInterval {
+		t.Fatal("reads that stopped long ago paused mutations until", until.Sub(start), "every", s.probes.every)
+	}
+}
+
+// A replica that started while its backend queued pauses at the first instant
+// it is busy for, without waiting a whole interval.
+func TestAReplicaThatNeverProbedPausesAtOnce(t *testing.T) {
+	start := time.Unix(1_000_000, 0).Truncate(probeInterval)
+	s := newProbeStore(start.Add(-time.Second), probeInterval)
+	s.probes.share = probeShare
+	s.limits[operationMutate].busy(start.Add(-time.Second))
+	s.ran(operationMutate, 10*time.Millisecond, start.Add(-time.Millisecond))
+	if gate, _ := s.probes.gate(operationMutate, start); gate != gateClosed {
+		t.Fatal("a replica that never probed did not pause at its first instant")
+	}
+}
+
 // A baseline lasts until the next probe can renew it.
 func TestBaselinesOutlastTheProbeInterval(t *testing.T) {
 	start := time.Unix(1_000_000, 0).Truncate(8 * probeInterval)
 	s := newProbeStore(start, probeInterval)
 	s.probes.share = probeShare
 	l := &s.limits[operationMutate]
-	l.typical = 300 * time.Millisecond
+	s.ran(operationMutate, 300*time.Millisecond, start)
 	s.probes.gate(operationMutate, start)
 	fast := finishedBatch{started: start, finished: start.Add(10 * time.Millisecond), key: mutations, size: 8}
 	l.observe(fast)
@@ -461,22 +495,25 @@ func TestReplicasThatStayBusyPause(t *testing.T) {
 	start := time.Unix(1_000_000, 0)
 	busy := newProbeStore(start.Add(-3*probeInterval), probeInterval)
 	busy.probes.share = probeShare
-	busy.limits[operationRead].typical = 10 * time.Millisecond
 	busy.limits[operationRead].busy(start.Add(-3 * probeInterval))
+	busy.limits[operationRead].probed = true
+	busy.ran(operationRead, 10*time.Millisecond, start.Add(-time.Millisecond))
 	if gate, _ := busy.probes.gate(operationMutate, start); gate != gateClosed {
 		t.Fatal("a replica busy with reads through the previous interval did not pause its mutations")
 	}
 	// Emptying during its own pause does not make it idle.
+	busy.ran(operationRead, 10*time.Millisecond, start.Add(5*time.Millisecond))
 	busy.probes.rest(operationRead, start.Add(5*time.Millisecond))
 	if gate, _ := busy.probes.gate(operationRead, start.Add(probeInterval)); gate != gateClosed {
 		t.Fatal("a replica that emptied only during a pause stopped pausing")
 	}
 	rested := newProbeStore(start.Add(-3*probeInterval), probeInterval)
 	rested.probes.share = probeShare
-	rested.limits[operationRead].typical = 10 * time.Millisecond
 	rested.limits[operationRead].busy(start.Add(-3 * probeInterval))
+	rested.limits[operationRead].probed = true
 	rested.probes.rest(operationRead, start.Add(-probeInterval/2))
 	rested.limits[operationRead].busy(start.Add(-probeInterval / 4))
+	rested.ran(operationRead, 10*time.Millisecond, start.Add(-time.Millisecond))
 	if gate, _ := rested.probes.gate(operationRead, start); gate != gateOpen {
 		t.Fatal("a replica that was idle in the previous interval paused")
 	}
@@ -489,8 +526,8 @@ func TestSlowExecutionsProbeLessOften(t *testing.T) {
 	slow := newProbeStore(start.Add(-20*probeInterval), probeInterval)
 	slow.probes.share = probeShare
 	l := &slow.limits[operationMutate]
-	l.typical = 300 * time.Millisecond
 	l.busy(start.Add(-20 * probeInterval))
+	slow.ran(operationMutate, 300*time.Millisecond, start.Add(4*probeInterval))
 	for _, at := range []time.Time{start.Add(probeInterval), start.Add(2 * probeInterval), start.Add(3 * probeInterval)} {
 		if gate, _ := slow.probes.gate(operationRead, at); gate != gateOpen {
 			t.Fatal("a slow replica paused", at.Sub(start), "after an instant of its interval")

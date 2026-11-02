@@ -103,6 +103,10 @@ type executionLimit struct {
 	// operation, and busySince is when it last stopped being idle.
 	idle      bool
 	busySince time.Time
+	// lastSeen is when the last observed execution finished, and probed is
+	// set once a probe's execution was observed.
+	lastSeen time.Time
+	probed   bool
 	// every is the Store's current probe interval.
 	every time.Duration
 }
@@ -196,11 +200,19 @@ func (l *executionLimit) busy(now time.Time) {
 	}
 }
 
+// recent reports whether an execution of the limit's operation finished
+// since a time, so that its typical execution time still applies.
+func (l *executionLimit) recent(since time.Time) bool {
+	return !l.lastSeen.IsZero() && !l.lastSeen.Before(since)
+}
+
 // loaded reports whether the limit held a batch back since a time, or its
-// operation kept batches running since then.
+// operation kept batches running since then. A limit that has not probed yet
+// may have learned its baseline from a queue, so it counts as loaded while it
+// runs batches, however recently it started.
 func (l *executionLimit) loaded(since time.Time) bool {
 	held := !l.lastHeld.IsZero() && !l.lastHeld.Before(since)
-	busy := !l.idle && !l.busySince.After(since)
+	busy := !l.idle && l.recent(since) && (!l.busySince.After(since) || !l.probed)
 	return held || busy
 }
 
@@ -216,11 +228,16 @@ func (l *executionLimit) current() float64 {
 // gate reports whether a batch of an operation may start now and, while it
 // waits, until when.
 func (p *probes) gate(op operation, now time.Time) (gate, time.Time) {
-	var drain, window time.Duration
+	// An operation that stopped running keeps its typical execution time, so
+	// only those that ran in the current interval size the pause.
+	drain, window := probeDrainMin, probeWindowMin
 	for i := range p.limits {
+		if !p.limits[i].recent(now.Add(-p.every)) {
+			continue
+		}
 		typical := p.limits[i].typical
-		drain = max(drain, min(max(2*typical, probeDrainMin), probeDrainMax))
-		window = max(window, min(max(typical, probeWindowMin), probeWindowMax))
+		drain = max(drain, min(2*typical, probeDrainMax))
+		window = max(window, min(typical, probeWindowMax))
 	}
 	every := p.interval
 	for float64(drain+window) > p.share*float64(every) {
@@ -325,7 +342,11 @@ func (l *executionLimit) observe(e finishedBatch) {
 	if !e.full && e.finished.After(l.lastFinished) {
 		l.lastFinished = e.finished
 	}
+	if e.finished.After(l.lastSeen) {
+		l.lastSeen = e.finished
+	}
 	if e.probe {
+		l.probed = true
 		return
 	}
 	if l.typical == 0 {
