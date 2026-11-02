@@ -43,6 +43,7 @@ func (a *Adapter) PrepareRecord(ctx context.Context, record *execution.Record) (
 	work.BatchKey = "records"
 	if work.Backend.(*plan).waitUntilVisible {
 		work.BatchKey += "|visible"
+		work.Waits = true
 	}
 	return work, nil
 }

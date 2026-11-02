@@ -1,0 +1,686 @@
+package store
+
+import (
+	"context"
+	"fmt"
+	"math/rand/v2"
+	"sync"
+	"sync/atomic"
+	"testing"
+	"time"
+
+	"github.com/batchstream/weir-protocol/api/protocol"
+	pb "github.com/batchstream/weir-protocol/api/weir/v1"
+	"github.com/batchstream/weir/internal/execution"
+)
+
+// executions describes back-to-back record batches of one kind and size.
+type executions struct {
+	count   int
+	size    int
+	elapsed time.Duration
+	read    bool
+	// held marks that the limit held a ready batch back before each one.
+	held bool
+}
+
+// unit is a tenth of the shortest window, which the executions below are
+// measured in.
+const unit = limitWindow / 10
+
+// times is ratio times an execution time.
+func times(elapsed time.Duration, ratio float64) time.Duration {
+	return time.Duration(ratio * float64(elapsed))
+}
+
+// Executions at 5 units are idle, and these run under and over queueingRatio
+// times as long.
+var (
+	varied = times(5*unit, queueingRatio-0.2)
+	queued = times(5*unit, queueingRatio+1)
+)
+
+type limitFeed struct {
+	limit executionLimit
+	now   time.Time
+}
+
+func newLimitFeed(minimum, maximum int) *limitFeed {
+	now := time.Unix(1_000_000, 0)
+	feed := &limitFeed{limit: newExecutionLimit(minimum, maximum, now), now: now}
+	return feed
+}
+
+func (f *limitFeed) run(batches executions) {
+	for range batches.count {
+		if batches.held {
+			f.limit.holdBack(f.now)
+		}
+		done := finishedBatch{started: f.now, finished: f.now.Add(batches.elapsed), read: batches.read, size: batches.size}
+		f.limit.observe(done)
+		f.now = done.finished
+	}
+}
+
+func TestLimitHalvesWhileExecutionsQueue(t *testing.T) {
+	feed := newLimitFeed(1, 16)
+	idle := executions{count: 10, size: 8, elapsed: 5 * unit}
+	feed.run(idle)
+	if got := feed.limit.current(); got != 16 {
+		t.Fatal("executions at their baseline lowered the limit to", got)
+	}
+	// Executions vary below queueingRatio without queueing.
+	below := executions{count: 10, size: 8, elapsed: varied}
+	feed.run(below)
+	if got := feed.limit.current(); got != 16 {
+		t.Fatal("executions under queueingRatio times their baseline lowered the limit to", got)
+	}
+	over := executions{count: 1, size: 8, elapsed: queued}
+	feed.run(over)
+	if got := feed.limit.current(); got != 8 {
+		t.Fatal("executions over queueingRatio times their baseline left the limit at", got)
+	}
+	// Executions that started before the cut show the old limit.
+	before := finishedBatch{started: feed.now.Add(-unit), finished: feed.now.Add(100 * unit), size: 8}
+	feed.limit.observe(before)
+	if got := feed.limit.current(); got != 8 {
+		t.Fatal("an execution started before the cut lowered the limit to", got)
+	}
+	feed.now = before.finished
+	over.count = 10
+	feed.run(over)
+	if got := feed.limit.current(); got != 1 {
+		t.Fatal("the limit fell to", got, "instead of its minimum")
+	}
+}
+
+func TestLimitGrowsOnlyWhileItHoldsBatchesBack(t *testing.T) {
+	feed := newLimitFeed(1, 16)
+	idle := executions{count: 4, size: 8, elapsed: 5 * unit}
+	feed.run(idle)
+	over := executions{count: 6, size: 8, elapsed: queued}
+	feed.run(over)
+	if got := feed.limit.current(); got != 1 {
+		t.Fatal("queueing left the limit at", got)
+	}
+	unused := executions{count: 100, size: 8, elapsed: 5 * unit}
+	feed.run(unused)
+	if got := feed.limit.current(); got != 1 {
+		t.Fatal("a limit that held nothing back grew to", got)
+	}
+	// Each window that held a batch back adds half a batch.
+	held := executions{count: 20, size: 8, elapsed: 5 * unit, held: true}
+	feed.run(held)
+	if got := feed.limit.current(); got != 6 {
+		t.Fatal("ten windows holding batches back grew the limit to", got)
+	}
+	held.count = 100
+	feed.run(held)
+	if got := feed.limit.current(); got != 16 {
+		t.Fatal("the limit grew to", got, "instead of max_in_flight")
+	}
+}
+
+// Halving the limit makes batches larger, and larger batches take longer even
+// on an idle backend. That must not read as queueing, or the limit would keep
+// halving.
+func TestLargerBatchesAreNotMistakenForQueueing(t *testing.T) {
+	feed := newLimitFeed(1, 16)
+	idle := executions{count: 4, size: 8, elapsed: 5 * unit}
+	feed.run(idle)
+	over := executions{count: 1, size: 8, elapsed: queued}
+	feed.run(over)
+	if got := feed.limit.current(); got != 8 {
+		t.Fatal("queueing left the limit at", got)
+	}
+	larger := executions{count: 40, size: 64, elapsed: 12 * unit, held: true}
+	feed.run(larger)
+	if got := feed.limit.current(); got != 16 {
+		t.Fatal("larger batches at their own baseline held the limit at", got)
+	}
+	// A larger batch is never faster, so it bounds the baseline of smaller ones.
+	fast := newLimitFeed(1, 16)
+	quick := executions{count: 2, size: 64, elapsed: 2 * unit}
+	fast.run(quick)
+	small := executions{count: 10, size: 8, elapsed: times(2*unit, queueingRatio+1)}
+	fast.run(small)
+	if got := fast.limit.current(); got == 16 {
+		t.Fatal("small batches far slower than a larger one did not lower the limit")
+	}
+}
+
+func TestReadsAndMutationsKeepTheirOwnBaselines(t *testing.T) {
+	feed := newLimitFeed(1, 16)
+	read := executions{count: 1, size: 8, elapsed: unit, read: true}
+	mutation := executions{count: 1, size: 8, elapsed: 5 * unit}
+	for range 50 {
+		feed.run(read)
+		feed.run(mutation)
+	}
+	if got := feed.limit.current(); got != 16 {
+		t.Fatal("mutations slower than reads lowered the limit to", got)
+	}
+}
+
+// A backend that became slower for good must not keep the limit at its
+// minimum: the old baseline expires.
+func TestBaselineOfAFasterBackendExpires(t *testing.T) {
+	feed := newLimitFeed(1, 16)
+	faster := executions{count: 10, size: 8, elapsed: 5 * unit}
+	feed.run(faster)
+	slower := executions{count: 1, size: 8, elapsed: queued, held: true}
+	start := feed.now
+	for feed.now.Sub(start) < baselineAge {
+		feed.run(slower)
+	}
+	if got := feed.limit.current(); got != 1 {
+		t.Fatal("a slower backend left the limit at", got, "while its old baseline lasted")
+	}
+	for feed.now.Sub(start) < 2*baselineAge+1000*unit {
+		feed.run(slower)
+	}
+	if got := feed.limit.current(); got != 16 {
+		t.Fatal("after the old baseline expired the limit only reached", got)
+	}
+}
+
+func TestOneStalledExecutionDoesNotDecideAWindow(t *testing.T) {
+	feed := newLimitFeed(1, 16)
+	quick := executions{count: 19, size: 8, elapsed: unit}
+	feed.run(quick)
+	stalled := executions{count: 1, size: 8, elapsed: 100 * unit}
+	feed.run(stalled)
+	if got := feed.limit.current(); got != 16 {
+		t.Fatal("one stalled execution lowered the limit to", got)
+	}
+}
+
+// One execution per replica can be more than a shared backend takes. The limit
+// then runs one batch at a time and leaves the backend idle in between, and
+// the callers that would have sent a second batch join the next one.
+func TestLimitFallsBelowOneBatch(t *testing.T) {
+	feed := newLimitFeed(0, 16)
+	idle := executions{count: 4, size: 8, elapsed: 5 * unit}
+	feed.run(idle)
+	queued := executions{count: 20, size: 8, elapsed: 40 * unit}
+	feed.run(queued)
+	if got := feed.limit.current(); got != lowestLimit {
+		t.Fatal("queueing at one batch left the limit at", got)
+	}
+	if admitted, _ := feed.limit.admits(1, feed.now); admitted {
+		t.Fatal("a limit below one admitted a second running batch")
+	}
+	// A quarter runs one batch and stays idle three times as long.
+	admitted, retry := feed.limit.admits(0, feed.now)
+	idleFor := 3 * feed.limit.typical
+	if admitted || !retry.Equal(feed.limit.lastFinished.Add(idleFor)) {
+		t.Fatal("a limit of a quarter admitted", admitted, "with retry after", retry.Sub(feed.now))
+	}
+	if admitted, _ := feed.limit.admits(0, retry); !admitted {
+		t.Fatal("the limit did not admit a batch after its idle time")
+	}
+	// Below one it grows by half its value per window that held a batch back.
+	held := executions{count: 1, size: 8, elapsed: 5 * unit, held: true}
+	for range 100 {
+		feed.run(held)
+		if feed.limit.current() != lowestLimit {
+			break
+		}
+	}
+	if got := feed.limit.current(); got != 1.5*lowestLimit {
+		t.Fatal("a window holding batches back grew the limit to", got)
+	}
+}
+
+// A replica that starts while the backend queues takes slow executions for its
+// baseline; the probe's execution on an emptied backend corrects it.
+func TestAProbeRenewsAnInflatedBaseline(t *testing.T) {
+	feed := newLimitFeed(1, 16)
+	congested := executions{count: 20, size: 8, elapsed: 8 * unit, held: true}
+	feed.run(congested)
+	if got := feed.limit.current(); got != 16 {
+		t.Fatal("executions at a congested baseline lowered the limit to", got)
+	}
+	typical := feed.limit.typical
+	fastest := times(congested.elapsed, 1/(queueingRatio+1))
+	probe := finishedBatch{started: feed.now, finished: feed.now.Add(fastest), size: 8, probe: true}
+	feed.limit.observe(probe)
+	feed.now = probe.finished
+	if got := feed.limit.baseline(0, sizeClass(8)); got != fastest {
+		t.Fatal("the probe left the baseline at", got)
+	}
+	if feed.limit.typical != typical {
+		t.Fatal("the probe moved the typical execution time to", feed.limit.typical)
+	}
+	feed.run(congested)
+	if got := feed.limit.current(); got != 1 {
+		t.Fatal("congested executions after the probe left the limit at", got)
+	}
+}
+
+func TestProbesPauseEveryReplicaTogether(t *testing.T) {
+	start := time.Unix(1_000_000, 0)
+	interval := time.Second
+	replicas := make([]executionLimit, 3)
+	for i := range replicas {
+		replicas[i] = newExecutionLimit(1, 16, start)
+		replicas[i].interval = interval
+		replicas[i].share = 1
+		replicas[i].typical = time.Duration(i+1) * 10 * time.Millisecond
+		replicas[i].holdBack(start.Add(-interval / 2))
+	}
+	// Every replica that held a batch back pauses at the start of the interval.
+	for i := range replicas {
+		if gate, _ := replicas[i].gate(start); gate != gateClosed {
+			t.Fatal("replica", i, "did not pause at the start of an interval")
+		}
+	}
+	// Each sends one probe batch, after a drain of twice its typical execution
+	// time and within one typical execution time after that.
+	for i := range replicas {
+		l := &replicas[i]
+		probes := 0
+		// Like the runtime, wake when a pause ends.
+		for at := start; at.Before(start.Add(interval)); {
+			gate, until := l.gate(at)
+			switch gate {
+			case gateClosed:
+				if !until.After(at) {
+					t.Fatal("replica", i, "paused until", until.Sub(start), "at", at.Sub(start))
+				}
+				at = until
+			case gateProbe:
+				drain := 2 * l.typical
+				if at.Before(start.Add(drain)) || !at.Before(start.Add(drain+l.typical)) {
+					t.Fatal("replica", i, "probed at", at.Sub(start))
+				}
+				l.sendProbe()
+				probes++
+			default:
+				at = at.Add(time.Millisecond)
+			}
+		}
+		if probes != 1 {
+			t.Fatal("replica", i, "sent", probes, "probe batches")
+		}
+	}
+	// A replica that held nothing back in the previous interval does not pause.
+	next := start.Add(interval)
+	idle := newExecutionLimit(1, 16, start)
+	idle.interval = interval
+	idle.share = 1
+	idle.typical = 10 * time.Millisecond
+	idle.holdBack(start.Add(-interval / 2))
+	if gate, _ := idle.gate(next); gate != gateOpen {
+		t.Fatal("a replica that held nothing back for an interval paused")
+	}
+	// One whose executions outlast the longest pause still pauses, within it.
+	slow := newExecutionLimit(1, 16, start)
+	slow.interval = interval
+	slow.share = 1
+	slow.typical = 2 * probeDrainMax
+	slow.holdBack(start.Add(-interval / 2))
+	gate, until := slow.gate(start)
+	if gate != gateClosed || until.After(start.Add(probeDrainMax+probeWindowMax)) {
+		t.Fatal("a replica with executions longer than the longest pause paused until", until.Sub(start))
+	}
+}
+
+// A baseline lasts until the next probe can renew it.
+func TestBaselinesOutlastTheProbeInterval(t *testing.T) {
+	start := time.Unix(1_000_000, 0).Truncate(8 * probeInterval)
+	l := newExecutionLimit(1, 16, start)
+	l.typical = 300 * time.Millisecond
+	l.gate(start)
+	fast := finishedBatch{started: start, finished: start.Add(10 * time.Millisecond), size: 8}
+	l.observe(fast)
+	for _, at := range []time.Duration{20 * time.Second, 36 * time.Second} {
+		slow := finishedBatch{started: start.Add(at), finished: start.Add(at + 300*time.Millisecond), size: 8}
+		l.observe(slow)
+	}
+	if got := l.baseline(0, sizeClass(8)); got != 10*time.Millisecond {
+		t.Fatal("a probe interval of", l.every, "kept a baseline of", got)
+	}
+}
+
+// A replica whose limit holds nothing back still loads the backend while it
+// keeps batches running, so it pauses with the others.
+func TestReplicasThatStayBusyPause(t *testing.T) {
+	start := time.Unix(1_000_000, 0)
+	busy := newExecutionLimit(1, 16, start.Add(-3*probeInterval))
+	busy.typical = 10 * time.Millisecond
+	busy.busy(start.Add(-3 * probeInterval))
+	if gate, _ := busy.gate(start); gate != gateClosed {
+		t.Fatal("a replica busy through the previous interval did not pause")
+	}
+	// Emptying during its own pause does not make it idle.
+	busy.rest(start.Add(5 * time.Millisecond))
+	if gate, _ := busy.gate(start.Add(probeInterval)); gate != gateClosed {
+		t.Fatal("a replica that emptied only during a pause stopped pausing")
+	}
+	rested := newExecutionLimit(1, 16, start.Add(-3*probeInterval))
+	rested.typical = 10 * time.Millisecond
+	rested.busy(start.Add(-3 * probeInterval))
+	rested.rest(start.Add(-probeInterval / 2))
+	rested.busy(start.Add(-probeInterval / 4))
+	if gate, _ := rested.gate(start); gate != gateOpen {
+		t.Fatal("a replica that was idle in the previous interval paused")
+	}
+}
+
+// A pause of twice a long execution would take a large share of every
+// interval, so slower Stores probe less often, at instants faster ones share.
+func TestSlowExecutionsProbeLessOften(t *testing.T) {
+	start := time.Unix(1_000_000, 0).Truncate(8 * probeInterval)
+	slow := newExecutionLimit(1, 16, start.Add(-20*probeInterval))
+	slow.typical = 300 * time.Millisecond
+	slow.busy(start.Add(-20 * probeInterval))
+	for _, at := range []time.Time{start.Add(probeInterval), start.Add(2 * probeInterval), start.Add(3 * probeInterval)} {
+		if gate, _ := slow.gate(at); gate != gateOpen {
+			t.Fatal("a slow replica paused", at.Sub(start), "after an instant of its interval")
+		}
+	}
+	if gate, _ := slow.gate(start.Add(4 * probeInterval)); gate != gateClosed {
+		t.Fatal("a slow replica did not pause at an instant of its interval")
+	}
+	if slow.every != 4*probeInterval {
+		t.Fatal("a pause of", 2*slow.typical, "probes every", slow.every)
+	}
+}
+
+func TestAStoreIsIdleOnlyWithNothingRunningOrQueued(t *testing.T) {
+	release := make(chan struct{})
+	adapter := &fakeAdapter{started: make(chan []*execution.Plan, 1)}
+	adapter.records = blockUntil(release)
+	runtime := open(t, adapter, limits(nil))
+	idle := func() bool {
+		runtime.mu.Lock()
+		defer runtime.mu.Unlock()
+		return runtime.limit.idle
+	}
+	ticket := submit(t, runtime, mutationPlan("a"), nil)
+	<-adapter.started
+	if idle() {
+		t.Fatal("a Store running a record batch is idle")
+	}
+	close(release)
+	wait(t, ticket)
+	if !idle() {
+		t.Fatal("a Store with nothing running or queued is busy")
+	}
+}
+
+// lowerLimit sets a runtime's adaptive limit as if its backend had queued.
+func lowerLimit(runtime *Runtime, value float64) {
+	runtime.mu.Lock()
+	defer runtime.mu.Unlock()
+	runtime.limit.value = value
+}
+
+func TestFullBatchesUseEverySlot(t *testing.T) {
+	adapter := &fakeAdapter{started: make(chan []*execution.Plan, 8)}
+	release := make(chan struct{})
+	adapter.records = blockUntil(release)
+	runtime := open(t, adapter, limits(func(l *Limits) { l.MaxInFlight, l.BatchOperations = 4, 2 }))
+	lowerLimit(runtime, 1)
+	submit(t, runtime, mutationPlan("a"), nil)
+	if got := started(t, adapter); len(got) != 1 {
+		t.Fatal("first batch", got)
+	}
+	// Each lone record waits for the limit until a second one fills its batch.
+	for i := range 3 {
+		submit(t, runtime, mutationPlan(fmt.Sprint("held", i)), nil)
+		notStarted(t, adapter)
+		submit(t, runtime, mutationPlan(fmt.Sprint("filled", i)), nil)
+		if got := started(t, adapter); len(got) != 2 {
+			t.Fatal("a full batch did not start beside the limit", got)
+		}
+	}
+	submit(t, runtime, mutationPlan("over"), nil)
+	submit(t, runtime, mutationPlan("max"), nil)
+	notStarted(t, adapter)
+	if stats := runtime.Stats(); stats.Active != 4 || stats.AdaptiveLimit != 1 || stats.Queued != 2 {
+		t.Fatal("full batches did not stop at max_in_flight", stats)
+	}
+	close(release)
+	if got := started(t, adapter); len(got) != 2 {
+		t.Fatal("the batch over max_in_flight", got)
+	}
+}
+
+func TestDrainUsesEverySlot(t *testing.T) {
+	adapter := &fakeAdapter{started: make(chan []*execution.Plan, 8)}
+	release := make(chan struct{})
+	adapter.records = blockUntil(release)
+	runtime := open(t, adapter, limits(func(l *Limits) { l.MaxInFlight = 4 }))
+	lowerLimit(runtime, 1)
+	for i := range 4 {
+		plan := mutationPlan(fmt.Sprint("r", i))
+		plan.BatchKey = fmt.Sprint("collection", i)
+		submit(t, runtime, plan, nil)
+	}
+	started(t, adapter)
+	notStarted(t, adapter)
+	runtime.BeginDrain()
+	for range 3 {
+		started(t, adapter)
+	}
+	close(release)
+}
+
+func TestALimitBelowOneSpacesBatchesOut(t *testing.T) {
+	adapter := &fakeAdapter{started: make(chan []*execution.Plan, 8)}
+	runtime := open(t, adapter, limits(nil))
+	runtime.mu.Lock()
+	runtime.limit.value = 0.5
+	runtime.limit.typical = 200 * time.Millisecond
+	runtime.limit.lastFinished = time.Now()
+	runtime.mu.Unlock()
+	submitted := time.Now()
+	ticket := submit(t, runtime, mutationPlan("a"), nil)
+	started(t, adapter)
+	// At a half the backend stays idle as long as an execution typically takes.
+	if waited := time.Since(submitted); waited < 150*time.Millisecond {
+		t.Fatal("a batch started", waited, "after the last execution finished")
+	}
+	wait(t, ticket)
+}
+
+func TestEqualInFlightBoundsFixTheLimit(t *testing.T) {
+	adapter := &fakeAdapter{started: make(chan []*execution.Plan, 8)}
+	release := make(chan struct{})
+	adapter.records = blockUntil(release)
+	runtime := open(t, adapter, limits(func(l *Limits) { l.MinInFlight, l.MaxInFlight = 3, 3 }))
+	if runtime.adaptive {
+		t.Fatal("equal bounds left the limit adaptive")
+	}
+	lowerLimit(runtime, 1)
+	for i := range 3 {
+		plan := mutationPlan(fmt.Sprint("r", i))
+		plan.BatchKey = fmt.Sprint("collection", i)
+		submit(t, runtime, plan, nil)
+		started(t, adapter)
+	}
+	if stats := runtime.Stats(); stats.AdaptiveLimit != 3 || stats.LatencyRatio != 0 {
+		t.Fatal("fixed limit reported", stats)
+	}
+	close(release)
+}
+
+func TestAbandonedExecutionsDoNotTeachTheLimit(t *testing.T) {
+	adapter := &fakeAdapter{started: make(chan []*execution.Plan, 8)}
+	adapter.records = blockUntil(nil)
+	runtime := open(t, adapter, limits(nil))
+	ctx, cancel := context.WithCancel(t.Context())
+	ticket := submitWithin(t, ctx, runtime, mutationPlan("a"))
+	started(t, adapter)
+	cancel()
+	if _, err := ticket.Wait(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	runtime.mu.Lock()
+	typical := runtime.limit.typical
+	runtime.mu.Unlock()
+	if typical != 0 {
+		t.Fatal("an execution its callers abandoned was observed", typical)
+	}
+}
+
+func TestRefusedExecutionsDoNotTeachTheLimit(t *testing.T) {
+	var refuse atomic.Bool
+	refuse.Store(true)
+	adapter := &fakeAdapter{}
+	adapter.records = func(_ context.Context, plans []*execution.Plan) []*pb.Event {
+		if !refuse.Load() {
+			return applied(plans)
+		}
+		events := make([]*pb.Event, len(plans))
+		for i, plan := range plans {
+			failure := protocol.Fail(pb.FailureCode_UNAVAILABLE, "connection refused")
+			events[i] = execution.FailedEvent(plan.Command, pb.MutationOutcome_NOT_STARTED, failure)
+		}
+		return events
+	}
+	runtime := open(t, adapter, limits(nil))
+	typical := func() time.Duration {
+		runtime.mu.Lock()
+		defer runtime.mu.Unlock()
+		return runtime.limit.typical
+	}
+	refused := submit(t, runtime, mutationPlan("a"), nil)
+	wait(t, refused)
+	if got := typical(); got != 0 {
+		t.Fatal("an execution its backend refused was observed", got)
+	}
+	refuse.Store(false)
+	answered := submit(t, runtime, mutationPlan("b"), nil)
+	wait(t, answered)
+	if typical() == 0 {
+		t.Fatal("an execution its backend answered was not observed")
+	}
+}
+
+func TestExecutionsThatWaitDoNotTeachTheLimit(t *testing.T) {
+	adapter := &fakeAdapter{}
+	adapter.records = func(_ context.Context, plans []*execution.Plan) []*pb.Event {
+		return applied(plans)
+	}
+	runtime := open(t, adapter, limits(nil))
+	typical := func() time.Duration {
+		runtime.mu.Lock()
+		defer runtime.mu.Unlock()
+		return runtime.limit.typical
+	}
+	visible := mutationPlan("a")
+	visible.Waits = true
+	waited := submit(t, runtime, visible, nil)
+	wait(t, waited)
+	if got := typical(); got != 0 {
+		t.Fatal("an execution that waited for a refresh was observed", got)
+	}
+	answered := submit(t, runtime, mutationPlan("b"), nil)
+	wait(t, answered)
+	if typical() == 0 {
+		t.Fatal("an execution that did not wait was not observed")
+	}
+}
+
+// sharedBackend runs executions on two workers. Each costs a fixed overhead
+// plus a small cost per record, as a request costs a database CPU.
+type sharedBackend struct {
+	workers   chan struct{}
+	overhead  time.Duration
+	perRecord time.Duration
+	records   atomic.Int64
+}
+
+func (b *sharedBackend) execute(ctx context.Context, plans []*execution.Plan) []*pb.Event {
+	select {
+	case b.workers <- struct{}{}:
+	case <-ctx.Done():
+		events := make([]*pb.Event, len(plans))
+		for i, plan := range plans {
+			events[i] = execution.FailedEvent(plan.Command, pb.MutationOutcome_NOT_STARTED, protocol.ContextFailure(ctx))
+		}
+		return events
+	}
+	time.Sleep(b.overhead + time.Duration(len(plans))*b.perRecord)
+	<-b.workers
+	b.records.Add(int64(len(plans)))
+	return applied(plans)
+}
+
+type sharingRun struct {
+	replicas, writers int
+	limits            Limits
+}
+
+// throughput runs writers that each wait for one record at a time, spread over
+// replicas sharing one backend, and returns the records per second it applied
+// after a warm-up of several probes.
+func throughput(t *testing.T, run sharingRun) float64 {
+	t.Helper()
+	backend := &sharedBackend{workers: make(chan struct{}, 2), overhead: 2 * time.Millisecond, perRecord: 20 * time.Microsecond}
+	runtimes := make([]*Runtime, run.replicas)
+	for i := range runtimes {
+		adapter := &fakeAdapter{records: backend.execute}
+		runtimes[i] = open(t, adapter, run.limits)
+		runtimes[i].mu.Lock()
+		runtimes[i].limit.interval = 300 * time.Millisecond
+		runtimes[i].limit.share = 1
+		runtimes[i].mu.Unlock()
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	var writers sync.WaitGroup
+	var sequence atomic.Int64
+	for i := range run.writers {
+		runtime := runtimes[i%run.replicas]
+		writers.Go(func() {
+			for ctx.Err() == nil {
+				// Callers that finish together do not all send again at once.
+				time.Sleep(rand.N(2 * time.Millisecond))
+				plan := mutationPlan(fmt.Sprint("r", sequence.Add(1)))
+				ticket, failure := runtime.Submit(ctx, plan, nil)
+				if failure != nil {
+					return
+				}
+				_, _ = ticket.Wait(ctx)
+			}
+		})
+	}
+	time.Sleep(1500 * time.Millisecond)
+	before := backend.records.Load()
+	measure := time.Second
+	time.Sleep(measure)
+	applied := backend.records.Load() - before
+	cancel()
+	writers.Wait()
+	return float64(applied) / measure.Seconds()
+}
+
+// Replicas added in front of a backend that is the bottleneck must not lower
+// what it applies. With fixed slots each replica keeps sending small batches,
+// and the backend spends its time on their overhead.
+func TestReplicasSharingASlowBackendKeepTheirThroughput(t *testing.T) {
+	if testing.Short() {
+		t.Skip("runs for several seconds")
+	}
+	adaptive := DefaultLimits()
+	fixed := DefaultLimits()
+	fixed.MinInFlight = fixed.MaxInFlight
+	few := sharingRun{replicas: 2, writers: 768, limits: adaptive}
+	many := few
+	many.replicas = 6
+	fixedMany := many
+	fixedMany.limits = fixed
+	fewRate := throughput(t, few)
+	manyRate := throughput(t, many)
+	fixedRate := throughput(t, fixedMany)
+	t.Logf("records/s: 2 replicas %.0f, 6 replicas %.0f, 6 replicas with fixed slots %.0f", fewRate, manyRate, fixedRate)
+	if manyRate < 0.8*fewRate {
+		t.Fatalf("six replicas applied %.0f records/s against %.0f for two", manyRate, fewRate)
+	}
+	if manyRate < 4*fixedRate {
+		t.Fatalf("adaptive slots applied %.0f records/s against %.0f for fixed slots", manyRate, fixedRate)
+	}
+}

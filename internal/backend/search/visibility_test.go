@@ -165,6 +165,9 @@ func TestMutationVisibilityFlagsGroupWritesAndKeepDefaultBehavior(t *testing.T) 
 	if works[0].BatchKey == works[1].BatchKey || works[1].BatchKey != works[6].BatchKey {
 		t.Fatal("scheduler must separate visibility waits and batch every opted-in mutation")
 	}
+	if works[0].Waits || !works[1].Waits || works[7].Waits {
+		t.Fatal("refresh waits must not be taken for backend load", works[0].Waits, works[1].Waits, works[7].Waits)
+	}
 	results := adapter.executeRecords(t.Context(), works)
 	for _, result := range results {
 		mutation := result.GetMutationResult()

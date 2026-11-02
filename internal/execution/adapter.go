@@ -19,7 +19,11 @@ type Plan struct {
 	// Bytes is the request size used for queue and batch bounds.
 	Bytes int
 	// Index is the record's one-based ordinal in its stream.
-	Index   uint64
+	Index uint64
+	// Waits marks a record whose execution also waits for something other
+	// than the backend's work on it, such as a scheduled refresh. Its time
+	// does not show how loaded the backend is.
+	Waits   bool
 	Context context.Context
 	Backend any
 }

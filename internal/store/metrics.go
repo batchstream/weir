@@ -85,27 +85,37 @@ func (m runtimeMetrics) observe(command *pb.Command, event *pb.Event) {
 func (r *Runtime) Describe(ch chan<- *prometheus.Desc) { prometheus.DescribeByCollect(r, ch) }
 
 // Stats is the Store's current queue and execution state. Active counts record
-// batches and Natives counts running Native commands.
+// batches and Natives counts running Native commands. AdaptiveLimit is how many
+// record batches may run while one that is not full starts, below one the
+// share of time one runs, and LatencyRatio the last window's median execution
+// time over its baseline.
 type Stats struct {
 	Queued, QueuedBytes, Active, Natives int
+	AdaptiveLimit, LatencyRatio          float64
 }
 
 func (r *Runtime) Stats() Stats {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	stats := Stats{Queued: len(r.queue), QueuedBytes: r.queueBytes, Active: r.records, Natives: r.natives}
+	stats := Stats{Queued: len(r.queue), QueuedBytes: r.queueBytes, Active: r.records, Natives: r.natives, AdaptiveLimit: float64(r.limits.MaxInFlight)}
+	if r.adaptive {
+		stats.AdaptiveLimit = r.limit.current()
+		stats.LatencyRatio = r.limit.ratio
+	}
 	return stats
 }
 
 func (r *Runtime) Collect(ch chan<- prometheus.Metric) {
 	stats := r.Stats()
 	values := map[string]float64{
-		"queued_operations":       float64(stats.Queued),
-		"queued_bytes":            float64(stats.QueuedBytes),
-		"active_executions":       float64(stats.Active),
-		"active_executions_limit": float64(r.limits.MaxInFlight),
-		"active_natives":          float64(stats.Natives),
-		"active_natives_limit":    float64(r.limits.MaxNative),
+		"queued_operations":         float64(stats.Queued),
+		"queued_bytes":              float64(stats.QueuedBytes),
+		"active_executions":         float64(stats.Active),
+		"active_executions_limit":   float64(r.limits.MaxInFlight),
+		"adaptive_executions_limit": stats.AdaptiveLimit,
+		"execution_latency_ratio":   stats.LatencyRatio,
+		"active_natives":            float64(stats.Natives),
+		"active_natives_limit":      float64(r.limits.MaxNative),
 	}
 	for name, value := range values {
 		description := prometheus.NewDesc("weir_store_"+name, "Store queue and execution state.", nil, nil)

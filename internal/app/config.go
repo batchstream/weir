@@ -64,6 +64,7 @@ type Batching struct {
 	MaxOperations Count     `yaml:"max_operations,omitempty"`
 	MaxBytes      ByteSize  `yaml:"max_bytes,omitempty"`
 	MaxWait       *Duration `yaml:"max_wait,omitempty"`
+	MinInFlight   Count     `yaml:"min_in_flight,omitempty"`
 	MaxInFlight   Count     `yaml:"max_in_flight,omitempty"`
 }
 
@@ -184,6 +185,9 @@ func (definition StoreConfig) runtimeLimits() store.Limits {
 	}
 	if b.MaxWait != nil {
 		limits.BatchWait = time.Duration(*b.MaxWait)
+	}
+	if b.MinInFlight != 0 {
+		limits.MinInFlight = int(b.MinInFlight)
 	}
 	if b.MaxInFlight != 0 {
 		limits.MaxInFlight = int(b.MaxInFlight)
