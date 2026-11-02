@@ -88,7 +88,7 @@ func (r *Runtime) Describe(ch chan<- *prometheus.Desc) { prometheus.DescribeByCo
 // batches and Natives counts running Native commands. AdaptiveLimit is how many
 // record batches may run while one that is not full starts, below one the
 // share of time one runs, and LatencyRatio the last window's median execution
-// time over its baseline.
+// time over its baseline, or zero when the limit is fixed.
 type Stats struct {
 	Queued, QueuedBytes, Active, Natives int
 	AdaptiveLimit, LatencyRatio          float64

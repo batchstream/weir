@@ -75,7 +75,7 @@ of improved capacity.
 | --- | --- |
 | `weir_node_ready` | Readiness |
 | `weir_store_active_executions`, `weir_store_active_executions_limit` | Per-Store record batches and their limit |
-| `weir_store_adaptive_executions_limit`, `weir_store_execution_latency_ratio` | The [adaptive limit](batching.md#adaptive-concurrency) for record batches that are not full, below one the share of time one runs, and the last window's median execution time over its baseline; above 4 the backend queues |
+| `weir_store_adaptive_executions_limit`, `weir_store_execution_latency_ratio` | The [adaptive limit](batching.md#adaptive-concurrency) for record batches that are not full, below one the share of time one runs, and the last window's median execution time over its baseline; above 4 the backend queues, and 0 when the limit is fixed |
 | `weir_store_active_natives`, `weir_store_active_natives_limit` | Per-Store running Native commands |
 | `weir_store_native_seconds` | Native call time, including sending the response on the RPC stream; not proof of client receipt |
 | `weir_store_queued_operations`, `weir_store_queued_bytes` | Waiting work |
@@ -231,11 +231,13 @@ means clients send invalid Natives; read the failure messages in client logs.
 ### WeirQueueWaitHigh
 
 Records of a Store wait more than a second before dispatch at the 99th
-percentile. Compare `weir_store_active_executions` with
-`weir_store_adaptive_executions_limit`, and read
-`weir_store_execution_latency_ratio`. Busy slots with a ratio above 4 mean the
-database is the bottleneck: records wait in Weir, where they form larger batches,
-and more Weir replicas add no capacity. Free slots mean records wait for earlier
+percentile. Compare `weir_store_execution_seconds` and
+`weir_store_active_executions` with `weir_store_adaptive_executions_limit`, and
+read `weir_store_execution_latency_ratio`. Busy slots with slow executions, or a
+ratio above 4, mean the database is the bottleneck: records wait in Weir, where
+they form larger batches, and more Weir replicas add no capacity. The ratio is 0
+when `min_in_flight` equals `max_in_flight`, and it keeps its last value while a
+Store is idle. Free slots mean records wait for earlier
 mutations of the same resource: one stream's mutations of a resource run one at
 a time, so a client that keeps rewriting the same records queues behind itself.
 

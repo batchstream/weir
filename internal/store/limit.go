@@ -12,10 +12,10 @@ import (
 // without this a shared backend would receive more and smaller requests as
 // replicas are added or as it slows down, and slow down further. The limit
 // compares each execution's time with the fastest recent execution of a batch
-// of the same kind and size. When the backend queues, executions take longer
-// than that baseline and the limit halves, so records wait and share larger
-// batches; while the limit holds batches back and executions stay near the
-// baseline, it grows again. Replicas sharing a backend see the same queueing
+// of the same group and size. When the backend queues while this Store
+// contends for it, executions take longer than that baseline and the limit
+// halves, so records wait and share larger batches; while the limit holds
+// batches back and executions stay near the baseline, it grows again. Replicas sharing a backend see the same queueing
 // and back off together, so their total follows what the backend can take
 // rather than how many replicas there are. Below one, the limit runs one batch
 // at a time and leaves the backend idle in between, so a replica's callers
@@ -50,9 +50,12 @@ const (
 	// or the probe interval when that is longer. A baseline expires after one
 	// to two ages, so a backend that became slower for good regains its limit.
 	baselineAge = 15 * time.Second
-	// sizeClasses holds batch sizes 1, 2–3, 4–7 and so on; larger sizes share
-	// the last class.
+	// sizeClasses holds batch sizes 1, 2–3, 4–7 and so on, in records or in
+	// KiB when that is larger; larger sizes share the last class.
 	sizeClasses = 16
+	// longestIdle bounds the idle time between batches below one, which
+	// follows the typical execution time that one stalled execution raises.
+	longestIdle = time.Second
 	// probeInterval separates probes; they start at multiples of it on the
 	// wall clock, so the replicas of a group pause together. It doubles until
 	// a pause takes at most probeShare of it. Replicas whose executions differ
@@ -72,16 +75,17 @@ const (
 type executionLimit struct {
 	min, max float64
 	value    float64
-	// fastest[generation][kind][class] is the shortest execution seen in the
-	// current (0) and previous generation, by reads (1) or mutations (0).
-	fastest    [2][2][sizeClasses]time.Duration
+	// fastest holds each batch group's shortest executions by size class in
+	// the current (0) and previous generation.
+	fastest    map[groupKey]*[2][sizeClasses]time.Duration
 	generation time.Time
 	// typical is a moving average of execution time.
 	typical time.Duration
-	// The current window.
-	windowStart time.Time
-	ratios      []float64
-	heldBack    bool
+	// The current window. A window contended for the backend when the limit
+	// held a batch back or batches ran together.
+	windowStart        time.Time
+	ratios             []float64
+	heldBack, together bool
 	// cutAt is when the limit last halved; executions that started earlier
 	// show the old limit and do not count.
 	cutAt time.Time
@@ -89,7 +93,7 @@ type executionLimit struct {
 	ratio float64
 	// lastHeld is when the limit last held a batch back.
 	lastHeld time.Time
-	// lastFinished is when the last observed execution finished.
+	// lastFinished is when the last observed batch that was not full finished.
 	lastFinished time.Time
 	// idle is set while the Store runs and queues no record batch, and
 	// busySince is when it last stopped being idle.
@@ -125,9 +129,9 @@ const (
 // finishedBatch is one record batch the adapter executed.
 type finishedBatch struct {
 	started, finished time.Time
-	read              bool
-	size              int
-	probe             bool
+	key               groupKey
+	size, bytes       int
+	full, probe       bool
 }
 
 func newExecutionLimit(minimum, maximum int, now time.Time) executionLimit {
@@ -135,14 +139,14 @@ func newExecutionLimit(minimum, maximum int, now time.Time) executionLimit {
 	if minimum == 0 {
 		floor = lowestLimit
 	}
-	limit := executionLimit{min: floor, max: float64(maximum), value: float64(maximum), generation: now, windowStart: now, idle: true, interval: probeInterval, every: probeInterval, share: probeShare}
+	limit := executionLimit{min: floor, max: float64(maximum), value: float64(maximum), fastest: make(map[groupKey]*[2][sizeClasses]time.Duration), generation: now, windowStart: now, idle: true, interval: probeInterval, every: probeInterval, share: probeShare}
 	return limit
 }
 
 // admits reports whether a batch that is not full may start while running
-// record batches execute. Otherwise it returns when one may, or the zero time
-// when that waits for an execution to finish. Below one the backend stays idle
-// between executions in proportion: at a half, as long as one typically takes.
+// such batches execute. Otherwise it returns when one may, or the zero time
+// when that waits for an execution to finish. Below one these batches leave
+// the backend idle in proportion: at a half, as long as one typically takes.
 func (l *executionLimit) admits(running int, now time.Time) (bool, time.Time) {
 	var finish time.Time
 	if l.value >= 1 {
@@ -151,7 +155,7 @@ func (l *executionLimit) admits(running int, now time.Time) (bool, time.Time) {
 	if running > 0 {
 		return false, finish
 	}
-	idle := time.Duration(float64(l.typical) * (1/l.value - 1))
+	idle := min(time.Duration(float64(l.typical)*(1/l.value-1)), longestIdle)
 	next := l.lastFinished.Add(idle)
 	if !now.Before(next) {
 		return true, finish
@@ -163,6 +167,11 @@ func (l *executionLimit) admits(running int, now time.Time) (bool, time.Time) {
 func (l *executionLimit) holdBack(now time.Time) {
 	l.heldBack = true
 	l.lastHeld = now
+}
+
+// overlap records that a record batch started while another ran.
+func (l *executionLimit) overlap() {
+	l.together = true
 }
 
 // busy records that a record batch started.
@@ -209,8 +218,9 @@ func (l *executionLimit) gate(now time.Time) (gate, time.Time) {
 		active := held || busy
 		*p = probe{start: start, active: active, sendAt: start.Add(drain + rand.N(window)), end: start.Add(drain + window)}
 	}
+	var open time.Time
 	if !p.active || !now.Before(p.end) {
-		return gateOpen, time.Time{}
+		return gateOpen, open
 	}
 	if p.sent || now.Before(p.sendAt) {
 		until := p.end
@@ -227,7 +237,9 @@ func (l *executionLimit) sendProbe() {
 	l.probe.sent = true
 }
 
-func sizeClass(size int) int {
+// sizeClass is the class of a batch of size records and bytes.
+func sizeClass(size, bytes int) int {
+	size = max(size, (bytes+1023)/1024)
 	class := 0
 	for size > 1 && class < sizeClasses-1 {
 		size >>= 1
@@ -236,13 +248,17 @@ func sizeClass(size int) int {
 	return class
 }
 
-// baseline is the shortest recent execution of a batch of this kind and size
+// baseline is the shortest recent execution of a batch of this group and size
 // class or larger, since a larger batch is never faster on an idle backend.
-func (l *executionLimit) baseline(kind, class int) time.Duration {
+func (l *executionLimit) baseline(key groupKey, class int) time.Duration {
 	var fastest time.Duration
+	generations := l.fastest[key]
+	if generations == nil {
+		return fastest
+	}
 	for c := class; c < sizeClasses; c++ {
-		for g := range l.fastest {
-			if d := l.fastest[g][kind][c]; d > 0 && (fastest == 0 || d < fastest) {
+		for g := range generations {
+			if d := generations[g][c]; d > 0 && (fastest == 0 || d < fastest) {
 				fastest = d
 			}
 		}
@@ -253,19 +269,26 @@ func (l *executionLimit) baseline(kind, class int) time.Duration {
 func (l *executionLimit) observe(e finishedBatch) {
 	elapsed := max(e.finished.Sub(e.started), time.Microsecond)
 	if e.finished.Sub(l.generation) >= max(baselineAge, l.every) {
-		l.fastest[1] = l.fastest[0]
-		l.fastest[0] = [2][sizeClasses]time.Duration{}
+		// Groups seen in neither generation are forgotten.
+		for key, generations := range l.fastest {
+			if generations[0] == [sizeClasses]time.Duration{} {
+				delete(l.fastest, key)
+				continue
+			}
+			generations[1], generations[0] = generations[0], [sizeClasses]time.Duration{}
+		}
 		l.generation = e.finished
 	}
-	kind := 0
-	if e.read {
-		kind = 1
+	generations := l.fastest[e.key]
+	if generations == nil {
+		generations = new([2][sizeClasses]time.Duration)
+		l.fastest[e.key] = generations
 	}
-	class := sizeClass(e.size)
-	if fastest := l.fastest[0][kind][class]; fastest == 0 || elapsed < fastest {
-		l.fastest[0][kind][class] = elapsed
+	class := sizeClass(e.size, e.bytes)
+	if fastest := generations[0][class]; fastest == 0 || elapsed < fastest {
+		generations[0][class] = elapsed
 	}
-	if e.finished.After(l.lastFinished) {
+	if !e.full && e.finished.After(l.lastFinished) {
 		l.lastFinished = e.finished
 	}
 	if e.probe {
@@ -279,19 +302,22 @@ func (l *executionLimit) observe(e finishedBatch) {
 	if e.started.Before(l.cutAt) {
 		return
 	}
-	l.ratios = append(l.ratios, float64(elapsed)/float64(l.baseline(kind, class)))
+	l.ratios = append(l.ratios, float64(elapsed)/float64(l.baseline(e.key, class)))
 	if e.finished.Sub(l.windowStart) < max(limitWindow, l.typical) {
 		return
 	}
 	// The lower median, so one stalled execution of two does not decide.
 	slices.Sort(l.ratios)
 	l.ratio = l.ratios[(len(l.ratios)-1)/2]
+	// A Store that runs one batch at a time without holding any back does not
+	// contend for the backend, and executions slower than the fastest of
+	// their group then show different work rather than queueing.
 	switch {
-	case l.ratio > queueingRatio:
+	case l.ratio > queueingRatio && (l.heldBack || l.together):
 		l.value = max(l.min, l.value/2)
 		l.cutAt = e.finished
 	case l.heldBack:
 		l.value = min(l.max, l.value+limitGrowth*min(l.value, 1))
 	}
-	l.windowStart, l.ratios, l.heldBack = e.finished, l.ratios[:0], false
+	l.windowStart, l.ratios, l.heldBack, l.together = e.finished, l.ratios[:0], false, false
 }

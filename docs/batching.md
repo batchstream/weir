@@ -50,18 +50,21 @@ limit starts at `max_in_flight` and moves between `min_in_flight` and
 `max_in_flight`, or down to a quarter of a batch when `min_in_flight` is 0:
 
 - Each execution is compared with the fastest recent execution of a batch of the
-  same kind, read or mutation, and the same or a larger size. When the median
-  execution of a window takes more than four times that baseline, the backend
-  is queueing and the limit halves. A window lasts at least 10 ms and one typical
-  execution time. Executions whose callers all left, whose records all failed,
-  or that waited for a Search refresh to make writes query-visible do not count.
+  same group, such as Lua programs on one collection, and the same or a larger
+  size, counted in records or KiB. When the median execution of a window takes
+  more than four times that baseline while the Store ran batches together or
+  held one back, the backend is queueing and the limit halves. A window lasts
+  at least 10 ms and one typical execution time. Executions whose callers all
+  left, whose records all failed, or that waited for a Search refresh to make
+  writes query-visible do not count.
 - While the limit holds ready batches back and executions stay under four times
   their baseline, it grows by half a batch per window, or by half its value
   below one.
 - Below one, the Store runs one batch at a time and leaves the backend idle in
-  between: at a half, as long as an execution typically takes. Records that
-  would have formed a second batch join the next one, so this matters when one
-  batch per replica is already more than a shared backend can take.
+  between: at a half, as long as an execution typically takes, and at most a
+  second. Records that would have formed a second batch join the next one, so
+  this matters when one batch per replica is already more than a shared backend
+  can take.
 
 Records that are held back join larger batches, so a backend under pressure
 receives fewer, larger requests. Without the limit, each replica sends a batch
@@ -71,7 +74,8 @@ sharing a backend see the same queueing and back off together, so their combined
 requests follow what the backend can take rather than how many replicas there
 are. Scaling Weir out on CPU therefore stays safe when the database becomes the
 limit. Full batches, of `max_operations` records or `max_bytes`, and a draining
-Store may use every slot up to `max_in_flight`.
+Store may use every slot up to `max_in_flight`; the limit counts only batches
+that are not full, so bulk ingest does not hold other work back.
 
 A replica that starts while its backend queues sees only slow executions. So
 at the same wall-clock instants on every replica, a Store that kept record

@@ -59,10 +59,13 @@ type Runtime struct {
 	queueBytes       int
 	batches          map[*batch]struct{}
 	records, natives int
-	keys             map[resourceKey]*Ticket
-	limit            executionLimit
-	// probeNext marks the batch about to launch as the limit's probe.
-	probeNext                    bool
+	// partial counts running record batches that are not full.
+	partial int
+	keys    map[resourceKey]*Ticket
+	limit   executionLimit
+	// probeNext and fullNext describe the batch about to launch: the limit's
+	// probe, or one that is full.
+	probeNext, fullNext          bool
 	draining, closed, overloaded bool
 	// space and nativeSpace are closed and replaced whenever a waiting record
 	// or Native submitter may proceed.
@@ -114,7 +117,8 @@ type batch struct {
 	cancel context.CancelFunc
 	items  []*Ticket
 	stops  []func() bool
-	probe  bool
+	// probe marks the limit's probe and full a batch the limit does not hold.
+	probe, full bool
 }
 
 func New(adapter execution.Adapter, limits Limits) (*Runtime, error) {
@@ -483,6 +487,7 @@ func (r *Runtime) selectLocked(now time.Time) ([]*Ticket, time.Time) {
 			}
 			// The batch owns the returned slice.
 			items := g.items
+			r.fullNext = r.isFull(g)
 			g.items = nil
 			var ready time.Time
 			return items, ready
@@ -508,7 +513,7 @@ func (r *Runtime) holdsBack(g *group, now time.Time) (bool, time.Time) {
 	if !r.adaptive || r.draining || r.isFull(g) {
 		return false, retry
 	}
-	admitted, retry := r.limit.admits(r.records, now)
+	admitted, retry := r.limit.admits(r.partial, now)
 	if admitted {
 		return false, retry
 	}
@@ -564,12 +569,19 @@ func (r *Runtime) launchLocked(items []*Ticket) {
 		t.stop()
 	}
 	b := newBatch(items)
-	b.probe, r.probeNext = r.probeNext, false
+	b.probe, b.full = r.probeNext, r.fullNext
+	r.probeNext, r.fullNext = false, false
 	r.batches[b] = struct{}{}
 	if b.native() {
 		r.natives++
 	} else {
 		r.records++
+		if !b.full {
+			r.partial++
+		}
+		if r.adaptive && r.records > 1 {
+			r.limit.overlap()
+		}
 	}
 	go r.execute(b)
 }
@@ -651,9 +663,17 @@ func (r *Runtime) execute(b *batch) {
 		r.notifyNativeLocked()
 	} else {
 		r.records--
+		if !b.full {
+			r.partial--
+		}
 		if r.adaptive && !untimed {
-			read := b.items[0].plan.Command.GetRead() != nil
-			done := finishedBatch{started: started, finished: finished, read: read, size: len(b.items), probe: b.probe}
+			first := b.items[0].plan
+			key := groupKey{batch: first.BatchKey, read: first.Command.GetRead() != nil}
+			bytes := 0
+			for _, t := range b.items {
+				bytes += t.plan.Bytes
+			}
+			done := finishedBatch{started: started, finished: finished, key: key, size: len(b.items), bytes: bytes, full: b.full, probe: b.probe}
 			r.limit.observe(done)
 		}
 		if r.adaptive && r.records == 0 && len(r.queue) == 0 {

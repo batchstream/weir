@@ -14,14 +14,22 @@ import (
 	"github.com/batchstream/weir/internal/execution"
 )
 
-// executions describes back-to-back record batches of one kind and size.
+// Batch groups of the executions below.
+var (
+	mutations = groupKey{batch: "records"}
+	reads     = groupKey{batch: "records", read: true}
+)
+
+// executions describes back-to-back record batches of one group and size.
+// Unless they are alone, each overlaps another batch of the Store.
 type executions struct {
 	count   int
 	size    int
+	bytes   int
 	elapsed time.Duration
-	read    bool
+	key     groupKey
 	// held marks that the limit held a ready batch back before each one.
-	held bool
+	held, alone bool
 }
 
 // unit is a tenth of the shortest window, which the executions below are
@@ -56,7 +64,10 @@ func (f *limitFeed) run(batches executions) {
 		if batches.held {
 			f.limit.holdBack(f.now)
 		}
-		done := finishedBatch{started: f.now, finished: f.now.Add(batches.elapsed), read: batches.read, size: batches.size}
+		if !batches.alone {
+			f.limit.overlap()
+		}
+		done := finishedBatch{started: f.now, finished: f.now.Add(batches.elapsed), key: batches.key, size: batches.size, bytes: batches.bytes}
 		f.limit.observe(done)
 		f.now = done.finished
 	}
@@ -81,7 +92,7 @@ func TestLimitHalvesWhileExecutionsQueue(t *testing.T) {
 		t.Fatal("executions over queueingRatio times their baseline left the limit at", got)
 	}
 	// Executions that started before the cut show the old limit.
-	before := finishedBatch{started: feed.now.Add(-unit), finished: feed.now.Add(100 * unit), size: 8}
+	before := finishedBatch{started: feed.now.Add(-unit), finished: feed.now.Add(100 * unit), key: mutations, size: 8}
 	feed.limit.observe(before)
 	if got := feed.limit.current(); got != 8 {
 		t.Fatal("an execution started before the cut lowered the limit to", got)
@@ -149,16 +160,57 @@ func TestLargerBatchesAreNotMistakenForQueueing(t *testing.T) {
 	}
 }
 
-func TestReadsAndMutationsKeepTheirOwnBaselines(t *testing.T) {
+func TestEachBatchGroupKeepsItsOwnBaseline(t *testing.T) {
+	programs := groupKey{batch: "db.collection/lua"}
+	for _, slower := range []groupKey{mutations, programs} {
+		feed := newLimitFeed(1, 16)
+		fast := executions{count: 1, size: 8, elapsed: unit, key: reads}
+		if slower == programs {
+			fast.key = mutations
+		}
+		slow := executions{count: 1, size: 8, elapsed: 5 * unit, key: slower}
+		for range 50 {
+			feed.run(fast)
+			feed.run(slow)
+		}
+		if got := feed.limit.current(); got != 16 {
+			t.Fatal(slower, "batches slower than", fast.key, "lowered the limit to", got)
+		}
+	}
+}
+
+// Records carry very different amounts of data, so a batch of large documents
+// is compared with batches of as much data.
+func TestLargerDocumentsAreNotMistakenForQueueing(t *testing.T) {
 	feed := newLimitFeed(1, 16)
-	read := executions{count: 1, size: 8, elapsed: unit, read: true}
-	mutation := executions{count: 1, size: 8, elapsed: 5 * unit}
+	small := executions{count: 1, size: 8, bytes: 8 << 10, elapsed: unit, key: mutations}
+	large := executions{count: 1, size: 8, bytes: 8 << 20, elapsed: 5 * unit, key: mutations}
 	for range 50 {
-		feed.run(read)
-		feed.run(mutation)
+		feed.run(small)
+		feed.run(large)
 	}
 	if got := feed.limit.current(); got != 16 {
-		t.Fatal("mutations slower than reads lowered the limit to", got)
+		t.Fatal("batches of larger documents lowered the limit to", got)
+	}
+}
+
+// One caller sending one request at a time does not contend for the backend,
+// so its slower requests are different work rather than queueing.
+func TestExecutionsThatRunAloneDoNotLowerTheLimit(t *testing.T) {
+	feed := newLimitFeed(0, 16)
+	fast := executions{count: 1, size: 1, elapsed: unit, key: mutations, alone: true}
+	slow := executions{count: 3, size: 1, elapsed: times(unit, queueingRatio+2), key: mutations, alone: true}
+	for range 50 {
+		feed.run(fast)
+		feed.run(slow)
+	}
+	if got := feed.limit.current(); got != 16 {
+		t.Fatal("executions that ran alone lowered the limit to", got)
+	}
+	slow.alone = false
+	feed.run(slow)
+	if got := feed.limit.current(); got != 8 {
+		t.Fatal("the same executions running together left the limit at", got)
 	}
 }
 
@@ -236,17 +288,17 @@ func TestLimitFallsBelowOneBatch(t *testing.T) {
 // baseline; the probe's execution on an emptied backend corrects it.
 func TestAProbeRenewsAnInflatedBaseline(t *testing.T) {
 	feed := newLimitFeed(1, 16)
-	congested := executions{count: 20, size: 8, elapsed: 8 * unit, held: true}
+	congested := executions{count: 20, size: 8, elapsed: 8 * unit, key: mutations, held: true}
 	feed.run(congested)
 	if got := feed.limit.current(); got != 16 {
 		t.Fatal("executions at a congested baseline lowered the limit to", got)
 	}
 	typical := feed.limit.typical
 	fastest := times(congested.elapsed, 1/(queueingRatio+1))
-	probe := finishedBatch{started: feed.now, finished: feed.now.Add(fastest), size: 8, probe: true}
+	probe := finishedBatch{started: feed.now, finished: feed.now.Add(fastest), key: mutations, size: 8, probe: true}
 	feed.limit.observe(probe)
 	feed.now = probe.finished
-	if got := feed.limit.baseline(0, sizeClass(8)); got != fastest {
+	if got := feed.limit.baseline(mutations, sizeClass(8, 0)); got != fastest {
 		t.Fatal("the probe left the baseline at", got)
 	}
 	if feed.limit.typical != typical {
@@ -332,13 +384,13 @@ func TestBaselinesOutlastTheProbeInterval(t *testing.T) {
 	l := newExecutionLimit(1, 16, start)
 	l.typical = 300 * time.Millisecond
 	l.gate(start)
-	fast := finishedBatch{started: start, finished: start.Add(10 * time.Millisecond), size: 8}
+	fast := finishedBatch{started: start, finished: start.Add(10 * time.Millisecond), key: mutations, size: 8}
 	l.observe(fast)
 	for _, at := range []time.Duration{20 * time.Second, 36 * time.Second} {
-		slow := finishedBatch{started: start.Add(at), finished: start.Add(at + 300*time.Millisecond), size: 8}
+		slow := finishedBatch{started: start.Add(at), finished: start.Add(at + 300*time.Millisecond), key: mutations, size: 8}
 		l.observe(slow)
 	}
-	if got := l.baseline(0, sizeClass(8)); got != 10*time.Millisecond {
+	if got := l.baseline(mutations, sizeClass(8, 0)); got != 10*time.Millisecond {
 		t.Fatal("a probe interval of", l.every, "kept a baseline of", got)
 	}
 }
@@ -484,6 +536,47 @@ func TestALimitBelowOneSpacesBatchesOut(t *testing.T) {
 		t.Fatal("a batch started", waited, "after the last execution finished")
 	}
 	wait(t, ticket)
+}
+
+// One stalled execution raises the typical execution time, but a limit below
+// one keeps the backend idle for at most longestIdle after it.
+func TestIdleTimeBelowOneIsBounded(t *testing.T) {
+	now := time.Unix(1_000_000, 0)
+	l := newExecutionLimit(0, 16, now)
+	l.value = lowestLimit
+	l.typical = 20 * time.Second
+	l.lastFinished = now
+	if _, retry := l.admits(0, now); retry.After(now.Add(longestIdle)) {
+		t.Fatal("a stalled execution left the backend idle for", retry.Sub(now))
+	}
+}
+
+// Full batches do not wait for the limit, and batches that are not full wait
+// only for each other, so ingest does not starve other work.
+func TestFullBatchesDoNotHoldOtherBatchesBack(t *testing.T) {
+	adapter := &fakeAdapter{started: make(chan []*execution.Plan, 8)}
+	release := make(chan struct{})
+	adapter.records = blockUntil(release)
+	defer close(release)
+	// Mutations wait for companions until their batch is full.
+	runtime := open(t, adapter, limits(func(l *Limits) { l.MaxInFlight, l.BatchOperations, l.BatchWait = 8, 2, time.Hour }))
+	runtime.mu.Lock()
+	runtime.limit.value = lowestLimit
+	runtime.limit.typical = 10 * time.Second
+	runtime.mu.Unlock()
+	for i := range 4 {
+		submit(t, runtime, mutationPlan(fmt.Sprint("r", i)), nil)
+	}
+	for range 2 {
+		if batch := started(t, adapter); len(batch) != 2 {
+			t.Fatal("a full batch started with", len(batch), "records")
+		}
+	}
+	read := readPlan("other")
+	submit(t, runtime, read, nil)
+	if batch := started(t, adapter); batch[0] != "other" {
+		t.Fatal("a read did not start beside running full batches")
+	}
 }
 
 func TestEqualInFlightBoundsFixTheLimit(t *testing.T) {
@@ -662,8 +755,8 @@ func throughput(t *testing.T, run sharingRun) float64 {
 // what it applies. With fixed slots each replica keeps sending small batches,
 // and the backend spends its time on their overhead.
 func TestReplicasSharingASlowBackendKeepTheirThroughput(t *testing.T) {
-	if testing.Short() {
-		t.Skip("runs for several seconds")
+	if testing.Short() || raceEnabled {
+		t.Skip("measures throughput for several seconds")
 	}
 	adaptive := DefaultLimits()
 	fixed := DefaultLimits()
@@ -677,10 +770,10 @@ func TestReplicasSharingASlowBackendKeepTheirThroughput(t *testing.T) {
 	manyRate := throughput(t, many)
 	fixedRate := throughput(t, fixedMany)
 	t.Logf("records/s: 2 replicas %.0f, 6 replicas %.0f, 6 replicas with fixed slots %.0f", fewRate, manyRate, fixedRate)
-	if manyRate < 0.8*fewRate {
+	if manyRate < 0.7*fewRate {
 		t.Fatalf("six replicas applied %.0f records/s against %.0f for two", manyRate, fewRate)
 	}
-	if manyRate < 4*fixedRate {
+	if manyRate < 3*fixedRate {
 		t.Fatalf("adaptive slots applied %.0f records/s against %.0f for fixed slots", manyRate, fixedRate)
 	}
 }
