@@ -82,17 +82,19 @@ that are not full and do not wait for a Search refresh, so bulk ingest and
 query-visible writes do not hold other work back.
 
 The limit cannot tell queueing from a backend that slows down for another
-reason, such as a stalled disk. While that lasts, records wait in Weir for up
-to about one more execution time, and the limit grows back once executions
-return to their baseline.
+reason, such as a stalled disk. While that lasts, records wait longer in Weir:
+for a few more execution times, and at most about a second more, once the limit
+falls below one. The limit grows back once executions return to their
+baseline.
 
 A replica that starts while its backend queues sees only slow executions. So
-at the same wall-clock instants on every replica, a Store that kept mutations
-or reads running through the previous interval, or whose limit for them held
-one back in it, pauses those batches for twice their typical execution time,
-from 20 ms to 1 second. It then sends one batch within one more typical
-execution time, at most 250 ms, and resumes. With every busy replica paused the
-backend empties, and that batch renews the baseline. Records arriving meanwhile
+at the same wall-clock instants on every replica, a Store that kept record
+batches running through the previous interval, or whose limit held one back in
+it, pauses all its record batches, mutations and reads alike, for twice the
+longer of their typical execution times, from 20 ms to 1 second. It then sends
+one batch of each operation within one more such time, at most 250 ms, and
+resumes. With every busy replica paused the backend empties, and those batches
+renew the baselines. Records arriving meanwhile
 wait for the pause to end. The interval is 10 seconds, doubled until the pause
 takes at most 2.5% of it: a Store whose executions typically take 300 ms probes
 every 40 seconds. Replicas that choose neighboring intervals still pause

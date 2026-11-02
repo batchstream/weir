@@ -232,8 +232,9 @@ means clients send invalid Natives; read the failure messages in client logs.
 
 Records of a Store wait more than a second before dispatch at the 99th
 percentile. Compare `weir_store_execution_seconds` and
-`weir_store_active_executions` with `weir_store_adaptive_executions_limit`, and
-read `weir_store_execution_latency_ratio`. Busy slots with slow executions, or a
+`weir_store_active_executions`, which counts both operations and full batches,
+with `weir_store_adaptive_executions_limit` of each operation, and read
+`weir_store_execution_latency_ratio`. Busy slots with slow executions, or a
 ratio above 4, mean the database is the bottleneck: records wait in Weir, where
 they form larger batches, and more Weir replicas add no capacity. The ratio is 0
 when `min_in_flight` equals `max_in_flight`, and it keeps its last value while a

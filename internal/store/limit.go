@@ -24,10 +24,11 @@ import (
 // and may use every slot up to max_in_flight.
 //
 // A replica that starts while the backend queues sees only slow executions and
-// would take them for its baseline. So every replica that kept batches of an
-// operation running, or whose limit held one back, pauses them at the same
-// wall-clock instants, letting the backend empty, and then sends one probe
-// batch at a random moment; the probe's time renews the baseline.
+// would take them for its baseline. So every replica that kept record batches
+// running, or whose limit held one back, pauses all its record batches at the
+// same wall-clock instants, letting the backend empty, and then sends one probe
+// batch of each operation at a random moment; the probe's time renews the
+// baseline.
 const (
 	// queueingRatio is the median execution time over its baseline, across
 	// one window, that halves the limit. Backends vary below it without
@@ -66,11 +67,11 @@ const (
 	// still instants of the shorter one.
 	probeInterval = 10 * time.Second
 	probeShare    = 0.025
-	// A probe pauses twice the typical execution time, within these bounds,
-	// and then sends its batch within one typical execution time. A backend
-	// that does not empty within the longest pause still runs the probe faster
-	// than its queue did, and the lower limit that follows shortens the next
-	// pause's wait.
+	// A probe pauses twice the longer typical execution time of mutations and
+	// reads, within these bounds, and then sends their batches within one such
+	// time. A backend that does not empty within the longest pause still runs
+	// the probe faster than its queue did, and the lower limit that follows
+	// shortens the next pause's wait.
 	probeDrainMin, probeDrainMax   = 20 * time.Millisecond, time.Second
 	probeWindowMin, probeWindowMax = 5 * time.Millisecond, 250 * time.Millisecond
 )
@@ -98,26 +99,32 @@ type executionLimit struct {
 	lastHeld time.Time
 	// lastFinished is when the last observed batch that was not full finished.
 	lastFinished time.Time
-	// idle is set while the Store runs and queues no record batch, and
-	// busySince is when it last stopped being idle.
+	// idle is set while the Store runs and queues no batch of the limit's
+	// operation, and busySince is when it last stopped being idle.
 	idle      bool
 	busySince time.Time
-	probe     probe
+	// every is the Store's current probe interval.
+	every time.Duration
+}
+
+// probes is the probe schedule of a Store's limits. Its record batches pause
+// together, so that a pause empties the backend of mutations and reads alike,
+// and each operation then sends one probe batch.
+type probes struct {
+	limits *[2]executionLimit
 	// interval is the shortest probe interval and every the current one,
 	// whose pause takes at most share of it.
 	interval, every time.Duration
 	share           float64
-}
-
-// probe is the schedule of the current probe interval.
-type probe struct {
-	start time.Time
-	// active is set when the limit held a batch back in the previous interval.
+	start           time.Time
+	// active is set when a limit held a batch back, or its operation kept
+	// batches running, through the previous interval.
 	active bool
-	// Batches wait until sendAt, one probe batch may then start, and the
-	// rest wait until end.
-	sendAt, end time.Time
-	sent        bool
+	// Batches of each operation wait until its sendAt, one probe batch of it
+	// may then start, and the rest wait until end.
+	sendAt [2]time.Time
+	end    time.Time
+	sent   [2]bool
 }
 
 // gate is what a probe allows now.
@@ -142,8 +149,13 @@ func newExecutionLimit(minimum, maximum int, now time.Time) executionLimit {
 	if minimum == 0 {
 		floor = lowestLimit
 	}
-	limit := executionLimit{min: floor, max: float64(maximum), value: float64(maximum), fastest: make(map[groupKey]*[2][sizeClasses]time.Duration), generation: now, windowStart: now, idle: true, interval: probeInterval, every: probeInterval, share: probeShare}
+	limit := executionLimit{min: floor, max: float64(maximum), value: float64(maximum), fastest: make(map[groupKey]*[2][sizeClasses]time.Duration), generation: now, windowStart: now, idle: true, every: probeInterval}
 	return limit
+}
+
+func newProbes(limits *[2]executionLimit) probes {
+	schedule := probes{limits: limits, interval: probeInterval, every: probeInterval, share: probeShare}
+	return schedule
 }
 
 // admits reports whether a batch that is not full may start while running
@@ -184,14 +196,12 @@ func (l *executionLimit) busy(now time.Time) {
 	}
 }
 
-// rest records that the Store runs and queues no record batch. A probe's
-// pause empties a Store without making it idle.
-func (l *executionLimit) rest(now time.Time) {
-	p := &l.probe
-	if p.active && !now.Before(p.start) && now.Before(p.end) {
-		return
-	}
-	l.idle = true
+// loaded reports whether the limit held a batch back since a time, or its
+// operation kept batches running since then.
+func (l *executionLimit) loaded(since time.Time) bool {
+	held := !l.lastHeld.IsZero() && !l.lastHeld.Before(since)
+	busy := !l.idle && !l.busySince.After(since)
+	return held || busy
 }
 
 // current is the limit in running batches: whole numbers from one, and below
@@ -203,41 +213,62 @@ func (l *executionLimit) current() float64 {
 	return l.value
 }
 
-// gate reports whether batches may start now and, while they wait, until when.
-func (l *executionLimit) gate(now time.Time) (gate, time.Time) {
-	drain := min(max(2*l.typical, probeDrainMin), probeDrainMax)
-	window := min(max(l.typical, probeWindowMin), probeWindowMax)
-	every := l.interval
-	for float64(drain+window) > l.share*float64(every) {
+// gate reports whether a batch of an operation may start now and, while it
+// waits, until when.
+func (p *probes) gate(op operation, now time.Time) (gate, time.Time) {
+	var drain, window time.Duration
+	for i := range p.limits {
+		typical := p.limits[i].typical
+		drain = max(drain, min(max(2*typical, probeDrainMin), probeDrainMax))
+		window = max(window, min(max(typical, probeWindowMin), probeWindowMax))
+	}
+	every := p.interval
+	for float64(drain+window) > p.share*float64(every) {
 		every *= 2
 	}
+	p.every = every
+	for i := range p.limits {
+		p.limits[i].every = every
+	}
 	start := now.Truncate(every)
-	p := &l.probe
-	l.every = every
 	if !p.start.Equal(start) {
 		previous := start.Add(-every)
-		held := !l.lastHeld.IsZero() && !l.lastHeld.Before(previous)
-		busy := !l.idle && !l.busySince.After(previous)
-		active := held || busy
-		*p = probe{start: start, active: active, sendAt: start.Add(drain + rand.N(window)), end: start.Add(drain + window)}
+		p.start, p.end, p.active = start, start.Add(drain+window), false
+		for i := range p.limits {
+			p.active = p.active || p.limits[i].loaded(previous)
+			p.sendAt[i], p.sent[i] = start.Add(drain+rand.N(window)), false
+		}
 	}
 	var open time.Time
-	if !p.active || !now.Before(p.end) {
+	if !p.pausing(now) {
 		return gateOpen, open
 	}
-	if p.sent || now.Before(p.sendAt) {
-		until := p.end
-		if !p.sent {
-			until = p.sendAt
-		}
-		return gateClosed, until
+	if p.sent[op] {
+		return gateClosed, p.end
+	}
+	if now.Before(p.sendAt[op]) {
+		return gateClosed, p.sendAt[op]
 	}
 	return gateProbe, p.end
 }
 
-// sendProbe records that the probe batch started.
-func (l *executionLimit) sendProbe() {
-	l.probe.sent = true
+// pausing reports whether a probe pause holds the Store's record batches.
+func (p *probes) pausing(now time.Time) bool {
+	return p.active && !now.Before(p.start) && now.Before(p.end)
+}
+
+// send records that the probe batch of an operation started.
+func (p *probes) send(op operation) {
+	p.sent[op] = true
+}
+
+// rest records that the Store runs and queues no batch of an operation. A
+// pause empties a Store without making it idle.
+func (p *probes) rest(op operation, now time.Time) {
+	if p.pausing(now) {
+		return
+	}
+	p.limits[op].idle = true
 }
 
 // sizeClass is the class of a batch of size records and bytes.

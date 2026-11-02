@@ -66,7 +66,9 @@ type Runtime struct {
 	keys             map[resourceKey]*Ticket
 	// limit adapts mutations and reads apart: a backend often queues writes
 	// behind its journal or translog while it still serves reads from memory.
-	limit [2]executionLimit
+	// Their probes pause together.
+	limit  [2]executionLimit
+	probes probes
 	// probeNext and fullNext describe the batch about to launch: the limit's
 	// probe, or one that is full.
 	probeNext, fullNext          bool
@@ -150,6 +152,7 @@ func New(adapter execution.Adapter, limits Limits) (*Runtime, error) {
 		wake:        make(chan struct{}, 1),
 		done:        make(chan struct{}),
 	}
+	runtime.probes = newProbes(&runtime.limit)
 	go runtime.loop()
 	return runtime, nil
 }
@@ -516,9 +519,9 @@ func (r *Runtime) isFull(g *group) bool {
 }
 
 // holdsBack reports whether a ready group must wait for the adaptive limit of
-// its operation and, unless an execution must finish first, until when. While
-// that limit probes, its operation's groups wait for the probe, which is the
-// first of them to be ready. Full groups may use every slot outside a probe's
+// its operation and, unless an execution must finish first, until when. During
+// a probe pause every group waits, and the first of an operation to be ready
+// after its send time is its probe. Full groups may use every slot outside a probe's
 // pause, and a draining Store uses every slot to finish before its deadline.
 func (r *Runtime) holdsBack(g *group, now time.Time) (bool, time.Time) {
 	var retry time.Time
@@ -526,19 +529,19 @@ func (r *Runtime) holdsBack(g *group, now time.Time) (bool, time.Time) {
 		return false, retry
 	}
 	op := operationOf(g.items[0].plan.Command)
-	limit := &r.limit[op]
-	gate, until := limit.gate(now)
+	gate, until := r.probes.gate(op, now)
 	switch gate {
 	case gateClosed:
 		return true, until
 	case gateProbe:
-		limit.sendProbe()
+		r.probes.send(op)
 		r.probeNext = true
 		return false, retry
 	}
 	if r.isFull(g) {
 		return false, retry
 	}
+	limit := &r.limit[op]
 	admitted, retry := limit.admits(r.partial[op], now)
 	if admitted {
 		return false, retry
@@ -723,7 +726,7 @@ func (r *Runtime) execute(b *batch) {
 			r.limit[op].observe(done)
 		}
 		if r.adaptive && r.running[op] == 0 && !r.queuesLocked(op) {
-			r.limit[op].rest(finished)
+			r.probes.rest(op, finished)
 		}
 	}
 	for i, t := range b.items {
