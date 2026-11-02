@@ -53,9 +53,13 @@ type limitFeed struct {
 	now   time.Time
 }
 
+// newLimitFeed returns a limit that settled at max_in_flight, as one in front
+// of a backend that did not queue.
 func newLimitFeed(minimum, maximum int) *limitFeed {
 	now := time.Unix(1_000_000, 0)
-	feed := &limitFeed{limit: newExecutionLimit(minimum, maximum, now), now: now}
+	limit := newExecutionLimit(minimum, maximum, now)
+	limit.value, limit.settled = limit.max, true
+	feed := &limitFeed{limit: limit, now: now}
 	return feed
 }
 
@@ -347,6 +351,56 @@ func TestAProbeRenewsAnInflatedBaseline(t *testing.T) {
 	}
 }
 
+// A replica that starts cannot tell how much its backend already queues, since
+// its first executions set its baseline either way. It runs two batches at a
+// time, halving below that while executions slow down, and grows only after
+// its Store's second probe. Until it first halves after that, each window
+// without queueing doubles it.
+func TestALimitStartsAtTwoBatchesAndGrowsOnceItSettled(t *testing.T) {
+	now := time.Unix(1_000_000, 0)
+	feed := &limitFeed{limit: newExecutionLimit(0, 16, now), now: now}
+	if got := feed.limit.current(); got != startingLimit {
+		t.Fatal("a limit started at", got)
+	}
+	steady := executions{count: 10 * windowExecutions, size: 8, elapsed: 5 * unit, held: true}
+	feed.run(steady)
+	if got := feed.limit.current(); got != startingLimit {
+		t.Fatal("executions at their baseline grew a limit that never probed to", got)
+	}
+	over := executions{count: windowExecutions, size: 8, elapsed: queued, held: true}
+	for range 2 {
+		feed.run(over)
+	}
+	if got := feed.limit.current(); got != 0.5 {
+		t.Fatal("queueing left a limit that never probed at", got)
+	}
+	// A probe at an instant only this replica pauses at may run into the
+	// queue of the others.
+	probe := finishedBatch{started: feed.now, finished: feed.now.Add(5 * unit), key: mutations, size: 8, probe: true}
+	feed.limit.observe(probe)
+	feed.now = probe.finished
+	feed.run(steady)
+	if got := feed.limit.current(); got != 0.5 {
+		t.Fatal("a probe at an instant other replicas may not share grew the limit to", got)
+	}
+	probe = finishedBatch{started: feed.now, finished: feed.now.Add(5 * unit), key: mutations, size: 8, probe: true, settles: true}
+	feed.limit.observe(probe)
+	feed.now = probe.finished
+	steady.count = windowExecutions
+	for _, want := range []float64{1, 2, 4, 8, 16, 16} {
+		feed.run(steady)
+		if got := feed.limit.current(); got != want {
+			t.Fatal("a settled limit grew to", got, "instead of", want)
+		}
+	}
+	feed.run(over)
+	steady.count = 2 * windowExecutions
+	feed.run(steady)
+	if got := feed.limit.current(); got != 9 {
+		t.Fatal("after it halved, two windows without queueing grew the limit from 8 to", got)
+	}
+}
+
 // probeStore is one replica's limits and their probe schedule.
 type probeStore struct {
 	limits [2]executionLimit
@@ -486,10 +540,35 @@ func TestAReplicaThatNeverProbedPausesAtOnce(t *testing.T) {
 	start := time.Unix(1_000_000, 0).Truncate(probeInterval)
 	s := newProbeStore(start.Add(-time.Second), probeInterval)
 	s.probes.share = probeShare
-	s.limits[operationMutate].busy(start.Add(-time.Second))
+	s.limits[operationMutate].busy(start.Add(-time.Second), true)
 	s.ran(operationMutate, 10*time.Millisecond, start.Add(-time.Millisecond))
 	if gate, _ := s.probes.gate(operationMutate, start); gate != gateClosed {
 		t.Fatal("a replica that never probed did not pause at its first instant")
+	}
+}
+
+// Replicas that start together, however long their executions, probe together
+// at the next instant of the shortest interval. They then probe at the
+// interval their executions need, which replicas with similar executions share.
+func TestAStoreThatNeverPausedPausesWithinTheShortestInterval(t *testing.T) {
+	longest := 8 * probeInterval
+	start := time.Unix(1_000_000, 0).Truncate(longest).Add(probeInterval)
+	s := newProbeStore(start.Add(-time.Second), probeInterval)
+	s.probes.share = probeShare
+	s.limits[operationMutate].busy(start.Add(-time.Second), true)
+	s.ran(operationMutate, 600*time.Millisecond, start.Add(-time.Millisecond))
+	if gate, _ := s.probes.gate(operationMutate, start); gate != gateClosed || s.probes.paused {
+		t.Fatal("a Store with slow executions that never paused did not pause at the next instant of the shortest interval")
+	}
+	s.ran(operationMutate, 600*time.Millisecond, start.Add(probeDrainMax+probeWindowMax))
+	next := start.Add(probeInterval)
+	if gate, _ := s.probes.gate(operationMutate, next); gate != gateOpen || s.probes.every != longest || !s.probes.paused {
+		t.Fatal("after its first pause a slow Store paused at", next.Sub(start), "probing every", s.probes.every)
+	}
+	second := start.Truncate(longest).Add(longest)
+	s.ran(operationMutate, 600*time.Millisecond, second.Add(-time.Millisecond))
+	if gate, _ := s.probes.gate(operationMutate, second); gate != gateClosed {
+		t.Fatal("a Store that never settled did not pause at an instant of its interval")
 	}
 }
 
@@ -497,7 +576,7 @@ func TestAReplicaThatNeverProbedPausesAtOnce(t *testing.T) {
 func TestBaselinesOutlastTheProbeInterval(t *testing.T) {
 	start := time.Unix(1_000_000, 0).Truncate(8 * probeInterval)
 	s := newProbeStore(start, probeInterval)
-	s.probes.share = probeShare
+	s.probes.share, s.probes.paused = probeShare, true
 	l := &s.limits[operationMutate]
 	s.ran(operationMutate, 300*time.Millisecond, start)
 	s.probes.gate(operationMutate, start)
@@ -518,8 +597,8 @@ func TestReplicasThatStayBusyPause(t *testing.T) {
 	start := time.Unix(1_000_000, 0)
 	busy := newProbeStore(start.Add(-3*probeInterval), probeInterval)
 	busy.probes.share = probeShare
-	busy.limits[operationRead].busy(start.Add(-3 * probeInterval))
-	busy.limits[operationRead].probed = true
+	busy.limits[operationRead].busy(start.Add(-3*probeInterval), true)
+	busy.limits[operationRead].settled = true
 	busy.ran(operationRead, 10*time.Millisecond, start.Add(-time.Millisecond))
 	if gate, _ := busy.probes.gate(operationMutate, start); gate != gateClosed {
 		t.Fatal("a replica busy with reads through the previous interval did not pause its mutations")
@@ -532,10 +611,10 @@ func TestReplicasThatStayBusyPause(t *testing.T) {
 	}
 	rested := newProbeStore(start.Add(-3*probeInterval), probeInterval)
 	rested.probes.share = probeShare
-	rested.limits[operationRead].busy(start.Add(-3 * probeInterval))
-	rested.limits[operationRead].probed = true
+	rested.limits[operationRead].busy(start.Add(-3*probeInterval), true)
+	rested.limits[operationRead].settled = true
 	rested.probes.rest(operationRead, start.Add(-probeInterval/2))
-	rested.limits[operationRead].busy(start.Add(-probeInterval / 4))
+	rested.limits[operationRead].busy(start.Add(-probeInterval/4), true)
 	rested.ran(operationRead, 10*time.Millisecond, start.Add(-time.Millisecond))
 	if gate, _ := rested.probes.gate(operationRead, start); gate != gateOpen {
 		t.Fatal("a replica that was idle in the previous interval paused")
@@ -547,9 +626,9 @@ func TestReplicasThatStayBusyPause(t *testing.T) {
 func TestSlowExecutionsProbeLessOften(t *testing.T) {
 	start := time.Unix(1_000_000, 0).Truncate(8 * probeInterval)
 	slow := newProbeStore(start.Add(-20*probeInterval), probeInterval)
-	slow.probes.share = probeShare
+	slow.probes.share, slow.probes.paused = probeShare, true
 	l := &slow.limits[operationMutate]
-	l.busy(start.Add(-20 * probeInterval))
+	l.busy(start.Add(-20*probeInterval), true)
 	slow.ran(operationMutate, 300*time.Millisecond, start.Add(4*probeInterval))
 	for _, at := range []time.Time{start.Add(probeInterval), start.Add(2 * probeInterval), start.Add(3 * probeInterval)} {
 		if gate, _ := slow.probes.gate(operationRead, at); gate != gateOpen {
@@ -587,6 +666,166 @@ func TestAStoreIsIdleOnlyWithNothingRunningOrQueued(t *testing.T) {
 	if !idle(operationMutate) {
 		t.Fatal("a Store with nothing running or queued is busy")
 	}
+}
+
+// settle sets a runtime's adaptive limits as if its probes had found a backend
+// that did not queue.
+func settle(runtime *Runtime) {
+	runtime.mu.Lock()
+	defer runtime.mu.Unlock()
+	for op := range runtime.limit {
+		l := &runtime.limit[op]
+		l.value, l.settled = l.max, true
+	}
+}
+
+// Short bursts may never reach a probe's instant. A limit that held batches back
+// then settles without a probe, and one that held none back does not need to.
+func TestALimitThatHeldBatchesBackSettlesWithoutAProbe(t *testing.T) {
+	now := time.Unix(1_000_000, 0)
+	feed := &limitFeed{limit: newExecutionLimit(0, 16, now), now: now}
+	steady := executions{count: windowExecutions, elapsed: 5 * time.Millisecond, key: mutations, size: 8}
+	feed.now = now.Add(2 * longestUnsettled)
+	feed.run(steady)
+	if got := feed.limit.current(); got != startingLimit {
+		t.Fatal("a limit that never held a batch back grew to", got)
+	}
+	first := feed.now
+	feed.limit.holdBack(first)
+	feed.now = first.Add(longestUnsettled - time.Second)
+	feed.run(steady)
+	if got := feed.limit.current(); got != startingLimit {
+		t.Fatal("a limit grew to", got, "before it could settle")
+	}
+	feed.limit.holdBack(feed.now)
+	feed.now = first.Add(longestUnsettled)
+	feed.run(steady)
+	if got := feed.limit.current(); got != 2*startingLimit {
+		t.Fatal("a limit that held a batch back long ago did not settle and double, it is", got)
+	}
+}
+
+// A Store that just started runs two batches of each operation that are not
+// full at a time; full batches still use every slot.
+func TestAStoreStartsWithTwoBatchesOfEachOperation(t *testing.T) {
+	adapter := &fakeAdapter{started: make(chan []*execution.Plan, 8)}
+	release := make(chan struct{})
+	adapter.records = blockUntil(release)
+	defer close(release)
+	runtime := open(t, adapter, limits(func(l *Limits) { l.BatchOperations = 2 }))
+	for i := range 3 {
+		plan := mutationPlan(fmt.Sprint("m", i))
+		plan.BatchKey = fmt.Sprint("collection", i)
+		submit(t, runtime, plan, nil)
+	}
+	for range 2 {
+		started(t, adapter)
+	}
+	first := time.Now()
+	notStarted(t, adapter)
+	submit(t, runtime, readPlan("read"), nil)
+	if batch := started(t, adapter); batch[0] != "read" {
+		t.Fatal("a read waited for the first mutation batch", batch)
+	}
+	for _, key := range []string{"a", "b"} {
+		submit(t, runtime, mutationPlan(key), nil)
+	}
+	if batch := started(t, adapter); len(batch) != 2 {
+		t.Fatal("a full batch waited for the first mutation batch", batch)
+	}
+	// Before any execution finished, those that run on hold the next back
+	// for a second.
+	batch := started(t, adapter)
+	if waited := time.Since(first); batch[0] != "m2" || waited < longestIdle-200*time.Millisecond {
+		t.Fatal(batch, "started", waited, "after the first mutation batches")
+	}
+}
+
+// Before a limit settles, and while it is at least one, an execution far slower
+// than executions typically take holds the next batch back for at most a second,
+// and each further batch above the limit for that much longer.
+func TestAnUnsettledLimitDoesNotWaitForAnOverrunningBatch(t *testing.T) {
+	now := time.Unix(1_000_000, 0)
+	l := newExecutionLimit(0, 16, now)
+	l.value = 1
+	l.busy(now, true)
+	if admitted, retry := l.admits(1, now); admitted || !retry.Equal(now.Add(longestIdle)) {
+		t.Fatal("before any execution finished, a second batch could start after", retry.Sub(now))
+	}
+	l.typical = 10 * time.Millisecond
+	overrun := times(l.typical, queueingRatio)
+	if admitted, retry := l.admits(1, now.Add(overrun-time.Millisecond)); admitted || !retry.Equal(now.Add(overrun)) {
+		t.Fatal("a second batch could start", retry.Sub(now), "after the first instead of", overrun)
+	}
+	if admitted, _ := l.admits(1, now.Add(overrun)); !admitted {
+		t.Fatal("an overrunning batch held the next back")
+	}
+	// Executions that took long do not make the next wait longer.
+	l.typical = 10 * time.Second
+	if _, retry := l.admits(1, now); !retry.Equal(now.Add(longestIdle)) {
+		t.Fatal("after slow executions a second batch could start", retry.Sub(now), "after the first")
+	}
+	if _, retry := l.admits(3, now); !retry.Equal(now.Add(3 * longestIdle)) {
+		t.Fatal("two batches above the limit let another start", retry.Sub(now), "after the last")
+	}
+	// Below one the backend queued, and batches wait their turn.
+	l.value = 0.5
+	if admitted, retry := l.admits(1, now.Add(time.Hour)); admitted || !retry.IsZero() {
+		t.Fatal("a limit below one admitted a second batch")
+	}
+	l.value, l.settled = 1, true
+	if admitted, retry := l.admits(1, now.Add(time.Hour)); admitted || !retry.IsZero() {
+		t.Fatal("a settled limit of one admitted a second batch")
+	}
+}
+
+// A Store whose limit holds batches back settles at its second probe, and only
+// then grows past where it started.
+func TestAStoreUnderLoadSettlesAtItsSecondProbeAndGrows(t *testing.T) {
+	adapter := &fakeAdapter{records: func(_ context.Context, plans []*execution.Plan) []*pb.Event {
+		time.Sleep(time.Millisecond)
+		return applied(plans)
+	}}
+	runtime := open(t, adapter, DefaultLimits())
+	runtime.mu.Lock()
+	runtime.probes.interval, runtime.probes.share = 10*time.Millisecond, 1
+	runtime.mu.Unlock()
+	ctx, cancel := context.WithCancel(t.Context())
+	var writers sync.WaitGroup
+	defer writers.Wait()
+	defer cancel()
+	var sequence atomic.Int64
+	for range 64 {
+		writers.Go(func() {
+			for ctx.Err() == nil {
+				// Callers that finish together do not all send again at once.
+				time.Sleep(rand.N(2 * time.Millisecond))
+				plan := mutationPlan(fmt.Sprint("r", sequence.Add(1)))
+				ticket, failure := runtime.Submit(ctx, plan, nil)
+				if failure != nil {
+					return
+				}
+				_, _ = ticket.Wait(ctx)
+			}
+		})
+	}
+	deadline := time.Now().Add(15 * time.Second)
+	for time.Now().Before(deadline) {
+		runtime.mu.Lock()
+		settled, value, paused := runtime.limit[operationMutate].settled, runtime.limit[operationMutate].value, runtime.probes.paused
+		runtime.mu.Unlock()
+		if settled && !paused {
+			t.Fatal("a limit settled at its Store's first probe")
+		}
+		if !settled && value > startingLimit {
+			t.Fatal("a limit grew to", value, "before it settled")
+		}
+		if settled && value > startingLimit {
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatal("a Store under load did not settle and grow")
 }
 
 // lowerLimit sets a runtime's adaptive limits as if its backend had queued.
@@ -741,6 +980,7 @@ func TestSlowMutationsDoNotHoldReadsBack(t *testing.T) {
 	adapter.records = blockUntil(release)
 	defer close(release)
 	runtime := open(t, adapter, limits(nil))
+	settle(runtime)
 	runtime.mu.Lock()
 	runtime.limit[operationMutate].value = 1
 	runtime.mu.Unlock()
