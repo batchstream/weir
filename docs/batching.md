@@ -48,9 +48,10 @@ Native commands, but not typed reads and mutations.
 Each Store limits how many record batches that are not full run at once, with
 one limit for mutations and one for reads: a backend often queues writes behind
 its journal or translog while it still serves reads from memory, and reads then
-need not wait for writes. Each limit starts at `max_in_flight` and moves between
-`min_in_flight` and `max_in_flight`, or down to a quarter of a batch when
-`min_in_flight` is 0. Together they still run at most `max_in_flight` batches:
+need not wait for writes. Each limit moves between `min_in_flight` and
+`max_in_flight`, or down to a quarter of a batch when `min_in_flight` is 0, and
+[starts at two batches](#starting-replicas). Together they still run at most
+`max_in_flight` batches:
 
 - Each execution is compared with the fastest recent execution of a batch of the
   same group, such as Lua programs on one collection, and the same or a larger
@@ -62,7 +63,8 @@ need not wait for writes. Each limit starts at `max_in_flight` and moves between
   whose callers all left, whose records all failed before their deadline, or
   that waited for a Search refresh to make writes query-visible do not count.
 - While executions stay under four times their baseline, the limit grows by
-  half a batch per window, or by half its value below one.
+  half a batch per window, or by half its value below one. Until it first
+  halves after it [settled](#starting-replicas), it doubles instead.
 - Below one, the Store runs one batch at a time and leaves the backend idle in
   between: at a half, as long as an execution typically takes, and at most a
   second. Records that would have formed a second batch join the next one, so
@@ -87,30 +89,51 @@ for a few more execution times, and at most about a second more, once the limit
 falls below one. The limit grows back once executions return to their
 baseline.
 
-A replica that starts while its backend queues sees only slow executions. So at
-the same wall-clock instants on every replica, a Store that kept record batches
-running through the previous interval, or whose limit held one back in it,
-pauses all its record batches, mutations and reads alike. A Store that has not
-probed yet pauses as soon as it runs batches. The pause lasts twice the longer
-typical execution time of the operations that ran in the interval, from 20 ms to
-1 second. The Store then sends one batch of each operation within one more such
-time, at most 250 ms, and resumes. With every busy replica paused the backend
-empties, and those batches renew the baselines. Records arriving meanwhile wait
-for the pause to end. The interval is 10 seconds, doubled until the pause takes
-at most 2.5% of it: a Store whose executions typically take 300 ms probes every
-40 seconds. Replicas that choose neighboring intervals still pause together at
-the longer one's instants. A backend that does not empty within a second still
-runs the probe faster than its queue, and the lower limit that follows shortens
-the next pause's wait. Keep replica clocks synchronized with NTP so their pauses
-overlap. A baseline rises at most twofold per interval, or per 15 seconds when
-that is longer, so one probe into a backend that did not empty cannot hide its
-queue, and a backend that became slower for good regains its limit within a few
-intervals.
-
 `weir_store_adaptive_executions_limit` and `weir_store_execution_latency_ratio`
 show each limit and the last window's median ratio, with an `operation` label of
 `mutate` or `read`. Set `min_in_flight` equal to `max_in_flight` to fix the
 limits.
+
+### Probes
+
+At the same wall-clock instants on every replica, a Store that kept record
+batches running through the previous interval, or whose limit held one back in
+it, pauses all its record batches, mutations and reads alike. The pause lasts
+twice the longer typical execution time of the operations that ran in the
+interval, from 20 ms to 1 second. The Store then sends one batch of each
+operation within one more such time, at most 250 ms, and resumes. With every
+busy replica paused the backend empties, and those batches renew the baselines.
+Records arriving meanwhile wait for the pause to end. The interval is 10
+seconds, doubled until the pause takes at most 2.5% of it: a Store whose
+executions typically take 300 ms probes every 40 seconds. Replicas that choose
+neighboring intervals still pause together at the longer one's instants, and
+every busy replica pauses at the instants of the longest, 80-second interval. A
+backend that does not empty within a second still runs the probe faster than
+its queue, and the lower limit that follows shortens the next pause's wait.
+Keep replica clocks synchronized with NTP so their pauses overlap. A baseline
+rises at most twofold per interval, or per 15 seconds when that is longer, so
+one probe into a backend that did not empty cannot hide its queue, and a
+backend that became slower for good regains its limit within a few intervals.
+
+### Starting replicas
+
+A replica that starts while its backend queues sees only slow executions and
+would take them for its baseline. So each limit starts at two batches, still
+halving while executions slow down, and grows only once it settled: after a
+probe at an 80-second instant, which every busy replica shares. A Store whose
+limits have not settled pauses at every instant of its interval while it runs
+batches, and one that has not paused yet at the next 10-second instant, so
+replicas that start together probe together within 10 seconds. Replicas added in
+front of a queueing backend therefore send few, large batches from the start,
+instead of many small ones until their first probe, and a cold start in front
+of one backs off within a few seconds of that probe.
+
+Until its limit settles, usually within 80 seconds under load, a Store runs at
+most two batches of each operation that are not full at a time, and fewer once
+executions slow down; full batches still use every slot. So that slow
+executions do not stall the others meanwhile, while the limit is at least one a
+batch also starts once four typical execution times, and at most a second, have
+passed since the previous one started.
 
 ## Memory sizing
 

@@ -375,6 +375,7 @@ func TestSessionMutationsOfOneResourceRunInOrder(t *testing.T) {
 	adapter := &fakeAdapter{started: make(chan []*execution.Plan, 8)}
 	release := make(chan struct{})
 	runtime := open(t, adapter, limits(nil))
+	settle(runtime)
 	adapter.records = blockUntil(release)
 	session := runtime.NewSession()
 	first := submit(t, runtime, mutationPlan("x"), session)

@@ -123,9 +123,10 @@ type batch struct {
 	cancel context.CancelFunc
 	items  []*Ticket
 	stops  []func() bool
-	// probe marks the limit's probe, full a batch of max_operations records
-	// or max_bytes, and partial one the adaptive limit counts.
-	probe, full, partial bool
+	// probe marks the limit's probe, settles one at an instant every
+	// replica's schedule includes, full a batch of max_operations records or
+	// max_bytes, and partial one the adaptive limit counts.
+	probe, settles, full, partial bool
 }
 
 func New(adapter execution.Adapter, limits Limits) (*Runtime, error) {
@@ -577,9 +578,6 @@ func (r *Runtime) startLocked(items []*Ticket, now time.Time) {
 		}
 		r.metrics.queueWait.Observe(now.Sub(t.queuedAt).Seconds())
 	}
-	if r.adaptive {
-		r.limit[operationOf(items[0].plan.Command)].busy(now)
-	}
 	kept := r.queue[:0]
 	for _, t := range r.queue {
 		if !t.started {
@@ -589,16 +587,20 @@ func (r *Runtime) startLocked(items []*Ticket, now time.Time) {
 	clear(r.queue[len(kept):])
 	r.queue = kept
 	r.notifySpaceLocked()
-	r.launchLocked(items)
+	b := r.launchLocked(items)
+	if r.adaptive {
+		r.limit[operationOf(items[0].plan.Command)].busy(now, b.partial)
+	}
 }
 
 // launchLocked runs items as one adapter invocation.
-func (r *Runtime) launchLocked(items []*Ticket) {
+func (r *Runtime) launchLocked(items []*Ticket) *batch {
 	for _, t := range items {
 		t.stop()
 	}
 	b := newBatch(items)
 	b.probe, b.full = r.probeNext, r.fullNext
+	b.settles = b.probe && r.probes.shared
 	r.probeNext, r.fullNext = false, false
 	r.batches[b] = struct{}{}
 	if b.native() {
@@ -621,6 +623,7 @@ func (r *Runtime) launchLocked(items []*Ticket) {
 		}
 	}
 	go r.execute(b)
+	return b
 }
 
 // newBatch gives a shared batch the lifetime of its callers: it ends at the
@@ -722,7 +725,7 @@ func (r *Runtime) execute(b *batch) {
 			for _, t := range b.items {
 				bytes += t.plan.Bytes
 			}
-			done := finishedBatch{started: started, finished: finished, key: key, size: len(b.items), bytes: bytes, full: b.full, probe: b.probe}
+			done := finishedBatch{started: started, finished: finished, key: key, size: len(b.items), bytes: bytes, full: b.full, probe: b.probe, settles: b.settles}
 			r.limit[op].observe(done)
 		}
 		if r.adaptive && r.running[op] == 0 && !r.queuesLocked(op) {
