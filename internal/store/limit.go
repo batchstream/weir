@@ -30,9 +30,10 @@ import (
 // batch of each operation at a random moment; the probe's time renews the
 // baseline. A limit starts at two batches and grows only after its Store's
 // second probe, at an instant of the interval its executions choose, which
-// replicas in front of the same backend share. So replicas added in front of a
-// queueing backend do not flood it before a probe shows them the queue, and
-// those in front of a backend with room soon use it.
+// replicas in front of the same backend share, or longestUnsettled after it
+// first held a batch back. So replicas added in front of a queueing backend do
+// not flood it before a probe shows them the queue, and those in front of a
+// backend with room soon use it.
 const (
 	// queueingRatio is the median execution time over its baseline, across
 	// one window, that halves the limit. Backends vary below it without
@@ -122,9 +123,10 @@ type executionLimit struct {
 	busySince time.Time
 	// lastSeen is when the last observed execution finished.
 	lastSeen time.Time
-	// settled is set once the execution of a probe at an instant every
-	// replica's schedule includes was observed; the limit grows only after it.
-	// starting is set until the limit first halves after that, and until then
+	// settled is set once the execution of a probe after the Store's first
+	// pause was observed, or an execution finished longestUnsettled after the
+	// limit first held a batch back; the limit grows only after it. starting
+	// is set until the limit first halves after that, and until then
 	// a window without queueing doubles it.
 	settled, starting bool
 	// every is the Store's current probe interval.

@@ -120,27 +120,27 @@ backend that became slower for good regains its limit within a few intervals.
 A replica that starts while its backend queues sees only slow executions and
 would take them for its baseline. So each limit starts at two batches, or at
 `min_in_flight` when that is higher, still halving while executions slow down,
-and grows only once it settled: after its Store's second probe. A Store that has
-not paused yet pauses at the next 10-second instant, so replicas that start
-together probe together within 10 seconds. It pauses next at an instant of the
-interval its executions choose, which replicas in front of the same backend
-share, and a Store whose limits have not settled pauses at every such instant
-while it runs batches. Replicas added in front of a queueing backend therefore
-send few, large batches from the start, instead of many small ones until their
-first probe, and a cold start in front of one backs off within a few seconds of
-that probe.
+and grows only once it settled: after its Store's second probe, or 160 seconds
+after it first held a batch back. A Store that has not paused yet pauses at the
+next 10-second instant, so replicas that start together probe together within 10
+seconds. It pauses next at an instant of the interval its executions choose,
+which replicas in front of the same backend share, and a Store whose limits have
+not settled pauses at every such instant while it runs batches. Replicas added
+in front of a queueing backend therefore send few, large batches from the start,
+instead of many small ones until their first probe, and a cold start in front of
+one backs off within a few seconds of that probe.
 
-A limit settles within 20 seconds under load when executions typically take
-less than about 80 ms, and within 90 seconds when they take a third of a second
-or more. One that first held a batch back 160 seconds ago settles without a
-probe, so short bursts that never reach a probe's instant are not held back for
-good. Until then a Store runs that many batches of each operation that are
-not full at a time, and fewer once executions slow down; full batches still use
-every slot. So that slow executions do not stall the others meanwhile, while the
-limit is at least one a batch also starts beside them once four typical
-execution times, and at most a second, have passed since the previous one
-started. Each further batch above the limit waits that much longer, so executions
-of several seconds add a few batches rather than one per second.
+A limit settles within about 20 seconds under load when executions typically
+take less than about 80 ms, and within about 90 seconds when they take a third
+of a second or more. The 160 seconds are for short bursts that never reach a
+probe's instant, which would otherwise be held back for good. Until then a Store
+runs that many batches of each operation that are not full at a time, and fewer
+once executions slow down; full batches still use every slot. So that slow
+executions do not stall the others meanwhile, while the limit is at least one a
+batch also starts beside them once four typical execution times, and at most a
+second, have passed since the previous one started. Each further batch above the
+limit waits that much longer, so executions of several seconds add a few batches
+rather than one per second.
 
 ## Memory sizing
 
