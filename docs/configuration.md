@@ -59,6 +59,7 @@ and exactly one `mongodb` or `search` backend.
 | `batching.max_bytes` | 4 MiB | Request bytes per execution; one larger record runs alone |
 | `batching.max_wait` | `1ms` | Write collection window; explicit `0s` executes immediately |
 | `batching.max_in_flight` | 16 | Concurrent backend executions per Store |
+| `batching.min_in_flight` | 0 | Lowest [adaptive limit](batching.md#adaptive-concurrency) for batches that are not full; 0 lets it fall below one batch, and equal to `max_in_flight` fixes the limit |
 
 The waiting queue holds 1024 operations / 32 MiB, and Native commands run in
 their own pool of 64 per Store. See [batching](batching.md) for how these limits

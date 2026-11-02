@@ -70,6 +70,12 @@ stores:
       # Concurrent backend executions per Store, including Search visibility
       # waits. Default: 16. Native commands use a separate limit of 64.
       max_in_flight: 16
+      # Batches that are not full run below an adaptive limit, which halves
+      # when the backend queues and grows back while executions stay near their
+      # baseline. This is its lowest value. Default: 0, which lets it fall to
+      # one batch at a time with the backend left idle in between; equal to
+      # max_in_flight fixes it.
+      min_in_flight: 0
 
   - name: search
     search:

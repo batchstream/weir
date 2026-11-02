@@ -45,6 +45,7 @@ func TestBatchingReachesRuntimeAndAdapter(t *testing.T) {
       max_operations: 7
       max_bytes: 1KiB
       max_wait: 0s
+      min_in_flight: 2
       max_in_flight: 3
 `
 	cfg, err := Decode(strings.NewReader(input))
@@ -53,7 +54,7 @@ func TestBatchingReachesRuntimeAndAdapter(t *testing.T) {
 	}
 	definition := cfg.Stores[0]
 	limits := definition.runtimeLimits()
-	if limits.BatchOperations != 7 || limits.BatchBytes != 1024 || limits.BatchWait != 0 || limits.MaxInFlight != 3 {
+	if limits.BatchOperations != 7 || limits.BatchBytes != 1024 || limits.BatchWait != 0 || limits.MinInFlight != 2 || limits.MaxInFlight != 3 {
 		t.Fatal("explicit batching did not reach the Store runtime", limits)
 	}
 	if definition.searchConfig().Options.BatchBytes != 1024 {
@@ -69,6 +70,9 @@ func TestBatchingReachesRuntimeAndAdapter(t *testing.T) {
 		"    batching:\n      max_bytes: 9223372036854775808B\n",
 		"    batching:\n      max_operations: 1.5\n",
 		"    batching:\n      max_in_flight: 0.9\n",
+		"    batching:\n      min_in_flight: -1\n",
+		"    batching:\n      min_in_flight: 17\n",
+		"    batching:\n      min_in_flight: 4\n      max_in_flight: 3\n",
 	} {
 		if _, err := Decode(strings.NewReader(searchDocument + fragment)); err == nil {
 			t.Fatal("invalid batching accepted", fragment)
