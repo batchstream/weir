@@ -52,6 +52,11 @@ const (
 	// added in front of a queueing backend do not flood it, and more than one,
 	// so that one slow execution does not hold the others back.
 	startingLimit = 2.0
+	// longestUnsettled is how long after it first held a batch back a limit
+	// settles without a probe: twice the longest probe interval, within which
+	// a Store under steady load settles anyway, so that short bursts that never
+	// reach a probe's instant are not held back for good.
+	longestUnsettled = 160 * time.Second
 	// limitWindow is the shortest decision window. A window also lasts at
 	// least the typical execution time, so a change shows before the next,
 	// and holds windowExecutions, so a few slower records, such as the reads
@@ -105,8 +110,9 @@ type executionLimit struct {
 	cutAt time.Time
 	// ratio is the last window's median execution time over its baseline.
 	ratio float64
-	// lastHeld is when the limit last held a batch back.
-	lastHeld time.Time
+	// firstHeld and lastHeld are when the limit first and last held a batch
+	// back.
+	firstHeld, lastHeld time.Time
 	// lastFinished is when the last observed batch that was not full finished,
 	// and lastStarted when the last batch the limit counts started.
 	lastFinished, lastStarted time.Time
@@ -220,6 +226,9 @@ func (l *executionLimit) admits(running int, now time.Time) (bool, time.Time) {
 func (l *executionLimit) holdBack(now time.Time) {
 	l.heldBack = true
 	l.lastHeld = now
+	if l.firstHeld.IsZero() {
+		l.firstHeld = now
+	}
 }
 
 // overlap records that a record batch started while another ran.
@@ -397,6 +406,9 @@ func (l *executionLimit) observe(e finishedBatch) {
 	}
 	if e.finished.After(l.lastSeen) {
 		l.lastSeen = e.finished
+	}
+	if !l.firstHeld.IsZero() && e.finished.Sub(l.firstHeld) >= longestUnsettled {
+		l.settled = true
 	}
 	if e.probe {
 		l.settled = l.settled || e.settles

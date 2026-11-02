@@ -132,7 +132,9 @@ that probe.
 
 A limit settles within 20 seconds under load when executions typically take
 less than about 80 ms, and within 90 seconds when they take a third of a second
-or more. Until then a Store runs that many batches of each operation that are
+or more. One that first held a batch back 160 seconds ago settles without a
+probe, so short bursts that never reach a probe's instant are not held back for
+good. Until then a Store runs that many batches of each operation that are
 not full at a time, and fewer once executions slow down; full batches still use
 every slot. So that slow executions do not stall the others meanwhile, while the
 limit is at least one a batch also starts beside them once four typical

@@ -679,6 +679,32 @@ func settle(runtime *Runtime) {
 	}
 }
 
+// Short bursts may never reach a probe's instant. A limit that held batches back
+// then settles without a probe, and one that held none back does not need to.
+func TestALimitThatHeldBatchesBackSettlesWithoutAProbe(t *testing.T) {
+	now := time.Unix(1_000_000, 0)
+	feed := &limitFeed{limit: newExecutionLimit(0, 16, now), now: now}
+	steady := executions{count: windowExecutions, elapsed: 5 * time.Millisecond, key: mutations, size: 8}
+	feed.now = now.Add(2 * longestUnsettled)
+	feed.run(steady)
+	if got := feed.limit.current(); got != startingLimit {
+		t.Fatal("a limit that never held a batch back grew to", got)
+	}
+	first := feed.now
+	feed.limit.holdBack(first)
+	feed.now = first.Add(longestUnsettled - time.Second)
+	feed.run(steady)
+	if got := feed.limit.current(); got != startingLimit {
+		t.Fatal("a limit grew to", got, "before it could settle")
+	}
+	feed.limit.holdBack(feed.now)
+	feed.now = first.Add(longestUnsettled)
+	feed.run(steady)
+	if got := feed.limit.current(); got != 2*startingLimit {
+		t.Fatal("a limit that held a batch back long ago did not settle and double, it is", got)
+	}
+}
+
 // A Store that just started runs two batches of each operation that are not
 // full at a time; full batches still use every slot.
 func TestAStoreStartsWithTwoBatchesOfEachOperation(t *testing.T) {

@@ -143,6 +143,11 @@ func open(t *testing.T, adapter *fakeAdapter, limits Limits) *Runtime {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// A test that crosses a probe's wall-clock instant would see its batches
+	// pause; those that cover probes choose their own interval.
+	runtime.mu.Lock()
+	runtime.probes.interval = time.Hour
+	runtime.mu.Unlock()
 	t.Cleanup(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -400,7 +405,7 @@ func TestSessionMutationsOfOneResourceRunInOrder(t *testing.T) {
 func TestSameResourceMutationsNeverShareABatch(t *testing.T) {
 	adapter := &fakeAdapter{}
 	release := make(chan struct{})
-	runtime := open(t, adapter, limits(func(l *Limits) { l.MaxInFlight, l.MinInFlight = 1, 1 }))
+	runtime := open(t, adapter, limits(func(l *Limits) { l.MaxInFlight = 1 }))
 	adapter.records = blockUntil(release)
 	blocker := submit(t, runtime, mutationPlan("blocker"), nil)
 	time.Sleep(20 * time.Millisecond)
