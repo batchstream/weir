@@ -50,8 +50,8 @@ one limit for mutations and one for reads: a backend often queues writes behind
 its journal or translog while it still serves reads from memory, and reads then
 need not wait for writes. Each limit moves between `min_in_flight` and
 `max_in_flight`, or down to a quarter of a batch when `min_in_flight` is 0, and
-[starts at two batches](#starting-replicas). Together they still run at most
-`max_in_flight` batches:
+[starts at two batches](#starting-replicas), or at `min_in_flight` when that is
+higher. Together they still run at most `max_in_flight` batches:
 
 - Each execution is compared with the fastest recent execution of a batch of the
   same group, such as Lua programs on one collection, and the same or a larger
@@ -118,22 +118,25 @@ backend that became slower for good regains its limit within a few intervals.
 ### Starting replicas
 
 A replica that starts while its backend queues sees only slow executions and
-would take them for its baseline. So each limit starts at two batches, still
-halving while executions slow down, and grows only once it settled: after a
-probe at an 80-second instant, which every busy replica shares. A Store whose
-limits have not settled pauses at every instant of its interval while it runs
-batches, and one that has not paused yet at the next 10-second instant, so
-replicas that start together probe together within 10 seconds. Replicas added in
-front of a queueing backend therefore send few, large batches from the start,
-instead of many small ones until their first probe, and a cold start in front
-of one backs off within a few seconds of that probe.
+would take them for its baseline. So each limit starts at two batches, or at
+`min_in_flight` when that is higher, still halving while executions slow down,
+and grows only once it settled: after a probe at an 80-second instant, which
+every busy replica shares. A Store whose limits have not settled pauses at every
+instant of its interval while it runs batches, and one that has not paused yet
+at the next 10-second instant, so replicas that start together probe together
+within 10 seconds. Replicas added in front of a queueing backend therefore send
+few, large batches from the start, instead of many small ones until their first
+probe, and a cold start in front of one backs off within a few seconds of that
+probe.
 
-Until its limit settles, usually within 80 seconds under load, a Store runs at
-most two batches of each operation that are not full at a time, and fewer once
+Until its limit settles, usually within 80 seconds under load, a Store runs that
+many batches of each operation that are not full at a time, and fewer once
 executions slow down; full batches still use every slot. So that slow
 executions do not stall the others meanwhile, while the limit is at least one a
-batch also starts once four typical execution times, and at most a second, have
-passed since the previous one started.
+batch also starts beside them once four typical execution times, and at most a
+second, have passed since the previous one started. Each further batch above the
+limit waits that much longer, so executions of several seconds add a few batches
+rather than one per second.
 
 ## Memory sizing
 

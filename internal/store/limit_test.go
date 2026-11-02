@@ -716,8 +716,9 @@ func TestAStoreStartsWithTwoBatchesOfEachOperation(t *testing.T) {
 	}
 }
 
-// Before a limit settles or halves, an execution far slower than executions
-// typically take holds the next batch back for at most a second.
+// Before a limit settles, and while it is at least one, an execution far slower
+// than executions typically take holds the next batch back for at most a second,
+// and each further batch above the limit for that much longer.
 func TestAnUnsettledLimitDoesNotWaitForAnOverrunningBatch(t *testing.T) {
 	now := time.Unix(1_000_000, 0)
 	l := newExecutionLimit(0, 16, now)
@@ -739,15 +740,64 @@ func TestAnUnsettledLimitDoesNotWaitForAnOverrunningBatch(t *testing.T) {
 	if _, retry := l.admits(1, now); !retry.Equal(now.Add(longestIdle)) {
 		t.Fatal("after slow executions a second batch could start", retry.Sub(now), "after the first")
 	}
-	// Once the limit halved, the backend queued, and batches wait their turn.
+	if _, retry := l.admits(3, now); !retry.Equal(now.Add(3 * longestIdle)) {
+		t.Fatal("two batches above the limit let another start", retry.Sub(now), "after the last")
+	}
+	// Below one the backend queued, and batches wait their turn.
 	l.value = 0.5
 	if admitted, retry := l.admits(1, now.Add(time.Hour)); admitted || !retry.IsZero() {
-		t.Fatal("a limit that halved admitted a second batch")
+		t.Fatal("a limit below one admitted a second batch")
 	}
 	l.value, l.settled = 1, true
 	if admitted, retry := l.admits(1, now.Add(time.Hour)); admitted || !retry.IsZero() {
 		t.Fatal("a settled limit of one admitted a second batch")
 	}
+}
+
+// A Store whose limit holds batches back settles at an instant of its longest
+// interval, and only then grows past where it started.
+func TestABusyStoreSettlesAtASharedInstantAndGrows(t *testing.T) {
+	adapter := &fakeAdapter{records: func(_ context.Context, plans []*execution.Plan) []*pb.Event {
+		time.Sleep(time.Millisecond)
+		return applied(plans)
+	}}
+	runtime := open(t, adapter, DefaultLimits())
+	runtime.mu.Lock()
+	runtime.probes.interval, runtime.probes.share = 10*time.Millisecond, 1
+	runtime.mu.Unlock()
+	ctx, cancel := context.WithCancel(t.Context())
+	var writers sync.WaitGroup
+	defer writers.Wait()
+	defer cancel()
+	var sequence atomic.Int64
+	for range 64 {
+		writers.Go(func() {
+			for ctx.Err() == nil {
+				// Callers that finish together do not all send again at once.
+				time.Sleep(rand.N(2 * time.Millisecond))
+				plan := mutationPlan(fmt.Sprint("r", sequence.Add(1)))
+				ticket, failure := runtime.Submit(ctx, plan, nil)
+				if failure != nil {
+					return
+				}
+				_, _ = ticket.Wait(ctx)
+			}
+		})
+	}
+	deadline := time.Now().Add(15 * time.Second)
+	for time.Now().Before(deadline) {
+		runtime.mu.Lock()
+		settled, value := runtime.limit[operationMutate].settled, runtime.limit[operationMutate].value
+		runtime.mu.Unlock()
+		if !settled && value > startingLimit {
+			t.Fatal("a limit grew to", value, "before it settled")
+		}
+		if settled && value > startingLimit {
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatal("a Store under load did not settle and grow")
 }
 
 // lowerLimit sets a runtime's adaptive limits as if its backend had queued.
@@ -1075,7 +1125,8 @@ type sharingRun struct {
 
 // throughput runs writers that each wait for one record at a time, spread over
 // replicas sharing one backend, and returns the records per second it applied
-// after a warm-up of several probes.
+// once their limits settled: after a warm-up of several probes that includes an
+// instant of the longest interval.
 func throughput(t *testing.T, run sharingRun) float64 {
 	t.Helper()
 	backend := &sharedBackend{workers: make(chan struct{}, 2), overhead: 2 * time.Millisecond, perRecord: 20 * time.Microsecond}
@@ -1106,7 +1157,12 @@ func throughput(t *testing.T, run sharingRun) float64 {
 			}
 		})
 	}
-	time.Sleep(1500 * time.Millisecond)
+	time.Sleep(500 * time.Millisecond)
+	runtimes[0].mu.Lock()
+	longest := runtimes[0].probes.longest()
+	runtimes[0].mu.Unlock()
+	now := time.Now()
+	time.Sleep(now.Truncate(longest).Add(longest).Sub(now) + time.Second)
 	before := backend.records.Load()
 	measure := time.Second
 	time.Sleep(measure)

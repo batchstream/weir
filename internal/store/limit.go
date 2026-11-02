@@ -188,7 +188,9 @@ func newProbes(limits *[2]executionLimit) probes {
 // Until the limit settles, and while it is at least one, another batch may
 // also start once queueingRatio typical execution times, and at most a second,
 // have passed since the last one started, so that slow executions do not hold
-// the others back merely because the Store has yet to learn its backend.
+// the others back merely because the Store has yet to learn its backend. Each
+// further batch above the limit waits that much longer, so that executions of
+// several seconds do not add up to the flood the low start avoids.
 func (l *executionLimit) admits(running int, now time.Time) (bool, time.Time) {
 	var next time.Time
 	switch {
@@ -204,7 +206,7 @@ func (l *executionLimit) admits(running int, now time.Time) (bool, time.Time) {
 		if l.typical > 0 {
 			overrun = min(overrun, time.Duration(queueingRatio*float64(l.typical)))
 		}
-		next = l.lastStarted.Add(overrun)
+		next = l.lastStarted.Add(overrun * time.Duration(running-int(l.value)+1))
 	}
 	if !now.Before(next) {
 		var admitted time.Time

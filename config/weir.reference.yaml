@@ -71,10 +71,10 @@ stores:
       # waits. Default: 16. Native commands use a separate limit of 64.
       max_in_flight: 16
       # Batches that are not full run below an adaptive limit, which starts at
-      # two batches, halves when the backend queues and grows while executions
-      # stay near their baseline. This is its lowest value. Default: 0, which
-      # lets it fall to one batch at a time with the backend left idle in
-      # between; equal to max_in_flight fixes it.
+      # two batches or at this value when higher, halves when the backend queues
+      # and grows while executions stay near their baseline. This is its lowest
+      # value. Default: 0, which lets it fall to one batch at a time with the
+      # backend left idle in between; equal to max_in_flight fixes it.
       min_in_flight: 0
 
   - name: search

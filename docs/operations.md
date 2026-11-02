@@ -307,7 +307,8 @@ until Ack or stream closure. During rolling updates, terminating Pods can retain
 `maxSurge: 0` does not cap that overlap. Scaling replicas adds backend
 connections and does not add database capacity; the adaptive limit keeps their
 combined requests near what the database can take, and new replicas start at
-two record batches per operation until their first shared probe.
+two record batches per operation, or `min_in_flight` when that is higher, until
+their first shared probe.
 
 Validate the real deployment with persisted reads/writes, visibility
 requirements, slow consumers, cancellation, memory bursts and rolling
