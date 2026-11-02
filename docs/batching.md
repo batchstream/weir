@@ -102,8 +102,10 @@ at most 2.5% of it: a Store whose executions typically take 300 ms probes every
 the longer one's instants. A backend that does not empty within a second still
 runs the probe faster than its queue, and the lower limit that follows shortens
 the next pause's wait. Keep replica clocks synchronized with NTP so their pauses
-overlap. Baselines expire after one to two intervals, and at least 15 seconds,
-so a backend that became slower for good regains its limit.
+overlap. A baseline rises at most twofold per interval, or per 15 seconds when
+that is longer, so one probe into a backend that did not empty cannot hide its
+queue, and a backend that became slower for good regains its limit within a few
+intervals.
 
 `weir_store_adaptive_executions_limit` and `weir_store_execution_latency_ratio`
 show each limit and the last window's median ratio, with an `operation` label of

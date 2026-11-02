@@ -51,8 +51,10 @@ const (
 	limitWindow      = 10 * time.Millisecond
 	windowExecutions = 8
 	// baselineAge is how long the fastest execution of a generation is kept,
-	// or the probe interval when that is longer. A baseline expires after one
-	// to two ages, so a backend that became slower for good regains its limit.
+	// or the probe interval when that is longer. A baseline rises at most
+	// twofold per age, so one probe into a backend that did not empty cannot
+	// hide its queue, and a backend that became slower for good regains its
+	// limit within a few ages.
 	baselineAge = 15 * time.Second
 	// sizeClasses holds batch sizes 1, 2–3, 4–7 and so on, in records or in
 	// KiB when that is larger; larger sizes share the last class.
@@ -326,7 +328,13 @@ func (l *executionLimit) observe(e finishedBatch) {
 				delete(l.fastest, key)
 				continue
 			}
-			generations[1], generations[0] = generations[0], [sizeClasses]time.Duration{}
+			var kept [sizeClasses]time.Duration
+			for class, fastest := range generations[0] {
+				if fastest > 0 {
+					kept[class] = min(fastest, 2*l.baseline(key, class))
+				}
+			}
+			generations[1], generations[0] = kept, [sizeClasses]time.Duration{}
 		}
 		l.generation = e.finished
 	}

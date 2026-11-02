@@ -249,6 +249,29 @@ func TestBaselineOfAFasterBackendExpires(t *testing.T) {
 	}
 }
 
+// A probe that ran into a backend that did not empty would otherwise become
+// the next generation's baseline and hide the queue from the limit.
+func TestABaselineRisesAtMostTwofoldPerGeneration(t *testing.T) {
+	feed := newLimitFeed(1, 16)
+	fast := executions{count: windowExecutions, size: 8, elapsed: 5 * unit, key: mutations}
+	feed.run(fast)
+	feed.now = feed.now.Add(baselineAge)
+	inflated := finishedBatch{started: feed.now, finished: feed.now.Add(40 * unit), key: mutations, size: 8, probe: true}
+	feed.limit.observe(inflated)
+	feed.now = inflated.finished
+	congested := executions{count: 2 * windowExecutions, size: 8, elapsed: 50 * unit, key: mutations, held: true}
+	feed.run(congested)
+	feed.now = feed.now.Add(baselineAge)
+	before := feed.limit.current()
+	feed.run(congested)
+	if got := feed.limit.baseline(mutations, sizeClass(8, 0)); got != 10*unit {
+		t.Fatal("the baseline rose from", 5*unit, "to", got, "in one generation")
+	}
+	if got := feed.limit.current(); got >= before {
+		t.Fatal("a queue ten times the old baseline let the limit go from", before, "to", got)
+	}
+}
+
 func TestOneStalledExecutionDoesNotDecideAWindow(t *testing.T) {
 	feed := newLimitFeed(1, 16)
 	quick := executions{count: 19, size: 8, elapsed: unit}
