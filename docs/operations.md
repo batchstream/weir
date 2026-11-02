@@ -75,6 +75,7 @@ of improved capacity.
 | --- | --- |
 | `weir_node_ready` | Readiness |
 | `weir_store_active_executions`, `weir_store_active_executions_limit` | Per-Store record batches and their limit |
+| `weir_store_adaptive_executions_limit`, `weir_store_execution_latency_ratio` | The [adaptive limit](batching.md#adaptive-concurrency) for record batches that are not full, below one the share of time one runs, and the last window's median execution time over its baseline; above 4 the backend queues |
 | `weir_store_active_natives`, `weir_store_active_natives_limit` | Per-Store running Native commands |
 | `weir_store_native_seconds` | Native call time, including sending the response on the RPC stream; not proof of client receipt |
 | `weir_store_queued_operations`, `weir_store_queued_bytes` | Waiting work |
@@ -230,13 +231,13 @@ means clients send invalid Natives; read the failure messages in client logs.
 ### WeirQueueWaitHigh
 
 Records of a Store wait more than a second before dispatch at the 99th
-percentile. Compare `weir_store_execution_seconds` and
-`weir_store_active_executions` with their limit. Busy slots with slow
-executions mean the database is the bottleneck, and more Weir replicas add
-backend demand without adding capacity. Free slots mean records wait for
-earlier mutations of the same resource: one stream's mutations of a resource
-run one at a time, so a client that keeps rewriting the same records queues
-behind itself.
+percentile. Compare `weir_store_active_executions` with
+`weir_store_adaptive_executions_limit`, and read
+`weir_store_execution_latency_ratio`. Busy slots with a ratio above 4 mean the
+database is the bottleneck: records wait in Weir, where they form larger batches,
+and more Weir replicas add no capacity. Free slots mean records wait for earlier
+mutations of the same resource: one stream's mutations of a resource run one at
+a time, so a client that keeps rewriting the same records queues behind itself.
 
 ### WeirWatchdogExpirations
 
@@ -300,8 +301,9 @@ is neither confirmed remote cleanup nor permission to replay. Disconnect errors
 and work that does not stop within the budget are reported as shutdown failures,
 never as a clean stop. Results not yet acknowledged by the consumer stay charged
 until Ack or stream closure. During rolling updates, terminating Pods can retain connections while new Pods start;
-`maxSurge: 0` does not cap that overlap. Scaling replicas increases aggregate
-backend demand and does not add database capacity.
+`maxSurge: 0` does not cap that overlap. Scaling replicas adds backend
+connections and does not add database capacity; the adaptive limit keeps their
+combined requests near what the database can take.
 
 Validate the real deployment with persisted reads/writes, visibility
 requirements, slow consumers, cancellation, memory bursts and rolling

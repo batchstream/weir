@@ -43,8 +43,10 @@ Validated records enter one Store scheduler. It combines compatible records from
 one or several streams using count and byte targets. Reads and mutations form
 separate batches. Writes can collect until their oldest admission reaches the
 configured wait; reads use already queued work. Queue capacity returns at dispatch.
-Active execution slots return when backend execution finishes. See
-[batching](batching.md) for grouping and backpressure.
+Active execution slots return when backend execution finishes. Batches that are
+not full run below an adaptive limit that halves when executions queue at the
+backend, so records wait in Weir and form larger batches instead. See
+[batching](batching.md) for grouping, the adaptive limit and backpressure.
 
 Same-resource mutations within a stream execute in input order. Each plan keeps
 its own record context, bounded by the record's timeout, its stream and any

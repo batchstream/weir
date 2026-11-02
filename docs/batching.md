@@ -17,6 +17,7 @@ request -> bounded Store queue -> compatible batch -> backend -> ordered result
 | `batching.max_bytes` | 4 MiB | Input estimate and final Search NDJSON aggregation target |
 | `batching.max_wait` | 1 ms | Maximum write collection age; explicit `0s` disables collection |
 | `batching.max_in_flight` | 16 | Simultaneous backend executions |
+| `batching.min_in_flight` | 0 | Lowest [adaptive limit](#adaptive-concurrency) for batches that are not full; 0 lets it fall below one batch |
 | Exchange bytes | 32 MiB (fixed) | Adapter request/response grouping target |
 
 A full queue waits for dispatch or caller cancellation. Dispatch returns queue
@@ -41,6 +42,56 @@ Native commands use neither the queue nor these slots. Each Store runs at most
 gives up. Each one lasts until its caller has read the response or the output
 stall timeout ends the RPC. Slow Native consumers can therefore delay other
 Native commands, but not typed reads and mutations.
+
+## Adaptive concurrency
+
+Each Store limits how many record batches that are not full run at once. The
+limit starts at `max_in_flight` and moves between `min_in_flight` and
+`max_in_flight`, or down to a quarter of a batch when `min_in_flight` is 0:
+
+- Each execution is compared with the fastest recent execution of a batch of the
+  same kind, read or mutation, and the same or a larger size. When the median
+  execution of a window takes more than four times that baseline, the backend
+  is queueing and the limit halves. A window lasts at least 10 ms and one typical
+  execution time. Executions whose callers all left, whose records all failed,
+  or that waited for a Search refresh to make writes query-visible do not count.
+- While the limit holds ready batches back and executions stay under four times
+  their baseline, it grows by half a batch per window, or by half its value
+  below one.
+- Below one, the Store runs one batch at a time and leaves the backend idle in
+  between: at a half, as long as an execution typically takes. Records that
+  would have formed a second batch join the next one, so this matters when one
+  batch per replica is already more than a shared backend can take.
+
+Records that are held back join larger batches, so a backend under pressure
+receives fewer, larger requests. Without the limit, each replica sends a batch
+whenever one of its slots is free: adding replicas, or a backend that slows down,
+multiplies small concurrent requests and slows the backend further. Replicas
+sharing a backend see the same queueing and back off together, so their combined
+requests follow what the backend can take rather than how many replicas there
+are. Scaling Weir out on CPU therefore stays safe when the database becomes the
+limit. Full batches, of `max_operations` records or `max_bytes`, and a draining
+Store may use every slot up to `max_in_flight`.
+
+A replica that starts while its backend queues sees only slow executions. So
+at the same wall-clock instants on every replica, a Store that kept record
+batches running through the previous interval, or whose limit held one back in
+it, pauses its record batches for twice its typical execution time, from 20 ms
+to 1 second. It then sends one batch within one more typical execution time, at
+most 250 ms, and resumes. With every busy replica paused the backend empties, and
+that batch renews the baseline. Records arriving meanwhile wait for the pause to
+end. The interval is 10 seconds, doubled until the pause takes at most 2.5% of
+it: a Store whose executions typically take 300 ms probes every 40 seconds.
+Replicas that choose neighboring intervals still pause together at the longer
+one's instants. A backend that does not empty within a second still runs the
+probe faster than its queue, and the lower limit that follows shortens the next
+pause's wait. Keep replica clocks synchronized with NTP so their pauses overlap.
+Baselines expire after one to two intervals, and at least 15 seconds, so a
+backend that became slower for good regains its limit.
+
+`weir_store_adaptive_executions_limit` and `weir_store_execution_latency_ratio`
+show the limit and the last window's median ratio. Set `min_in_flight` equal to
+`max_in_flight` to fix the limit.
 
 ## Memory sizing
 
@@ -91,8 +142,9 @@ The short default wait adds at most about 1 ms to an isolated write. Under
 sustained concurrency, compatible writes accumulate while all execution slots
 are busy, so batch size follows backend execution time rather than the wait.
 Increasing `max_operations` cannot create compatible arrivals. Longer collection
-can reduce backend calls while increasing latency; more execution slots can keep
-the backend busy while increasing small concurrent requests and retained memory.
+can reduce backend calls while increasing latency; a higher `max_in_flight` lets
+full batches and an idle backend use more concurrent requests and retained memory,
+while the adaptive limit keeps a queueing backend from receiving them.
 Query-visible Search writes include refresh waits in their execution slots.
 
 Compare equivalent native and Weir traffic with matching durability, visibility,
