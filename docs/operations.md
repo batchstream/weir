@@ -75,7 +75,7 @@ of improved capacity.
 | --- | --- |
 | `weir_node_ready` | Readiness |
 | `weir_store_active_executions`, `weir_store_active_executions_limit` | Per-Store record batches and their limit |
-| `weir_store_adaptive_executions_limit`, `weir_store_execution_latency_ratio` | The [adaptive limit](batching.md#adaptive-concurrency) for record batches that are not full, below one the share of time one runs, and the last window's median execution time over its baseline; above 4 the backend queues, and 0 when the limit is fixed |
+| `weir_store_adaptive_executions_limit`, `weir_store_execution_latency_ratio` | The [adaptive limit](batching.md#adaptive-concurrency) for record batches that are not full, by `operation` (`mutate` or `read`), below one the share of time one runs, and the last window's median execution time over its baseline; above 4 the backend queues, and 0 when the limit is fixed |
 | `weir_store_active_natives`, `weir_store_active_natives_limit` | Per-Store running Native commands |
 | `weir_store_native_seconds` | Native call time, including sending the response on the RPC stream; not proof of client receipt |
 | `weir_store_queued_operations`, `weir_store_queued_bytes` | Waiting work |

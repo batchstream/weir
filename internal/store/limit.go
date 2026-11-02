@@ -7,15 +7,15 @@ import (
 	"time"
 )
 
-// A Store adapts how many record batches that are not full it runs at once.
-// Each replica of a group sends a batch whenever an execution slot is free, so
+// A Store adapts how many record batches that are not full it runs at once,
+// for mutations and for reads apart. Each replica of a group sends a batch whenever an execution slot is free, so
 // without this a shared backend would receive more and smaller requests as
 // replicas are added or as it slows down, and slow down further. The limit
 // compares each execution's time with the fastest recent execution of a batch
 // of the same group and size. When the backend queues while this Store
 // contends for it, executions take longer than that baseline and the limit
-// halves, so records wait and share larger batches; while the limit holds
-// batches back and executions stay near the baseline, it grows again. Replicas sharing a backend see the same queueing
+// halves, so records wait and share larger batches; while executions stay
+// near the baseline, it grows again. Replicas sharing a backend see the same queueing
 // and back off together, so their total follows what the backend can take
 // rather than how many replicas there are. Below one, the limit runs one batch
 // at a time and leaves the backend idle in between, so a replica's callers
@@ -24,10 +24,10 @@ import (
 // and may use every slot up to max_in_flight.
 //
 // A replica that starts while the backend queues sees only slow executions and
-// would take them for its baseline. So every replica that kept record batches
-// running, or whose limit held one back, pauses at the same wall-clock
-// instants, letting the backend empty, and then sends one probe batch at a
-// random moment; the probe's time renews the baseline.
+// would take them for its baseline. So every replica that kept batches of an
+// operation running, or whose limit held one back, pauses them at the same
+// wall-clock instants, letting the backend empty, and then sends one probe
+// batch at a random moment; the probe's time renews the baseline.
 const (
 	// queueingRatio is the median execution time over its baseline, across
 	// one window, that halves the limit. Backends vary below it without
@@ -36,16 +36,19 @@ const (
 	// also queues a little before it is saturated, and backing off there
 	// gives up throughput.
 	queueingRatio = 4.0
-	// limitGrowth is how much a window that held a batch back raises the limit,
-	// in batches above one and as a share of the limit below.
+	// limitGrowth is how much a window without queueing raises the limit, in
+	// batches above one and as a share of the limit below.
 	limitGrowth = 0.5
 	// lowestLimit is the floor when min_in_flight is zero: one batch running
 	// a quarter of the time. Lower floors make callers wait longer between
 	// batches without making them larger.
 	lowestLimit = 1.0 / 4
 	// limitWindow is the shortest decision window. A window also lasts at
-	// least the typical execution time, so a change shows before the next.
-	limitWindow = 10 * time.Millisecond
+	// least the typical execution time, so a change shows before the next,
+	// and holds windowExecutions, so a few slower records, such as the reads
+	// of a large document, do not decide it.
+	limitWindow      = 10 * time.Millisecond
+	windowExecutions = 8
 	// baselineAge is how long the fastest execution of a generation is kept,
 	// or the probe interval when that is longer. A baseline expires after one
 	// to two ages, so a backend that became slower for good regains its limit.
@@ -303,7 +306,7 @@ func (l *executionLimit) observe(e finishedBatch) {
 		return
 	}
 	l.ratios = append(l.ratios, float64(elapsed)/float64(l.baseline(e.key, class)))
-	if e.finished.Sub(l.windowStart) < max(limitWindow, l.typical) {
+	if len(l.ratios) < windowExecutions || e.finished.Sub(l.windowStart) < max(limitWindow, l.typical) {
 		return
 	}
 	// The lower median, so one stalled execution of two does not decide.
@@ -316,7 +319,7 @@ func (l *executionLimit) observe(e finishedBatch) {
 	case l.ratio > queueingRatio && (l.heldBack || l.together):
 		l.value = max(l.min, l.value/2)
 		l.cutAt = e.finished
-	case l.heldBack:
+	case l.ratio <= queueingRatio:
 		l.value = min(l.max, l.value+limitGrowth*min(l.value, 1))
 	}
 	l.windowStart, l.ratios, l.heldBack, l.together = e.finished, l.ratios[:0], false, false

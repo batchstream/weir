@@ -23,9 +23,9 @@ type Limits struct {
 	QueueOperations, QueueBytes int
 	BatchOperations, BatchBytes int
 	// MaxInFlight bounds running record batches; zero allows unlimited.
-	// Batches that are not full run below an adaptive limit between
-	// MinInFlight, or a quarter of a batch when it is zero, and MaxInFlight;
-	// equal bounds fix it.
+	// Batches that are not full run below an adaptive limit, one for
+	// mutations and one for reads, between MinInFlight, or a quarter of a
+	// batch when it is zero, and MaxInFlight; equal bounds fix it.
 	MinInFlight, MaxInFlight int
 	// MaxNative bounds running Native commands. They bypass the queue and the
 	// record slots because each one lasts until its caller has read the
@@ -59,11 +59,14 @@ type Runtime struct {
 	queueBytes       int
 	batches          map[*batch]struct{}
 	records, natives int
-	// partial counts running record batches the adaptive limit holds: those
-	// that are not full and do not wait for something besides the backend.
-	partial int
-	keys    map[resourceKey]*Ticket
-	limit   executionLimit
+	// running counts record batches by operation, and partial those the
+	// adaptive limit holds: batches that are not full and do not wait for
+	// something besides the backend.
+	running, partial [2]int
+	keys             map[resourceKey]*Ticket
+	// limit adapts mutations and reads apart: a backend often queues writes
+	// behind its journal or translog while it still serves reads from memory.
+	limit [2]executionLimit
 	// probeNext and fullNext describe the batch about to launch: the limit's
 	// probe, or one that is full.
 	probeNext, fullNext          bool
@@ -133,12 +136,13 @@ func New(adapter execution.Adapter, limits Limits) (*Runtime, error) {
 		_ = adapter.Close(cleanup)
 		return nil, err
 	}
+	now := time.Now()
 	runtime := &Runtime{
 		adapter:     adapter,
 		limits:      limits,
 		metrics:     newRuntimeMetrics(),
 		adaptive:    limits.MaxInFlight > 0 && limits.MinInFlight < limits.MaxInFlight,
-		limit:       newExecutionLimit(limits.MinInFlight, limits.MaxInFlight, time.Now()),
+		limit:       [2]executionLimit{newExecutionLimit(limits.MinInFlight, limits.MaxInFlight, now), newExecutionLimit(limits.MinInFlight, limits.MaxInFlight, now)},
 		batches:     make(map[*batch]struct{}),
 		keys:        make(map[resourceKey]*Ticket),
 		space:       make(chan struct{}),
@@ -376,6 +380,24 @@ type groupKey struct {
 	read  bool
 }
 
+// operation indexes the adaptive limits, named as in the operation label of
+// the Store's metrics.
+type operation int
+
+const (
+	operationMutate operation = iota
+	operationRead
+)
+
+var operationNames = [...]string{"mutate", "read"}
+
+func operationOf(command *pb.Command) operation {
+	if command.GetRead() != nil {
+		return operationRead
+	}
+	return operationMutate
+}
+
 type group struct {
 	items []*Ticket
 	bytes int
@@ -426,17 +448,6 @@ func (r *Runtime) selectLocked(now time.Time) ([]*Ticket, time.Time) {
 	if r.limits.MaxInFlight > 0 && r.records >= r.limits.MaxInFlight {
 		return nil, wakeAt
 	}
-	probing := false
-	if r.adaptive && !r.draining {
-		gate, until := r.limit.gate(now)
-		switch gate {
-		case gateClosed:
-			return nil, until
-		case gateProbe:
-			probing = true
-			wakeAt = until
-		}
-	}
 	s := &r.selection
 	if s.byKey == nil {
 		s.byKey = make(map[groupKey]*group)
@@ -476,10 +487,8 @@ func (r *Runtime) selectLocked(now time.Time) ([]*Ticket, time.Time) {
 	for _, g := range s.groups[:s.used] {
 		at := r.readyAt(g, now)
 		if !now.Before(at) {
-			if probing {
-				r.limit.sendProbe()
-				r.probeNext = true
-			} else if held, retry := r.holdsBack(g, now); held {
+			held, retry := r.holdsBack(g, now)
+			if held {
 				// Unless the limit names a time, a finishing execution
 				// signals the loop.
 				if !retry.IsZero() && (wakeAt.IsZero() || retry.Before(wakeAt)) {
@@ -506,20 +515,35 @@ func (r *Runtime) isFull(g *group) bool {
 	return g.full || len(g.items) >= r.limits.BatchOperations || g.bytes >= r.limits.BatchBytes
 }
 
-// holdsBack reports whether a ready group must wait for the adaptive limit
-// and, unless an execution must finish first, until when. Full groups may use
-// every slot, and a draining Store uses every slot to finish before its
-// deadline.
+// holdsBack reports whether a ready group must wait for the adaptive limit of
+// its operation and, unless an execution must finish first, until when. While
+// that limit probes, its operation's groups wait for the probe, which is the
+// first of them to be ready. Full groups may use every slot outside a probe's
+// pause, and a draining Store uses every slot to finish before its deadline.
 func (r *Runtime) holdsBack(g *group, now time.Time) (bool, time.Time) {
 	var retry time.Time
-	if !r.adaptive || r.draining || r.isFull(g) {
+	if !r.adaptive || r.draining {
 		return false, retry
 	}
-	admitted, retry := r.limit.admits(r.partial, now)
+	op := operationOf(g.items[0].plan.Command)
+	limit := &r.limit[op]
+	gate, until := limit.gate(now)
+	switch gate {
+	case gateClosed:
+		return true, until
+	case gateProbe:
+		limit.sendProbe()
+		r.probeNext = true
+		return false, retry
+	}
+	if r.isFull(g) {
+		return false, retry
+	}
+	admitted, retry := limit.admits(r.partial[op], now)
 	if admitted {
 		return false, retry
 	}
-	r.limit.holdBack(now)
+	limit.holdBack(now)
 	return true, retry
 }
 
@@ -551,7 +575,7 @@ func (r *Runtime) startLocked(items []*Ticket, now time.Time) {
 		r.metrics.queueWait.Observe(now.Sub(t.queuedAt).Seconds())
 	}
 	if r.adaptive {
-		r.limit.busy(now)
+		r.limit[operationOf(items[0].plan.Command)].busy(now)
 	}
 	kept := r.queue[:0]
 	for _, t := range r.queue {
@@ -577,13 +601,20 @@ func (r *Runtime) launchLocked(items []*Ticket) {
 	if b.native() {
 		r.natives++
 	} else {
+		op := operationOf(items[0].plan.Command)
 		r.records++
+		r.running[op]++
 		b.partial = !b.full && !b.waits()
 		if b.partial {
-			r.partial++
+			r.partial[op]++
 		}
 		if r.adaptive && r.records > 1 {
-			r.limit.overlap()
+			// Every operation with a running batch now shares the backend.
+			for other, count := range r.running {
+				if count > 0 {
+					r.limit[other].overlap()
+				}
+			}
 		}
 	}
 	go r.execute(b)
@@ -635,6 +666,11 @@ func (b *batch) native() bool {
 	return b.items[0].plan.Command.GetNative() != nil
 }
 
+// queuesLocked reports whether a record of the operation is queued.
+func (r *Runtime) queuesLocked(op operation) bool {
+	return slices.ContainsFunc(r.queue, func(t *Ticket) bool { return operationOf(t.plan.Command) == op })
+}
+
 // waits reports whether the batch also waits for something besides the
 // backend's work on it, such as a Search refresh.
 func (b *batch) waits() bool {
@@ -670,22 +706,24 @@ func (r *Runtime) execute(b *batch) {
 		r.natives--
 		r.notifyNativeLocked()
 	} else {
+		first := b.items[0].plan
+		op := operationOf(first.Command)
 		r.records--
+		r.running[op]--
 		if b.partial {
-			r.partial--
+			r.partial[op]--
 		}
 		if r.adaptive && !untimed {
-			first := b.items[0].plan
-			key := groupKey{batch: first.BatchKey, read: first.Command.GetRead() != nil}
+			key := groupKey{batch: first.BatchKey, read: op == operationRead}
 			bytes := 0
 			for _, t := range b.items {
 				bytes += t.plan.Bytes
 			}
 			done := finishedBatch{started: started, finished: finished, key: key, size: len(b.items), bytes: bytes, full: b.full, probe: b.probe}
-			r.limit.observe(done)
+			r.limit[op].observe(done)
 		}
-		if r.adaptive && r.records == 0 && len(r.queue) == 0 {
-			r.limit.rest(finished)
+		if r.adaptive && r.running[op] == 0 && !r.queuesLocked(op) {
+			r.limit[op].rest(finished)
 		}
 	}
 	for i, t := range b.items {
