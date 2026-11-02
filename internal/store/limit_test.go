@@ -353,10 +353,10 @@ func TestAProbeRenewsAnInflatedBaseline(t *testing.T) {
 
 // A replica that starts cannot tell how much its backend already queues, since
 // its first executions set its baseline either way. It runs two batches at a
-// time, halving below that while executions slow down, and grows only after a
-// probe at an instant every replica pauses at. Until it first halves after
-// that, each window without queueing doubles it.
-func TestALimitStartsAtTwoBatchesAndGrowsAfterASharedProbe(t *testing.T) {
+// time, halving below that while executions slow down, and grows only after
+// its Store's second probe. Until it first halves after that, each window
+// without queueing doubles it.
+func TestALimitStartsAtTwoBatchesAndGrowsOnceItSettled(t *testing.T) {
 	now := time.Unix(1_000_000, 0)
 	feed := &limitFeed{limit: newExecutionLimit(0, 16, now), now: now}
 	if got := feed.limit.current(); got != startingLimit {
@@ -549,8 +549,7 @@ func TestAReplicaThatNeverProbedPausesAtOnce(t *testing.T) {
 
 // Replicas that start together, however long their executions, probe together
 // at the next instant of the shortest interval. They then probe at the
-// interval their executions need, and settle at an instant of the longest one,
-// which every replica's schedule includes.
+// interval their executions need, which replicas with similar executions share.
 func TestAStoreThatNeverPausedPausesWithinTheShortestInterval(t *testing.T) {
 	longest := 8 * probeInterval
 	start := time.Unix(1_000_000, 0).Truncate(longest).Add(probeInterval)
@@ -558,18 +557,18 @@ func TestAStoreThatNeverPausedPausesWithinTheShortestInterval(t *testing.T) {
 	s.probes.share = probeShare
 	s.limits[operationMutate].busy(start.Add(-time.Second), true)
 	s.ran(operationMutate, 600*time.Millisecond, start.Add(-time.Millisecond))
-	if gate, _ := s.probes.gate(operationMutate, start); gate != gateClosed || s.probes.shared {
+	if gate, _ := s.probes.gate(operationMutate, start); gate != gateClosed || s.probes.paused {
 		t.Fatal("a Store with slow executions that never paused did not pause at the next instant of the shortest interval")
 	}
 	s.ran(operationMutate, 600*time.Millisecond, start.Add(probeDrainMax+probeWindowMax))
 	next := start.Add(probeInterval)
-	if gate, _ := s.probes.gate(operationMutate, next); gate != gateOpen || s.probes.every != longest {
+	if gate, _ := s.probes.gate(operationMutate, next); gate != gateOpen || s.probes.every != longest || !s.probes.paused {
 		t.Fatal("after its first pause a slow Store paused at", next.Sub(start), "probing every", s.probes.every)
 	}
-	shared := start.Truncate(longest).Add(longest)
-	s.ran(operationMutate, 600*time.Millisecond, shared.Add(-time.Millisecond))
-	if gate, _ := s.probes.gate(operationMutate, shared); gate != gateClosed || !s.probes.shared {
-		t.Fatal("a Store that never settled did not pause at an instant every replica shares")
+	second := start.Truncate(longest).Add(longest)
+	s.ran(operationMutate, 600*time.Millisecond, second.Add(-time.Millisecond))
+	if gate, _ := s.probes.gate(operationMutate, second); gate != gateClosed {
+		t.Fatal("a Store that never settled did not pause at an instant of its interval")
 	}
 }
 
@@ -754,9 +753,9 @@ func TestAnUnsettledLimitDoesNotWaitForAnOverrunningBatch(t *testing.T) {
 	}
 }
 
-// A Store whose limit holds batches back settles at an instant of its longest
-// interval, and only then grows past where it started.
-func TestABusyStoreSettlesAtASharedInstantAndGrows(t *testing.T) {
+// A Store whose limit holds batches back settles at its second probe, and only
+// then grows past where it started.
+func TestAStoreUnderLoadSettlesAtItsSecondProbeAndGrows(t *testing.T) {
 	adapter := &fakeAdapter{records: func(_ context.Context, plans []*execution.Plan) []*pb.Event {
 		time.Sleep(time.Millisecond)
 		return applied(plans)
@@ -787,8 +786,11 @@ func TestABusyStoreSettlesAtASharedInstantAndGrows(t *testing.T) {
 	deadline := time.Now().Add(15 * time.Second)
 	for time.Now().Before(deadline) {
 		runtime.mu.Lock()
-		settled, value := runtime.limit[operationMutate].settled, runtime.limit[operationMutate].value
+		settled, value, paused := runtime.limit[operationMutate].settled, runtime.limit[operationMutate].value, runtime.probes.paused
 		runtime.mu.Unlock()
+		if settled && !paused {
+			t.Fatal("a limit settled at its Store's first probe")
+		}
 		if !settled && value > startingLimit {
 			t.Fatal("a limit grew to", value, "before it settled")
 		}
@@ -1125,8 +1127,7 @@ type sharingRun struct {
 
 // throughput runs writers that each wait for one record at a time, spread over
 // replicas sharing one backend, and returns the records per second it applied
-// once their limits settled: after a warm-up of several probes that includes an
-// instant of the longest interval.
+// after a warm-up of several probes.
 func throughput(t *testing.T, run sharingRun) float64 {
 	t.Helper()
 	backend := &sharedBackend{workers: make(chan struct{}, 2), overhead: 2 * time.Millisecond, perRecord: 20 * time.Microsecond}
@@ -1157,12 +1158,7 @@ func throughput(t *testing.T, run sharingRun) float64 {
 			}
 		})
 	}
-	time.Sleep(500 * time.Millisecond)
-	runtimes[0].mu.Lock()
-	longest := runtimes[0].probes.longest()
-	runtimes[0].mu.Unlock()
-	now := time.Now()
-	time.Sleep(now.Truncate(longest).Add(longest).Sub(now) + time.Second)
+	time.Sleep(1500 * time.Millisecond)
 	before := backend.records.Load()
 	measure := time.Second
 	time.Sleep(measure)

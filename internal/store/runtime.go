@@ -123,9 +123,9 @@ type batch struct {
 	cancel context.CancelFunc
 	items  []*Ticket
 	stops  []func() bool
-	// probe marks the limit's probe, settles one at an instant every
-	// replica's schedule includes, full a batch of max_operations records or
-	// max_bytes, and partial one the adaptive limit counts.
+	// probe marks the limit's probe, settles one after the Store's first
+	// pause, full a batch of max_operations records or max_bytes, and partial
+	// one the adaptive limit counts.
 	probe, settles, full, partial bool
 }
 
@@ -600,7 +600,7 @@ func (r *Runtime) launchLocked(items []*Ticket) *batch {
 	}
 	b := newBatch(items)
 	b.probe, b.full = r.probeNext, r.fullNext
-	b.settles = b.probe && r.probes.shared
+	b.settles = b.probe && r.probes.paused
 	r.probeNext, r.fullNext = false, false
 	r.batches[b] = struct{}{}
 	if b.native() {

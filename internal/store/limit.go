@@ -28,9 +28,11 @@ import (
 // running, or whose limit held one back, pauses all its record batches at the
 // same wall-clock instants, letting the backend empty, and then sends one probe
 // batch of each operation at a random moment; the probe's time renews the
-// baseline. A limit starts at two batches and grows only after a probe at an
-// instant that every replica's schedule includes, so replicas added in front
-// of a queueing backend do not flood it before a probe shows them the queue.
+// baseline. A limit starts at two batches and grows only after its Store's
+// second probe, at an instant of the interval its executions choose, which
+// replicas in front of the same backend share. So replicas added in front of a
+// queueing backend do not flood it before a probe shows them the queue, and
+// those in front of a backend with room soon use it.
 const (
 	// queueingRatio is the median execution time over its baseline, across
 	// one window, that halves the limit. Backends vary below it without
@@ -135,9 +137,8 @@ type probes struct {
 	start           time.Time
 	// active is set when a limit held a batch back, or its operation kept
 	// batches running, through the previous interval. paused is set once an
-	// active pause ended, and shared while the pause is at an instant of the
-	// longest interval, which every replica's schedule includes.
-	active, paused, shared bool
+	// active pause ended.
+	active, paused bool
 	// Batches of each operation wait until its sendAt, one probe batch of it
 	// may then start, and the rest wait until end.
 	sendAt [2]time.Time
@@ -160,7 +161,7 @@ type finishedBatch struct {
 	key               groupKey
 	size, bytes       int
 	full, probe       bool
-	// settles marks a probe at an instant every replica's schedule includes.
+	// settles marks a probe after the Store's first pause.
 	settles bool
 }
 
@@ -297,7 +298,6 @@ func (p *probes) gate(op operation, now time.Time) (gate, time.Time) {
 	if !p.start.Equal(start) {
 		previous := start.Add(-every)
 		p.start, p.end, p.active = start, start.Add(drain+window), false
-		p.shared = start.Equal(start.Truncate(p.longest()))
 		for i := range p.limits {
 			p.active = p.active || p.limits[i].loaded(previous)
 			p.sendAt[i], p.sent[i] = start.Add(drain+rand.N(window)), false
@@ -314,16 +314,6 @@ func (p *probes) gate(op operation, now time.Time) (gate, time.Time) {
 		return gateClosed, p.sendAt[op]
 	}
 	return gateProbe, p.end
-}
-
-// longest is the longest interval a Store probes at, whose instants are
-// instants of every shorter one.
-func (p *probes) longest() time.Duration {
-	longest := p.interval
-	for float64(probeDrainMax+probeWindowMax) > p.share*float64(longest) {
-		longest *= 2
-	}
-	return longest
 }
 
 // pausing reports whether a probe pause holds the Store's record batches.
