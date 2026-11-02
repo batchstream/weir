@@ -59,7 +59,8 @@ type Runtime struct {
 	queueBytes       int
 	batches          map[*batch]struct{}
 	records, natives int
-	// partial counts running record batches that are not full.
+	// partial counts running record batches the adaptive limit holds: those
+	// that are not full and do not wait for something besides the backend.
 	partial int
 	keys    map[resourceKey]*Ticket
 	limit   executionLimit
@@ -117,8 +118,9 @@ type batch struct {
 	cancel context.CancelFunc
 	items  []*Ticket
 	stops  []func() bool
-	// probe marks the limit's probe and full a batch the limit does not hold.
-	probe, full bool
+	// probe marks the limit's probe, full a batch of max_operations records
+	// or max_bytes, and partial one the adaptive limit counts.
+	probe, full, partial bool
 }
 
 func New(adapter execution.Adapter, limits Limits) (*Runtime, error) {
@@ -576,7 +578,8 @@ func (r *Runtime) launchLocked(items []*Ticket) {
 		r.natives++
 	} else {
 		r.records++
-		if !b.full {
+		b.partial = !b.full && !b.waits()
+		if b.partial {
 			r.partial++
 		}
 		if r.adaptive && r.records > 1 {
@@ -632,6 +635,12 @@ func (b *batch) native() bool {
 	return b.items[0].plan.Command.GetNative() != nil
 }
 
+// waits reports whether the batch also waits for something besides the
+// backend's work on it, such as a Search refresh.
+func (b *batch) waits() bool {
+	return slices.ContainsFunc(b.items, func(t *Ticket) bool { return t.plan.Waits })
+}
+
 var errInvalidNativeEvent = errors.New("adapter emitted an invalid Native event")
 
 func (r *Runtime) execute(b *batch) {
@@ -642,8 +651,7 @@ func (r *Runtime) execute(b *batch) {
 	// all failed before their deadline, such as one an unreachable backend
 	// refused, did not run normally. Neither shows how long the backend takes,
 	// and nor does one that waited for something else.
-	waits := slices.ContainsFunc(b.items, func(t *Ticket) bool { return t.plan.Waits })
-	untimed := errors.Is(b.ctx.Err(), context.Canceled) || b.ctx.Err() == nil && !answered(events) || waits
+	untimed := errors.Is(b.ctx.Err(), context.Canceled) || b.ctx.Err() == nil && !answered(events) || b.waits()
 	elapsed := finished.Sub(started).Seconds()
 	if b.native() {
 		r.metrics.native.Observe(elapsed)
@@ -663,7 +671,7 @@ func (r *Runtime) execute(b *batch) {
 		r.notifyNativeLocked()
 	} else {
 		r.records--
-		if !b.full {
+		if b.partial {
 			r.partial--
 		}
 		if r.adaptive && !untimed {

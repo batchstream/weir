@@ -74,8 +74,9 @@ sharing a backend see the same queueing and back off together, so their combined
 requests follow what the backend can take rather than how many replicas there
 are. Scaling Weir out on CPU therefore stays safe when the database becomes the
 limit. Full batches, of `max_operations` records or `max_bytes`, and a draining
-Store may use every slot up to `max_in_flight`; the limit counts only batches
-that are not full, so bulk ingest does not hold other work back.
+Store may use every slot up to `max_in_flight`. The limit counts only batches
+that are not full and do not wait for a Search refresh, so bulk ingest and
+query-visible writes do not hold other work back.
 
 A replica that starts while its backend queues sees only slow executions. So
 at the same wall-clock instants on every replica, a Store that kept record

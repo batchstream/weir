@@ -579,6 +579,25 @@ func TestFullBatchesDoNotHoldOtherBatchesBack(t *testing.T) {
 	}
 }
 
+// A write waiting for a Search refresh does not use the backend meanwhile,
+// so it does not take the limit's slot from other work.
+func TestBatchesThatWaitDoNotHoldOtherBatchesBack(t *testing.T) {
+	adapter := &fakeAdapter{started: make(chan []*execution.Plan, 8)}
+	release := make(chan struct{})
+	adapter.records = blockUntil(release)
+	defer close(release)
+	runtime := open(t, adapter, limits(nil))
+	lowerLimit(runtime, 1)
+	visible := mutationPlan("visible")
+	visible.BatchKey, visible.Waits = "records|visible", true
+	submit(t, runtime, visible, nil)
+	started(t, adapter)
+	submit(t, runtime, readPlan("other"), nil)
+	if batch := started(t, adapter); batch[0] != "other" {
+		t.Fatal("a read waited for a write waiting on a refresh")
+	}
+}
+
 func TestEqualInFlightBoundsFixTheLimit(t *testing.T) {
 	adapter := &fakeAdapter{started: make(chan []*execution.Plan, 8)}
 	release := make(chan struct{})
