@@ -97,9 +97,7 @@ func TestConcurrentRPCExecutionPolicy(t *testing.T) {
 					t.Error(err)
 				}
 			})
-			if err := node.Start(ctx); err != nil {
-				t.Fatal(err)
-			}
+			node.Start()
 			connection, err := grpc.NewClient("passthrough:///"+node.Address(), grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithNoProxy(), grpc.WithDisableRetry())
 			if err != nil {
 				t.Fatal(err)

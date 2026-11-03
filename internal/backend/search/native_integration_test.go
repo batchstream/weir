@@ -63,7 +63,7 @@ func TestSearchNativeRealMixedAndReplyLoss(t *testing.T) {
 			defer proxy.Close()
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
-			cfg := Config{Store: "search", URL: proxy.URL}
+			cfg := Config{URL: proxy.URL}
 			a, err := Open(ctx, cfg)
 			if err != nil {
 				t.Fatal(err)
@@ -120,7 +120,7 @@ func TestSearchNativeRealMixedAndReplyLoss(t *testing.T) {
 
 func TestSearchNativeCreatesIndexesSearchesUpdatesAndUsesRootPaths(t *testing.T) {
 	backend := testsearch.Open(t)
-	config := Config{Store: "search", URL: backend.URL}
+	config := Config{URL: backend.URL}
 	adapter, err := Open(t.Context(), config)
 	if err != nil {
 		t.Fatal(err)

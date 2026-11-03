@@ -221,7 +221,7 @@ func TestRouteSearch2MiBRecordAndAppliedReplyLoss(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	config := search.Config{Store: "records", URL: backend.URL}
+	config := search.Config{URL: backend.URL}
 	adapter, err := search.Open(ctx, config)
 	if err != nil {
 		t.Fatal(err)
@@ -273,7 +273,7 @@ func TestRouteSearch2MiBRecordAndAppliedReplyLoss(t *testing.T) {
 				_, _ = io.Copy(writer, response.Body)
 			}))
 			t.Cleanup(proxy.Close)
-			config := search.Config{Store: "records", URL: proxy.URL}
+			config := search.Config{URL: proxy.URL}
 			adapter, err := search.Open(ctx, config)
 			if err != nil {
 				t.Fatal(err)

@@ -522,7 +522,7 @@ func TestMaxInFlightBoundsConcurrentExecutions(t *testing.T) {
 
 	adapter = &fakeAdapter{started: make(chan []*execution.Plan, 8)}
 	release = make(chan struct{})
-	runtime = open(t, adapter, limits(func(l *Limits) { l.MaxInFlight = 0 }))
+	runtime = open(t, adapter, limits(func(l *Limits) { l.MinInFlight, l.MaxInFlight = 8, 8 }))
 	adapter.records = blockUntil(release)
 	for i := range 4 {
 		plan := readPlan("a")

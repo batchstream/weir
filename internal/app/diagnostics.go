@@ -14,7 +14,6 @@ import (
 type diagnostics struct {
 	listener net.Listener
 	http     *http.Server
-	done     chan struct{}
 }
 
 const diagnosticTimeout = time.Second
@@ -24,7 +23,7 @@ func (n *Node) openDiagnostics(address string) error {
 	if err != nil {
 		return errors.New("diagnostic listener startup failed")
 	}
-	d := &diagnostics{listener: listener, done: make(chan struct{})}
+	d := &diagnostics{listener: listener}
 	n.diagnostics = d
 
 	options := promhttp.HandlerOpts{DisableCompression: true}
@@ -33,7 +32,7 @@ func (n *Node) openDiagnostics(address string) error {
 		_, _ = io.WriteString(w, "ok\n")
 	})
 	routes.HandleFunc("GET /readyz", func(w http.ResponseWriter, _ *http.Request) {
-		if !n.ready() {
+		if !n.serving.Load() {
 			http.Error(w, "not ready", http.StatusServiceUnavailable)
 			return
 		}
@@ -57,7 +56,6 @@ func (n *Node) openDiagnostics(address string) error {
 }
 
 func (d *diagnostics) serve() error {
-	defer close(d.done)
 	err := d.http.Serve(d.listener)
 	if errors.Is(err, http.ErrServerClosed) {
 		return nil
@@ -72,18 +70,7 @@ func (n *Node) DiagnosticAddress() string {
 	return n.diagnostics.listener.Addr().String()
 }
 
-// Data drain retains diagnostics until all owned runtimes and remote clients
-// have closed. Shutdown of diagnostics itself has no extra grace period.
-func (n *Node) closeDiagnostics() {
-	if n.diagnostics == nil {
-		return
-	}
-	d := n.diagnostics
-	if d.http != nil {
-		_ = d.http.Close()
-	}
+func (d *diagnostics) close() {
+	_ = d.http.Close()
 	_ = d.listener.Close()
-	if n.stopGuard != nil {
-		<-d.done
-	}
 }

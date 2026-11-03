@@ -76,7 +76,7 @@ func TestRPCExpiryKeepsSharedConnectionAndMutation(t *testing.T) {
 				}
 			} else {
 				until := time.Now().Add(time.Second)
-				for server.admission.activeRPCs.Load() != 1 {
+				for server.activeRPCs.Load() != 1 {
 					if time.Now().After(until) {
 						t.Fatal("empty RPC was not admitted")
 					}

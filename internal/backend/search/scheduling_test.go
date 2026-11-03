@@ -71,7 +71,7 @@ func TestSearchQueuedReadCompletesBeforeUnrelatedSlowWrite(t *testing.T) {
 	// Cancel before closing the HTTP server, including failed assertions with a
 	// blocked handler. The explicit gates make queue occupancy deterministic.
 	defer cancel()
-	config := Config{Store: "search", URL: server.URL}
+	config := Config{URL: server.URL}
 	adapter, err := Open(ctx, config)
 	if err != nil {
 		t.Fatal(err)

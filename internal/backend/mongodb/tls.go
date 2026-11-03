@@ -2,35 +2,34 @@ package mongodb
 
 import (
 	"crypto/tls"
-	"crypto/x509"
-	"errors"
 	"time"
 
 	"github.com/batchstream/weir/internal/backend"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
+	"go.mongodb.org/mongo-driver/v2/x/mongo/driver/connstring"
 )
 
-// The profile must be parsed before any trust-file or network access. The
-// driver verifies each member's certificate, including OCSP.
-func connectionOptions(cfg Config, profile connectionProfile) (*options.ClientOptions, error) {
-	opts := options.Client().SetHosts(profile.hosts).SetDirect(profile.direct)
-	if profile.replicaSet != "" {
-		opts.SetReplicaSet(profile.replicaSet).SetHeartbeatInterval(time.Second)
+// The URI must be parsed before any trust-file or network access. The driver
+// verifies each member's certificate, including OCSP.
+func connectionOptions(cfg Config, uri *connstring.ConnString) (*options.ClientOptions, error) {
+	opts := options.Client().SetHosts(uri.Hosts).SetDirect(uri.ReplicaSet == "")
+	if uri.ReplicaSet != "" {
+		opts.SetReplicaSet(uri.ReplicaSet).SetHeartbeatInterval(time.Second)
 	}
 	if cfg.Username != "" {
 		credential := options.Credential{
-			AuthMechanism: profile.authMechanism,
-			AuthSource:    profile.authSource,
+			AuthMechanism: uri.AuthMechanism,
+			AuthSource:    uri.AuthSource,
 			Username:      cfg.Username,
 			Password:      cfg.Password,
 			PasswordSet:   true,
 		}
 		opts.SetAuth(credential)
 	}
-	if profile.tls {
+	if uri.SSL {
 		config := &tls.Config{}
 		if cfg.CAFile != "" {
-			pool, err := mongoRoots(cfg.CAFile)
+			pool, err := backend.CertPool(cfg.CAFile)
 			if err != nil {
 				return nil, err
 			}
@@ -39,16 +38,4 @@ func connectionOptions(cfg Config, profile connectionProfile) (*options.ClientOp
 		opts.SetTLSConfig(config)
 	}
 	return opts, nil
-}
-
-func mongoRoots(name string) (*x509.CertPool, error) {
-	data, err := backend.ReadRegularFile(name)
-	if err != nil {
-		return nil, errors.New("MongoDB CA file unavailable")
-	}
-	roots := x509.NewCertPool()
-	if !roots.AppendCertsFromPEM(data) {
-		return nil, errors.New("invalid MongoDB CA file")
-	}
-	return roots, nil
 }

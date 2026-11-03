@@ -124,10 +124,9 @@ func localStore(t *testing.T, name string) (*recordAdapter, *store.Runtime) {
 }
 
 type testServerOptions struct {
-	stores    map[string]*store.Runtime
-	limits    Limits
-	admission *Admission
-	listener  net.Listener
+	stores   map[string]*store.Runtime
+	limits   Limits
+	listener net.Listener
 }
 
 func startTestServer(t *testing.T, opts testServerOptions) (*Server, string) {
@@ -136,11 +135,7 @@ func startTestServer(t *testing.T, opts testServerOptions) (*Server, string) {
 		opts.limits = DefaultLimits()
 		opts.limits.Stall = time.Second
 	}
-	if opts.admission == nil {
-		opts.admission = NewAdmission()
-	}
-	cfg := Config{Stores: opts.stores, Limits: opts.limits, Admission: opts.admission}
-	srv := New(cfg)
+	srv := New(opts.stores, opts.limits)
 	listener := opts.listener
 	if listener == nil {
 		var err error
@@ -154,7 +149,7 @@ func startTestServer(t *testing.T, opts testServerOptions) (*Server, string) {
 	t.Cleanup(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 		defer cancel()
-		_ = srv.Shutdown(ctx)
+		srv.Shutdown(ctx)
 		_ = listener.Close()
 		if err := <-done; err != nil {
 			t.Error(err)
@@ -192,7 +187,7 @@ func waitIdle(t *testing.T, s *Server) {
 	t.Helper()
 	until := time.Now().Add(3 * time.Second)
 	for {
-		busy := s.admission.activeRPCs.Load() != 0
+		busy := s.activeRPCs.Load() != 0
 		for name, runtime := range s.stores {
 			stats := runtime.Stats()
 			if stats.Queued != 0 || stats.Active != 0 || stats.Natives != 0 {
@@ -206,7 +201,7 @@ func waitIdle(t *testing.T, s *Server) {
 			return
 		}
 		if time.Now().After(until) {
-			t.Fatal("RPC handlers did not return", s.admission.activeRPCs.Load())
+			t.Fatal("RPC handlers did not return", s.activeRPCs.Load())
 		}
 		time.Sleep(time.Millisecond)
 	}

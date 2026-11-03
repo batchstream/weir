@@ -63,11 +63,11 @@ func TestDiagnosticsLifecycleIsolationAndNoSyntheticExecutions(t *testing.T) {
 	request := httptest.NewRequest(http.MethodGet, "/readyz", nil)
 	recorder := httptest.NewRecorder()
 	n.diagnostics.http.Handler.ServeHTTP(recorder, request)
-	if recorder.Code != 503 || n.ready() {
+	if recorder.Code != 503 || n.serving.Load() {
 		t.Fatal("ready before Start")
 	}
-	n.Start(context.Background())
-	second.Start(context.Background())
+	n.Start()
+	second.Start()
 	if health(t, n, "/readyz") != 200 || health(t, n, "/livez") != 200 {
 		t.Fatal("not serving")
 	}
@@ -84,7 +84,7 @@ func TestDiagnosticsLifecycleIsolationAndNoSyntheticExecutions(t *testing.T) {
 	if health(t, n, "/readyz") != 200 {
 		t.Fatal("unknown Store changed readiness")
 	}
-	n.admission.SetOverloaded(true)
+	n.server.SetOverloaded(true)
 	_, _ = testutil.ExecuteRecord(ctx, client, testutil.RecordRequest("records", read))
 	if health(t, n, "/readyz") != 200 {
 		t.Fatal("overload changed readiness")
@@ -106,7 +106,7 @@ func TestDiagnosticsLifecycleIsolationAndNoSyntheticExecutions(t *testing.T) {
 	if len(n.stores) != 0 || n.guard.Snapshot().Live == 0 {
 		t.Fatal("fake Runtime")
 	}
-	n.admission.SetOverloaded(false)
+	n.server.SetOverloaded(false)
 	// Hold one real decoded-input slot while drain starts; diagnostics retain
 	// independent request lifetimes and must remain available after data readiness falls.
 	desc := &grpc.StreamDesc{ClientStreams: true, ServerStreams: true}
@@ -128,7 +128,7 @@ func TestDiagnosticsLifecycleIsolationAndNoSyntheticExecutions(t *testing.T) {
 	}
 	closed := make(chan error, 1)
 	go func() { closed <- n.Close(context.Background()) }()
-	for n.ready() {
+	for n.serving.Load() {
 		time.Sleep(time.Millisecond)
 	}
 	if health(t, n, "/readyz") != 503 || health(t, n, "/livez") != 200 {
@@ -138,13 +138,12 @@ func TestDiagnosticsLifecycleIsolationAndNoSyntheticExecutions(t *testing.T) {
 		t.Fatal(err)
 	}
 	for range 3 {
-		n.Start(context.Background())
 		if err := n.Close(context.Background()); err != nil {
 			t.Fatal(err)
 		}
 	}
 	after := testmetrics.Registry(t, n.registry)
-	if testmetrics.Sum(after, "weir_node_ready") != 0 || n.state != "closed" {
+	if testmetrics.Sum(after, "weir_node_ready") != 0 {
 		t.Fatal("non-monotonic close")
 	}
 	if testmetrics.Sum(after, "weir_ingress_sessions") != 0 {
@@ -158,7 +157,7 @@ func TestDiagnosticsLifecycleIsolationAndNoSyntheticExecutions(t *testing.T) {
 
 func TestDiagnosticsInputCardinalityAndNoSecrets(t *testing.T) {
 	n := diagnosticNode(t)
-	n.Start(context.Background())
+	n.Start()
 	before := testmetrics.Scrape(t, n.DiagnosticAddress())
 	conn, err := grpc.NewClient("passthrough:///"+n.Address(), grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithNoProxy())
 	if err != nil {
@@ -206,7 +205,7 @@ func TestDiagnosticsConnectionLimitsDeadlinesAndStartupFailure(t *testing.T) {
 		}
 	}
 	n := diagnosticNode(t)
-	n.Start(context.Background())
+	n.Start()
 	var sockets []net.Conn
 	defer func() {
 		for _, conn := range sockets {
@@ -285,9 +284,7 @@ func TestWildcardDiagnosticsListener(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = node.Close(context.Background()) })
-	if err := node.Start(context.Background()); err != nil {
-		t.Fatal(err)
-	}
+	node.Start()
 	_, port, err := net.SplitHostPort(node.DiagnosticAddress())
 	if err != nil {
 		t.Fatal(err)
@@ -300,7 +297,7 @@ func TestWildcardDiagnosticsListener(t *testing.T) {
 
 func TestDiagnosticsScrapeCloseRace(t *testing.T) {
 	n := diagnosticNode(t)
-	n.Start(context.Background())
+	n.Start()
 	var group sync.WaitGroup
 	for range 2 {
 		group.Go(func() {
@@ -317,7 +314,7 @@ func TestDiagnosticsScrapeCloseRace(t *testing.T) {
 		})
 	}
 	group.Wait()
-	if testmetrics.Sum(testmetrics.Registry(t, n.registry), "weir_node_ready") != 0 || n.state != "closed" {
+	if testmetrics.Sum(testmetrics.Registry(t, n.registry), "weir_node_ready") != 0 {
 		t.Fatal("concurrent Close left the node open")
 	}
 }
@@ -383,7 +380,7 @@ func TestDiagnosticsStoppedScrapesAndConcurrentHandlersBounded(t *testing.T) {
 	}
 	listener := &smallSendListener{Listener: n.diagnostics.listener}
 	n.diagnostics.listener = listener
-	n.Start(context.Background())
+	n.Start()
 	for round := 0; round < 3; round++ {
 		var sockets []net.Conn
 		for range 8 {
@@ -432,10 +429,10 @@ func TestDiagnosticsDisabledAndFatalListenerReadiness(t *testing.T) {
 	if disabled.diagnostics != nil || disabled.DiagnosticAddress() != "" {
 		t.Fatal("disabled diagnostics created listener")
 	}
-	disabled.Start(context.Background())
+	disabled.Start()
 	_ = disabled.Close(context.Background())
 	n := diagnosticNode(t)
-	n.Start(context.Background())
+	n.Start()
 	_ = n.listener.Close()
 	select {
 	case <-n.Errors:

@@ -15,20 +15,12 @@ import (
 // are read at startup.
 func Load(filename string) (Config, error) {
 	var empty Config
-	file, err := os.Open(filename)
+	raw, err := os.ReadFile(filename)
 	if err != nil {
 		return empty, errors.New("configuration unavailable")
 	}
-	cfg, decodeErr := decode(file)
-	closeErr := file.Close()
-	if decodeErr != nil {
-		return empty, decodeErr
-	}
-	if closeErr != nil {
-		return empty, errors.New("configuration unavailable")
-	}
-	// Validate the whole file first, so a later error cannot trigger earlier IO.
-	if err := cfg.validateShape(); err != nil {
+	cfg, err := decode(raw)
+	if err != nil {
 		return empty, err
 	}
 	directory := filepath.Dir(filename)
@@ -45,12 +37,8 @@ func Load(filename string) (Config, error) {
 	return cfg, cfg.Validate()
 }
 
-func decode(input io.Reader) (Config, error) {
+func decode(raw []byte) (Config, error) {
 	var empty Config
-	raw, err := io.ReadAll(input)
-	if err != nil {
-		return empty, errors.New("configuration unavailable")
-	}
 	cfg := Config{}
 	decoder := yaml.NewDecoder(bytes.NewReader(raw))
 	decoder.KnownFields(true)
@@ -61,13 +49,6 @@ func decode(input io.Reader) (Config, error) {
 	var trailing yaml.Node
 	if err := decoder.Decode(&trailing); err != io.EOF {
 		return empty, errors.New("configuration must be one YAML document")
-	}
-	// The decoder skips null sequence items, so count Store entries separately.
-	var entries struct {
-		Stores []yaml.Node `yaml:"stores"`
-	}
-	if err := yaml.Unmarshal(raw, &entries); err != nil || len(entries.Stores) != len(cfg.Stores) {
-		return empty, errors.New("Store entries must not be null")
 	}
 	return cfg, nil
 }

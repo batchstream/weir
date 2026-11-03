@@ -146,8 +146,8 @@ func responseError(err error) error {
 // Backend authentication supplies defaults; Native may override end-to-end headers.
 func (a *Adapter) configureRequest(request *http.Request) {
 	request.GetBody = nil
-	if connection := a.config.Connection; connection != nil && connection.Username != "" {
-		request.SetBasicAuth(connection.Username, connection.Password)
+	if a.config.Username != "" {
+		request.SetBasicAuth(a.config.Username, a.config.Password)
 	}
 }
 func newTransport(timeout, idleTimeout time.Duration) *http.Transport {

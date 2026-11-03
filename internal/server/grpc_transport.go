@@ -17,10 +17,10 @@ type rpcCancelKey struct{}
 // context, so canceling it also ends a blocked Recv or flow-controlled Send.
 func (s *Server) admitRPC(ctx context.Context, info *tap.Info) (context.Context, error) {
 	if info.FullMethodName != pb.StoreService_Execute_FullMethodName {
-		s.admission.rejections.WithLabelValues("method").Inc()
+		s.metrics.rejections.WithLabelValues("method").Inc()
 		return nil, status.Error(codes.Unimplemented, "method is not served")
 	}
-	if err := s.admission.check(); err != nil {
+	if err := s.admit(); err != nil {
 		return nil, err
 	}
 	rpc, cancel := context.WithCancel(ctx)
@@ -49,8 +49,8 @@ func (s *Server) cancelRPC(ctx context.Context, phase string) {
 
 // observeStream counts Execute, the only method admitRPC lets through.
 func (s *Server) observeStream(service any, stream grpc.ServerStream, _ *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
-	s.admission.activeRPCs.Add(1)
-	defer s.admission.activeRPCs.Add(-1)
+	s.activeRPCs.Add(1)
+	defer s.activeRPCs.Add(-1)
 	err := handler(service, stream)
 	s.metrics.rpcs.WithLabelValues(statusLabel(err)).Inc()
 	return err

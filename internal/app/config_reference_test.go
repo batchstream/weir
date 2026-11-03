@@ -45,7 +45,7 @@ func TestMongoReplicaProfiles(t *testing.T) {
 		"mongodb://mongo-a.invalid:27017/",
 		"mongodb://[::1]:27017,mongo-b.invalid:27018/?replicaSet=orders&directConnection=false",
 	} {
-		cfg, err := Decode(strings.NewReader(prefix + uri + "\n"))
+		cfg, err := Decode(prefix + uri + "\n")
 		if err != nil || cfg.Stores[0].MongoDB.URI != uri {
 			t.Fatal("documented discovery profile must decode without DNS or backend IO", uri, err)
 		}
@@ -59,7 +59,7 @@ func TestMongoReplicaProfiles(t *testing.T) {
 		"mongodb://mongo-a.invalid:27017/?replicaSet=orders&directConnection=true",
 		"mongodb://mongo-a.invalid:27017/?replicaSet=orders&readPreference=secondary",
 	} {
-		if _, err := Decode(strings.NewReader(prefix + uri + "\n")); err == nil {
+		if _, err := Decode(prefix + uri + "\n"); err == nil {
 			t.Fatal("ambiguous or unsupported discovery profile accepted", uri)
 		}
 	}

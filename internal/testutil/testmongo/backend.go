@@ -17,7 +17,7 @@ import (
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 )
 
-const plainURI = "mongodb://127.0.0.1:27028/?directConnection=true&serverMonitoringMode=poll"
+const plainURI = "mongodb://127.0.0.1:27028/?directConnection=true"
 
 var sequence atomic.Uint64
 

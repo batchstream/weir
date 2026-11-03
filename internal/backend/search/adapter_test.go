@@ -31,7 +31,7 @@ func TestJSONBoundsAndExactNumbers(t *testing.T) {
 	}
 }
 func TestSearchPrepareRejectsUnsupportedInputs(t *testing.T) {
-	cfg := Config{Store: "search"}
+	cfg := Config{}
 	a := &Adapter{dialect: ElasticsearchProduct, config: cfg}
 	for _, resource := range []string{"weir://other/records/s:a", "records/i:1", "records/s:", "Records/s:a", "records/s:a?routing=x"} {
 		read := &pb.ReadRequest{Resource: resource}
@@ -119,7 +119,7 @@ func TestResponseAndRequestLimits(t *testing.T) {
 	}
 }
 func TestBulkEvidenceIsNotHTTPStatus(t *testing.T) {
-	cfg := Config{Store: "search"}
+	cfg := Config{}
 	a := &Adapter{dialect: ElasticsearchProduct, config: cfg}
 	empty := &pb.Empty{}
 	action := &pb.MutateRequest_Delete{Delete: empty}

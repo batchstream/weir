@@ -41,7 +41,7 @@ func TestOrdinaryReadAcceptsLargeJSONArrays(t *testing.T) {
 func TestBulkAcknowledgementExceedsExchangeWindowWithoutRejection(t *testing.T) {
 	settings := backend.DefaultOptions()
 	settings.ExchangeBytes = 4 << 20
-	config := Config{Store: "search", Options: &settings}
+	config := Config{Options: &settings}
 	adapter := &Adapter{dialect: ElasticsearchProduct, config: config}
 	var output bytes.Buffer
 	output.WriteString(`{"errors":false,"took":1,"items":[`)

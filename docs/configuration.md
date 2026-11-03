@@ -15,14 +15,14 @@ weir serve --config weir.yaml
 directory. Relative credential and CA paths inside the file resolve from the
 file's own directory. Changes require a restart.
 
-The file is one YAML document. Unknown and duplicate keys and null Store entries
-are rejected. Counts are YAML integers. Durations require units such as `ms`, `s`
+The file is one YAML document. Unknown and duplicate keys are rejected. Counts are YAML integers. Durations require units such as `ms`, `s`
 or `m`; byte sizes use integer `B`, `KiB`, `MiB` or `GiB` units. Strings are literal; no field reads environment variables.
 Omitted fields and zero values select the defaults.
 
 `check` runs the same validation as `serve` without binding listeners, resolving
-DNS or connecting to backends. It validates the whole file before reading
-credential files, and does not read CA files.
+DNS or connecting to backends. It reads credential files but not CA files, so
+an unreachable host, an address already in use or an unreadable CA file fails at
+`serve`.
 Validation errors never include configuration values.
 
 ## Process settings
@@ -34,8 +34,8 @@ Validation errors never include configuration values.
 | `shutdown_timeout` | `5s` | Drain of admitted work after SIGTERM |
 
 Listener addresses are explicit `IP:port` values; port zero requests an
-ephemeral port. The two listeners must not overlap. Bind diagnostics to a
-non-loopback address only on a trusted network. Readiness describes Node
+ephemeral port. Bind diagnostics to a non-loopback address only on a trusted
+network. Readiness describes Node
 lifecycle, independent of Store pressure or backend health.
 
 Business work inherits caller cancellation and deadlines. After
@@ -70,26 +70,22 @@ interact.
 MongoDB uses primary reads, majority-acknowledged typed writes and no automatic
 read/write replay. Configure an ordinary nonsharded replica set in either mode:
 
-- **Discovery:** an explicit `replicaSet` name and one to seven IP/DNS seeds, each
-  with an explicit port. `directConnection` must be omitted or `false`. The MongoDB
+- **Discovery:** an explicit `replicaSet` name and at least one IP/DNS seed.
+  `directConnection` must be omitted or `false`. The MongoDB
   driver discovers the members and selects the current primary. For example:
   `mongodb://mongo-a:27017,mongo-b:27017,mongo-c:27017/?replicaSet=orders`.
-- **Direct:** exactly one explicit endpoint without `replicaSet`;
+- **Direct:** exactly one endpoint without `replicaSet`;
   `directConnection` must be omitted or `true`. This intentionally isolated mode
   still requires a replica-set member, but does not discover another primary or
   provide failover. For example: `mongodb://127.0.0.1:27028/?directConnection=true`.
 
-The URI is limited to 4096 bytes. Set names contain 1–64 ASCII letters, digits,
-underscores or hyphens. Seed order is retained; DNS case, IP literals (including
-mapped IPv4) and decimal ports are canonicalized before duplicate checks, without
-DNS access. IPv6 seeds use brackets, such as
+A seed without a port uses 27017. IPv6 seeds use brackets, such as
 `mongodb://[::1]:27017,127.0.0.1:27018/?replicaSet=orders`.
 
 URI userinfo, database paths, fragments, SRV, mongos/sharding, load balancing,
-secondary routing, unknown options and duplicate option names (case-insensitive)
-are unsupported. A query requires the `/` separator before `?`. Accepted options
-are `replicaSet`, `directConnection`, `serverMonitoringMode=poll`, `authSource`,
-`authMechanism=SCRAM-SHA-256` and `tls=true`. Authentication requires the
+secondary routing and other options are unsupported. A query requires the `/`
+separator before `?`. Accepted options are `replicaSet`, `directConnection`,
+`authSource`, `authMechanism=SCRAM-SHA-256` and `tls=true`. Authentication requires the
 `authentication` block, explicit SCRAM-SHA-256, `authSource` and TLS; TLS options
 require credentials. Custom CAs belong in `tls.ca_file`, not in the URI.
 Verification uses each actual member's hostname/IP, not the seed's name. OCSP

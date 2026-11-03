@@ -36,8 +36,8 @@ a request can reach a replica that answers NotFound, and the SDK does not retry.
 ## MongoDB discovery and failover
 
 For automatic primary discovery, use the strict [replica-set connection
-profile](configuration.md#store-settings): an explicit set name with one to
-seven seeds and `directConnection` omitted or `false`. The driver uses ordinary
+profile](configuration.md#store-settings): an explicit set name with its seeds
+and `directConnection` omitted or `false`. The driver uses ordinary
 replica-set topology discovery and follows MongoDB's own elections; secondary
 routing, SRV, mongos and load balancing are unsupported. Direct mode stays on
 one member and cannot provide automatic failover.

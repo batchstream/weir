@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"time"
 	"unicode/utf8"
 
 	"github.com/iceisfun/golua/compiler"
@@ -14,34 +13,33 @@ import (
 
 var errInvalidLuaResult = errors.New("Lua callback must return one object or explicit action")
 
+// Evaluate reports the caller's context error whenever it has ended, whatever
+// failure that cancellation caused inside the VM.
 func Evaluate(ctx context.Context, program Program) (Result, error) {
 	var empty Result
-	if ctx == nil {
-		return empty, errors.New("Lua execution context is required")
-	}
-	if program.ObservedAt.IsZero() {
-		program.ObservedAt = time.Now()
-	}
 	if err := ctx.Err(); err != nil {
 		return empty, err
 	}
-	if err := validateProgram(ctx, program); err != nil {
-		return empty, err
-	}
-	if err := ctx.Err(); err != nil {
-		return empty, err
-	}
-	block, err := parser.Parse("transform.lua", program.Source)
+	result, err := evaluate(ctx, program)
 	if contextErr := ctx.Err(); contextErr != nil {
 		return empty, contextErr
 	}
 	if err != nil {
 		return empty, err
 	}
-	prototype, err := compiler.Compile("transform.lua", block)
-	if contextErr := ctx.Err(); contextErr != nil {
-		return empty, contextErr
+	return result, nil
+}
+
+func evaluate(ctx context.Context, program Program) (Result, error) {
+	var empty Result
+	if err := validateProgram(ctx, program); err != nil {
+		return empty, err
 	}
+	block, err := parser.Parse("transform.lua", program.Source)
+	if err != nil {
+		return empty, err
+	}
+	prototype, err := compiler.Compile("transform.lua", block)
 	if err != nil {
 		return empty, err
 	}
@@ -52,9 +50,6 @@ func Evaluate(ctx context.Context, program Program) (Result, error) {
 	conversion := newBridge(ctx, state)
 	conversion.install(state, module)
 	functions, err := state.Run(prototype)
-	if contextErr := ctx.Err(); contextErr != nil {
-		return empty, contextErr
-	}
 	if err != nil {
 		return empty, err
 	}
@@ -69,14 +64,8 @@ func Evaluate(ctx context.Context, program Program) (Result, error) {
 	if err != nil {
 		return empty, err
 	}
-	if err := ctx.Err(); err != nil {
-		return empty, err
-	}
 	arguments := []vm.Value{current, incoming}
 	outputs, err := state.ProtectedCall(functions[0], arguments)
-	if contextErr := ctx.Err(); contextErr != nil {
-		return empty, contextErr
-	}
 	if err != nil {
 		return empty, err
 	}
@@ -100,9 +89,6 @@ func Evaluate(ctx context.Context, program Program) (Result, error) {
 		}
 	}
 	if err := validateResult(ctx, result); err != nil {
-		return empty, err
-	}
-	if err := ctx.Err(); err != nil {
 		return empty, err
 	}
 	return result, nil

@@ -111,7 +111,7 @@ func TestSearchMixedRequestTargets(t *testing.T) {
 	})
 	server := httptest.NewServer(handler)
 	defer server.Close()
-	cfg := Config{Store: "search", URL: server.URL}
+	cfg := Config{URL: server.URL}
 	a := &Adapter{config: cfg, dialect: ElasticsearchProduct, client: server.Client(), ctx: context.Background()}
 	cases := []struct{ index, action, id string }{
 		{index: "left", action: "read", id: "same"},
@@ -158,7 +158,7 @@ func TestSearchMixedRequestTargets(t *testing.T) {
 }
 
 func TestSearchInvalidRequestTargetsArePure(t *testing.T) {
-	cfg := Config{Store: "search"}
+	cfg := Config{}
 	a := &Adapter{config: cfg, ctx: context.Background()}
 	for _, resource := range []string{
 		"weir://other/records", "weir://search", "Records",
@@ -177,7 +177,7 @@ func TestSearchInvalidRequestTargetsArePure(t *testing.T) {
 }
 
 func TestSearchPlansRetainRequestTargets(t *testing.T) {
-	cfg := Config{Store: "search"}
+	cfg := Config{}
 	a := &Adapter{config: cfg}
 	record := batchTestPlan(t, a, "read", "left/s:same")
 	record.Command.GetRead().Resource = "right/s:same"
@@ -211,7 +211,7 @@ func TestSearchCrossIndexRepliesAreNotTrusted(t *testing.T) {
 			})
 			server := httptest.NewServer(handler)
 			defer server.Close()
-			cfg := Config{Store: "search", URL: server.URL}
+			cfg := Config{URL: server.URL}
 			a := &Adapter{config: cfg, dialect: ElasticsearchProduct, client: server.Client(), ctx: context.Background()}
 			left := batchTestPlan(t, a, action, "left/s:same")
 			right := batchTestPlan(t, a, action, "right/s:same")
@@ -288,7 +288,7 @@ func TestSearchQualificationRechecksCancelledCallers(t *testing.T) {
 			})
 			server := httptest.NewServer(handler)
 			defer server.Close()
-			cfg := Config{Store: "search", URL: server.URL}
+			cfg := Config{URL: server.URL}
 			a := &Adapter{config: cfg, dialect: ElasticsearchProduct, client: server.Client(), ctx: context.Background()}
 			left := batchTestPlan(t, a, "put", "left/s:left")
 			right := batchTestPlan(t, a, "put", "right/s:cancelled")

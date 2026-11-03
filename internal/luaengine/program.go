@@ -35,10 +35,6 @@ type Result struct {
 	Message string
 }
 
-func ValidateProgram(ctx context.Context, program Program) error {
-	return validateProgram(ctx, program)
-}
-
 func validateProgram(ctx context.Context, program Program) error {
 	if len(program.Source) == 0 ||
 		!utf8.ValidString(program.Source) ||
@@ -81,34 +77,24 @@ func validateResult(ctx context.Context, result Result) error {
 	return nil
 }
 
+// validateDocumentValue rejects a missing value anywhere inside a document.
 func validateDocumentValue(ctx context.Context, v value.Value) error {
-	type documentFrame struct {
-		node  *value.Value
-		index int
-	}
-	first := documentFrame{node: &v}
-	stack := []documentFrame{first}
+	stack := []*value.Value{&v}
 	for len(stack) != 0 {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		frame := &stack[len(stack)-1]
-		if frame.node.Kind == value.Missing {
+		node := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
+		if node.Kind == value.Missing {
 			return fmt.Errorf("document contains missing value")
 		}
-		if frame.index == len(frame.node.Fields)+len(frame.node.Items) {
-			stack = stack[:len(stack)-1]
-			continue
+		for i := range node.Fields {
+			stack = append(stack, &node.Fields[i].Value)
 		}
-		var child *value.Value
-		if frame.node.Kind == value.Object {
-			child = &frame.node.Fields[frame.index].Value
-		} else {
-			child = &frame.node.Items[frame.index]
+		for i := range node.Items {
+			stack = append(stack, &node.Items[i])
 		}
-		frame.index++
-		next := documentFrame{node: child}
-		stack = append(stack, next)
 	}
 	return nil
 }

@@ -67,7 +67,7 @@ func (a *Adapter) options() backend.Options {
 }
 
 func Open(ctx context.Context, cfg Config) (*Adapter, error) {
-	profile, err := parseConfig(cfg)
+	uri, err := parseConfig(cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -77,7 +77,7 @@ func Open(ctx context.Context, cfg Config) (*Adapter, error) {
 	}
 	cfg.Options = &settings
 
-	opts, err := connectionOptions(cfg, profile)
+	opts, err := connectionOptions(cfg, uri)
 	if err != nil {
 		return nil, err
 	}
@@ -126,7 +126,7 @@ func Open(ctx context.Context, cfg Config) (*Adapter, error) {
 		config:         cfg,
 		lua:            luaengine.NewMetrics(),
 	}
-	if err = a.qualify(ctx, profile.replicaSet); err != nil {
+	if err = a.qualify(ctx, uri.ReplicaSet); err != nil {
 		cleanup, cancel := context.WithTimeout(context.Background(), settings.CleanupTimeout)
 		_ = a.Close(cleanup)
 		cancel()

@@ -70,7 +70,7 @@ func startScenarioNode(t *testing.T, fixture *testsearch.Backend) (*routeAccepta
 	t.Cleanup(front.Close)
 	options := backend.DefaultOptions()
 	options.BatchBytes = 64 << 10
-	config := search.Config{Store: "records", URL: front.URL, Options: &options}
+	config := search.Config{URL: front.URL, Options: &options}
 	adapter, err := search.Open(t.Context(), config)
 	if err != nil {
 		t.Fatal(err)

@@ -113,7 +113,7 @@ func visibilityAdapter(t *testing.T, fixture *visibilityFixture) *Adapter {
 	handler := http.HandlerFunc(fixture.serve)
 	server := httptest.NewServer(handler)
 	t.Cleanup(server.Close)
-	cfg := Config{Store: "search", URL: server.URL}
+	cfg := Config{URL: server.URL}
 	a := &Adapter{dialect: ElasticsearchProduct, config: cfg, client: server.Client(), ctx: context.Background()}
 	return a
 }

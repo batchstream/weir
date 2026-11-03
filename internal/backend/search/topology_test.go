@@ -62,7 +62,7 @@ func TestSingleIndexAliasPinsLuaCASAndVisibility(t *testing.T) {
 	})
 	server := httptest.NewServer(handler)
 	defer server.Close()
-	config := Config{Store: "search", URL: server.URL}
+	config := Config{URL: server.URL}
 	adapter, err := Open(t.Context(), config)
 	if err != nil {
 		t.Fatal(err)

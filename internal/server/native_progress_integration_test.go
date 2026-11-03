@@ -84,7 +84,7 @@ func TestSearchSlowNativeOutputAllowsHealthyQueries(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
-	config := search.Config{Store: "records", URL: fixture.URL}
+	config := search.Config{URL: fixture.URL}
 	adapter, err := search.Open(ctx, config)
 	if err != nil {
 		t.Fatal(err)

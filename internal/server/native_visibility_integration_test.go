@@ -82,7 +82,7 @@ func TestSDKExecuteSearchVisibilityAndNativeBackendRoot(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
 	defer cancel()
-	config := search.Config{Store: "records", URL: backend.URL}
+	config := search.Config{URL: backend.URL}
 	adapter, err := search.Open(ctx, config)
 	if err != nil {
 		t.Fatal(err)

@@ -90,7 +90,7 @@ func TestSearchConcreteIndexRemainsOneHTTPPathSegment(t *testing.T) {
 				})
 				server := httptest.NewServer(handler)
 				defer server.Close()
-				config := Config{Store: "search", URL: server.URL}
+				config := Config{URL: server.URL}
 				adapter := &Adapter{dialect: dialect, config: config, client: server.Client(), nativeClient: server.Client(), ctx: context.Background()}
 				resource := url.PathEscape(index)
 				read := &pb.ReadRequest{Resource: resource + "/s:item"}

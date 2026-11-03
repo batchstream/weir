@@ -21,7 +21,6 @@ import (
 	"github.com/batchstream/weir-protocol/api/protocol"
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 	"github.com/batchstream/weir/internal/execution"
-	"github.com/batchstream/weir/internal/server"
 	"github.com/batchstream/weir/internal/store"
 	"github.com/batchstream/weir/internal/testutil"
 	"github.com/batchstream/weir/internal/testutil/testmetrics"
@@ -90,16 +89,12 @@ func newRetirementNode(t *testing.T, failure error) retirementNodeFixture {
 		t.Fatal(err)
 	}
 	node.stores["records"] = runtime
-	serverCfg := server.Config{Stores: node.stores, Limits: server.DefaultLimits(), Admission: node.admission}
-	node.server = server.New(serverCfg)
 	t.Cleanup(func() {
 		if err := node.Close(context.Background()); !errors.Is(err, failure) {
 			t.Error(err)
 		}
 	})
-	if err := node.Start(t.Context()); err != nil {
-		t.Fatal(err)
-	}
+	node.Start()
 	connection, err := grpc.NewClient("passthrough:///"+node.Address(), grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithNoProxy(), grpc.WithDisableRetry())
 	if err != nil {
 		t.Fatal(err)

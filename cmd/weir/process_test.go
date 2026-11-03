@@ -516,9 +516,9 @@ func TestCLISignalBeforeStart(t *testing.T) {
 	}
 	p.terminate(t, "Open returned with the application listener, diagnostics and local runtime; Start not called")
 	reserveReleasedAddresses(t, strings.Fields(strings.TrimPrefix(line, "opened ")))
-	p.wait(t, 1)
-	if !strings.HasSuffix(p.stderr.text(), "context canceled\n") || strings.Contains(p.stdout.text(), "listening") {
-		t.Fatal("canceled Start classified incorrectly", p.stderr.text())
+	p.wait(t, 0)
+	if strings.Contains(p.stdout.text(), "listening") {
+		t.Fatal("unstarted node announced readiness", p.stdout.text())
 	}
 	b.idle(t)
 }
@@ -567,11 +567,9 @@ func beforeStartChild(config string) error {
 	}
 	fmt.Fprintln(os.Stdout, "opened", node.Address(), node.DiagnosticAddress())
 	<-signals.Done()
-	err = node.Start(startup)
 	drain, stopDrain := context.WithTimeout(context.Background(), 5*time.Second)
 	defer stopDrain()
-	err = errors.Join(err, node.Close(drain), node.Close(drain))
-	return err
+	return errors.Join(node.Close(drain), node.Close(drain))
 }
 
 func TestCLIStartupFailure(t *testing.T) {

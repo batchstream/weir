@@ -1,7 +1,6 @@
 package app
 
 import (
-	"bytes"
 	"context"
 	"net"
 	"net/http"
@@ -34,7 +33,7 @@ func TestSearchConnectionFullGraphPreflight(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Decode(bytes.NewReader(raw)); err != nil {
+	if _, err := Decode(string(raw)); err != nil {
 		t.Fatal("Decode accessed CA/DNS", err)
 	}
 	// Even an invalid later service must be rejected before the first connection.
@@ -77,7 +76,7 @@ func TestSearchConnectionFullGraphPreflight(t *testing.T) {
 	indent := fields[:len(fields)-len(strings.TrimLeft(fields, " "))]
 	for _, field := range []string{"server_name", "insecure_skip_verify", "auth_provider", "token", "resolver", "tls"} {
 		input := strings.Replace(document, marker, marker+indent+field+": unknown\n", 1)
-		if _, err := Decode(strings.NewReader(input)); err == nil {
+		if _, err := Decode(input); err == nil {
 			t.Fatal("unknown connection/identity option accepted", field)
 		}
 	}
@@ -101,7 +100,7 @@ func TestStartupPreservesRedactedQualificationReason(t *testing.T) {
 	node, err := Open(context.Background(), cfg)
 	if node != nil ||
 		err == nil ||
-		!strings.Contains(err.Error(), `local Store "records" startup qualification failed: Search CA file unavailable or invalid`) ||
+		!strings.Contains(err.Error(), `local Store "records" startup qualification failed: CA file unavailable`) ||
 		strings.Contains(err.Error(), "sentinel") ||
 		strings.Contains(err.Error(), "unresolved.invalid") {
 		t.Fatal("startup must preserve the reason while redacting configuration", err)
@@ -189,9 +188,7 @@ func TestSearchStartupIdentifiesProductsWithoutVersionRestrictions(t *testing.T)
 					t.Error(err)
 				}
 			})
-			if err := node.Start(ctx); err != nil {
-				t.Fatal(err)
-			}
+			node.Start()
 			if roots.Load() != 1 {
 				t.Fatal("startup must identify the server once", roots.Load())
 			}

@@ -19,7 +19,7 @@ var batchBodyLimit = int64(backend.DefaultOptions().ExchangeBytes)
 func setupSearch(t *testing.T) (*Adapter, *testsearch.Backend) {
 	t.Helper()
 	backend := testsearch.Open(t)
-	cfg := Config{Store: "search", URL: backend.URL}
+	cfg := Config{URL: backend.URL}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	adapter, err := Open(ctx, cfg)

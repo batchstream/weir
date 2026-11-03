@@ -61,14 +61,6 @@ func BenchmarkLuaPhases(b *testing.B) {
 			state.Close(ctx)
 		}
 	})
-	b.Run("ValidateProgram", func(b *testing.B) {
-		b.ReportAllocs()
-		for b.Loop() {
-			if err := ValidateProgram(ctx, program); err != nil {
-				b.Fatal(err)
-			}
-		}
-	})
 	b.Run("BridgeRoundtrip", func(b *testing.B) {
 		state := vm.New(vm.WithContext(ctx))
 		defer state.Close(ctx)

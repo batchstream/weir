@@ -3,7 +3,6 @@ package app
 import (
 	"context"
 	"net"
-	"strings"
 	"testing"
 	"time"
 
@@ -17,7 +16,7 @@ import (
 
 func TestEmptyStoreLists(t *testing.T) {
 	for _, stores := range []string{"", "stores: []\n", "stores: null\n"} {
-		cfg, err := Decode(strings.NewReader("listeners:\n  application: 127.0.0.1:0\n" + stores))
+		cfg, err := Decode("listeners:\n  application: 127.0.0.1:0\n" + stores)
 		if err != nil || len(cfg.Stores) != 0 {
 			t.Fatal("empty Store list rejected", err)
 		}
@@ -39,12 +38,10 @@ func TestStorelessNodeLifecycleAndUnknownStore(t *testing.T) {
 	if len(node.stores) != 0 || node.guard.Snapshot().Live == 0 {
 		t.Fatal("an empty graph must construct admission only, with no backend or remote state")
 	}
-	if node.ready() {
+	if node.serving.Load() {
 		t.Fatal("Store-less node is ready before startup")
 	}
-	if err := node.Start(context.Background()); err != nil {
-		t.Fatal(err)
-	}
+	node.Start()
 	if health(t, node, "/readyz") != 200 || health(t, node, "/livez") != 200 || health(t, node, "/metrics") != 200 {
 		t.Fatal("Store-less node did not serve diagnostics after startup")
 	}
@@ -69,7 +66,7 @@ func TestStorelessNodeLifecycleAndUnknownStore(t *testing.T) {
 	if err := node.Close(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if node.ready() {
+	if node.serving.Load() {
 		t.Fatal("closed Store-less node is ready")
 	}
 	for _, address := range addresses {

@@ -172,7 +172,7 @@ func TestNativeHTTPForwardsOpaqueBodiesAndHeaders(t *testing.T) {
 	})
 	backend := httptest.NewServer(handler)
 	defer backend.Close()
-	cfg := Config{Store: "search", URL: backend.URL}
+	cfg := Config{URL: backend.URL}
 	adapter := &Adapter{config: cfg, nativeClient: backend.Client(), ctx: context.Background()}
 	request := nativeRequest(t, "records", "POST", "/_bulk?pipeline=p&refresh=%74rue&refresh=false")
 	parsed, err := http.ReadRequest(bufio.NewReader(bytes.NewReader(request.Request.Data)))
@@ -267,7 +267,7 @@ func TestNativeHTTPSyntheticFraming(t *testing.T) {
 			transport.DisableKeepAlives = true
 			defer transport.CloseIdleConnections()
 			client := &http.Client{Transport: transport, CheckRedirect: noRedirect}
-			cfg := Config{Store: "search", URL: backend.URL}
+			cfg := Config{URL: backend.URL}
 			a := &Adapter{dialect: ElasticsearchProduct, config: cfg, nativeClient: client, ctx: context.Background()}
 			open := nativeRequest(t, "records", "GET", "/_doc/x")
 			end, capture := runNative(t, a, open, nil)
@@ -354,7 +354,7 @@ func TestNativeHTTPExplicitCongestion(t *testing.T) {
 			transport.DisableKeepAlives = true
 			defer transport.CloseIdleConnections()
 			client := &http.Client{Transport: transport, CheckRedirect: noRedirect}
-			cfg := Config{Store: "search", URL: backend.URL}
+			cfg := Config{URL: backend.URL}
 			a := &Adapter{dialect: ElasticsearchProduct, config: cfg, nativeClient: client, ctx: context.Background()}
 			method, path, input := http.MethodGet, "/_doc/x", ""
 			if test.method == http.MethodPost {
@@ -406,7 +406,7 @@ func TestNativeHTTPDoesNotQualifyTarget(t *testing.T) {
 			transport := newTransport(time.Second, backendcfg.DefaultOptions().IdleTimeout)
 			defer transport.CloseIdleConnections()
 			client := &http.Client{Transport: transport, CheckRedirect: noRedirect}
-			cfg := Config{Store: "search", URL: backend.URL}
+			cfg := Config{URL: backend.URL}
 			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 			defer cancel()
 			a := &Adapter{dialect: ElasticsearchProduct, config: cfg, client: client, nativeClient: client, ctx: ctx}

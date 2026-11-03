@@ -29,12 +29,12 @@ func TestTapAdmitsOnlyServedMethodsWhileAccepting(t *testing.T) {
 	if !endRPC(accepted) || accepted.Err() != context.Canceled || endRPC(accepted) {
 		t.Fatal("admitted RPC cannot be ended exactly once", accepted.Err())
 	}
-	server.admission.SetOverloaded(true)
+	server.SetOverloaded(true)
 	if _, err := server.admitRPC(t.Context(), execute); status.Code(err) != codes.Unavailable {
 		t.Fatal("overloaded process admitted an RPC", err)
 	}
-	server.admission.SetOverloaded(false)
-	server.admission.BeginDrain()
+	server.SetOverloaded(false)
+	server.BeginDrain()
 	if _, err := server.admitRPC(t.Context(), execute); status.Code(err) != codes.Unavailable {
 		t.Fatal("draining process admitted an RPC", err)
 	}
@@ -80,17 +80,16 @@ func TestConnectionAgeEndsConnectionsWithoutCuttingStreams(t *testing.T) {
 
 func TestRefusedStreamTellsTheClientNothingStarted(t *testing.T) {
 	_, local := localStore(t, "records")
-	admission := NewAdmission()
-	opts := testServerOptions{stores: map[string]*store.Runtime{"records": local}, admission: admission}
-	_, address := startTestServer(t, opts)
+	opts := testServerOptions{stores: map[string]*store.Runtime{"records": local}}
+	srv, address := startTestServer(t, opts)
 	_, client := testClient(t, address)
 	// Draining lasts, so it comes last.
 	refusals := []struct {
 		name   string
 		refuse func()
 	}{
-		{name: "process overloaded", refuse: func() { admission.SetOverloaded(true) }},
-		{name: "draining", refuse: admission.BeginDrain},
+		{name: "process overloaded", refuse: func() { srv.SetOverloaded(true) }},
+		{name: "draining", refuse: srv.BeginDrain},
 	}
 	for _, refusal := range refusals {
 		name := refusal.name
@@ -108,6 +107,6 @@ func TestRefusedStreamTellsTheClientNothingStarted(t *testing.T) {
 		if !ok || failure.GetCode() != pb.FailureCode_UNAVAILABLE || failure.GetMessage() != name {
 			t.Fatal(name, details[0])
 		}
-		admission.SetOverloaded(false)
+		srv.SetOverloaded(false)
 	}
 }

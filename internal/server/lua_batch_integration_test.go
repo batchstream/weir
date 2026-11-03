@@ -113,7 +113,7 @@ func startLuaRPCNode(t *testing.T, adapter execution.Adapter) *routeAcceptanceNo
 	// Concurrent callers must arrive within one collection window.
 	limits.BatchWait = 100 * time.Millisecond
 	// Every caller must reach its gated reply before the fixture releases it.
-	limits.MaxInFlight = 0
+	limits.MinInFlight, limits.MaxInFlight = 64, 64
 
 	ingress := DefaultLimits()
 
@@ -203,7 +203,7 @@ func runLuaRPCBatch(t *testing.T, opts luaRPCBatchOptions) int {
 			}
 			// The client's cancellation return alone does not prove the server
 			// has received it. Other handlers remain held at the backend reply.
-			for opts.node.server.admission.activeRPCs.Load() != int64(len(opts.cases)-1) {
+			for opts.node.server.activeRPCs.Load() != int64(len(opts.cases)-1) {
 				select {
 				case <-ctx.Done():
 					t.Fatal("server did not observe the canceled Lua RPC")
@@ -374,7 +374,7 @@ func TestRouteSearchLuaRPCsShareOCCBatchWithoutDocumentMetadata(t *testing.T) {
 	defer gate.unblockAll()
 	observer := &luaRPCSearchObserver{gate: gate}
 	proxyURL := luaRPCSearchProxy(t, backend, observer)
-	config := search.Config{Store: "records", URL: proxyURL}
+	config := search.Config{URL: proxyURL}
 	adapter, err := search.Open(t.Context(), config)
 	if err != nil {
 		t.Fatal(err)
@@ -459,7 +459,7 @@ func TestRouteSearchLuaSameURIRPCsPreserveAppliedIncrements(t *testing.T) {
 	defer gate.unblockAll()
 	observer := &luaRPCSearchObserver{gate: gate}
 	proxyURL := luaRPCSearchProxy(t, backend, observer)
-	config := search.Config{Store: "records", URL: proxyURL}
+	config := search.Config{URL: proxyURL}
 	adapter, err := search.Open(t.Context(), config)
 	if err != nil {
 		t.Fatal(err)

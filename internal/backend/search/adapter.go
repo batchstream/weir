@@ -11,8 +11,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"unicode"
-	"unicode/utf8"
 
 	"github.com/batchstream/weir-protocol/api/protocol"
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
@@ -25,12 +23,14 @@ import (
 const ElasticsearchProduct = "elasticsearch"
 const OpenSearchProduct = "opensearch"
 
+// Config is static backend client configuration; credentials are never caller
+// identity. HTTPS without a CAFile uses the system trust roots.
 type Config struct {
-	Options *backend.Options
-	Store   string
-	URL     string
-
-	Connection *Connection
+	Options  *backend.Options
+	URL      string
+	Username string
+	Password string
+	CAFile   string
 }
 
 type Adapter struct {
@@ -61,15 +61,8 @@ type capabilities struct {
 }
 
 func validIndex(name string) bool {
-	if name == "" || len(name) > 255 || name == "." || name == ".." || strings.ToLower(name) != name || strings.ContainsAny(name, "\\/*?\"<>| ,#:+") || strings.ContainsRune("-_+", rune(name[0])) || !utf8.ValidString(name) {
-		return false
-	}
-	for _, character := range name {
-		if unicode.IsControl(character) {
-			return false
-		}
-	}
-	return true
+	return name != "" && len(name) <= 255 && name != "." && name != ".." && strings.ToLower(name) == name &&
+		!strings.ContainsAny(name, "\\/*?\"<>| ,#:+") && !strings.ContainsRune("-_+", rune(name[0])) && backend.ValidText(name)
 }
 
 func (a *Adapter) options() backend.Options {
@@ -90,10 +83,6 @@ func Open(ctx context.Context, cfg Config) (*Adapter, error) {
 	cfg.Options = &settings
 
 	cfg.URL, _ = canonicalURL(cfg.URL)
-	if cfg.Connection != nil {
-		connection := *cfg.Connection
-		cfg.Connection = &connection
-	}
 	tlsConfig, err := connectionTLS(cfg)
 	if err != nil {
 		return nil, err

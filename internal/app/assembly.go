@@ -29,16 +29,15 @@ func open(ctx context.Context, cfg Config, transport server.Limits) (*Node, erro
 		return nil, err
 	}
 
-	admission := server.NewAdmission()
+	stores := make(map[string]*store.Runtime, len(cfg.Stores))
 	node := &Node{
 		shutdownTimeout: cfg.shutdownTimeout(),
-		admission:       admission,
-		stores:          make(map[string]*store.Runtime, len(cfg.Stores)),
+		stores:          stores,
+		server:          server.New(stores, transport),
 		Errors:          make(chan error, 2),
-		state:           "constructed",
 		registry:        prometheus.NewRegistry(),
 	}
-	overloadTargets := []overload.Target{admission}
+	overloadTargets := []overload.Target{node.server}
 
 	complete := false
 	defer func() {
@@ -69,9 +68,6 @@ func open(ctx context.Context, cfg Config, transport server.Limits) (*Node, erro
 	if err != nil {
 		return nil, errors.New("listener startup failed")
 	}
-	options := server.Config{Stores: node.stores, Limits: transport, Admission: admission}
-	node.server = server.New(options)
-
 	node.guard = overload.New(overloadTargets)
 	if err := node.registerMetrics(); err != nil {
 		return nil, err

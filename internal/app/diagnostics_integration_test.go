@@ -39,7 +39,7 @@ func TestDiagnosticsMaximumStaticSeries(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer n.Close(context.Background())
-	n.Start(context.Background())
+	n.Start()
 	families := testmetrics.Scrape(t, n.DiagnosticAddress())
 	// The fixed vocabulary belongs to Weir. Go and process collectors vary with
 	// the toolchain and operating system, so they do not enter this budget.

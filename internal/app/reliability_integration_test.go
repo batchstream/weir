@@ -201,10 +201,10 @@ func runLowLoadReliability(t *testing.T, probe reliabilityProbe) {
 	}
 	budgetWait(t, "low-load SDK resources drained", func() bool {
 		stats := probe.node.stores["records"].Stats()
-		metrics := testmetrics.Gather(t, probe.node.admission)
+		metrics := testmetrics.Gather(t, probe.node.server)
 		return stats.Queued == 0 && stats.Active == 0 && testmetrics.Sum(metrics, "weir_ingress_sessions") == 0
 	})
-	metrics := testmetrics.Gather(t, probe.node.admission)
+	metrics := testmetrics.Gather(t, probe.node.server)
 	if rejected := testmetrics.Sum(metrics, "weir_admission_rejections_total"); rejected != 0 {
 		t.Fatal("low-load calls experienced admission rejection", rejected)
 	}

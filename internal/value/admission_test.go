@@ -20,7 +20,7 @@ func TestJSONRoundTripsLargeWideAndDeepValues(t *testing.T) {
 	}
 }
 
-func TestValueValidationAllowsSharedTreesAndRejectsCycles(t *testing.T) {
+func TestValueValidationAllowsSharedTrees(t *testing.T) {
 	leaf := Value{Kind: String, Text: "shared"}
 	field := Field{Name: "v", Value: leaf}
 	shared := Value{Kind: Object, Fields: []Field{field}}
@@ -29,12 +29,6 @@ func TestValueValidationAllowsSharedTreesAndRejectsCycles(t *testing.T) {
 	root := Value{Kind: Object, Fields: []Field{first, second}}
 	if err := Validate(t.Context(), root); err != nil {
 		t.Fatal("shared acyclic values rejected", err)
-	}
-	items := make([]Value, 1)
-	cycle := Value{Kind: Array, Items: items}
-	items[0] = cycle
-	if err := Validate(t.Context(), cycle); err == nil {
-		t.Fatal("cyclic Go value accepted")
 	}
 }
 

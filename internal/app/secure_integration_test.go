@@ -42,7 +42,7 @@ func secureNode(t *testing.T, cfg Config) *Node {
 			t.Error(err)
 		}
 	})
-	node.Start(context.Background())
+	node.Start()
 	return node
 }
 

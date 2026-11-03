@@ -207,7 +207,6 @@ func (fixture *SecureFixture) writeOtherCA(t *testing.T) string {
 func (fixture *SecureFixture) uri(username, password, host, caFile string) string {
 	query := url.Values{}
 	query.Set("directConnection", "true")
-	query.Set("serverMonitoringMode", "poll")
 	query.Set("tls", "true")
 	query.Set("tlsCAFile", caFile)
 	var credentials *url.Userinfo
