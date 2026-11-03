@@ -101,7 +101,7 @@ func TestRealSearchCallerDeadlineAcknowledgements(t *testing.T) {
 			request := &pb.MutateRequest{Resource: backend.Index + "/s:write", Action: action}
 			operation := &pb.Command_Mutate{Mutate: request}
 			command := &pb.Command{Operation: operation}
-			record, err := execution.NewRecord("search", 1, command)
+			record, err := execution.NewRecord(1, command)
 			if err != nil {
 				t.Fatal(err)
 			}

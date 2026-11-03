@@ -29,9 +29,9 @@ type exchange struct {
 	body          []byte
 	method        string
 	contentType   string
-	native        bool
 	mutation      bool
 	operation     string
+	visible       bool
 	records       int
 	responseLimit int
 }
@@ -63,21 +63,12 @@ func (a *Adapter) request(ctx context.Context, call exchange) (status int, raw [
 		}
 		return 0, nil, errResponse
 	}
-	client := a.client
-	if call.native {
-		client = a.nativeClient
-	}
-	transport := client.Transport
-	if transport == nil {
-		transport = http.DefaultTransport
-	}
-	_, standardTransport := transport.(*http.Transport)
 	var acquiring, connected atomic.Bool
 	trace := &httptrace.ClientTrace{
 		GetConn: func(string) { acquiring.Store(true) },
 		GotConn: func(httptrace.GotConnInfo) { connected.Store(true) },
 	}
-	*request = *request.WithContext(httptrace.WithClientTrace(request.Context(), trace))
+	request = request.WithContext(httptrace.WithClientTrace(request.Context(), trace))
 	// No replay even on a reused connection: nonempty command bodies, no GetBody
 	// or idempotency headers. Record Delete is deliberately a bulk POST too.
 	a.configureRequest(request)
@@ -100,27 +91,19 @@ func (a *Adapter) request(ctx context.Context, call exchange) (status int, raw [
 		observation := httpObservation{call: call, request: request, duration: time.Since(started), status: status, err: err}
 		a.metrics.observeHTTP(observation)
 	}()
-	response, err := client.Do(request)
+	response, err := a.client.Do(request)
 	if err != nil {
 		// A positive GetConn without GotConn proves that this HTTP exchange
 		// never acquired a connection. Once GotConn runs, any failure remains
-		// uncertain, even if no complete request body was observed. Missing
-		// trace callbacks or a custom transport are also insufficient evidence.
-		if call.mutation && standardTransport && acquiring.Load() && !connected.Load() {
+		// uncertain, even if no complete request body was observed.
+		if call.mutation && acquiring.Load() && !connected.Load() {
 			return 0, nil, errWriteNotSent
 		}
-		if errors.Is(err, context.DeadlineExceeded) {
-			return 0, nil, errTimeout
-		}
-		if errors.Is(err, context.Canceled) {
-			return 0, nil, errCanceled
-		}
 		var network *net.OpError
-		if errors.As(err, &network) {
+		if errors.As(err, &network) && !errors.Is(err, context.DeadlineExceeded) && !errors.Is(err, context.Canceled) {
 			return 0, nil, errTransport
 		}
-		// Protocol/header limits and cancellation are not affirmative congestion.
-		return 0, nil, errResponse
+		return 0, nil, responseError(err)
 	}
 	defer response.Body.Close()
 	if response.Header.Get("Content-Encoding") != "" {
@@ -135,29 +118,29 @@ func (a *Adapter) request(ctx context.Context, call exchange) (status int, raw [
 		length = int64(call.responseLimit) + 1
 	}
 	raw, err = readResponseBody(reader, length)
-	if err == nil && call.responseLimit > 0 && len(raw) > call.responseLimit {
+	if err != nil {
+		return response.StatusCode, nil, responseError(err)
+	}
+	if call.responseLimit > 0 && len(raw) > call.responseLimit {
 		return response.StatusCode, nil, errResponseWindow
 	}
-	if errors.Is(err, context.DeadlineExceeded) {
-		return response.StatusCode, nil, errTimeout
-	}
-	if errors.Is(err, context.Canceled) {
-		return response.StatusCode, nil, errCanceled
-	}
-	if err != nil {
+	if !validJSON(raw) {
 		return response.StatusCode, nil, errResponse
 	}
-	status = response.StatusCode
-	if err := validateJSON(ctx, raw); err != nil {
-		if errors.Is(err, context.DeadlineExceeded) {
-			return status, nil, errTimeout
-		}
-		if errors.Is(err, context.Canceled) {
-			return status, nil, errCanceled
-		}
-		return status, nil, errResponse
+	return response.StatusCode, raw, nil
+}
+
+// responseError classifies a failed exchange. Protocol or header limits and
+// cancellation are not affirmative congestion.
+func responseError(err error) error {
+	switch {
+	case errors.Is(err, context.DeadlineExceeded):
+		return errTimeout
+	case errors.Is(err, context.Canceled):
+		return errCanceled
+	default:
+		return errResponse
 	}
-	return status, raw, nil
 }
 
 // Backend authentication supplies defaults; Native may override end-to-end headers.

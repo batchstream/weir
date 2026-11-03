@@ -3,7 +3,6 @@ package search
 import (
 	"context"
 	"errors"
-	"github.com/batchstream/weir/internal/backend"
 	"io"
 	"net"
 	"net/http"
@@ -13,6 +12,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/batchstream/weir/internal/backend"
 
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 	"github.com/batchstream/weir/internal/execution"
@@ -104,45 +105,9 @@ func TestBulkCanceledWhileWaitingForConnectionWasNotApplied(t *testing.T) {
 	}
 	work := unsentWritePlan()
 	works := []*execution.Plan{work}
-	bulkReply := bulkResponse{works: works, status: 0, raw: nil, err: err}
-	results := adapter.bulkResults(context.Background(), bulkReply)
+	results, _ := adapter.bulkResults(works, 0, nil, err)
 	if results[0].GetMutationResult().GetOutcome() != pb.MutationOutcome_NOT_APPLIED {
 		t.Fatal("connection queue cancellation became a committed write or congestion", results)
-	}
-}
-
-type untrustedTraceTransport struct {
-	announceConnection bool
-}
-
-func (t *untrustedTraceTransport) RoundTrip(request *http.Request) (*http.Response, error) {
-	trace := httptrace.ContextClientTrace(request.Context())
-	trace.GetConn("example:80")
-	if t.announceConnection {
-		info := httptrace.GotConnInfo{}
-		trace.GotConn(info)
-	}
-	return nil, errors.New("custom transport request failed")
-}
-
-func TestBulkCustomTransportCannotProveAnUnsentWrite(t *testing.T) {
-	for _, connected := range []bool{false, true} {
-		transport := &untrustedTraceTransport{announceConnection: connected}
-		client := &http.Client{Transport: transport, CheckRedirect: noRedirect}
-		config := Config{URL: "http://example:80"}
-		adapter := &Adapter{config: config, client: client, ctx: context.Background()}
-		call := unsentBulkCall()
-		_, _, err := adapter.request(context.Background(), call)
-		if err == nil || err == errWriteNotSent {
-			t.Fatal("untrusted trace became proof that a write was not sent", connected, err)
-		}
-		work := unsentWritePlan()
-		works := []*execution.Plan{work}
-		bulkReply := bulkResponse{works: works, status: 0, raw: nil, err: err}
-		results := adapter.bulkResults(context.Background(), bulkReply)
-		if results[0].GetMutationResult().GetOutcome() != pb.MutationOutcome_UNKNOWN {
-			t.Fatal("custom transport uncertainty became successful or unapplied", results)
-		}
 	}
 }
 
@@ -166,8 +131,7 @@ func TestBulkConnectionAcquiredBeforeWriteFailureRemainsUnknown(t *testing.T) {
 	}
 	work := unsentWritePlan()
 	works := []*execution.Plan{work}
-	bulkReply := bulkResponse{works: works, status: 0, raw: nil, err: err}
-	results := adapter.bulkResults(context.Background(), bulkReply)
+	results, _ := adapter.bulkResults(works, 0, nil, err)
 	if results[0].GetMutationResult().GetOutcome() != pb.MutationOutcome_UNKNOWN {
 		t.Fatal("uncertain connected failure became unapplied", results)
 	}
@@ -198,8 +162,7 @@ func TestBulkBeforeConnectionFailureWasNotApplied(t *testing.T) {
 			}
 			work := unsentWritePlan()
 			works := []*execution.Plan{work}
-			bulkReply := bulkResponse{works: works, status: 0, raw: nil, err: err}
-			results := adapter.bulkResults(context.Background(), bulkReply)
+			results, _ := adapter.bulkResults(works, 0, nil, err)
 			if results[0].GetMutationResult().GetOutcome() != pb.MutationOutcome_NOT_APPLIED {
 				t.Fatal("unsent write changed evidence or capacity", results)
 			}
@@ -246,8 +209,7 @@ func TestBulkCommittedReplyLossRemainsUnknownWithoutReplay(t *testing.T) {
 	}
 	work := unsentWritePlan()
 	works := []*execution.Plan{work}
-	bulkReply := bulkResponse{works: works, status: 0, raw: nil, err: err}
-	results := adapter.bulkResults(context.Background(), bulkReply)
+	results, _ := adapter.bulkResults(works, 0, nil, err)
 	if results[0].GetMutationResult().GetOutcome() != pb.MutationOutcome_UNKNOWN {
 		t.Fatal("lost acknowledgement changed mutation certainty", results)
 	}

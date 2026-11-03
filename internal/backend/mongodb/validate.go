@@ -7,92 +7,63 @@ import (
 
 	"github.com/batchstream/weir-protocol/api/protocol"
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
-	"github.com/batchstream/weir/internal/execution"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/x/bsonx/bsoncore"
 )
 
-// Full payload validation runs at execution, before target qualification or
-// business commands. Prepared plans retain only wire bytes.
-func (a *Adapter) validateRecord(ctx context.Context, work *execution.Plan) *pb.Failure {
-	if ctx.Err() != nil {
-		return protocol.ContextFailure(ctx)
+// setDocument validates a whole-document write: raw BSON whose first and only
+// _id matches the resource.
+func (native *plan) setDocument(document *pb.Document) *pb.Failure {
+	if document.GetContentType() != "application/bson" {
+		return protocol.Fail(pb.FailureCode_UNSUPPORTED, "only raw BSON is supported")
 	}
-	native := work.Backend.(*plan)
-	if native.validated || work.Command.GetRead() != nil {
+	raw := document.Data
+	if !validRecordBSON(raw, 0, false) {
+		return protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid BSON document")
+	}
+	mismatch := protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "explicit first _id must match resource")
+	first, _, ok := bsoncore.ReadElement(raw[4 : len(raw)-1])
+	if !ok || first.Key() != "_id" {
+		return mismatch
+	}
+	id, validID := rawRecordID(bson.Raw(raw).Lookup("_id"))
+	ids := 0
+	for rest := raw[4 : len(raw)-1]; len(rest) != 0; {
+		element, tail, _ := bsoncore.ReadElement(rest)
+		if element.Key() == "_id" {
+			ids++
+		}
+		rest = tail
+	}
+	if !validID || ids != 1 || id != native.id {
+		return mismatch
+	}
+	native.document = raw
+	return nil
+}
+
+func validateProgramInput(ctx context.Context, input *pb.Document) *pb.Failure {
+	if input == nil {
 		return nil
 	}
-	mutation := work.Command.GetMutate()
-	var raw []byte
-	if transform := mutation.GetAtomicTransform(); transform != nil {
-		if program := transform.GetLua(); program != nil {
-			if program.Input != nil {
-				raw = program.Input.Data
-			}
-		} else {
-			raw = transform.GetBackendExpression().Data
-		}
-	} else {
-		raw = native.document
+	if input.ContentType != "application/bson" {
+		return protocol.Fail(pb.FailureCode_UNSUPPORTED, "MongoDB Lua input must use BSON")
 	}
-	if transform := mutation.GetAtomicTransform(); transform != nil {
-		if program := transform.GetLua(); program != nil {
-			if program.Input != nil {
-				if _, err := Decode(ctx, raw); err != nil {
-					if ctx.Err() != nil {
-						return protocol.ContextFailure(ctx)
-					}
-					return protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid BSON transform input")
-				}
-			}
-			native.program.Source = string(program.Source)
-		} else if failure := a.prepareExpression(ctx, transform.GetBackendExpression()); failure != nil {
-			return failure
-		}
-	} else if len(raw) != 0 {
-		valid := validRecordBSON(ctx, raw, 0, false)
-		if !valid {
-			if ctx.Err() != nil {
-				return protocol.ContextFailure(ctx)
-			}
-			return protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid BSON document")
-		}
-		first, _, ok := bsoncore.ReadElement(raw[4 : len(raw)-1])
-		if !ok || first.Key() != "_id" {
-			return protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "explicit first _id must match resource")
-		}
-		id, validID := rawRecordID(bson.Raw(raw).Lookup("_id"))
-		ids := 0
-		for rest := raw[4 : len(raw)-1]; len(rest) != 0; {
-			element, tail, _ := bsoncore.ReadElement(rest)
-			if element.Key() == "_id" {
-				ids++
-			}
-			rest = tail
-		}
-		if !validID || ids != 1 || id != native.id {
-			return protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "explicit first _id must match resource")
-		}
+	if _, err := Decode(ctx, input.Data); err != nil {
+		return protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid BSON transform input")
 	}
-	if ctx.Err() != nil {
-		return protocol.ContextFailure(ctx)
-	}
-	native.validated = true
 	return nil
 }
 
 // Plain writes are forwarded as BSON. Validate the same supported value types,
 // UTF-8 and canonical arrays as Decode without constructing a disposable Value
 // tree or copying scalar payloads merely to check the first _id.
-func validRecordBSON(ctx context.Context, raw []byte, depth int, array bool) bool {
+func validRecordBSON(raw []byte, depth int, array bool) bool {
 	if depth > 100 || !bsonFraming(raw) {
 		return false
 	}
 	position := 0
 	for rest := raw[4 : len(raw)-1]; len(rest) != 0; {
-		if ctx.Err() != nil {
-			return false
-		}
 		element, tail, ok := bsoncore.ReadElement(rest)
 		if !ok {
 			return false
@@ -109,8 +80,7 @@ func validRecordBSON(ctx context.Context, raw []byte, depth int, array bool) boo
 		}
 		switch item.Type {
 		case bsoncore.TypeEmbeddedDocument, bsoncore.TypeArray:
-			valid := validRecordBSON(ctx, item.Data, depth+1, item.Type == bsoncore.TypeArray)
-			if !valid {
+			if !validRecordBSON(item.Data, depth+1, item.Type == bsoncore.TypeArray) {
 				return false
 			}
 		case bsoncore.TypeString:

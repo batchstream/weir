@@ -14,123 +14,65 @@ import (
 	"go.mongodb.org/mongo-driver/v2/x/mongo/driver/topology"
 )
 
-// A large scheduled batch becomes multiple native exchanges of at most
-// ExchangeBytes; a single larger operation is sent alone.
-func (a *Adapter) executeRecords(ctx context.Context, plans []*execution.Plan) []*pb.Event {
-	results := make([]*pb.Event, len(plans))
-	active := make([]*execution.Plan, 0, len(plans))
-	positions := make([]int, 0, len(plans))
-	for i, work := range plans {
-		if failure := a.validateRecord(ctx, work); failure != nil {
-			results[i] = execution.FailedEvent(work.Command, pb.MutationOutcome_NOT_STARTED, failure)
-			continue
+// ExecuteRecords runs one batch: reads of one collection, programs of one
+// collection, or writes across collections. A batch too large for one native
+// exchange of ExchangeBytes splits; a single larger operation is sent alone.
+func (a *Adapter) ExecuteRecords(ctx context.Context, plans []*execution.Plan) []*pb.Event {
+	ctx, release := a.bindLifetime(ctx)
+	defer release()
+	switch plans[0].Backend.(*plan).action {
+	case "read":
+		if failed := a.qualifyRecordBatch(ctx, plans); failed != nil {
+			return failed
 		}
-		active = append(active, work)
-		positions = append(positions, i)
+		return a.executeReads(ctx, plans)
+	case "program":
+		return a.executePrograms(ctx, plans)
 	}
-	limit := a.options().ExchangeBytes
-	for start := 0; start < len(active); {
-		end, bytes := start, 0
-		for end < len(active) {
-			charge := active[end].Bytes
-			if end > start && charge > limit-bytes {
-				break
-			}
-			bytes += charge
-			end++
-		}
-		for i, event := range a.executeRecordChunk(ctx, active[start:end]) {
-			results[positions[start+i]] = event
-		}
-		start = end
-	}
-	return results
+	return a.executeTargetedWrites(ctx, plans)
 }
 
-func (a *Adapter) executeRecordChunk(ctx context.Context, plans []*execution.Plan) []*pb.Event {
+// executeTargetedWrites qualifies each collection and writes to those that pass.
+func (a *Adapter) executeTargetedWrites(ctx context.Context, plans []*execution.Plan) []*pb.Event {
+	groups := make(map[namespace][]int)
+	var order []namespace
+	for i, work := range plans {
+		target := work.Backend.(*plan).target
+		if _, known := groups[target]; !known {
+			order = append(order, target)
+		}
+		groups[target] = append(groups[target], i)
+	}
 	results := make([]*pb.Event, len(plans))
-	type targetBatch struct {
-		plans                         []*execution.Plan
-		positions                     []int
-		reads, writes                 []*execution.Plan
-		readPositions, writePositions []int
-		qualified                     bool
-	}
-	groups := make([]targetBatch, 0)
-	positions := make(map[namespace]int)
-	var programs []*execution.Plan
-	var programPositions []int
-	for i, p := range plans {
-		native := p.Backend.(*plan)
-		if native.action == "program" {
-			programs = append(programs, p)
-			programPositions = append(programPositions, i)
-			continue
-		}
-		position, exists := positions[native.target]
-		if !exists {
-			position = len(groups)
-			positions[native.target] = position
-			group := targetBatch{}
-			groups = append(groups, group)
-		}
-		group := &groups[position]
-		group.plans = append(group.plans, p)
-		group.positions = append(group.positions, i)
-		if native.action == "read" {
-			group.reads = append(group.reads, p)
-			group.readPositions = append(group.readPositions, i)
-		} else {
-			group.writes = append(group.writes, p)
-			group.writePositions = append(group.writePositions, i)
-		}
-	}
-
-	for position := range groups {
-		group := &groups[position]
-		if replies := a.qualifyRecordBatch(ctx, group.plans); replies != nil {
-			for i, reply := range replies {
-				results[group.positions[i]] = reply
-			}
-			continue
-		}
-		group.qualified = true
-		if len(group.reads) != 0 {
-			replies := a.executeReads(ctx, group.reads)
-			for i, reply := range replies {
-				results[group.readPositions[i]] = reply
-			}
-		}
-	}
 	var writes []*execution.Plan
-	var writePositions []int
-	for _, group := range groups {
-		if group.qualified {
-			writes = append(writes, group.writes...)
-			writePositions = append(writePositions, group.writePositions...)
+	var positions []int
+	for _, target := range order {
+		group := make([]*execution.Plan, len(groups[target]))
+		for i, position := range groups[target] {
+			group[i] = plans[position]
+		}
+		failed := a.qualifyRecordBatch(ctx, group)
+		for i, position := range groups[target] {
+			if failed != nil {
+				results[position] = failed[i]
+				continue
+			}
+			writes = append(writes, plans[position])
+			positions = append(positions, position)
 		}
 	}
-	if len(writes) != 0 {
-		replies := a.executeWrites(ctx, writes)
-		for i, reply := range replies {
-			results[writePositions[i]] = reply
-		}
+	if len(writes) == 0 {
+		return results
 	}
-	if len(programs) != 0 {
-		replies := a.executePrograms(ctx, programs)
-		for i, reply := range replies {
-			results[programPositions[i]] = reply
-		}
+	for i, reply := range a.executeWrites(ctx, writes) {
+		results[positions[i]] = reply
 	}
 	return results
 }
 
 func unstarted(ctx context.Context, p *execution.Plan) *pb.Event {
-	if p.Context != nil && p.Context.Err() != nil {
-		return execution.FailedEvent(p.Command, pb.MutationOutcome_NOT_STARTED, protocol.ContextFailure(p.Context))
-	}
-	if ctx.Err() != nil {
-		return execution.FailedEvent(p.Command, pb.MutationOutcome_NOT_STARTED, protocol.ContextFailure(ctx))
+	if failure := p.Ended(ctx); failure != nil {
+		return execution.FailedEvent(p.Command, pb.MutationOutcome_NOT_STARTED, failure)
 	}
 	return nil
 }
@@ -272,7 +214,7 @@ func (a *Adapter) executeReads(ctx context.Context, plans []*execution.Plan) []*
 			}
 			interested := false
 			for _, p := range plans {
-				interested = interested || p.Context == nil || p.Context.Err() == nil
+				interested = interested || p.Context.Err() == nil
 			}
 			if !interested {
 				stopped = true
@@ -339,12 +281,6 @@ func (a *Adapter) executeWrites(ctx context.Context, plans []*execution.Plan) []
 		}
 
 		n := p.Backend.(*plan)
-		switch n.action {
-		case "create", "put", "replace", "expression", "delete":
-		default:
-			results[i] = execution.FailedEvent(p.Command, pb.MutationOutcome_NOT_STARTED, protocol.Fail(pb.FailureCode_INTERNAL, "unsupported prepared operation"))
-			continue
-		}
 		namespaceIndex, exists := namespaceIndexes[n.target]
 		if !exists {
 			namespaceIndex = int32(len(namespaces))

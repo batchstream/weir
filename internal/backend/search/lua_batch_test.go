@@ -140,7 +140,7 @@ func TestLuaBatchCallerCancellationAndDeadlineKeepPeers(t *testing.T) {
 			cancelled.Context = caller
 			peer := batchTestPlan(t, adapter, "program", "records/s:peer")
 			works := []*execution.Plan{cancelled, peer}
-			results := adapter.executeRecords(t.Context(), works)
+			results := adapter.ExecuteRecords(t.Context(), works)
 			code := pb.FailureCode_CANCELLED
 			if mode == "deadline" {
 				code = pb.FailureCode_DEADLINE_EXCEEDED
@@ -206,7 +206,7 @@ func TestLuaBatchChunksLargeLegalSourcesBeforeEvaluation(t *testing.T) {
 		work := batchTestPlan(t, adapter, "program", fmt.Sprintf("records/s:%d", i))
 		works = append(works, work)
 	}
-	results := adapter.executeRecords(t.Context(), works)
+	results := adapter.ExecuteRecords(t.Context(), works)
 	if reads.Load() < 2 || maxReadItems.Load() >= records || int(maxReadItems.Load())*len(source) > adapter.options().ExchangeBytes || writes.Load() != 1 {
 		t.Fatal("large document pre-read ignored its batch window or lost write batching", reads.Load(), maxReadItems.Load(), writes.Load())
 	}
@@ -246,7 +246,7 @@ func TestLuaBatchUsesAbsoluteBackendDeadlineBeyondFiveSeconds(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 8*time.Second)
 	defer cancel()
 	works := []*execution.Plan{work}
-	results := adapter.executeRecords(ctx, works)
+	results := adapter.ExecuteRecords(ctx, works)
 	if reads.Load() != 1 || writes.Load() != 1 || results[0].GetMutationResult().GetOutcome() != pb.MutationOutcome_APPLIED || results[0].GetMutationResult().GetFailure() != nil {
 		t.Fatal("hidden Lua RMW lifetime overrode legal backend deadline", results, reads.Load(), writes.Load())
 	}

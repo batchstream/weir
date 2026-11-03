@@ -30,7 +30,7 @@ func TestSearchMutationPreparationPerformsNoBackendIO(t *testing.T) {
 			client := server.Client()
 			adapter := &Adapter{config: config, dialect: ElasticsearchProduct, client: client, nativeClient: client, ctx: lifetime, cancel: cancel}
 			work := batchTestPlan(t, adapter, action, "records/s:record")
-			record, err := execution.NewRecord("search", 1, work.Command)
+			record, err := execution.NewRecord(1, work.Command)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -73,7 +73,7 @@ func TestSearchRecordPreflightBeforeAnyCommand(t *testing.T) {
 			mutation := &pb.MutateRequest{Resource: path, Action: action}
 			operation := &pb.Command_Mutate{Mutate: mutation}
 			command := &pb.Command{Operation: operation}
-			record, err := execution.NewRecord("search", 1, command)
+			record, err := execution.NewRecord(1, command)
 			if err != nil {
 				t.Fatal(err)
 			}

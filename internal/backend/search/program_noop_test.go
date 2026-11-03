@@ -28,8 +28,8 @@ func TestLuaUnchangedDocumentSkipsSearchWrite(t *testing.T) {
 			found := tc.found
 			current := &getReply{Found: &found, Source: []byte(tc.current)}
 			adapter := &Adapter{}
-			work := &execution.Plan{Backend: native}
-			write, result := adapter.evaluateProgram(t.Context(), work, current)
+			work := &execution.Plan{Context: t.Context(), Backend: native}
+			write, result := adapter.evaluateProgram(work, current)
 			if tc.unchanged {
 				if write != nil || result.GetOutcome() != pb.MutationOutcome_APPLIED || result.GetFailure() != nil {
 					t.Fatal("unchanged ordinary document was not a successful no-op", write, result)
@@ -48,7 +48,7 @@ func TestLuaUnchangedDocumentRetainsSearchVisibilityBarrier(t *testing.T) {
 		opts := visibilityPlanOptions{action: "program", id: "unchanged", wait: visible, program: `return function(current) return current end`}
 		work := visibilityPlan(t, adapter, opts)
 		works := []*execution.Plan{work}
-		results := adapter.executeRecords(t.Context(), works)
+		results := adapter.ExecuteRecords(t.Context(), works)
 		if len(results) != 1 || results[0].GetMutationResult().GetOutcome() != pb.MutationOutcome_APPLIED || results[0].GetMutationResult().GetFailure() != nil {
 			t.Fatal("unchanged document acknowledgement", results)
 		}

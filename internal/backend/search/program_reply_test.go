@@ -1,7 +1,6 @@
 package search
 
 import (
-	"context"
 	"fmt"
 	"strings"
 	"testing"
@@ -14,8 +13,7 @@ import (
 func testBulkMutationReply(a *Adapter, native *plan, raw string) *pb.MutationResult {
 	work := &execution.Plan{Backend: native}
 	body := []byte(fmt.Sprintf(`{"errors":%t,"took":1,"items":[{%q:%s}]}`, strings.Contains(raw, `"error":`), native.bulkAction(), raw))
-	bulkReply := bulkResponse{works: []*execution.Plan{work}, status: 200, raw: body, err: nil}
-	results := a.bulkResults(context.Background(), bulkReply)
+	results, _ := a.bulkResults([]*execution.Plan{work}, 200, body, nil)
 	return results[0].GetMutationResult()
 }
 
@@ -143,11 +141,10 @@ func TestBulkLargeTransformMetadataPreservesAcknowledgements(t *testing.T) {
 				}
 				item := success[:len(success)-1] + `,"extra":` + extra + `}`
 				body := []byte(fmt.Sprintf(`{"errors":false,"took":1,"items":[{"index":%s},{%q:%s}]}`, success, native.bulkAction(), item))
-				if len(body) > (8<<20) || validateJSON(context.Background(), body) != nil {
+				if len(body) > (8<<20) || !validJSON(body) {
 					t.Fatal("fixture exceeds whole-batch limits")
 				}
-				bulkReply := bulkResponse{works: []*execution.Plan{ordinaryWork, transformWork}, status: 200, raw: body, err: nil}
-				results := a.bulkResults(context.Background(), bulkReply)
+				results, _ := a.bulkResults([]*execution.Plan{ordinaryWork, transformWork}, 200, body, nil)
 				if results[0].GetMutationResult().GetOutcome() != pb.MutationOutcome_APPLIED {
 					t.Fatal("bounded ordinary acknowledgement lost", results[0])
 				}
@@ -176,8 +173,7 @@ func TestBulkValidatesAllItemsBeforeAcknowledgingAny(t *testing.T) {
 		`{"index":{"_index":"records","_id":"item","status":409,"error":{"type":"version_conflict_engine_exception"}}}`,
 	} {
 		body := []byte(`{"errors":false,"took":1,"items":[{"index":` + success + `},` + tail + `]}`)
-		bulkReply := bulkResponse{works: []*execution.Plan{ordinaryWork, programWork}, status: 200, raw: body, err: nil}
-		results := a.bulkResults(context.Background(), bulkReply)
+		results, _ := a.bulkResults([]*execution.Plan{ordinaryWork, programWork}, 200, body, nil)
 		for _, result := range results {
 			if result.GetMutationResult().GetOutcome() != pb.MutationOutcome_UNKNOWN {
 				t.Fatalf("acknowledgement escaped batch validation: %s: %v", tail, results)

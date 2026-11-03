@@ -107,10 +107,6 @@ func TestMongoNativeExplicitCongestion(t *testing.T) {
 			initializeTestLifetime(a)
 			nativeBody := &pb.Document{ContentType: "application/bson", Data: []byte{5, 0, 0, 0, 0}}
 			open := &pb.NativeRequest{Resource: "db", Request: nativeBody}
-			plan, failure := a.prepareNative(open)
-			if failure != nil {
-				t.Fatal(failure)
-			}
 			capture := &nativeCapture{}
 			if test.failHead {
 				capture.headErr = errors.New("output unavailable")
@@ -124,8 +120,7 @@ func TestMongoNativeExplicitCongestion(t *testing.T) {
 				t.Fatal(err)
 			}
 			open.Request.Data = raw
-			plan.Command = testutil.NativeCommand(open)
-			end := a.executeNative(ctx, plan, capture.Emit)
+			end := a.ExecuteNative(ctx, testutil.NativeCommand(open), capture.Emit)
 			if end.Completion != test.completion || calls != 1 {
 				t.Fatal(end, calls)
 			}
@@ -206,13 +201,8 @@ func TestMongoNativeResourceSelectsDatabaseWithoutCollectionQualification(t *tes
 		adapter := batchMockAdapter(t, responses, monitor)
 		body := &pb.Document{ContentType: "application/bson", Data: raw}
 		request := &pb.NativeRequest{Resource: resource, Request: body}
-		work, failure := adapter.prepareNative(request)
-		if failure != nil {
-			t.Fatal(resource, failure)
-		}
-		work.Command = testutil.NativeCommand(request)
 		capture := &nativeCapture{}
-		end := adapter.executeNative(t.Context(), work, capture.Emit)
+		end := adapter.ExecuteNative(t.Context(), testutil.NativeCommand(request), capture.Emit)
 		if calls != 1 || end.Completion != pb.NativeCompletion_RESPONSE_COMPLETE {
 			t.Fatal(resource, calls, end)
 		}
@@ -241,20 +231,17 @@ func TestMongoNativeAdapterOwnsRequestFormat(t *testing.T) {
 	for _, contentType := range []string{"application/http", "application/vnd.future.store"} {
 		document := &pb.Document{ContentType: contentType, Data: []byte("GET /_doc/x HTTP/1.1\r\n\r\n")}
 		request := &pb.NativeRequest{Resource: "db", Request: document}
-		if _, failure := adapter.prepareNative(request); failure.GetCode() != pb.FailureCode_UNSUPPORTED {
-			t.Fatal("shared envelope interpreted adapter payload", contentType, failure)
+		capture := &nativeCapture{}
+		end := adapter.ExecuteNative(t.Context(), testutil.NativeCommand(request), capture.Emit)
+		if end.Completion != pb.NativeCompletion_NATIVE_NOT_STARTED || end.GetFailure().GetCode() != pb.FailureCode_UNSUPPORTED {
+			t.Fatal("shared envelope interpreted adapter payload", contentType, end)
 		}
 	}
 	// An empty opaque document is a valid envelope, but an invalid BSON command.
 	document := &pb.Document{ContentType: "application/bson"}
 	request := &pb.NativeRequest{Resource: "db", Request: document}
-	work, failure := adapter.prepareNative(request)
-	if failure != nil {
-		t.Fatal("generic envelope unexpectedly requires a body", failure)
-	}
-	work.Command = testutil.NativeCommand(request)
 	capture := &nativeCapture{}
-	end := adapter.executeNative(context.Background(), work, capture.Emit)
+	end := adapter.ExecuteNative(context.Background(), testutil.NativeCommand(request), capture.Emit)
 	if end.Completion != pb.NativeCompletion_NATIVE_NOT_STARTED || end.GetFailure().GetCode() != pb.FailureCode_INVALID_ARGUMENT || capture.head != nil || capture.body.Len() != 0 {
 		t.Fatal("invalid BSON reached backend", end)
 	}
@@ -276,13 +263,8 @@ func TestMongoNativeSmallRequestPublishesLargeReply(t *testing.T) {
 	}
 	body := &pb.Document{ContentType: "application/bson", Data: raw}
 	request := &pb.NativeRequest{Resource: "db", Request: body}
-	work, failure := adapter.prepareNative(request)
-	if failure != nil {
-		t.Fatal(failure)
-	}
-	work.Command = testutil.NativeCommand(request)
 	capture := &nativeCapture{}
-	end := adapter.executeNative(t.Context(), work, capture.Emit)
+	end := adapter.ExecuteNative(t.Context(), testutil.NativeCommand(request), capture.Emit)
 	expected, err := bson.Marshal(response)
 	if err != nil {
 		t.Fatal(err)
@@ -342,15 +324,10 @@ func TestMongoNativePreservesCallerSessionAndDeadlineOptions(t *testing.T) {
 			adapter := batchMockAdapter(t, responses, monitor)
 			body := &pb.Document{ContentType: "application/bson", Data: raw}
 			request := &pb.NativeRequest{Request: body}
-			work, failure := adapter.prepareNative(request)
-			if failure != nil {
-				t.Fatal(failure)
-			}
-			work.Command = testutil.NativeCommand(request)
 			capture := &nativeCapture{}
 			ctx, cancel := context.WithTimeout(t.Context(), time.Second)
 			defer cancel()
-			end := adapter.executeNative(ctx, work, capture.Emit)
+			end := adapter.ExecuteNative(ctx, testutil.NativeCommand(request), capture.Emit)
 			if calls != 1 || end.Completion != pb.NativeCompletion_RESPONSE_COMPLETE || end.Failure != nil {
 				t.Fatal(calls, end)
 			}
@@ -374,13 +351,8 @@ func TestMongoNativeDatabaseRoutingRejectsAmbiguousEnvelopes(t *testing.T) {
 		}
 		body := &pb.Document{ContentType: "application/bson", Data: raw}
 		request := &pb.NativeRequest{Request: body}
-		work, failure := adapter.prepareNative(request)
-		if failure != nil {
-			t.Fatal(failure)
-		}
-		work.Command = testutil.NativeCommand(request)
 		capture := &nativeCapture{}
-		end := adapter.executeNative(t.Context(), work, capture.Emit)
+		end := adapter.ExecuteNative(t.Context(), testutil.NativeCommand(request), capture.Emit)
 		if end.Completion != pb.NativeCompletion_NATIVE_NOT_STARTED || end.GetFailure().GetCode() != pb.FailureCode_INVALID_ARGUMENT || capture.head != nil || capture.body.Len() != 0 {
 			t.Fatal("invalid routing touched backend", command, end)
 		}
@@ -403,13 +375,8 @@ func TestMongoNativeLargeTopLevelDataArraysRemainOpaque(t *testing.T) {
 	}
 	body := &pb.Document{ContentType: "application/bson", Data: raw}
 	request := &pb.NativeRequest{Request: body}
-	work, failure := adapter.prepareNative(request)
-	if failure != nil {
-		t.Fatal(failure)
-	}
-	work.Command = testutil.NativeCommand(request)
 	capture := &nativeCapture{}
-	end := adapter.executeNative(t.Context(), work, capture.Emit)
+	end := adapter.ExecuteNative(t.Context(), testutil.NativeCommand(request), capture.Emit)
 	want, err := bson.Marshal(response)
 	if err != nil {
 		t.Fatal(err)
@@ -430,9 +397,10 @@ func TestMongoNativeRejectsCollectionResourceShapes(t *testing.T) {
 	for _, resource := range []string{"db/records", "db/system.views", "db/records/s:id"} {
 		body := &pb.Document{ContentType: "application/bson", Data: raw}
 		request := &pb.NativeRequest{Resource: resource, Request: body}
-		work, failure := adapter.prepareNative(request)
-		if work != nil || failure.GetCode() != pb.FailureCode_INVALID_ARGUMENT {
-			t.Fatal("Native accepted a collection resource even with explicit $db", resource, work, failure)
+		capture := &nativeCapture{}
+		end := adapter.ExecuteNative(t.Context(), testutil.NativeCommand(request), capture.Emit)
+		if end.Completion != pb.NativeCompletion_NATIVE_NOT_STARTED || end.GetFailure().GetCode() != pb.FailureCode_INVALID_ARGUMENT {
+			t.Fatal("Native accepted a collection resource even with explicit $db", resource, end)
 		}
 	}
 }

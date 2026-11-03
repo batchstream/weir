@@ -17,7 +17,7 @@ func New(store string, input *pb.ExecuteRequest) (*execution.Record, *pb.Failure
 	if err := protocol.ValidateExecuteRequest(request); err != nil {
 		return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, err.Error())
 	}
-	record, err := execution.NewRecord(store, input.Index, input.Command)
+	record, err := execution.NewRecord(input.Index, input.Command)
 	if err != nil {
 		return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, err.Error())
 	}

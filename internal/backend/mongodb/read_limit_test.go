@@ -39,13 +39,13 @@ func TestMongoReadRetainsLargeDocumentsAndIndependentWrites(t *testing.T) {
 			}
 			plans = append(plans, work)
 		}
-		results := adapter.executeRecords(context.Background(), plans)
-		read := results[0].GetReadResult()
+		read := adapter.ExecuteRecords(context.Background(), plans[:1])[0].GetReadResult()
 		if len(read.GetDocument().Data) != size {
 			t.Fatal("read size was changed", size, read)
 		}
-		if results[1].GetMutationResult().Outcome != pb.MutationOutcome_APPLIED || results[1].GetMutationResult().Failure != nil {
-			t.Fatal("acknowledged write was affected by a read limit", results[1])
+		write := adapter.ExecuteRecords(context.Background(), plans[1:])[0].GetMutationResult()
+		if write.Outcome != pb.MutationOutcome_APPLIED || write.Failure != nil {
+			t.Fatal("acknowledged write was affected by a read limit", write)
 		}
 	}
 }

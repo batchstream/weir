@@ -27,14 +27,9 @@ type nativeStallAdapter struct {
 	chunks        int
 }
 
-func (*nativeStallAdapter) PrepareNative(_ context.Context, command *pb.Command) (*execution.Plan, *pb.Failure) {
-	plan := &execution.Plan{Command: command}
-	return plan, nil
-}
-
 // ExecuteNative streams a head and, for the "slow" resource, chunks large
 // enough to exhaust the gRPC stream write quota when the client grants no window.
-func (adapter *nativeStallAdapter) ExecuteNative(_ context.Context, plan *execution.Plan, emit execution.Emit) *pb.NativeEnd {
+func (adapter *nativeStallAdapter) ExecuteNative(_ context.Context, command *pb.Command, emit execution.Emit) *pb.NativeEnd {
 	adapter.nativeStarted.Add(1)
 	head := &pb.NativeHead{BodyContentType: "application/octet-stream"}
 	value := &pb.Event_Head{Head: head}
@@ -43,7 +38,7 @@ func (adapter *nativeStallAdapter) ExecuteNative(_ context.Context, plan *execut
 		failure := protocol.Fail(pb.FailureCode_UNAVAILABLE, "output closed")
 		return protocol.NativeFailure(false, failure)
 	}
-	if plan.Command.GetNative().Resource == "slow" {
+	if command.GetNative().Resource == "slow" {
 		body := bytes.Repeat([]byte("s"), protocol.NativeChunk)
 		for range adapter.chunks {
 			value := &pb.Event_Chunk{Chunk: body}

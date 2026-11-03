@@ -2,8 +2,6 @@ package search
 
 import (
 	"bytes"
-	"context"
-	"time"
 
 	"github.com/batchstream/weir-protocol/api/protocol"
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
@@ -11,9 +9,11 @@ import (
 	"github.com/batchstream/weir/internal/value"
 )
 
-// evaluateProgram runs Lua in the main process. A returned write carries the
-// exact observed OCC condition; only a confirmed conflict permits reevaluation.
-func (a *Adapter) evaluateProgram(ctx context.Context, work *execution.Plan, current *getReply) (*plan, *pb.MutationResult) {
+// evaluateProgram runs Lua in the main process under its caller's context, which
+// ends no later than the batch does. A returned write carries the exact observed
+// OCC condition; only a confirmed conflict permits reevaluation.
+func (a *Adapter) evaluateProgram(work *execution.Plan, current *getReply) (*plan, *pb.MutationResult) {
+	ctx := work.Context
 	native := work.Backend.(*plan)
 	currentValue := value.Value{Kind: value.Missing}
 	if *current.Found {
@@ -26,9 +26,6 @@ func (a *Adapter) evaluateProgram(ctx context.Context, work *execution.Plan, cur
 			failure := protocol.Fail(pb.FailureCode_UNSUPPORTED, "stored JSON source cannot be transformed losslessly")
 			return nil, protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, failure)
 		}
-	}
-	if native.program.ObservedAt.IsZero() {
-		native.program.ObservedAt = time.Now()
 	}
 	program := *native.program
 	program.Current = currentValue

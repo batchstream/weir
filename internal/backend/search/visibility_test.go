@@ -168,11 +168,12 @@ func TestMutationVisibilityFlagsGroupWritesAndKeepDefaultBehavior(t *testing.T) 
 	if works[0].Waits || !works[1].Waits || works[7].Waits {
 		t.Fatal("refresh waits must not be taken for backend load", works[0].Waits, works[1].Waits, works[7].Waits)
 	}
-	results := adapter.executeRecords(t.Context(), works)
-	for _, result := range results {
-		mutation := result.GetMutationResult()
-		if mutation.GetOutcome() != pb.MutationOutcome_APPLIED || mutation.GetFailure() != nil {
-			t.Fatal("visibility acknowledgement", mutation)
+	for _, batch := range [][]*execution.Plan{works[:1], works[1:7], works[7:]} {
+		for _, result := range adapter.ExecuteRecords(t.Context(), batch) {
+			mutation := result.GetMutationResult()
+			if mutation.GetOutcome() != pb.MutationOutcome_APPLIED || mutation.GetFailure() != nil {
+				t.Fatal("visibility acknowledgement", mutation)
+			}
 		}
 	}
 	fixture.mu.Lock()
@@ -205,7 +206,7 @@ func TestMutationOptionsDefaultVisibilityKeepsApplicationAcknowledgement(t *test
 				t.Fatal(failure)
 			}
 			works := []*execution.Plan{prepared}
-			mutation := adapter.executeRecords(t.Context(), works)[0].GetMutationResult()
+			mutation := adapter.ExecuteRecords(t.Context(), works)[0].GetMutationResult()
 			if mutation.GetOutcome() != pb.MutationOutcome_APPLIED || mutation.GetFailure() != nil || prepared.BatchKey != "records" {
 				t.Fatal("default visibility changed application acknowledgement", mutation, prepared.BatchKey)
 			}
@@ -233,7 +234,7 @@ func TestNoopVisibilityUsesOneConfirmedBarrierPerIndex(t *testing.T) {
 			for i, opts := range options {
 				works[i] = visibilityPlan(t, adapter, opts)
 			}
-			for _, result := range adapter.executeRecords(t.Context(), works) {
+			for _, result := range adapter.ExecuteRecords(t.Context(), works) {
 				mutation := result.GetMutationResult()
 				if mutation.GetOutcome() != pb.MutationOutcome_APPLIED || mutation.GetFailure() != nil {
 					t.Fatal("noop visibility acknowledgement", mutation)
@@ -276,7 +277,7 @@ func TestVisibilityBarrierFailurePreservesAppliedOutcome(t *testing.T) {
 			ctx, cancel := context.WithTimeout(t.Context(), 150*time.Millisecond)
 			defer cancel()
 			works := []*execution.Plan{work}
-			mutation := adapter.executeRecords(ctx, works)[0].GetMutationResult()
+			mutation := adapter.ExecuteRecords(ctx, works)[0].GetMutationResult()
 			if mutation.GetOutcome() != pb.MutationOutcome_APPLIED || mutation.GetFailure().GetCode() != test.code {
 				t.Fatal("refresh failure lost prior applied evidence", mutation)
 			}
@@ -297,7 +298,7 @@ func TestVisibilityWriteDeadlineIsUnknownAndNeverReplayed(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 150*time.Millisecond)
 	defer cancel()
 	works := []*execution.Plan{work}
-	mutation := adapter.executeRecords(ctx, works)[0].GetMutationResult()
+	mutation := adapter.ExecuteRecords(ctx, works)[0].GetMutationResult()
 	if mutation.GetOutcome() != pb.MutationOutcome_UNKNOWN || mutation.GetFailure().GetCode() != pb.FailureCode_DEADLINE_EXCEEDED {
 		t.Fatal("unacknowledged visible write lost uncertainty", mutation)
 	}

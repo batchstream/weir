@@ -61,7 +61,42 @@ func batchTestPlan(t *testing.T, a *Adapter, action, resource string) *execution
 	return work
 }
 
-func TestMixedRecordBatchMergesReadsAndEveryMutation(t *testing.T) {
+func TestReadBatchSharesOneMget(t *testing.T) {
+	var qualifications, reads atomic.Int32
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/records":
+			qualifications.Add(1)
+			_, _ = io.WriteString(w, testIndexReply)
+		case "/records/_mget":
+			reads.Add(1)
+			var request struct {
+				IDs []string `json:"ids"`
+			}
+			if r.Method != "POST" || r.URL.Query().Get("realtime") != "true" || json.NewDecoder(r.Body).Decode(&request) != nil || strings.Join(request.IDs, ",") != "read,missing" {
+				t.Errorf("unexpected merged read: method=%s ids=%v", r.Method, request.IDs)
+			}
+			_, _ = io.WriteString(w, `{"docs":[{"_index":"records","_id":"read","found":true,"_seq_no":1,"_primary_term":1,"_source":{"n":9007199254740993}},{"_index":"records","_id":"missing","found":false}]}`)
+		default:
+			t.Errorf("unbatched request: %s", r.URL.Path)
+			http.NotFound(w, r)
+		}
+	})
+	server := httptest.NewServer(handler)
+	defer server.Close()
+	cfg := Config{Store: "search", URL: server.URL}
+	a := &Adapter{dialect: ElasticsearchProduct, config: cfg, client: server.Client(), ctx: context.Background()}
+	works := []*execution.Plan{batchTestPlan(t, a, "read", "records/s:read"), batchTestPlan(t, a, "read", "records/s:missing")}
+	results := a.ExecuteRecords(context.Background(), works)
+	if len(results) != len(works) || qualifications.Load() != 1 || reads.Load() != 1 {
+		t.Fatalf("batch counts/results: qualification=%d reads=%d results=%v", qualifications.Load(), reads.Load(), results)
+	}
+	if string(results[0].GetReadResult().GetDocument().GetData()) != `{"n":9007199254740993}` || results[1].GetReadResult().GetMissing() == nil {
+		t.Fatal("read source/missing evidence", results)
+	}
+}
+
+func TestMutationBatchSharesOneBulkAcrossEveryAction(t *testing.T) {
 	var qualifications, reads, writes atomic.Int32
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -73,14 +108,10 @@ func TestMixedRecordBatchMergesReadsAndEveryMutation(t *testing.T) {
 			var request struct {
 				IDs []string `json:"ids"`
 			}
-			if r.Method != "POST" || r.URL.Query().Get("realtime") != "true" || json.NewDecoder(r.Body).Decode(&request) != nil || strings.Join(request.IDs, ",") != "read,missing,replace,program" {
-				t.Errorf("unexpected merged read: method=%s ids=%v", r.Method, request.IDs)
+			if r.Method != "POST" || r.URL.Query().Get("realtime") != "true" || json.NewDecoder(r.Body).Decode(&request) != nil || strings.Join(request.IDs, ",") != "replace,program" {
+				t.Errorf("unexpected merged pre-read: method=%s ids=%v", r.Method, request.IDs)
 			}
-			if strings.Join(request.IDs, ",") == "program" {
-				_, _ = io.WriteString(w, `{"docs":[{"_index":"records","_id":"program","found":true,"_seq_no":3,"_primary_term":1,"_source":{"n":1}}]}`)
-			} else {
-				_, _ = io.WriteString(w, `{"docs":[{"_index":"records","_id":"read","found":true,"_seq_no":1,"_primary_term":1,"_source":{"n":9007199254740993}},{"_index":"records","_id":"missing","found":false},{"_index":"records","_id":"replace","found":true,"_seq_no":2,"_primary_term":1,"_source":{"n":1}},{"_index":"records","_id":"program","found":true,"_seq_no":3,"_primary_term":1,"_source":{"n":1}}]}`)
-			}
+			_, _ = io.WriteString(w, `{"docs":[{"_index":"records","_id":"replace","found":true,"_seq_no":2,"_primary_term":1,"_source":{"n":1}},{"_index":"records","_id":"program","found":true,"_seq_no":3,"_primary_term":1,"_source":{"n":1}}]}`)
 		case "/_bulk":
 			writes.Add(1)
 			raw, _ := io.ReadAll(r.Body)
@@ -98,25 +129,21 @@ func TestMixedRecordBatchMergesReadsAndEveryMutation(t *testing.T) {
 	defer server.Close()
 	cfg := Config{Store: "search", URL: server.URL}
 	a := &Adapter{dialect: ElasticsearchProduct, config: cfg, client: server.Client(), ctx: context.Background()}
-	actions := []string{"read", "read", "replace", "expression", "program", "put", "create", "delete"}
-	ids := []string{"read", "missing", "replace", "expression", "program", "put", "create", "delete"}
+	actions := []string{"replace", "expression", "program", "put", "create", "delete"}
 	works := make([]*execution.Plan, len(actions))
 	for i, action := range actions {
-		works[i] = batchTestPlan(t, a, action, "records/s:"+ids[i])
+		works[i] = batchTestPlan(t, a, action, "records/s:"+action)
 	}
-	results := a.executeRecords(context.Background(), works)
+	results := a.ExecuteRecords(context.Background(), works)
 	if len(results) != len(works) || qualifications.Load() != 1 || reads.Load() != 1 || writes.Load() != 1 {
 		t.Fatalf("batch counts/results: qualification=%d reads=%d writes=%d results=%v", qualifications.Load(), reads.Load(), writes.Load(), results)
 	}
-	if string(results[0].GetReadResult().GetDocument().GetData()) != `{"n":9007199254740993}` || results[1].GetReadResult().GetMissing() == nil {
-		t.Fatal("read source/missing evidence", results[:2])
-	}
-	for i, result := range results {
-		if i >= 2 && (result.GetMutationResult().GetOutcome() != pb.MutationOutcome_APPLIED || result.GetMutationResult().GetFailure() != nil) {
+	for _, result := range results {
+		if result.GetMutationResult().GetOutcome() != pb.MutationOutcome_APPLIED || result.GetMutationResult().GetFailure() != nil {
 			t.Fatal("mutation not applied", result)
 		}
 	}
-	if works[4].Backend.(*plan).action != "program" || works[4].Backend.(*plan).source != nil {
+	if works[2].Backend.(*plan).action != "program" || works[2].Backend.(*plan).source != nil {
 		t.Fatal("original Lua plan mutated")
 	}
 }
@@ -174,7 +201,7 @@ func TestMixedWriteShardEvidenceNeverReplaysUnknown(t *testing.T) {
 				for i, action := range actions {
 					works[i] = batchTestPlan(t, a, action, "records/s:"+action)
 				}
-				results := a.executeRecords(t.Context(), works)
+				results := a.ExecuteRecords(t.Context(), works)
 				if len(results) != len(works) {
 					t.Fatal("missing acknowledgement results", len(results))
 				}
@@ -230,7 +257,7 @@ func TestMgetRequiresCompleteIDCorrespondenceAndIsolatesItemErrors(t *testing.T)
 			cfg := Config{Store: "search", URL: server.URL}
 			a := &Adapter{dialect: ElasticsearchProduct, config: cfg, client: server.Client(), ctx: context.Background()}
 			works := []*execution.Plan{batchTestPlan(t, a, "read", "records/s:first"), batchTestPlan(t, a, "read", "records/s:second")}
-			results := a.executeRecords(context.Background(), works)
+			results := a.ExecuteRecords(context.Background(), works)
 			if len(results) != 2 || results[1].GetReadResult().GetFailure() == nil {
 				t.Fatal("incomplete/error evidence", results)
 			}
@@ -326,7 +353,7 @@ func TestMixedLuaCreateConflictRetriesOnlyConfirmedItem(t *testing.T) {
 			cfg := Config{Store: "search", URL: server.URL, Options: &settings}
 			a := &Adapter{dialect: ElasticsearchProduct, config: cfg, client: server.Client(), ctx: context.Background()}
 			works := []*execution.Plan{batchTestPlan(t, a, "program", "records/s:program"), batchTestPlan(t, a, "put", "records/s:put")}
-			results := a.executeRecords(context.Background(), works)
+			results := a.ExecuteRecords(context.Background(), works)
 			wantCalls, wantOutcome := int32(2), pb.MutationOutcome_APPLIED
 			if mode == "unknown" {
 				wantCalls, wantOutcome = 1, pb.MutationOutcome_UNKNOWN
@@ -380,7 +407,7 @@ func TestCanceledCallerSkippedAfterBatchReadWithoutCancelingPeer(t *testing.T) {
 	replace := batchTestPlan(t, a, "replace", "records/s:replace")
 	replace.Context = caller
 	put := batchTestPlan(t, a, "put", "records/s:put")
-	results := a.executeRecords(context.Background(), []*execution.Plan{replace, put})
+	results := a.ExecuteRecords(context.Background(), []*execution.Plan{replace, put})
 	if writes.Load() != 1 || results[0].GetMutationResult().GetOutcome() != pb.MutationOutcome_NOT_APPLIED || results[0].GetMutationResult().GetFailure().GetCode() != pb.FailureCode_CANCELLED || results[1].GetMutationResult().GetOutcome() != pb.MutationOutcome_APPLIED {
 		t.Fatal("caller isolation", results, writes.Load())
 	}

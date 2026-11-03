@@ -77,7 +77,7 @@ func TestMongoExpressionValidation(t *testing.T) {
 	}
 	for _, path := range []string{"_id", "a..b", ".a", "a.", "a.$", "a.$[]", "a.$[x]", "a.01"} {
 		doc := bson.D{{Key: "$set", Value: bson.D{{Key: path, Value: 1}}}}
-		if f := a.prepareExpression(context.Background(), expressionOperation("x", expressionBSON(t, doc)).Command.GetMutate().GetAtomicTransform().GetBackendExpression()); f == nil {
+		if f := validateExpression(context.Background(), expressionOperation("x", expressionBSON(t, doc)).Command.GetMutate().GetAtomicTransform().GetBackendExpression()); f == nil {
 			t.Fatal(path)
 		}
 	}
@@ -116,7 +116,7 @@ func TestMongoExpressionValidation(t *testing.T) {
 	}
 	excessive = bson.D{{Key: "$set", Value: bson.D{{Key: "x", Value: nodes}}}}
 	d := &pb.Document{ContentType: ExpressionContentType, Data: expressionBSON(t, excessive)}
-	if f := a.prepareExpression(context.Background(), d); f != nil {
+	if f := validateExpression(context.Background(), d); f != nil {
 		t.Fatal("valid nodes rejected", f)
 	}
 }
@@ -155,10 +155,8 @@ func TestMongoExpressionEvidence(t *testing.T) {
 func FuzzMongoExpression(f *testing.F) {
 	f.Add([]byte{5, 0, 0, 0, 0})
 	f.Fuzz(func(t *testing.T, raw []byte) {
-		a := &Adapter{}
-		initializeTestLifetime(a)
 		d := &pb.Document{ContentType: ExpressionContentType, Data: raw}
-		_ = a.prepareExpression(context.Background(), d)
+		_ = validateExpression(context.Background(), d)
 		fields, err := bsonFields(raw)
 		if err == nil {
 			item := &plan{action: "expression"}

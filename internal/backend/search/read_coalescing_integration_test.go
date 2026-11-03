@@ -59,7 +59,7 @@ func TestSearchCrossIndexPureReadsUseOneNativeExchange(t *testing.T) {
 		}
 		works[i] = batchTestPlan(t, adapter, "read", searchResource(index, id))
 	}
-	results := adapter.executeRecords(context.Background(), works)
+	results := adapter.ExecuteRecords(context.Background(), works)
 	for i, result := range results {
 		if i < 4 {
 			want := fmt.Sprintf(`{"n":%d}`, i%2+1)

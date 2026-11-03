@@ -14,20 +14,14 @@ import (
 
 const ExpressionContentType = "application/vnd.weir.mongodb-update.v1+bson"
 
-func (a *Adapter) prepareExpression(ctx context.Context, d *pb.Document) *pb.Failure {
-	if ctx.Err() != nil {
-		return protocol.ContextFailure(ctx)
-	}
+func validateExpression(ctx context.Context, d *pb.Document) *pb.Failure {
 	if d == nil || d.ContentType != ExpressionContentType {
 		return protocol.Fail(pb.FailureCode_UNSUPPORTED, "unsupported MongoDB expression profile")
 	}
 	invalid := protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid MongoDB expression")
 	// Decode validates BSON under the caller context; original bytes are sent.
 	doc, err := Decode(ctx, d.Data)
-	if err != nil || len(doc.Fields) == 0 || !expressionValues(ctx, doc) {
-		if ctx.Err() != nil {
-			return protocol.ContextFailure(ctx)
-		}
+	if err != nil || len(doc.Fields) == 0 || !expressionValues(doc) {
 		return invalid
 	}
 	paths := make(map[string]bool)
@@ -36,13 +30,7 @@ func (a *Adapter) prepareExpression(ctx context.Context, d *pb.Document) *pb.Fai
 			return invalid
 		}
 		for _, field := range operator.Value.Fields {
-			if ctx.Err() != nil {
-				return protocol.ContextFailure(ctx)
-			}
-			if !expressionPath(field.Name) {
-				return invalid
-			}
-			if paths[field.Name] {
+			if !expressionPath(field.Name) || paths[field.Name] {
 				return invalid
 			}
 			paths[field.Name] = true
@@ -52,9 +40,6 @@ func (a *Adapter) prepareExpression(ctx context.Context, d *pb.Document) *pb.Fai
 		}
 	}
 	for path := range paths {
-		if ctx.Err() != nil {
-			return protocol.ContextFailure(ctx)
-		}
 		parts := strings.Split(path, ".")
 		for i := 1; i < len(parts); i++ {
 			if paths[strings.Join(parts[:i], ".")] {
@@ -86,10 +71,7 @@ func expressionPath(path string) bool {
 	return true
 }
 
-func expressionValues(ctx context.Context, v value.Value) bool {
-	if ctx.Err() != nil {
-		return false
-	}
+func expressionValues(v value.Value) bool {
 	if v.Kind == value.Extended && v.Type == "mongodb.bson.regex.v1" {
 		raw := bson.RawValue{Type: bson.TypeRegex, Value: v.Data}
 		pattern, options := raw.Regex()
@@ -100,14 +82,14 @@ func expressionValues(ctx context.Context, v value.Value) bool {
 	if v.Kind == value.Object {
 		seen := make(map[string]bool, len(v.Fields))
 		for _, f := range v.Fields {
-			if seen[f.Name] || !expressionValues(ctx, f.Value) {
+			if seen[f.Name] || !expressionValues(f.Value) {
 				return false
 			}
 			seen[f.Name] = true
 		}
 	}
 	for _, child := range v.Items {
-		if !expressionValues(ctx, child) {
+		if !expressionValues(child) {
 			return false
 		}
 	}

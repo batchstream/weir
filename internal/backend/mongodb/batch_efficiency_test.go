@@ -12,7 +12,7 @@ import (
 	"go.mongodb.org/mongo-driver/v2/event"
 )
 
-func TestMongoMixedBatchRetainsQualificationAcrossExecutions(t *testing.T) {
+func TestMongoBatchesRetainQualificationAcrossExecutions(t *testing.T) {
 	document := bson.D{{Key: "_id", Value: "read"}}
 	readCursor := bson.D{{Key: "id", Value: int64(0)}, {Key: "ns", Value: "db.records"}, {Key: "firstBatch", Value: bson.A{document}}}
 	item := bson.D{{Key: "ok", Value: 1}, {Key: "idx", Value: 0}, {Key: "n", Value: 1}, {Key: "nModified", Value: 1}}
@@ -44,9 +44,10 @@ func TestMongoMixedBatchRetainsQualificationAcrossExecutions(t *testing.T) {
 		plans = append(plans, work)
 	}
 	for range 2 {
-		results := adapter.executeRecords(context.Background(), plans)
-		if results[0].GetMutationResult().Outcome != pb.MutationOutcome_APPLIED || results[1].GetReadResult().GetDocument() == nil {
-			t.Fatal("mixed batch lost result correspondence or acknowledgement", results)
+		read := adapter.ExecuteRecords(context.Background(), plans[1:])
+		write := adapter.ExecuteRecords(context.Background(), plans[:1])
+		if read[0].GetReadResult().GetDocument() == nil || write[0].GetMutationResult().Outcome != pb.MutationOutcome_APPLIED {
+			t.Fatal("batch lost result correspondence or acknowledgement", read, write)
 		}
 	}
 	want := []string{"listCollections", "find", "bulkWrite", "find", "bulkWrite"}
@@ -81,7 +82,7 @@ func TestMongoPointReadUsesEqualityForOneUniqueID(t *testing.T) {
 				}
 				plans = append(plans, work)
 			}
-			results := adapter.executeRecords(context.Background(), plans)
+			results := adapter.ExecuteRecords(context.Background(), plans)
 			for _, result := range results {
 				if result.GetReadResult().GetDocument() == nil {
 					t.Fatal("read or duplicate-ID correspondence lost", results)
@@ -99,7 +100,7 @@ func TestMongoPointReadUsesEqualityForOneUniqueID(t *testing.T) {
 	}
 }
 
-func TestMongoMixedBatchRejectsUnqualifiedTargetBeforeReadingOrWriting(t *testing.T) {
+func TestMongoBatchesRejectUnqualifiedTargetBeforeReadingOrWriting(t *testing.T) {
 	qualification := collectionQualificationResponse("db", "records")
 	cursor := qualification[1].Value.(bson.D)
 	specification := cursor[2].Value.(bson.A)[0].(bson.D)
@@ -108,7 +109,7 @@ func TestMongoMixedBatchRejectsUnqualifiedTargetBeforeReadingOrWriting(t *testin
 	monitor := &event.CommandMonitor{Started: func(_ context.Context, e *event.CommandStartedEvent) {
 		commands = append(commands, e.CommandName)
 	}}
-	responses := []bson.D{qualification}
+	responses := []bson.D{qualification, qualification}
 	adapter := batchMockAdapter(t, responses, monitor)
 	readOptions := batchOperationOptions{resource: "db/records/s:read", action: "read"}
 	writeOptions := batchOperationOptions{resource: "db/records/s:write", action: "put", document: bson.D{{Key: "_id", Value: "write"}}}
@@ -120,48 +121,42 @@ func TestMongoMixedBatchRejectsUnqualifiedTargetBeforeReadingOrWriting(t *testin
 		}
 		plans = append(plans, work)
 	}
-	results := adapter.executeRecords(context.Background(), plans)
-	mutation := results[1].GetMutationResult()
-	if results[0].GetReadResult().GetFailure().GetCode() != pb.FailureCode_UNSUPPORTED || mutation.Outcome != pb.MutationOutcome_NOT_STARTED || mutation.Failure.GetCode() != pb.FailureCode_UNSUPPORTED {
-		t.Fatal("mixed batch bypassed qualification", results)
+	read := adapter.ExecuteRecords(context.Background(), plans[:1])
+	write := adapter.ExecuteRecords(context.Background(), plans[1:])
+	mutation := write[0].GetMutationResult()
+	if read[0].GetReadResult().GetFailure().GetCode() != pb.FailureCode_UNSUPPORTED || mutation.Outcome != pb.MutationOutcome_NOT_STARTED || mutation.Failure.GetCode() != pb.FailureCode_UNSUPPORTED {
+		t.Fatal("batch bypassed qualification", read, write)
 	}
-	want := []string{"listCollections"}
+	want := []string{"listCollections", "listCollections"}
 	if !reflect.DeepEqual(commands, want) {
-		t.Fatal("unqualified mixed batch executed data commands", commands)
+		t.Fatal("unqualified batch executed data commands", commands)
 	}
 }
 
-func TestMongoMixedBatchRechecksWriteCallerAfterRead(t *testing.T) {
+func TestMongoWriteBatchRechecksCallerAfterQualification(t *testing.T) {
 	caller, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	var commands []string
 	monitor := &event.CommandMonitor{Succeeded: func(_ context.Context, e *event.CommandSucceededEvent) {
 		commands = append(commands, e.CommandName)
-		if e.CommandName == "find" {
+		if e.CommandName == "listCollections" {
 			cancel()
 		}
 	}}
-	document := bson.D{{Key: "_id", Value: "read"}}
-	cursor := bson.D{{Key: "id", Value: int64(0)}, {Key: "ns", Value: "db.records"}, {Key: "firstBatch", Value: bson.A{document}}}
-	responses := []bson.D{collectionQualificationResponse("db", "records"), readCursorResponse(cursor)}
+	responses := []bson.D{collectionQualificationResponse("db", "records")}
 	adapter := batchMockAdapter(t, responses, monitor)
-	readOptions := batchOperationOptions{resource: "db/records/s:read", action: "read"}
 	writeOptions := batchOperationOptions{resource: "db/records/s:write", action: "put", document: bson.D{{Key: "_id", Value: "write"}}}
-	var plans []*execution.Plan
-	for _, opts := range []batchOperationOptions{readOptions, writeOptions} {
-		work, failure := prepareTestRecord(adapter, batchOperation(t, opts))
-		if failure != nil {
-			t.Fatal(failure)
-		}
-		plans = append(plans, work)
+	work, failure := prepareTestRecord(adapter, batchOperation(t, writeOptions))
+	if failure != nil {
+		t.Fatal(failure)
 	}
-	plans[1].Context = caller
-	results := adapter.executeRecords(context.Background(), plans)
-	mutation := results[1].GetMutationResult()
-	if results[0].GetReadResult().GetDocument() == nil || mutation.Outcome != pb.MutationOutcome_NOT_STARTED || mutation.Failure.GetCode() != pb.FailureCode_CANCELLED {
-		t.Fatal("canceled write was dispatched after shared qualification", results)
+	work.Context = caller
+	results := adapter.ExecuteRecords(context.Background(), []*execution.Plan{work})
+	mutation := results[0].GetMutationResult()
+	if mutation.Outcome != pb.MutationOutcome_NOT_STARTED || mutation.Failure.GetCode() != pb.FailureCode_CANCELLED {
+		t.Fatal("canceled write was dispatched after qualification", results)
 	}
-	want := []string{"listCollections", "find"}
+	want := []string{"listCollections"}
 	if !reflect.DeepEqual(commands, want) {
 		t.Fatal("canceled write contacted the backend", commands)
 	}

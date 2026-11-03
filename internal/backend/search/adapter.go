@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 	"unicode"
 	"unicode/utf8"
 
@@ -18,6 +19,7 @@ import (
 	"github.com/batchstream/weir/internal/backend"
 	"github.com/batchstream/weir/internal/execution"
 	"github.com/batchstream/weir/internal/luaengine"
+	"github.com/batchstream/weir/internal/value"
 )
 
 const ElasticsearchProduct = "elasticsearch"
@@ -51,7 +53,6 @@ type plan struct {
 	program          *luaengine.Program
 	input            *pb.Document
 	waitUntilVisible bool
-	validated        bool
 }
 
 type capabilities struct {
@@ -155,7 +156,7 @@ func (a *Adapter) qualify(ctx context.Context) error {
 	return nil
 }
 
-func (a *Adapter) inspect(ctx context.Context, target string, native bool) (capabilities, *pb.Failure) {
+func (a *Adapter) inspect(ctx context.Context, target string) (capabilities, *pb.Failure) {
 	caps := capabilities{}
 	if ctx.Err() != nil {
 		return caps, protocol.ContextFailure(ctx)
@@ -164,7 +165,7 @@ func (a *Adapter) inspect(ctx context.Context, target string, native bool) (capa
 		"flat_settings": {"true"},
 		"filter_path":   {"error,status,*.aliases,*.settings,*.mappings._source,*.mappings._routing,*.data_stream"},
 	}
-	call := exchange{path: "/" + url.PathEscape(target) + "?" + query.Encode(), native: native, operation: "metadata"}
+	call := exchange{path: "/" + url.PathEscape(target) + "?" + query.Encode(), operation: "metadata"}
 	status, raw, err := a.request(ctx, call)
 	if ctx.Err() != nil {
 		return caps, protocol.ContextFailure(ctx)
@@ -239,9 +240,9 @@ func (a *Adapter) inspect(ctx context.Context, target string, native bool) (capa
 	return caps, nil
 }
 
-func (a *Adapter) prepareRecord(ctx context.Context, record *execution.Record) (*execution.Plan, *pb.Failure) {
-	op := record.Command()
-	segments := record.Segments()
+// PrepareRecord validates a record once, without backend I/O.
+func (a *Adapter) PrepareRecord(ctx context.Context, record *execution.Record) (*execution.Plan, *pb.Failure) {
+	segments := record.Segments
 	if len(segments) != 2 || !validIndex(segments[0]) {
 		return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "one Search index or single-index alias and string ID required")
 	}
@@ -249,63 +250,72 @@ func (a *Adapter) prepareRecord(ctx context.Context, record *execution.Record) (
 	if !strings.HasPrefix(key, "s:") || len(key) <= 2 || len(key[2:]) > 512 {
 		return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "exact string ID of 1-512 bytes required")
 	}
-	native := &plan{index: segments[0], id: key[2:]}
-	work := &execution.Plan{
-		Command: op,
-		Key:     record.Key(),
-		Backend: native,
-		Bytes:   record.Bytes(),
+	native := &plan{index: segments[0], id: key[2:], action: "read"}
+	work := record.Plan(ctx, native)
+	work.BatchKey = "records"
+	mutation := record.Command.GetMutate()
+	if mutation == nil {
+		return work, nil
 	}
-	if read := op.GetRead(); read != nil {
-		native.action = "read"
-	} else {
-		mutation := op.GetMutate()
-		native.waitUntilVisible = mutation.GetOptions().GetVisibility() == pb.MutationVisibility_QUERY_VISIBLE
-		var document *pb.Document
-		switch action := mutation.Action.(type) {
-		case *pb.MutateRequest_Put:
-			native.action = "index"
-			document = action.Put
-		case *pb.MutateRequest_Create:
-			native.action = "create"
-			document = action.Create
-		case *pb.MutateRequest_Replace:
-			native.action = "replace"
-			document = action.Replace
-		case *pb.MutateRequest_Delete:
-			native.action = "delete"
-		case *pb.MutateRequest_AtomicTransform:
-			if program := action.AtomicTransform.GetLua(); program != nil {
-				if program.Input != nil && program.Input.ContentType != "application/json" {
-					return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "Search Lua input must use JSON")
-				}
-
-				native.action = "program"
-				native.program = &luaengine.Program{}
-				native.input = program.Input
-			} else {
-				expression := action.AtomicTransform.GetBackendExpression()
-				if expression.ContentType != ExpressionContentType {
-					return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "unsupported Search expression profile")
-				}
-				native.action = "expression"
-				native.source = expression.Data
-			}
-		default:
-			return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "mutation unsupported")
+	if mutation.GetOptions().GetVisibility() == pb.MutationVisibility_QUERY_VISIBLE {
+		native.waitUntilVisible, work.Waits = true, true
+		work.BatchKey += "|visible"
+	}
+	switch action := mutation.Action.(type) {
+	case *pb.MutateRequest_Put:
+		native.action = "index"
+		native.source = action.Put.GetData()
+		return work, validateSource(action.Put)
+	case *pb.MutateRequest_Create:
+		native.action = "create"
+		native.source = action.Create.GetData()
+		return work, validateSource(action.Create)
+	case *pb.MutateRequest_Replace:
+		native.action = "replace"
+		native.source = action.Replace.GetData()
+		return work, validateSource(action.Replace)
+	case *pb.MutateRequest_Delete:
+		native.action = "delete"
+		return work, nil
+	case *pb.MutateRequest_AtomicTransform:
+		if program := action.AtomicTransform.GetLua(); program != nil {
+			native.action = "program"
+			native.program = &luaengine.Program{Source: string(program.Source), ObservedAt: time.Now()}
+			native.input = program.Input
+			return work, validateProgramInput(ctx, program.Input)
 		}
-		if document != nil {
-			if document.ContentType != "application/json" {
-				return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "only JSON source is supported")
-			}
+		expression := action.AtomicTransform.GetBackendExpression()
+		native.action = "expression"
+		native.source = expression.Data
+		return work, validateExpression(expression)
+	}
+	return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "mutation unsupported")
+}
 
-			native.source = document.Data
-		}
+func validateSource(document *pb.Document) *pb.Failure {
+	if document.GetContentType() != "application/json" {
+		return protocol.Fail(pb.FailureCode_UNSUPPORTED, "only JSON source is supported")
 	}
-	if ctx.Err() != nil {
-		return nil, protocol.ContextFailure(ctx)
+	if !object(document.Data) || !validJSON(document.Data) {
+		return protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid JSON source")
 	}
-	return work, nil
+	return nil
+}
+
+func validateProgramInput(ctx context.Context, input *pb.Document) *pb.Failure {
+	if input == nil {
+		return nil
+	}
+	if input.ContentType != "application/json" {
+		return protocol.Fail(pb.FailureCode_UNSUPPORTED, "Search Lua input must use JSON")
+	}
+	if !validJSON(input.Data) {
+		return protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid JSON transform input")
+	}
+	if _, err := value.DecodeJSON(ctx, input.Data); err != nil {
+		return protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid JSON transform input")
+	}
+	return nil
 }
 
 type getReply struct {

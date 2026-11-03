@@ -255,7 +255,7 @@ func TestSearchExpressionRealCapacity(t *testing.T) {
 				<-start
 				ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 				defer cancel()
-				rs := a.executeRecords(ctx, []*execution.Plan{p})
+				rs := a.ExecuteRecords(ctx, []*execution.Plan{p})
 				r := rs[0].GetMutationResult()
 				switch {
 				case r.Outcome == pb.MutationOutcome_APPLIED:
@@ -320,8 +320,7 @@ func TestSearchExpressionRealConflictEvidence(t *testing.T) {
 	}
 	n := &plan{index: b.Index, id: "counter", action: "expression"}
 	work := &execution.Plan{Backend: n}
-	bulkReply := bulkResponse{works: []*execution.Plan{work}, status: code, raw: raw, err: nil}
-	results := a.bulkResults(context.Background(), bulkReply)
+	results, _ := a.bulkResults([]*execution.Plan{work}, code, raw, nil)
 	result := results[0].GetMutationResult()
 	if result.Outcome != pb.MutationOutcome_NOT_APPLIED || result.GetFailure().GetCode() != pb.FailureCode_CONFLICT {
 		t.Fatal(result)

@@ -36,7 +36,7 @@ func TestRouteCallRelativeTargetAndLargeRead(t *testing.T) {
 	request := &pb.ReadRequest{Resource: "records/s:a"}
 	operation := &pb.Command_Read{Read: request}
 	command := &pb.Command{Operation: operation}
-	record, err := execution.NewRecord("search", 9, command)
+	record, err := execution.NewRecord(9, command)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -67,7 +67,7 @@ func TestRouteLuaParticipatesInNativeRecordBatch(t *testing.T) {
 	mutation := &pb.MutateRequest{Resource: "records/s:a", Action: action}
 	operation := &pb.Command_Mutate{Mutate: mutation}
 	command := &pb.Command{Operation: operation}
-	record, err := execution.NewRecord("search", 1, command)
+	record, err := execution.NewRecord(1, command)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -94,14 +94,10 @@ func TestRouteNativeDeliveryFailureEndsIncomplete(t *testing.T) {
 			server := httptest.NewServer(handler)
 			defer server.Close()
 			config := Config{URL: server.URL}
-			adapter := &Adapter{config: config, nativeClient: server.Client()}
+			adapter := &Adapter{ctx: context.Background(), config: config, nativeClient: server.Client()}
 			request := nativeRequest(t, "records", "GET", "/_search")
 			variant := &pb.Command_Native{Native: request}
 			call := &pb.Command{Operation: variant}
-			work, failure := adapter.PrepareNative(t.Context(), call)
-			if failure != nil {
-				t.Fatal(failure)
-			}
 			chunks := 0
 			emit := func(event *pb.Event) error {
 				if event.GetChunk() != nil {
@@ -112,7 +108,7 @@ func TestRouteNativeDeliveryFailureEndsIncomplete(t *testing.T) {
 				}
 				return nil
 			}
-			end := adapter.ExecuteNative(t.Context(), work, emit)
+			end := adapter.ExecuteNative(t.Context(), call, emit)
 			if chunks == 0 {
 				t.Fatal("Native reply sent no chunk")
 			}
@@ -164,10 +160,6 @@ func TestRouteNativeBackendDeadlineAndOutputBackpressure(t *testing.T) {
 			native := open
 			variant := &pb.Command_Native{Native: native}
 			call := &pb.Command{Operation: variant}
-			work, failure := adapter.PrepareNative(context.Background(), call)
-			if failure != nil {
-				t.Fatal(failure)
-			}
 
 			var body strings.Builder
 			emit := func(event *pb.Event) error {
@@ -186,7 +178,7 @@ func TestRouteNativeBackendDeadlineAndOutputBackpressure(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), callerTimeout)
 			defer cancel()
 			started := time.Now()
-			end := adapter.ExecuteNative(ctx, work, emit)
+			end := adapter.ExecuteNative(ctx, call, emit)
 			elapsed := time.Since(started)
 			if phase == "slow_output" {
 				if end.Completion != pb.NativeCompletion_RESPONSE_COMPLETE || end.Failure != nil || body.String() != "complete" || elapsed < 300*time.Millisecond {

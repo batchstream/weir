@@ -43,7 +43,7 @@ func TestBulkEntryTooDeepFailsTheRecordInsteadOfTheProcess(t *testing.T) {
 	command := &pb.Command{Operation: operation}
 	work := &execution.Plan{Command: command, Backend: native}
 	adapter := &Adapter{}
-	batch := &recordBatch{adapter: adapter, results: make([]*pb.Event, 1)}
+	batch := &recordBatch{adapter: adapter, works: []*execution.Plan{work}, results: make([]*pb.Event, 1), attempts: make([]int, 1)}
 	batch.appendWrite(work, 0, nil)
 	result := batch.results[0].GetMutationResult()
 	if result.GetOutcome() != pb.MutationOutcome_NOT_APPLIED || result.GetFailure().GetCode() != pb.FailureCode_INVALID_ARGUMENT || len(batch.pending) != 0 || batch.request.Len() != 0 {

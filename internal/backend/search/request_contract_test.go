@@ -44,8 +44,7 @@ func TestSearchLuaBulkRequiresPositivePrimaryEvidence(t *testing.T) {
 				command := &pb.Command{Operation: variant}
 				work := &execution.Plan{Command: command, Backend: native}
 				raw := []byte(fmt.Sprintf(`{"errors":false,"took":1,"items":[{%q:{"_index":"records","_id":"item","status":%d,"_version":1,"_seq_no":0,"_primary_term":1,"result":%q,"_shards":{"total":%d,"successful":%d,"failed":%d}}}]}`, operation, status, action, total, successful, failed))
-				bulkReply := bulkResponse{works: []*execution.Plan{work}, status: 200, raw: raw, err: nil}
-				results := adapter.bulkResults(context.Background(), bulkReply)
+				results, _ := adapter.bulkResults([]*execution.Plan{work}, 200, raw, nil)
 				result := results[0].GetMutationResult()
 				if evidence == "zero" {
 					if result.Outcome != pb.MutationOutcome_UNKNOWN || result.Failure == nil {
@@ -54,8 +53,7 @@ func TestSearchLuaBulkRequiresPositivePrimaryEvidence(t *testing.T) {
 				} else if result.Outcome != pb.MutationOutcome_APPLIED || (result.Failure != nil) != (evidence == "replica_failure") {
 					t.Fatal("confirmed application evidence lost", result)
 				}
-				lostReply := bulkResponse{works: []*execution.Plan{work}, status: 200, raw: raw, err: errTimeout}
-				lost := adapter.bulkResults(context.Background(), lostReply)
+				lost, _ := adapter.bulkResults([]*execution.Plan{work}, 200, raw, errTimeout)
 				if lost[0].GetMutationResult().Outcome != pb.MutationOutcome_UNKNOWN {
 					t.Fatal("transport failure trusted body", lost[0])
 				}
@@ -98,7 +96,7 @@ func TestSearchConcreteIndexRemainsOneHTTPPathSegment(t *testing.T) {
 				read := &pb.ReadRequest{Resource: resource + "/s:item"}
 				variant := &pb.Command_Read{Read: read}
 				command := &pb.Command{Operation: variant}
-				record, err := execution.NewRecord("search", 1, command)
+				record, err := execution.NewRecord(1, command)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -140,7 +138,7 @@ func TestSearchWarmReadClassifiesNativeTargetAndPermissionFailures(t *testing.T)
 			read := &pb.ReadRequest{Resource: "records/s:item"}
 			variant := &pb.Command_Read{Read: read}
 			command := &pb.Command{Operation: variant}
-			record, err := execution.NewRecord("search", 1, command)
+			record, err := execution.NewRecord(1, command)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -152,7 +150,7 @@ func TestSearchWarmReadClassifiesNativeTargetAndPermissionFailures(t *testing.T)
 			if observations[0].failure.GetCode() != item.code {
 				t.Fatal("warm read classification", observations[0].failure)
 			}
-			_, failure = adapter.inspect(context.Background(), "records", false)
+			_, failure = adapter.inspect(context.Background(), "records")
 			if failure.GetCode() != item.code {
 				t.Fatal("initial classification differed", failure)
 			}

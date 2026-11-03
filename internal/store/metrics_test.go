@@ -36,7 +36,7 @@ func TestMetricsCountFinalOutcomes(t *testing.T) {
 	wait(t, submit(t, runtime, readPlan("r"), nil))
 	wait(t, submit(t, runtime, mutationPlan("m"), nil))
 	emit := func(*pb.Event) error { return nil }
-	native, failure := runtime.SubmitNative(t.Context(), nativePlan(), emit)
+	native, failure := runtime.SubmitNative(t.Context(), nativeCommand(), emit)
 	if failure != nil {
 		t.Fatal(failure)
 	}

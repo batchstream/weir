@@ -18,26 +18,6 @@ import (
 	"github.com/batchstream/weir/internal/execution"
 )
 
-type nativePlan struct {
-	resource string
-	raw      []byte
-}
-
-func (a *Adapter) prepareNative(request *pb.NativeRequest) (*execution.Plan, *pb.Failure) {
-	if f := protocol.ValidateNative(request); f != nil {
-		return nil, f
-	}
-	if request.Request.ContentType != "application/http" {
-		return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "Search Native requires application/http")
-	}
-	if _, failure := scanNativeHTTPRequest(request.Request.Data); failure != nil {
-		return nil, failure
-	}
-	native := &nativePlan{resource: request.Resource, raw: request.Request.Data}
-	p := &execution.Plan{Key: request.Resource, Backend: native}
-	return p, nil
-}
-
 // scanNativeHTTPRequest checks the request framing without allocating and
 // returns the length of the request head.
 func scanNativeHTTPRequest(raw []byte) (int, *pb.Failure) {
@@ -102,27 +82,28 @@ func parseNativeHTTPRequest(raw []byte) (*http.Request, []byte, *pb.Failure) {
 	return request, body, nil
 }
 
-func (a *Adapter) executeNative(ctx context.Context, p *execution.Plan, emit execution.Emit) *pb.NativeEnd {
+func (a *Adapter) ExecuteNative(ctx context.Context, command *pb.Command, emit execution.Emit) *pb.NativeEnd {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	if a.ctx != nil {
-		if a.ctx.Err() != nil {
-			cancel()
-		}
-		stop := context.AfterFunc(a.ctx, cancel)
-		defer stop()
+	stop := context.AfterFunc(a.ctx, cancel)
+	defer stop()
+	if a.ctx.Err() != nil {
+		cancel()
 	}
-	native := p.Backend.(*nativePlan)
 	if ctx.Err() != nil {
 		return protocol.NativeFailure(false, protocol.ContextFailure(ctx))
 	}
-	d, nativeBody, failure := parseNativeHTTPRequest(native.raw)
+	native := command.GetNative()
+	if native.Request.ContentType != "application/http" {
+		return protocol.NativeFailure(false, protocol.Fail(pb.FailureCode_UNSUPPORTED, "Search Native requires application/http"))
+	}
+	d, nativeBody, failure := parseNativeHTTPRequest(native.Request.Data)
 	if failure != nil {
 		return protocol.NativeFailure(false, failure)
 	}
 	path := d.URL.EscapedPath()
-	if native.resource != "" {
-		parts, _ := protocol.ParseRelativeResource(native.resource)
+	if native.Resource != "" {
+		parts, _ := protocol.ParseRelativeResource(native.Resource)
 		for i := range parts {
 			parts[i] = url.PathEscape(parts[i])
 		}

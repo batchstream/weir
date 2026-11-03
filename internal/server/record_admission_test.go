@@ -22,7 +22,7 @@ type rejectingAdapter struct {
 }
 
 func (a *rejectingAdapter) PrepareRecord(ctx context.Context, record *execution.Record) (*execution.Plan, *pb.Failure) {
-	if record.Command().GetMutate().GetResource() == a.rejected {
+	if record.Command.GetMutate().GetResource() == a.rejected {
 		return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "resource rejected by the fixture")
 	}
 	return a.recordAdapter.PrepareRecord(ctx, record)

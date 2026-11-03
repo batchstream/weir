@@ -54,7 +54,7 @@ func TestMongoVisibleMutationsAreImmediatelyQueryableIncludingNoops(t *testing.T
 				t.Fatal(failure)
 			}
 			works := []*execution.Plan{work}
-			mutation := adapter.executeRecords(t.Context(), works)[0].GetMutationResult()
+			mutation := adapter.ExecuteRecords(t.Context(), works)[0].GetMutationResult()
 			if mutation.GetOutcome() != pb.MutationOutcome_APPLIED || mutation.GetFailure() != nil {
 				t.Fatal("mutation was not synchronously visible", mutation)
 			}

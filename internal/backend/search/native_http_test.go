@@ -14,6 +14,7 @@ import (
 	"time"
 
 	backendcfg "github.com/batchstream/weir/internal/backend"
+	"github.com/batchstream/weir/internal/testutil"
 
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 )
@@ -113,12 +114,14 @@ func TestNativeHTTPHostCannotSelectBackend(t *testing.T) {
 }
 
 func TestSearchNativeAdapterOwnsRequestFormat(t *testing.T) {
-	adapter := &Adapter{}
+	adapter := &Adapter{ctx: context.Background()}
+	emit := func(*pb.Event) error { return nil }
 	for _, contentType := range []string{"application/bson", "application/vnd.future.store"} {
 		document := &pb.Document{ContentType: contentType, Data: []byte{5, 0, 0, 0, 0}}
 		request := &pb.NativeRequest{Resource: "records", Request: document}
-		if _, failure := adapter.prepareNative(request); failure.GetCode() != pb.FailureCode_UNSUPPORTED {
-			t.Fatal("shared envelope interpreted adapter payload", contentType, failure)
+		end := adapter.ExecuteNative(t.Context(), testutil.NativeCommand(request), emit)
+		if end.Completion != pb.NativeCompletion_NATIVE_NOT_STARTED || end.GetFailure().GetCode() != pb.FailureCode_UNSUPPORTED {
+			t.Fatal("shared envelope interpreted adapter payload", contentType, end)
 		}
 	}
 }

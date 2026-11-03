@@ -20,25 +20,14 @@ func (b *recordBatch) queueVisibilityBarrier(index string, position int) {
 
 // A noop update and a delete of an absent record may not install a refresh
 // listener. Their successful real-time state still needs a search barrier.
-func (b *recordBatch) queueBulkVisibilityBarriers(works []*execution.Plan, positions []int, replies []*pb.Event, raw []byte) {
-	if !works[0].Backend.(*plan).waitUntilVisible {
-		return
-	}
-	var envelope struct {
-		Items []map[string]struct{ Result string } `json:"items"`
-	}
-	if json.Unmarshal(raw, &envelope) != nil || len(envelope.Items) != len(works) {
-		return
-	}
-	for i, work := range works {
+func (b *recordBatch) queueBulkVisibilityBarriers(works []*execution.Plan, positions []int, replies []*pb.Event, items []bulkItem) {
+	for i := range items {
 		mutation := replies[i].GetMutationResult()
 		if mutation.GetOutcome() != pb.MutationOutcome_APPLIED || mutation.GetFailure() != nil {
 			continue
 		}
-		native := work.Backend.(*plan)
-		result := envelope.Items[i][native.bulkAction()].Result
-		if result == "noop" || result == "not_found" {
-			b.queueVisibilityBarrier(native.index, positions[i])
+		if result := items[i].result; result == "noop" || result == "not_found" {
+			b.queueVisibilityBarrier(works[i].Backend.(*plan).index, positions[i])
 		}
 	}
 }
@@ -48,8 +37,8 @@ func (b *recordBatch) flushVisibilityBarriers() {
 		active := positions[:0]
 		for _, position := range positions {
 			work := b.works[position]
-			if failure := b.callerFailure(work); failure != nil {
-				b.results[position] = execution.FailedEvent(work.Command, pb.MutationOutcome_APPLIED, failure)
+			if failure := work.Ended(b.ctx); failure != nil {
+				b.fail(position, pb.MutationOutcome_APPLIED, failure)
 				continue
 			}
 			active = append(active, position)
@@ -60,7 +49,7 @@ func (b *recordBatch) flushVisibilityBarriers() {
 		failure := b.adapter.refreshBarrier(b.ctx, index)
 		if failure != nil {
 			for _, position := range active {
-				b.results[position] = execution.FailedEvent(b.works[position].Command, pb.MutationOutcome_APPLIED, failure)
+				b.fail(position, pb.MutationOutcome_APPLIED, failure)
 			}
 		}
 	}

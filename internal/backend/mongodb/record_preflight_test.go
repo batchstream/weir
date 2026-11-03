@@ -36,7 +36,7 @@ func TestMongoRecordPreflightBeforeAnyCommand(t *testing.T) {
 			mutation := &pb.MutateRequest{Resource: path, Action: action}
 			operation := &pb.Command_Mutate{Mutate: mutation}
 			command := &pb.Command{Operation: operation}
-			record, err := execution.NewRecord("mongo", 1, command)
+			record, err := execution.NewRecord(1, command)
 			if err != nil {
 				t.Fatal(err)
 			}

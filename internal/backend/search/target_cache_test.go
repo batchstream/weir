@@ -38,15 +38,14 @@ func TestSearchRecordsResolveMetadataOncePerExecution(t *testing.T) {
 	cfg := Config{Store: "search", URL: server.URL}
 	adapter := &Adapter{config: cfg, dialect: ElasticsearchProduct, client: server.Client(), ctx: context.Background()}
 	for range 2 {
-		read := batchTestPlan(t, adapter, "read", "records/s:same")
-		put := batchTestPlan(t, adapter, "put", "records/s:same")
-		works := []*execution.Plan{read, put}
-		results := adapter.executeRecords(context.Background(), works)
-		if len(results) != 2 || results[0].GetReadResult().GetDocument() == nil || results[1].GetMutationResult().GetOutcome() != pb.MutationOutcome_APPLIED {
-			t.Fatal("hot target lost business results", results)
+		for _, work := range []*execution.Plan{batchTestPlan(t, adapter, "read", "records/s:same"), batchTestPlan(t, adapter, "put", "records/s:same")} {
+			result := adapter.ExecuteRecords(context.Background(), []*execution.Plan{work})[0]
+			if result.GetReadResult().GetDocument() == nil && result.GetMutationResult().GetOutcome() != pb.MutationOutcome_APPLIED {
+				t.Fatal("hot target lost business results", result)
+			}
 		}
 	}
-	if metadata.Load() != 2 || reads.Load() != 2 || writes.Load() != 2 {
+	if metadata.Load() != 4 || reads.Load() != 2 || writes.Load() != 2 {
 		t.Fatal("metadata was cached across executions or business I/O lost", metadata.Load(), reads.Load(), writes.Load())
 	}
 }
@@ -73,15 +72,15 @@ func TestSearchFailedInspectionIsRetriedAndCapabilitiesAreIsolated(t *testing.T)
 	defer server.Close()
 	cfg := Config{URL: server.URL}
 	adapter := &Adapter{config: cfg, client: server.Client(), ctx: context.Background()}
-	if _, failure := adapter.inspect(context.Background(), "left", false); failure.GetCode() != pb.FailureCode_UNAVAILABLE {
+	if _, failure := adapter.inspect(context.Background(), "left"); failure.GetCode() != pb.FailureCode_UNAVAILABLE {
 		t.Fatal("failed target inspection was accepted", failure)
 	}
 	for range 2 {
-		caps, failure := adapter.inspect(context.Background(), "left", false)
+		caps, failure := adapter.inspect(context.Background(), "left")
 		if failure != nil || !caps.source || !caps.write {
 			t.Fatal("failed inspection poisoned retry", caps, failure)
 		}
-		caps, failure = adapter.inspect(context.Background(), "right", false)
+		caps, failure = adapter.inspect(context.Background(), "right")
 		if failure != nil || caps.source || caps.write {
 			t.Fatal("capabilities crossed index cache keys", caps, failure)
 		}
@@ -110,7 +109,7 @@ func TestSearchCanceledInspectionDoesNotPoisonRetry(t *testing.T) {
 	defer cancel()
 	done := make(chan *pb.Failure, 1)
 	go func() {
-		_, failure := adapter.inspect(ctx, "records", false)
+		_, failure := adapter.inspect(ctx, "records")
 		done <- failure
 	}()
 	select {
@@ -122,11 +121,11 @@ func TestSearchCanceledInspectionDoesNotPoisonRetry(t *testing.T) {
 	if failure := <-done; failure.GetCode() != pb.FailureCode_CANCELLED {
 		t.Fatal("canceled inspection did not preserve cancellation", failure)
 	}
-	caps, failure := adapter.inspect(context.Background(), "records", false)
+	caps, failure := adapter.inspect(context.Background(), "records")
 	if failure != nil || !caps.source || inspections.Load() != 2 {
 		t.Fatal("canceled inspection poisoned retry", caps, failure, inspections.Load())
 	}
-	if _, failure := adapter.inspect(ctx, "records", false); failure.GetCode() != pb.FailureCode_CANCELLED || inspections.Load() != 2 {
+	if _, failure := adapter.inspect(ctx, "records"); failure.GetCode() != pb.FailureCode_CANCELLED || inspections.Load() != 2 {
 		t.Fatal("hot cache ignored cancellation", failure, inspections.Load())
 	}
 }
@@ -157,11 +156,11 @@ func TestSearchRecordPermissionsRemainPerExecution(t *testing.T) {
 	adapter := &Adapter{config: cfg, dialect: ElasticsearchProduct, client: server.Client(), ctx: context.Background()}
 	read := batchTestPlan(t, adapter, "read", "records/s:same")
 	works := []*execution.Plan{read}
-	results := adapter.executeRecords(context.Background(), works)
+	results := adapter.ExecuteRecords(context.Background(), works)
 	if results[0].GetReadResult().GetMissing() == nil {
 		t.Fatal("first authorized read failed", results)
 	}
-	results = adapter.executeRecords(context.Background(), works)
+	results = adapter.ExecuteRecords(context.Background(), works)
 	if results[0].GetReadResult().GetFailure() == nil || results[0].GetReadResult().GetMissing() != nil || results[0].GetReadResult().GetDocument() != nil {
 		t.Fatal("cached metadata became a cached authorization", results)
 	}

@@ -48,7 +48,7 @@ func replicaLuaLifecycleStart(t *testing.T, opts replicaLuaRuntimeOptions, phase
 	mutate := &pb.MutateRequest{Resource: opts.fixture.DB + "/records/s:" + op.ID, Action: action}
 	operation := &pb.Command_Mutate{Mutate: mutate}
 	command := &pb.Command{Operation: operation}
-	record, err := execution.NewRecord("mongo", 1001+uint64(phase), command)
+	record, err := execution.NewRecord(1001+uint64(phase), command)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -66,7 +66,7 @@ func TestMongoQueuedReadCompletesBeforeUnrelatedSlowWrite(t *testing.T) {
 	}()
 	submit := func(caller context.Context, options batchOperationOptions) *store.Ticket {
 		operation := batchOperation(t, options)
-		record, err := execution.NewRecord("mongo", operation.Index, operation.Command)
+		record, err := execution.NewRecord(operation.Index, operation.Command)
 		if err != nil {
 			t.Fatal(err)
 		}

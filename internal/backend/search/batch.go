@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"encoding/json/jsontext"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -14,8 +15,6 @@ import (
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 	"github.com/batchstream/weir/internal/execution"
 )
-
-const getFramingLimit = 32 << 10
 
 type observedRecord struct {
 	reply   *getReply
@@ -35,12 +34,8 @@ func (a *Adapter) mget(ctx context.Context, works []*execution.Plan) []observedR
 	positions := make([]int, len(works))
 	identities := make(map[readIdentity]int, len(works))
 	for i, work := range works {
-		caller := ctx
-		if work.Context != nil && work.Context.Err() != nil {
-			caller = work.Context
-		}
-		if caller.Err() != nil {
-			observed[i].failure = protocol.ContextFailure(caller)
+		if failure := work.Ended(ctx); failure != nil {
+			observed[i].failure = failure
 			continue
 		}
 		native := work.Backend.(*plan)
@@ -58,9 +53,8 @@ func (a *Adapter) mget(ctx context.Context, works []*execution.Plan) []observedR
 	}
 	replies := a.mgetUnique(ctx, unique)
 	for i, position := range positions {
-		if works[i].Context != nil && works[i].Context.Err() != nil {
-			observed[i].reply = nil
-			observed[i].failure = protocol.ContextFailure(works[i].Context)
+		if works[i].Context.Err() != nil {
+			observed[i] = observedRecord{failure: protocol.ContextFailure(works[i].Context)}
 			continue
 		}
 		if observed[i].failure == nil {
@@ -70,152 +64,102 @@ func (a *Adapter) mget(ctx context.Context, works []*execution.Plan) []observedR
 	return observed
 }
 
-// Each real-time pre-read verifies the entire positional ID and index
-// correspondence before publishing a document. Every response is validated in
-// full before its documents become observations.
+// mgetUnique verifies the entire positional ID and index correspondence of a
+// reply before publishing any of its documents. A reply larger than the exchange
+// window is dropped whole and read again in smaller groups; one source alone may
+// exceed it.
 func (a *Adapter) mgetUnique(ctx context.Context, works []*execution.Plan) []observedRecord {
 	observed := make([]observedRecord, len(works))
-	readOnly := true
-	for _, work := range works {
-		readOnly = readOnly && work.Backend.(*plan).action == "read"
+	failAll := func(failure *pb.Failure) []observedRecord {
+		for i := range observed {
+			observed[i] = observedRecord{failure: failure}
+		}
+		return observed
 	}
-	for start := 0; start < len(works); {
-		end := start
-		bound := getFramingLimit
-		if readOnly {
-			bound = 16
+	if ctx.Err() != nil {
+		return failAll(protocol.ContextFailure(ctx))
+	}
+	ids := make([]string, len(works))
+	index := works[0].Backend.(*plan).index
+	for i, work := range works {
+		native := work.Backend.(*plan)
+		ids[i] = native.id
+		if native.index != index {
+			index = ""
 		}
-		for end < len(works) {
-			native := works[end].Backend.(*plan)
-			item := a.options().BatchBytes + len(native.index) + len(native.id) + getFramingLimit
-			if readOnly {
-				// JSON can escape each byte to six bytes. Pure reads use the real
-				// response byte window instead of assuming every source is 4 MiB.
-				item = 6*(len(native.index)+len(native.id)) + 64
-			}
-			if end > start && item > a.options().ExchangeBytes-bound {
-				break
-			}
-			bound += item
-			end++
+	}
+	body := map[string]any{"ids": ids}
+	path := "/" + url.PathEscape(index) + "/_mget?realtime=true"
+	if index == "" {
+		type recordReference struct {
+			Index string `json:"_index"`
+			ID    string `json:"_id"`
 		}
-		group := make([]*execution.Plan, 0, end-start)
-		indexes := make([]int, 0, end-start)
-		ids := make([]string, 0, end-start)
-		for i := start; i < end; i++ {
-			work := works[i]
-			if ctx.Err() != nil {
-				observed[i].failure = protocol.ContextFailure(ctx)
-				continue
-			}
-			group = append(group, work)
-			indexes = append(indexes, i)
-			ids = append(ids, work.Backend.(*plan).id)
+		docs := make([]recordReference, len(works))
+		for i, work := range works {
+			native := work.Backend.(*plan)
+			docs[i] = recordReference{Index: native.index, ID: native.id}
 		}
-		start = end
-		if len(group) == 0 {
-			continue
+		body = map[string]any{"docs": docs}
+		path = "/_mget?realtime=true"
+	}
+	encoded, _ := json.Marshal(body)
+	call := exchange{path: path, body: encoded, contentType: "application/json", operation: "mget", records: len(works)}
+	if len(works) > 1 {
+		call.responseLimit = a.options().ExchangeBytes
+	}
+	status, raw, err := a.request(ctx, call)
+	if err == errResponseWindow && status == 200 {
+		middle := len(works) / 2
+		return append(a.mgetUnique(ctx, works[:middle]), a.mgetUnique(ctx, works[middle:])...)
+	}
+	failure := protocol.Fail(pb.FailureCode_UNAVAILABLE, "record response unavailable or incomplete")
+	switch {
+	case ctx.Err() != nil:
+		return failAll(protocol.ContextFailure(ctx))
+	case err == nil && (status == 429 || status == 503):
+		return failAll(protocol.Fail(pb.FailureCode_UNAVAILABLE, "backend capacity unavailable"))
+	case err == nil && status != 200:
+		return failAll(a.nativeResponseFailure(ctx, status, raw))
+	case err != nil:
+		return failAll(failure)
+	}
+	var envelope struct {
+		Docs []getReply `json:"docs"`
+	}
+	if json.Unmarshal(raw, &envelope) != nil || len(envelope.Docs) != len(works) {
+		return failAll(failure)
+	}
+	for i := range envelope.Docs {
+		if envelope.Docs[i].Index != works[i].Backend.(*plan).index || envelope.Docs[i].ID != ids[i] {
+			return failAll(failure)
 		}
-		index := group[0].Backend.(*plan).index
-		for _, work := range group[1:] {
-			if work.Backend.(*plan).index != index {
-				index = ""
-				break
-			}
-		}
-		body := map[string]any{"ids": ids}
-		path := "/" + url.PathEscape(index) + "/_mget?realtime=true"
-		if index == "" {
-			type recordReference struct {
-				Index string `json:"_index"`
-				ID    string `json:"_id"`
-			}
-			docs := make([]recordReference, len(group))
-			for i, work := range group {
-				native := work.Backend.(*plan)
-				docs[i] = recordReference{Index: native.index, ID: native.id}
-			}
-			body = map[string]any{"docs": docs}
-			path = "/_mget?realtime=true"
-		}
-		encoded, _ := json.Marshal(body)
-		call := exchange{
-			path: path, body: encoded,
-			contentType: "application/json", operation: "mget", records: len(group)}
-		if readOnly && len(group) > 1 {
-			call.responseLimit = a.options().ExchangeBytes
-		}
-		status, raw, err := a.request(ctx, call)
-		if err == errResponseWindow && status == 200 {
-			// No partial body is retained or published. Reads can safely retry in
-			// smaller groups; a single large source retains its existing contract.
-			middle := len(group) / 2
-			replies := a.mgetUnique(ctx, group[:middle])
-			replies = append(replies, a.mgetUnique(ctx, group[middle:])...)
-			for i, position := range indexes {
-				observed[position] = replies[i]
-			}
-			continue
-		}
-		failure := protocol.Fail(pb.FailureCode_UNAVAILABLE, "record response unavailable or incomplete")
+	}
+	for i := range envelope.Docs {
+		reply := &envelope.Docs[i]
+		observation := observedRecord{reply: reply}
 		switch {
+		case reply.Error != nil:
+			observation = observedRecord{failure: failure}
+			if reply.Found == nil && reply.Seq == nil && reply.Term == nil && len(reply.Source) == 0 {
+				if rejected := a.reject(reply.Error.Type, reply.Status); rejected != nil {
+					observation.failure = rejected
+				} else if reply.Error.Type == "index_not_found_exception" {
+					observation.failure = protocol.Fail(pb.FailureCode_TARGET_NOT_FOUND, "requested index missing")
+				}
+			}
+		case reply.Found == nil || reply.Status != 0:
+			observation = observedRecord{failure: failure}
+		case !*reply.Found:
+			if reply.Seq != nil || reply.Term != nil || len(reply.Source) != 0 {
+				observation = observedRecord{failure: failure}
+			}
+		case reply.Seq == nil || reply.Term == nil || *reply.Seq < 0 || *reply.Term < 1 || !object(reply.Source):
+			observation = observedRecord{failure: failure}
 		case ctx.Err() != nil:
-			failure = protocol.ContextFailure(ctx)
-		case err == nil && (status == 429 || status == 503):
-			failure = protocol.Fail(pb.FailureCode_UNAVAILABLE, "backend capacity unavailable")
-		case err == nil && status != 200:
-			failure = a.nativeResponseFailure(ctx, status, raw)
+			observation = observedRecord{failure: protocol.ContextFailure(ctx)}
 		}
-		for _, i := range indexes {
-			observation := observedRecord{failure: failure}
-			observed[i] = observation
-		}
-		if err != nil || status != 200 {
-			continue
-		}
-		var envelope struct {
-			Docs []getReply `json:"docs"`
-		}
-		if json.Unmarshal(raw, &envelope) != nil || len(envelope.Docs) != len(group) {
-			continue
-		}
-		corresponds := true
-		for i, reply := range envelope.Docs {
-			if reply.Index != group[i].Backend.(*plan).index || reply.ID != ids[i] {
-				corresponds = false
-				break
-			}
-		}
-		if !corresponds {
-			continue
-		}
-		for i := range envelope.Docs {
-			reply := &envelope.Docs[i]
-			observation := observedRecord{reply: reply}
-			switch {
-			case reply.Error != nil:
-				observation.reply = nil
-				observation.failure = failure
-				if reply.Found == nil && reply.Seq == nil && reply.Term == nil && len(reply.Source) == 0 {
-					if rejected := a.reject(reply.Error.Type, reply.Status); rejected != nil {
-						observation.failure = rejected
-					} else if reply.Error.Type == "index_not_found_exception" {
-						observation.failure = protocol.Fail(pb.FailureCode_TARGET_NOT_FOUND, "requested index missing")
-					}
-				}
-			case reply.Found == nil || reply.Status != 0:
-				observation.reply, observation.failure = nil, failure
-			case !*reply.Found:
-				if reply.Seq != nil || reply.Term != nil || len(reply.Source) != 0 {
-					observation.reply, observation.failure = nil, failure
-				}
-			case reply.Seq == nil || reply.Term == nil || *reply.Seq < 0 || *reply.Term < 1 || !object(reply.Source):
-				observation.reply, observation.failure = nil, failure
-			case ctx.Err() != nil:
-				observation.reply, observation.failure = nil, protocol.ContextFailure(ctx)
-			}
-			observed[indexes[i]] = observation
-		}
+		observed[i] = observation
 	}
 	return observed
 }
@@ -238,27 +182,17 @@ type recordBatch struct {
 	barriers map[string][]int
 }
 
-func (b *recordBatch) callerFailure(work *execution.Plan) *pb.Failure {
-	if work.Context != nil && work.Context.Err() != nil {
-		return protocol.ContextFailure(work.Context)
-	}
-	if b.ctx.Err() != nil {
-		return protocol.ContextFailure(b.ctx)
-	}
-	return nil
+// fail records a final result for one work.
+func (b *recordBatch) fail(position int, outcome pb.MutationOutcome, failure *pb.Failure) {
+	b.results[position] = execution.FailedEvent(b.works[position].Command, outcome, failure)
 }
 
 // appendWrite frames one document at a time; a single large entry can exceed
 // the batch window.
 func (b *recordBatch) appendWrite(work *execution.Plan, position int, current *getReply) {
-	native := work.Backend.(*plan)
-	if len(b.pending) != 0 && b.pending[0].work.Backend.(*plan).waitUntilVisible != native.waitUntilVisible {
-		b.flush()
-	}
-	entry, err := appendBulkEntry(b.entry[:0], native, current)
+	entry, err := appendBulkEntry(b.entry[:0], work.Backend.(*plan), current)
 	if err != nil {
-		failure := protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "Search source cannot be framed as one NDJSON line")
-		b.results[position] = execution.FailedEvent(work.Command, pb.MutationOutcome_NOT_APPLIED, failure)
+		b.fail(position, pb.MutationOutcome_NOT_APPLIED, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "Search source cannot be framed as one NDJSON line"))
 		return
 	}
 	b.entry = entry
@@ -331,8 +265,8 @@ func (b *recordBatch) flush() {
 	works := make([]*execution.Plan, 0, len(b.pending))
 	positions := make([]int, 0, len(b.pending))
 	for _, item := range b.pending {
-		if failure := b.callerFailure(item.work); failure != nil {
-			b.results[item.position] = execution.FailedEvent(item.work.Command, pb.MutationOutcome_NOT_APPLIED, failure)
+		if failure := item.work.Ended(b.ctx); failure != nil {
+			b.fail(item.position, pb.MutationOutcome_NOT_APPLIED, failure)
 			continue
 		}
 		length += copy(body[length:], body[item.start:item.end])
@@ -340,18 +274,20 @@ func (b *recordBatch) flush() {
 		positions = append(positions, item.position)
 	}
 	if len(works) != 0 {
+		visible := works[0].Backend.(*plan).waitUntilVisible
 		refresh := "false"
-		if works[0].Backend.(*plan).waitUntilVisible {
+		if visible {
 			refresh = "wait_for"
 		}
 		call := exchange{
 			path: "/_bulk?pipeline=_none&refresh=" + refresh + "&wait_for_active_shards=1",
-			body: body[:length], mutation: true, operation: "bulk", records: len(works),
+			body: body[:length], mutation: true, operation: "bulk", visible: visible, records: len(works),
 		}
 		status, raw, err := b.adapter.request(b.ctx, call)
-		response := bulkResponse{works: works, status: status, raw: raw, err: err}
-		replies := b.adapter.bulkResults(b.ctx, response)
-		b.queueBulkVisibilityBarriers(works, positions, replies, raw)
+		replies, items := b.adapter.bulkResults(works, status, raw, err)
+		if visible {
+			b.queueBulkVisibilityBarriers(works, positions, replies, items)
+		}
 		for i, position := range positions {
 			b.results[position] = replies[i]
 			program := works[i].Backend.(*plan).program
@@ -362,8 +298,7 @@ func (b *recordBatch) flush() {
 			if b.attempts[position] < b.adapter.options().RetryAttempts {
 				b.retry = append(b.retry, position)
 			} else {
-				failure := protocol.Fail(pb.FailureCode_CONFLICT, "Search record changed during every transform attempt")
-				b.results[position] = execution.FailedEvent(works[i].Command, pb.MutationOutcome_NOT_APPLIED, failure)
+				b.fail(position, pb.MutationOutcome_NOT_APPLIED, protocol.Fail(pb.FailureCode_CONFLICT, "Search record changed during every transform attempt"))
 			}
 		}
 	}
@@ -372,209 +307,187 @@ func (b *recordBatch) flush() {
 	b.pending = b.pending[:0]
 }
 
-func (a *Adapter) executeRecords(ctx context.Context, works []*execution.Plan) []*pb.Event {
-	if len(works) == 0 {
-		return nil
-	}
-	works = append([]*execution.Plan(nil), works...)
-	readOnly := true
-	for _, work := range works {
-		readOnly = readOnly && work.Backend.(*plan).action == "read"
-	}
-	batch := recordBatch{
+// ExecuteRecords resolves each target once and then runs the batch's reads or
+// mutations. In-flight reads and conditional writes keep that physical index
+// even if an alias changes concurrently.
+func (a *Adapter) ExecuteRecords(ctx context.Context, works []*execution.Plan) []*pb.Event {
+	batch := &recordBatch{
 		adapter:  a,
 		ctx:      ctx,
 		works:    works,
 		results:  make([]*pb.Event, len(works)),
 		attempts: make([]int, len(works)),
 	}
-	positions := make([]int, 0, len(works))
-	for i, work := range works {
-		if failure := a.validateRecord(ctx, work); failure != nil {
-			batch.results[i] = execution.FailedEvent(work.Command, pb.MutationOutcome_NOT_STARTED, failure)
-			continue
-		}
-		if failure := batch.callerFailure(work); failure != nil {
-			batch.results[i] = execution.FailedEvent(work.Command, pb.MutationOutcome_NOT_STARTED, failure)
+	positions := batch.qualify()
+	if works[0].Command.GetRead() != nil {
+		batch.read(positions)
+	} else {
+		batch.mutate(positions)
+	}
+	return batch.results
+}
+
+// qualify denies works their targets cannot serve and returns the others.
+func (b *recordBatch) qualify() []int {
+	positions := make([]int, 0, len(b.works))
+	for i, work := range b.works {
+		if failure := work.Ended(b.ctx); failure != nil {
+			b.fail(i, pb.MutationOutcome_NOT_STARTED, failure)
 			continue
 		}
 		positions = append(positions, i)
-	}
-	if len(positions) == 0 {
-		return batch.results
 	}
 	type qualification struct {
 		caps    capabilities
 		failure *pb.Failure
 	}
-	// Resolve each target once for this execution. In-flight reads and conditional
-	// writes retain that physical index even if an alias changes concurrently.
 	qualified := make(map[string]qualification)
-	for _, i := range positions {
-		work := works[i]
-		if failure := batch.callerFailure(work); failure != nil {
-			batch.results[i] = execution.FailedEvent(work.Command, pb.MutationOutcome_NOT_APPLIED, failure)
-			continue
+	return slices.DeleteFunc(positions, func(i int) bool {
+		work := b.works[i]
+		if failure := work.Ended(b.ctx); failure != nil {
+			b.fail(i, pb.MutationOutcome_NOT_APPLIED, failure)
+			return true
 		}
 		native := work.Backend.(*plan)
-		target, exists := qualified[native.index]
-		if !exists {
-			caps, failure := a.inspect(ctx, native.index, false)
+		target, known := qualified[native.index]
+		if !known {
+			caps, failure := b.adapter.inspect(b.ctx, native.index)
 			target = qualification{caps: caps, failure: failure}
 			qualified[native.index] = target
 		}
-		if failure := batch.callerFailure(work); failure != nil {
-			batch.results[i] = execution.FailedEvent(work.Command, pb.MutationOutcome_NOT_APPLIED, failure)
-			continue
+		if failure := work.Ended(b.ctx); failure != nil {
+			b.fail(i, pb.MutationOutcome_NOT_APPLIED, failure)
+			return true
 		}
-		caps := target.caps
 		denied := target.failure
 		if denied == nil {
-			switch {
-			case native.action != "read" && !caps.writable:
-				denied = protocol.Fail(pb.FailureCode_UNSUPPORTED, "alias is not a write target")
-			case native.action == "read" && !caps.source:
-				denied = protocol.Fail(pb.FailureCode_UNSUPPORTED, "stored full source required for this operation")
-			case (native.action == "program" || native.action == "expression") && (!caps.source || !caps.nativeWrite):
-				denied = protocol.Fail(pb.FailureCode_UNSUPPORTED, "transform requires full stored source and no default or final pipeline")
-			case native.action != "read" && native.action != "delete" && !caps.write:
-				denied = protocol.Fail(pb.FailureCode_UNSUPPORTED, "stored full source and no final pipeline required for this operation")
-			}
+			denied = target.caps.denies(native.action)
 		}
 		if denied != nil {
-			batch.results[i] = execution.FailedEvent(work.Command, pb.MutationOutcome_NOT_APPLIED, denied)
-			continue
+			b.fail(i, pb.MutationOutcome_NOT_APPLIED, denied)
+			return true
 		}
-		resolved := *native
-		resolved.index = caps.index
-		resolvedWork := *work
-		resolvedWork.Backend = &resolved
-		works[i] = &resolvedWork
+		native.index = target.caps.index
+		return false
+	})
+}
+
+func (c capabilities) denies(action string) *pb.Failure {
+	switch {
+	case action != "read" && !c.writable:
+		return protocol.Fail(pb.FailureCode_UNSUPPORTED, "alias is not a write target")
+	case action == "read" && !c.source:
+		return protocol.Fail(pb.FailureCode_UNSUPPORTED, "stored full source required for this operation")
+	case (action == "program" || action == "expression") && (!c.source || !c.nativeWrite):
+		return protocol.Fail(pb.FailureCode_UNSUPPORTED, "transform requires full stored source and no default or final pipeline")
+	case action != "read" && action != "delete" && !c.write:
+		return protocol.Fail(pb.FailureCode_UNSUPPORTED, "stored full source and no final pipeline required for this operation")
 	}
+	return nil
+}
+
+func (b *recordBatch) read(positions []int) {
+	works := make([]*execution.Plan, len(positions))
+	for i, position := range positions {
+		works[i] = b.works[position]
+	}
+	for i, record := range b.adapter.mget(b.ctx, works) {
+		b.results[positions[i]] = readResult(record.reply, record.failure)
+	}
+}
+
+// mutate frames each work's write, pre-reading the records its action depends
+// on, and sends conflicting transforms around again from a fresh read.
+func (b *recordBatch) mutate(positions []int) {
+	settings := b.adapter.options()
+	// At most this many pre-read sources are retained while Lua runs.
+	retained := max(1, settings.ExchangeBytes/settings.BatchBytes)
 	for len(positions) != 0 {
-		// Bound the retained pre-read sources before Lua runs. Only one chunk's
-		// sources and one framed write body coexist. The batch window estimates
-		// read capacity rather than rejecting individual large sources.
 		for start := 0; start < len(positions); {
-			end, readBytes := start, getFramingLimit
-			identities := make(map[readIdentity]bool)
-			for end < len(positions) {
-				work := works[positions[end]]
-				native := work.Backend.(*plan)
-				if !readOnly && batch.results[positions[end]] == nil && (native.action == "read" || native.action == "replace" || native.action == "program") {
-					identity := readIdentity{index: native.index, id: native.id}
-					if !identities[identity] {
-						bound := a.options().BatchBytes + len(native.index) + len(native.id) + getFramingLimit
-						if end > start && bound > a.options().ExchangeBytes-readBytes {
-							break
-						}
-						readBytes += bound
-						identities[identity] = true
-					}
+			end, reads := start, 0
+			for end < len(positions) && (reads < retained || !b.works[positions[end]].Backend.(*plan).preReads()) {
+				if b.works[positions[end]].Backend.(*plan).preReads() {
+					reads++
 				}
 				end++
 			}
-			chunk := positions[start:end]
-			readWorks := make([]*execution.Plan, 0, len(chunk))
-			readPositions := make([]int, 0, len(chunk))
-			for _, i := range chunk {
-				work := works[i]
-				if batch.results[i] != nil {
-					continue
-				}
-				if denied := batch.callerFailure(work); denied != nil {
-					batch.results[i] = execution.FailedEvent(work.Command, pb.MutationOutcome_NOT_APPLIED, denied)
-					continue
-				}
-				action := work.Backend.(*plan).action
-				if action == "read" || action == "replace" || action == "program" {
-					readWorks = append(readWorks, work)
-					readPositions = append(readPositions, i)
-				}
-			}
-			observed := make(map[int]*getReply, len(readWorks))
-			records := a.mget(ctx, readWorks)
-			for offset, record := range records {
-				i := readPositions[offset]
-				work := works[i]
-				if work.Backend.(*plan).action == "read" {
-					batch.results[i] = readResult(record.reply, record.failure)
-				} else if record.failure != nil {
-					batch.results[i] = execution.FailedEvent(work.Command, pb.MutationOutcome_NOT_APPLIED, record.failure)
-				} else {
-					observed[i] = record.reply
-				}
-			}
-			for _, i := range chunk {
-				work := works[i]
-				if batch.results[i] != nil {
-					continue
-				}
-				if denied := batch.callerFailure(work); denied != nil {
-					batch.results[i] = execution.FailedEvent(work.Command, pb.MutationOutcome_NOT_APPLIED, denied)
-					continue
-				}
-				native := work.Backend.(*plan)
-				current := observed[i]
-				delete(observed, i)
-				if native.action == "replace" && !*current.Found {
-					denied := protocol.Fail(pb.FailureCode_PRECONDITION_FAILED, "record missing")
-					batch.results[i] = execution.FailedEvent(work.Command, pb.MutationOutcome_NOT_APPLIED, denied)
-					continue
-				}
-				if native.action == "program" {
-					batch.attempts[i]++
-					programContext, cancel := context.WithCancel(ctx)
-					deadlineInstalled := false
-					var forwarded chan struct{}
-					var stop func() bool
-					if work.Context != nil {
-						if deadline, bounded := work.Context.Deadline(); bounded {
-							cancel()
-							programContext, cancel = context.WithDeadline(ctx, deadline)
-							deadlineInstalled = true
-						}
-						forwarded = make(chan struct{})
-						stop = context.AfterFunc(work.Context, func() {
-							defer close(forwarded)
-							// Preserve the installed deadline's error instead of
-							// racing its timer with an unconditional cancellation.
-							if !deadlineInstalled || work.Context.Err() != context.DeadlineExceeded {
-								cancel()
-							}
-						})
-					}
-					next, mutation := a.evaluateProgram(programContext, work, current)
-					if stop != nil && !stop() {
-						<-forwarded
-					}
-					cancel()
-					if denied := batch.callerFailure(work); denied != nil {
-						mutation = protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, denied)
-					}
-					if mutation != nil {
-						batch.results[i] = execution.FailedEvent(work.Command, mutation.Outcome, mutation.Failure)
-						if native.waitUntilVisible && mutation.Outcome == pb.MutationOutcome_APPLIED && mutation.Failure == nil {
-							batch.queueVisibilityBarrier(native.index, i)
-						}
-						continue
-					}
-					copy := *work
-					copy.Backend = next
-					work = &copy
-				}
-				batch.appendWrite(work, i, current)
-			}
+			b.mutateChunk(positions[start:end])
 			start = end
 		}
-
-		batch.flush()
-		batch.flushVisibilityBarriers()
-		positions = batch.retry
-		batch.retry = nil
+		b.flush()
+		b.flushVisibilityBarriers()
+		positions = b.retry
+		b.retry = nil
 		for _, i := range positions {
-			batch.results[i] = nil
+			b.results[i] = nil
 		}
 	}
-	return batch.results
+}
+
+// preReads reports whether a mutation depends on the record's current state.
+func (native *plan) preReads() bool {
+	return native.action == "replace" || native.action == "program"
+}
+
+func (b *recordBatch) mutateChunk(chunk []int) {
+	var readWorks []*execution.Plan
+	var readPositions []int
+	for _, i := range chunk {
+		work := b.works[i]
+		if denied := work.Ended(b.ctx); denied != nil {
+			b.fail(i, pb.MutationOutcome_NOT_APPLIED, denied)
+			continue
+		}
+		if work.Backend.(*plan).preReads() {
+			readWorks = append(readWorks, work)
+			readPositions = append(readPositions, i)
+		}
+	}
+	current := make(map[int]*getReply, len(readWorks))
+	for offset, record := range b.adapter.mget(b.ctx, readWorks) {
+		if record.failure != nil {
+			b.fail(readPositions[offset], pb.MutationOutcome_NOT_APPLIED, record.failure)
+		} else {
+			current[readPositions[offset]] = record.reply
+		}
+	}
+	for _, i := range chunk {
+		if b.results[i] != nil {
+			continue
+		}
+		if denied := b.works[i].Ended(b.ctx); denied != nil {
+			b.fail(i, pb.MutationOutcome_NOT_APPLIED, denied)
+			continue
+		}
+		b.mutateOne(i, current[i])
+		delete(current, i)
+	}
+}
+
+// mutateOne frames one write from the record's current state, if it has one.
+func (b *recordBatch) mutateOne(i int, current *getReply) {
+	work := b.works[i]
+	native := work.Backend.(*plan)
+	if native.action == "replace" && !*current.Found {
+		b.fail(i, pb.MutationOutcome_NOT_APPLIED, protocol.Fail(pb.FailureCode_PRECONDITION_FAILED, "record missing"))
+		return
+	}
+	if native.program != nil {
+		b.attempts[i]++
+		next, mutation := b.adapter.evaluateProgram(work, current)
+		if denied := work.Ended(b.ctx); denied != nil {
+			mutation = protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, denied)
+		}
+		if mutation != nil {
+			b.fail(i, mutation.Outcome, mutation.Failure)
+			if native.waitUntilVisible && mutation.Outcome == pb.MutationOutcome_APPLIED && mutation.Failure == nil {
+				b.queueVisibilityBarrier(native.index, i)
+			}
+			return
+		}
+		transformed := *work
+		transformed.Backend = next
+		work = &transformed
+	}
+	b.appendWrite(work, i, current)
 }

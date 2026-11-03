@@ -77,7 +77,7 @@ func TestLargeBatchSplitsConfiguredExchangesWithoutRejectingInputs(t *testing.T)
 		}
 		plans = append(plans, work)
 	}
-	results := adapter.executeRecords(t.Context(), plans)
+	results := adapter.ExecuteRecords(t.Context(), plans)
 	if calls < 2 || received != 40 {
 		t.Fatal("batch did not split or lost inputs", calls, received)
 	}

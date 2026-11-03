@@ -6,7 +6,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	backendcfg "github.com/batchstream/weir/internal/backend"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -14,6 +13,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	backendcfg "github.com/batchstream/weir/internal/backend"
 
 	weirclient "github.com/batchstream/weir-go"
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
@@ -95,15 +96,10 @@ func nativeMetadata(t *testing.T, head *pb.NativeHead) *weirclient.HTTPNativeRes
 func runNative(t *testing.T, a *Adapter, request *pb.NativeRequest, body []byte) (*pb.NativeEnd, *nativeCapture) {
 	t.Helper()
 	setNativeBody(t, request, body)
-	p, f := a.prepareNative(request)
-	if f != nil {
-		t.Fatal(f)
-	}
 	capture := &nativeCapture{}
-	p.Command = testutil.NativeCommand(request)
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	end := a.executeNative(ctx, p, capture.Emit)
+	end := a.ExecuteNative(ctx, testutil.NativeCommand(request), capture.Emit)
 	return end, capture
 }
 
@@ -125,17 +121,12 @@ func TestNativeHTTPRequestPreservesNativeOperations(t *testing.T) {
 }
 
 func TestNativeEarlyCancellationIsNotStarted(t *testing.T) {
-	adapter := &Adapter{}
+	adapter := &Adapter{ctx: context.Background()}
 	request := nativeRequest(t, "records", "GET", "/_search")
-	work, failure := adapter.prepareNative(request)
-	if failure != nil {
-		t.Fatal(failure)
-	}
-	work.Command = testutil.NativeCommand(request)
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 	capture := &nativeCapture{}
-	end := adapter.executeNative(ctx, work, capture.Emit)
+	end := adapter.ExecuteNative(ctx, testutil.NativeCommand(request), capture.Emit)
 	if end.Completion != pb.NativeCompletion_NATIVE_NOT_STARTED || end.Failure == nil {
 		t.Fatal("early canceled Native started", end)
 	}
@@ -151,15 +142,10 @@ func TestNativeAnnouncedTrailersEndBeforeOutput(t *testing.T) {
 	backend := httptest.NewServer(handler)
 	defer backend.Close()
 	config := Config{URL: backend.URL}
-	adapter := &Adapter{config: config, nativeClient: backend.Client()}
+	adapter := &Adapter{ctx: context.Background(), config: config, nativeClient: backend.Client()}
 	request := nativeRequest(t, "records", "GET", "/_search")
-	work, failure := adapter.prepareNative(request)
-	if failure != nil {
-		t.Fatal(failure)
-	}
-	work.Command = testutil.NativeCommand(request)
 	capture := &nativeCapture{}
-	end := adapter.executeNative(t.Context(), work, capture.Emit)
+	end := adapter.ExecuteNative(t.Context(), testutil.NativeCommand(request), capture.Emit)
 	if end.Completion != pb.NativeCompletion_RESPONSE_INCOMPLETE || end.GetFailure().GetCode() != pb.FailureCode_UNSUPPORTED || capture.head != nil {
 		t.Fatal("unsupported Native trailers did not terminate before output", end, capture.head)
 	}
@@ -377,10 +363,6 @@ func TestNativeHTTPExplicitCongestion(t *testing.T) {
 			}
 			open := nativeRequest(t, "records", method, path)
 			setNativeBody(t, open, []byte(input))
-			plan, failure := a.prepareNative(open)
-			if failure != nil {
-				t.Fatal(failure)
-			}
 			capture := &nativeCapture{}
 			if test.failHead {
 				capture.headErr = errors.New("output unavailable")
@@ -393,8 +375,7 @@ func TestNativeHTTPExplicitCongestion(t *testing.T) {
 			if test.cancelAfterHead {
 				capture.cancelAfterHead = cancel
 			}
-			plan.Command = testutil.NativeCommand(open)
-			end := a.executeNative(ctx, plan, capture.Emit)
+			end := a.ExecuteNative(ctx, testutil.NativeCommand(open), capture.Emit)
 			if end.Completion != test.completion || calls.Load() != 1 {
 				t.Fatal(end, calls.Load())
 			}
@@ -431,13 +412,8 @@ func TestNativeHTTPDoesNotQualifyTarget(t *testing.T) {
 			a := &Adapter{dialect: ElasticsearchProduct, config: cfg, client: client, nativeClient: client, ctx: ctx}
 			open := nativeRequest(t, "records", "POST", "/_bulk")
 			setNativeBody(t, open, []byte("{\"index\":{\"_id\":\"x\"}}\n{}\n"))
-			plan, failure := a.prepareNative(open)
-			if failure != nil {
-				t.Fatal(failure)
-			}
 			capture := &nativeCapture{}
-			plan.Command = testutil.NativeCommand(open)
-			end := a.executeNative(ctx, plan, capture.Emit)
+			end := a.ExecuteNative(ctx, testutil.NativeCommand(open), capture.Emit)
 			if end.Completion != pb.NativeCompletion_RESPONSE_COMPLETE || calls.Load() != 1 || capture.head == nil || nativeMetadata(t, capture.head).StatusCode != status || capture.body.String() != `{"error":{"type":"capacity"}}` {
 				t.Fatal(end, calls.Load(), capture)
 			}

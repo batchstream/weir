@@ -14,7 +14,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/batchstream/weir-protocol/api/protocol"
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 	"github.com/batchstream/weir/internal/execution"
 )
@@ -129,8 +128,8 @@ func TestSearchMixedRequestTargets(t *testing.T) {
 		resource := target.index + "/s:" + target.id
 		works[i] = batchTestPlan(t, a, target.action, resource)
 	}
-	results := a.executeRecords(context.Background(), works)
-	if len(results) != len(works) || inspections.Load() != 2 || reads.Load() != 1 || writes.Load() != 1 {
+	results := append(a.ExecuteRecords(context.Background(), works[:2]), a.ExecuteRecords(context.Background(), works[2:])...)
+	if len(results) != len(works) || inspections.Load() != 4 || reads.Load() != 2 || writes.Load() != 1 {
 		t.Fatal("mixed index request framing", len(results), inspections.Load(), reads.Load(), writes.Load())
 	}
 	for i, result := range results {
@@ -149,7 +148,7 @@ func TestSearchMixedRequestTargets(t *testing.T) {
 		left := batchTestPlan(t, a, "read", "left/s:same")
 		right := batchTestPlan(t, a, "read", "right/s:same")
 		concurrent.Go(func() {
-			results := a.executeRecords(context.Background(), []*execution.Plan{left, right})
+			results := a.ExecuteRecords(context.Background(), []*execution.Plan{left, right})
 			if string(results[0].GetReadResult().GetDocument().GetData()) != `{"n":10}` || string(results[1].GetReadResult().GetDocument().GetData()) != `{"n":20}` {
 				t.Error("concurrent request changed adapter target", results)
 			}
@@ -160,7 +159,7 @@ func TestSearchMixedRequestTargets(t *testing.T) {
 
 func TestSearchInvalidRequestTargetsArePure(t *testing.T) {
 	cfg := Config{Store: "search"}
-	a := &Adapter{config: cfg}
+	a := &Adapter{config: cfg, ctx: context.Background()}
 	for _, resource := range []string{
 		"weir://other/records", "weir://search", "Records",
 		"_hidden", "a,b", "a*",
@@ -174,13 +173,6 @@ func TestSearchInvalidRequestTargetsArePure(t *testing.T) {
 		if _, failure := prepareTestRecord(a, op); failure == nil {
 			t.Error("record target accepted", resource)
 		}
-		native := nativeRequest(t, "records", "GET", "/_doc/same")
-		native.Resource = resource
-		_, resourceErr := protocol.ParseRelativeResource(resource)
-		_, failure := a.prepareNative(native)
-		if (resourceErr == nil) != (failure == nil) {
-			t.Error("Native resource must obey only canonical framing", resource, failure)
-		}
 	}
 }
 
@@ -191,15 +183,6 @@ func TestSearchPlansRetainRequestTargets(t *testing.T) {
 	record.Command.GetRead().Resource = "right/s:same"
 	if record.Backend.(*plan).index != "left" {
 		t.Fatal("record target follows mutable request")
-	}
-	open := nativeRequest(t, "left", "GET", "/_doc/same")
-	native, failure := a.prepareNative(open)
-	if failure != nil {
-		t.Fatal(failure)
-	}
-	open.Resource = "right"
-	if native.Backend.(*nativePlan).resource != "left" {
-		t.Fatal("Native target follows mutable request")
 	}
 }
 
@@ -233,7 +216,7 @@ func TestSearchCrossIndexRepliesAreNotTrusted(t *testing.T) {
 			left := batchTestPlan(t, a, action, "left/s:same")
 			right := batchTestPlan(t, a, action, "right/s:same")
 			works := []*execution.Plan{left, right}
-			results := a.executeRecords(context.Background(), works)
+			results := a.ExecuteRecords(context.Background(), works)
 			for _, result := range results {
 				if action == "read" {
 					if result.GetReadResult().GetFailure().GetCode() != pb.FailureCode_UNAVAILABLE {
@@ -317,7 +300,7 @@ func TestSearchQualificationRechecksCancelledCallers(t *testing.T) {
 			}
 			ctx, stop := context.WithTimeout(context.Background(), 250*time.Millisecond)
 			defer stop()
-			results := a.executeRecords(ctx, works)
+			results := a.ExecuteRecords(ctx, works)
 			if len(results) != len(works) || writes.Load() != 1 {
 				t.Fatal("cancelled target blocked valid caller", results, writes.Load())
 			}

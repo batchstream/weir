@@ -19,7 +19,7 @@ import (
 	"go.mongodb.org/mongo-driver/v2/event"
 )
 
-func TestMongoMixedRecordBatchUsesPointReadAndVerboseBulkWrite(t *testing.T) {
+func TestMongoEveryRecordActionAggregatesInItsBatch(t *testing.T) {
 	fixture := testmongo.Open(t)
 	collection := fixture.Admin.Database(fixture.DB).Collection("records")
 	for _, id := range []string{"read", "replace", "expression", "duplicate", "delete", "program"} {
@@ -73,7 +73,25 @@ func TestMongoMixedRecordBatchUsesPointReadAndVerboseBulkWrite(t *testing.T) {
 		}
 		plans = append(plans, work)
 	}
-	replies := a.executeRecords(context.Background(), plans)
+	// The Runtime groups reads, writes and programs into separate batches.
+	groups := make(map[string][]int)
+	var order []string
+	for i, work := range plans {
+		if _, known := groups[work.BatchKey]; !known {
+			order = append(order, work.BatchKey)
+		}
+		groups[work.BatchKey] = append(groups[work.BatchKey], i)
+	}
+	replies := make([]*pb.Event, len(plans))
+	for _, key := range order {
+		batch := make([]*execution.Plan, len(groups[key]))
+		for i, position := range groups[key] {
+			batch[i] = plans[position]
+		}
+		for i, reply := range a.ExecuteRecords(context.Background(), batch) {
+			replies[groups[key][i]] = reply
+		}
+	}
 	for i, reply := range replies {
 		operation := operations[i]
 		if operation.action == "read" {
@@ -127,9 +145,11 @@ func TestMongoCallerCancellationBeforeWritePhaseDoesNotAffectPeers(t *testing.T)
 		}
 		plans = append(plans, p)
 	}
-	replies := a.executeRecords(context.Background(), plans)
-	if replies[0].GetReadResult().GetMissing() == nil || replies[1].GetMutationResult().GetOutcome() != pb.MutationOutcome_NOT_STARTED || replies[2].GetMutationResult().GetOutcome() != pb.MutationOutcome_APPLIED || replies[3].GetMutationResult().GetOutcome() != pb.MutationOutcome_NOT_STARTED {
-		t.Fatal(replies)
+	read := a.ExecuteRecords(context.Background(), plans[:1])
+	peers := a.ExecuteRecords(context.Background(), plans[1:3])
+	program := a.ExecuteRecords(context.Background(), plans[3:])
+	if read[0].GetReadResult().GetMissing() == nil || peers[0].GetMutationResult().GetOutcome() != pb.MutationOutcome_NOT_STARTED || peers[1].GetMutationResult().GetOutcome() != pb.MutationOutcome_APPLIED || program[0].GetMutationResult().GetOutcome() != pb.MutationOutcome_NOT_STARTED {
+		t.Fatal(read, peers, program)
 	}
 	if finds.Load() != 1 || writes.Load() != 1 {
 		t.Fatal("canceled caller affected peers or Lua was executed", finds.Load(), writes.Load())
@@ -167,7 +187,7 @@ func TestMongoMixedWriteLostReplyDoesNotReplayExpression(t *testing.T) {
 		}
 		plans = append(plans, work)
 	}
-	replies := a.executeRecords(context.Background(), plans)
+	replies := a.ExecuteRecords(context.Background(), plans)
 	for _, reply := range replies {
 		if reply.GetMutationResult().GetOutcome() != pb.MutationOutcome_UNKNOWN {
 			t.Fatal("lost mixed-write acknowledgement became definite", replies)
@@ -231,7 +251,7 @@ func TestMongoIndependentRPCDuplicateReadsKeepCallerIsolationAndSharedResults(t 
 			if mode == "first canceled" {
 				cancel()
 			}
-			replies := adapter.executeRecords(t.Context(), plans)
+			replies := adapter.ExecuteRecords(t.Context(), plans)
 			raw := expressionBSON(t, document)
 			if finds.Load() != 1 || len(replies) != 2 || !bytes.Equal(replies[1].GetReadResult().GetDocument().GetData(), raw) {
 				t.Fatal("independent RPC reads lost identity or quota isolation", finds.Load(), replies)
@@ -286,7 +306,7 @@ func TestMongoLargeBatchSplitsAtNativeBoundary(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)
 	defer cancel()
-	results := adapter.executeRecords(ctx, plans)
+	results := adapter.ExecuteRecords(ctx, plans)
 	for _, result := range results {
 		if result.GetMutationResult().GetOutcome() != pb.MutationOutcome_APPLIED {
 			t.Fatal("legal large batch failed", result)

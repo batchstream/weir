@@ -25,17 +25,10 @@ func TestMongoResourceTargetsPrepareWithoutIO(t *testing.T) {
 			if failure != nil {
 				t.Fatal(failure)
 			}
-			nativeBody := &pb.Document{ContentType: "application/bson", Data: []byte{5, 0, 0, 0, 0}}
-			open := &pb.NativeRequest{Resource: database, Request: nativeBody}
-			native, failure := adapter.prepareNative(open)
-			if failure != nil {
-				t.Fatal(failure)
-			}
 			want := namespace{database: database, collection: collection}
 			operation.Command.GetRead().Resource = "changed/changed/s:changed"
-			open.Resource = "changed"
-			if work.Backend.(*plan).target != want || native.Backend.(string) != database {
-				t.Fatal("prepared target changed with request", work, native)
+			if work.Backend.(*plan).target != want {
+				t.Fatal("prepared target changed with request", work)
 			}
 		}
 	}
@@ -52,12 +45,6 @@ func TestMongoInvalidResourceTargetsDoNotAccessClient(t *testing.T) {
 			if _, failure := prepareTestRecord(adapter, batchOperation(t, opts)); failure == nil {
 				t.Fatal("invalid record target accepted")
 			}
-			nativeBody := &pb.Document{ContentType: "application/bson", Data: []byte{5, 0, 0, 0, 0}}
-			open := &pb.NativeRequest{Resource: resource, Request: nativeBody}
-			_, failure := adapter.prepareNative(open)
-			if (failure != nil) != strings.ContainsRune(resource, '/') {
-				t.Fatal("Native applied collection constraints instead of resource framing", resource, failure)
-			}
 		})
 	}
 }
@@ -71,27 +58,29 @@ func TestMongoPointReadsIsolateTargetsAndDuplicateIDs(t *testing.T) {
 		responses = append(responses, readCursorResponse(cursor))
 	}
 	adapter := batchMockAdapter(t, responses, nil)
-	var plans []*execution.Plan
-	for i, target := range []string{"first/records", "second/other", "first/records"} {
-		opts := batchOperationOptions{resource: target + "/s:shared", action: "read", index: uint64(i + 8)}
-		work, failure := prepareTestRecord(adapter, batchOperation(t, opts))
-		if failure != nil {
-			t.Fatal(failure)
+	batches := [][]string{{"first/records", "first/records"}, {"second/other"}}
+	keys := make(map[string]bool)
+	for i, batch := range batches {
+		var plans []*execution.Plan
+		for j, target := range batch {
+			opts := batchOperationOptions{resource: target + "/s:shared", action: "read", index: uint64(j + 8)}
+			work, failure := prepareTestRecord(adapter, batchOperation(t, opts))
+			if failure != nil {
+				t.Fatal(failure)
+			}
+			plans = append(plans, work)
 		}
-		plans = append(plans, work)
+		keys[plans[0].BatchKey] = true
+		for _, reply := range adapter.ExecuteRecords(context.Background(), plans) {
+			document := reply.GetReadResult().GetDocument()
+			if document == nil || bson.Raw(document.Data).Lookup("n").Int32() != int32(i+1) {
+				t.Fatal("namespace/id correspondence lost", i, reply)
+			}
+		}
 	}
-	replies := adapter.executeRecords(context.Background(), plans)
-	for i, reply := range replies {
-		want := int32(1)
-		if i == 1 {
-			want = 2
-		}
-		document := reply.GetReadResult().GetDocument()
-		if document == nil || bson.Raw(document.Data).Lookup("n").Int32() != want {
-			t.Fatal("namespace/id correspondence lost", i, reply)
-		}
+	if len(keys) != len(batches) {
+		t.Fatal("reads of different collections share a batch key", keys)
 	}
-
 }
 
 func TestMongoNativeCommandOwnsCollectionTarget(t *testing.T) {
@@ -110,16 +99,11 @@ func TestMongoNativeCommandOwnsCollectionTarget(t *testing.T) {
 	adapter := batchMockAdapter(t, responses, monitor)
 	nativeBody := &pb.Document{ContentType: "application/bson", Data: []byte{5, 0, 0, 0, 0}}
 	open := &pb.NativeRequest{Resource: "db", Request: nativeBody}
-	work, failure := adapter.prepareNative(open)
-	if failure != nil {
-		t.Fatal(failure)
-	}
 	command := bson.D{{Key: "count", Value: "other"}}
 	raw := expressionBSON(t, command)
 	capture := &nativeCapture{}
 	open.Request.Data = raw
-	work.Command = testutil.NativeCommand(open)
-	end := adapter.executeNative(context.Background(), work, capture.Emit)
+	end := adapter.ExecuteNative(context.Background(), testutil.NativeCommand(open), capture.Emit)
 	if end.Completion != pb.NativeCompletion_RESPONSE_COMPLETE || end.Failure != nil || calls != 1 || bson.Raw(capture.body.Bytes()).Lookup("n").Int32() != 7 {
 		t.Fatal(end, calls)
 	}
@@ -152,7 +136,7 @@ func TestMongoQualificationFailureDoesNotAttemptWrites(t *testing.T) {
 			if failure != nil {
 				t.Fatal(failure)
 			}
-			results := adapter.executeRecords(context.Background(), []*execution.Plan{work})
+			results := adapter.ExecuteRecords(context.Background(), []*execution.Plan{work})
 			if results[0].GetMutationResult().Outcome != pb.MutationOutcome_NOT_STARTED || results[0].GetMutationResult().Failure == nil || len(commands) != 1 || commands[0] != "listCollections" {
 				t.Fatal("target rejection performed a write", results, commands)
 			}
@@ -181,7 +165,7 @@ func TestMongoCallerCanceledDuringQualificationIsNotDispatched(t *testing.T) {
 				t.Fatal(failure)
 			}
 			work.Context = caller
-			results := adapter.executeRecords(context.Background(), []*execution.Plan{work})
+			results := adapter.ExecuteRecords(context.Background(), []*execution.Plan{work})
 			code := results[0].GetReadResult().GetFailure().GetCode()
 			if action == "put" {
 				code = results[0].GetMutationResult().GetFailure().GetCode()
@@ -209,23 +193,18 @@ func TestMongoCanceledTargetsDoNotContactBackend(t *testing.T) {
 		if failure != nil {
 			t.Fatal(failure)
 		}
-		results := adapter.executeRecords(ctx, []*execution.Plan{work})
+		results := adapter.ExecuteRecords(ctx, []*execution.Plan{work})
 		if results[0] == nil {
 			t.Fatal(results)
 		}
 	}
 	nativeBody := &pb.Document{ContentType: "application/bson", Data: []byte{5, 0, 0, 0, 0}}
 	open := &pb.NativeRequest{Resource: "db", Request: nativeBody}
-	native, failure := adapter.prepareNative(open)
-	if failure != nil {
-		t.Fatal(failure)
-	}
 	command := bson.D{{Key: "count", Value: "records"}}
 	raw := expressionBSON(t, command)
 	capture := &nativeCapture{}
 	open.Request.Data = raw
-	native.Command = testutil.NativeCommand(open)
-	end := adapter.executeNative(ctx, native, capture.Emit)
+	end := adapter.ExecuteNative(ctx, testutil.NativeCommand(open), capture.Emit)
 	if end.Completion != pb.NativeCompletion_NATIVE_NOT_STARTED || end.Failure.GetCode() != pb.FailureCode_CANCELLED {
 		t.Fatal(end)
 	}

@@ -71,7 +71,7 @@ func replicaLuaTopologyBegin(t *testing.T, opts replicaLuaRuntimeOptions, transi
 		mutate := &pb.MutateRequest{Resource: opts.fixture.DB + "/records/s:" + id, Action: atomicTransform}
 		operation := &pb.Command_Mutate{Mutate: mutate}
 		command := &pb.Command{Operation: operation}
-		record, err := execution.NewRecord("mongo", uint64(901+i), command)
+		record, err := execution.NewRecord(uint64(901+i), command)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -122,7 +122,7 @@ func replicaLuaTopologyRecovery(t *testing.T, ctx context.Context, opts replicaL
 	t.Helper()
 	id := "runtime-lua-topology-" + transition + "-new-work"
 	prepared := putPlan(t, opts.delegate.Adapter, opts.fixture.DB, id)
-	record, err := execution.NewRecord("mongo", 999, prepared.Command)
+	record, err := execution.NewRecord(999, prepared.Command)
 	if err != nil {
 		t.Fatal(err)
 	}

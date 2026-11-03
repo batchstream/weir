@@ -1,7 +1,6 @@
 package search
 
 import (
-	"context"
 	"fmt"
 	"strings"
 	"testing"
@@ -95,6 +94,6 @@ func FuzzSearchExpression(f *testing.F) {
 			return
 		}
 		d := &pb.Document{ContentType: ExpressionContentType, Data: raw}
-		_ = prepareExpression(context.Background(), d)
+		_ = validateExpression(d)
 	})
 }

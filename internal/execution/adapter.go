@@ -4,12 +4,11 @@ package execution
 import (
 	"context"
 
+	"github.com/batchstream/weir-protocol/api/protocol"
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 )
 
-// Plan is one prepared operation. The Store runtime sets Context before
-// execution; adapters use it to observe this caller's cancellation and deadline
-// inside a shared batch.
+// Plan is one prepared record.
 type Plan struct {
 	Command *pb.Command
 	// Key orders mutations of the same resource from one stream.
@@ -23,9 +22,28 @@ type Plan struct {
 	// Waits marks a record whose execution also waits for something other
 	// than the backend's work on it, such as a scheduled refresh. Its time
 	// does not show how loaded the backend is.
-	Waits   bool
+	Waits bool
+	// Context carries this caller's cancellation and deadline inside a shared
+	// batch. The Store runtime replaces the one PrepareRecord set.
 	Context context.Context
 	Backend any
+}
+
+// Ended reports why a record must stop: its caller left or its batch ended.
+func (p *Plan) Ended(batch context.Context) *pb.Failure {
+	if p.Context.Err() != nil {
+		return protocol.ContextFailure(p.Context)
+	}
+	if batch.Err() != nil {
+		return protocol.ContextFailure(batch)
+	}
+	return nil
+}
+
+// Plan returns the record's plan with an adapter's own state.
+func (r *Record) Plan(ctx context.Context, backend any) *Plan {
+	plan := &Plan{Command: r.Command, Key: r.Key, Bytes: r.Bytes, Index: r.Index, Context: ctx, Backend: backend}
+	return plan
 }
 
 // Emit sends one NativeHead or NativeChunk event to the caller and returns
@@ -33,14 +51,15 @@ type Plan struct {
 type Emit func(*pb.Event) error
 
 type Adapter interface {
+	// PrepareRecord validates a record without backend I/O.
 	PrepareRecord(context.Context, *Record) (*Plan, *pb.Failure)
-	PrepareNative(context.Context, *pb.Command) (*Plan, *pb.Failure)
-	// ExecuteRecords runs reads or mutations that share one BatchKey and
-	// returns exactly one result event per plan, in order.
+	// ExecuteRecords runs one batch and returns exactly one result event per
+	// plan, in order. Every plan of a batch shares its BatchKey and is either a
+	// read or a mutation, and mutations of a batch name distinct resources.
 	ExecuteRecords(context.Context, []*Plan) []*pb.Event
 	// ExecuteNative streams the response head and chunks through Emit and
 	// returns the terminal NativeEnd. It performs no backend I/O afterwards.
-	ExecuteNative(context.Context, *Plan, Emit) *pb.NativeEnd
+	ExecuteNative(context.Context, *pb.Command, Emit) *pb.NativeEnd
 	// Close retires owned I/O within the context and reports genuine failures.
 	Close(context.Context) error
 }

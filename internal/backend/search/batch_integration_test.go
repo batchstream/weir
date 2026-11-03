@@ -94,8 +94,9 @@ func TestSearchEveryRecordActionSharesNativeBatch(t *testing.T) {
 		}
 		works = append(works, work)
 	}
-	results := a.executeRecords(context.Background(), works)
-	if inspections.Load() != 1 || reads.Load() != 1 || writes.Load() != 1 || len(results) != len(works) {
+	// Reads and mutations are separate batches; each qualifies once.
+	results := append(a.ExecuteRecords(context.Background(), works[:2]), a.ExecuteRecords(context.Background(), works[2:])...)
+	if inspections.Load() != 2 || reads.Load() != 2 || writes.Load() != 1 || len(results) != len(works) {
 		t.Fatal("aggregate backend call counts", inspections.Load(), reads.Load(), writes.Load(), len(results))
 	}
 	if results[0].GetReadResult().GetDocument() == nil || results[1].GetReadResult().GetMissing() == nil {
@@ -128,7 +129,7 @@ func TestSearchEveryRecordActionSharesNativeBatch(t *testing.T) {
 			t.Fatal(id, status, string(raw))
 		}
 	}
-	t.Log(fmt.Sprintf("%s ten mixed operations -> one qualification, one realtime _mget, one mixed _bulk; persisted Lua/Replace/update/noop and isolated missing update verified", backend.Product))
+	t.Log(fmt.Sprintf("%s a read batch -> one _mget; eight mutations -> one pre-read _mget, one mixed _bulk; persisted Lua/Replace/update/noop and isolated missing update verified", backend.Product))
 }
 
 func TestSearchMixedLuaConflictRereadsOnlyConditionalItem(t *testing.T) {
@@ -186,7 +187,7 @@ func TestSearchMixedLuaConflictRereadsOnlyConditionalItem(t *testing.T) {
 	}
 	put := searchPlan(t, a, "put", searchResource(backend.Index, "put"))
 	works := []*execution.Plan{programWork, put}
-	results := a.executeRecords(context.Background(), works)
+	results := a.ExecuteRecords(context.Background(), works)
 	if len(results) != 2 || reads.Load() != 2 || writes.Load() != 2 {
 		t.Fatal("conditional subset retry counts", len(results), reads.Load(), writes.Load())
 	}
