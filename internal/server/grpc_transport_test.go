@@ -77,3 +77,37 @@ func TestConnectionAgeEndsConnectionsWithoutCuttingStreams(t *testing.T) {
 		t.Fatal("call after GOAWAY did not reconnect", err)
 	}
 }
+
+func TestRefusedStreamTellsTheClientNothingStarted(t *testing.T) {
+	_, local := localStore(t, "records")
+	admission := NewAdmission()
+	opts := testServerOptions{stores: map[string]*store.Runtime{"records": local}, admission: admission}
+	_, address := startTestServer(t, opts)
+	_, client := testClient(t, address)
+	// Draining lasts, so it comes last.
+	refusals := []struct {
+		name   string
+		refuse func()
+	}{
+		{name: "process overloaded", refuse: func() { admission.SetOverloaded(true) }},
+		{name: "draining", refuse: admission.BeginDrain},
+	}
+	for _, refusal := range refusals {
+		name := refusal.name
+		refusal.refuse()
+		_, err := routeRead(client, t.Context(), testRequest())
+		refused := status.Convert(err)
+		if refused.Code() != codes.Unavailable || refused.Message() != name {
+			t.Fatal(name, err)
+		}
+		details := refused.Details()
+		if len(details) != 1 {
+			t.Fatal(name, details)
+		}
+		failure, ok := details[0].(*pb.Failure)
+		if !ok || failure.GetCode() != pb.FailureCode_UNAVAILABLE || failure.GetMessage() != name {
+			t.Fatal(name, details[0])
+		}
+		admission.SetOverloaded(false)
+	}
+}

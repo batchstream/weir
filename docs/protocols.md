@@ -62,7 +62,11 @@ interpret their pagination, result counts or cursor lifetimes.
 Mutate is not an atomic transaction. Same-resource mutations execute in stream
 input order; an invalid later request does not undo earlier writes. Confirmed item
 results remain evidence after a transport error; missing acknowledgements remain
-unknown and are never replayed automatically. MongoDB Lua record groups can share
+unknown and are never replayed automatically. A draining or overloaded server turns
+away a new stream before reading any of it, with status `UNAVAILABLE` and a
+`Failure` of code `UNAVAILABLE` as a status detail: the detail tells a client that
+nothing on that stream took effect, which `UNAVAILABLE` alone does not, as a lost
+connection reports it too. MongoDB Lua record groups can share
 an internal short transaction with group rollback on database write error; Search
 uses per-item version conditions. Neither path adds document metadata.
 
