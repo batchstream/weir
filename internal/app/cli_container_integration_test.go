@@ -34,7 +34,7 @@ type cliContainerOptions struct {
 // containerMongoURI reaches scripts/mongo-local.sh from a CLI container
 // through the host gateway. On Linux, mongod must also bind the Docker bridge
 // gateway (WEIR_MONGO_BIND).
-const containerMongoURI = "mongodb://host.docker.internal:27028/?directConnection=true&serverMonitoringMode=poll"
+const containerMongoURI = "mongodb://host.docker.internal:27028/?directConnection=true"
 
 var fullContainerID = regexp.MustCompile(`^[0-9a-f]{64}$`)
 

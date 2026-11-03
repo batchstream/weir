@@ -1,10 +1,10 @@
 package app
 
 import (
-	"io"
 	"net/url"
 	"os"
 	"testing"
+	"time"
 
 	"go.yaml.in/yaml/v3"
 )
@@ -42,6 +42,11 @@ func searchFixtureStore(name, uri string) StoreConfig {
 	return definition
 }
 
+// MarshalYAML writes a Duration the way Load reads it, for test documents.
+func (value Duration) MarshalYAML() (any, error) {
+	return time.Duration(value).String(), nil
+}
+
 // writeConfigFile writes a test-owned configuration document, including
 // container mounts.
 func writeConfigFile(t *testing.T, filename string, cfg Config, mode os.FileMode) {
@@ -55,10 +60,9 @@ func writeConfigFile(t *testing.T, filename string, cfg Config, mode os.FileMode
 	}
 }
 
-// Decode reads one configuration document and validates it without IO, so a
-// document naming credential files fails validation.
-func Decode(input io.Reader) (Config, error) {
-	cfg, err := decode(input)
+// Decode reads one configuration document and validates it without IO.
+func Decode(input string) (Config, error) {
+	cfg, err := decode([]byte(input))
 	if err != nil {
 		return cfg, err
 	}

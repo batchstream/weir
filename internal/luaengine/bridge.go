@@ -153,10 +153,7 @@ type encodeFrame struct {
 }
 
 func (b *bridge) checkpoint() error {
-	if b.state != nil {
-		return b.state.CheckInterrupt()
-	}
-	return b.ctx.Err()
+	return b.state.CheckInterrupt()
 }
 
 // Convert the validated tree with an explicit stack so document depth does not
@@ -256,10 +253,8 @@ func (b *bridge) encodeChild(v value.Value) (vm.Value, value.Value, error) {
 		// Decimal comparison builds normalized spellings before deciding
 		// whether to preserve this field's exact original number.
 		if number, ok := nativeJSONNumber(string(v.Data)); ok {
-			if b.state != nil {
-				if err := b.state.CheckInterrupt(); err != nil {
-					return vm.Nil, hint, err
-				}
+			if err := b.state.CheckInterrupt(); err != nil {
+				return vm.Nil, hint, err
 			}
 			hint = v
 			hint.Data = append([]byte(nil), v.Data...)

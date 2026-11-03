@@ -18,9 +18,6 @@ func (n *Node) registerMetrics() error {
 	if err := n.registry.Register(n); err != nil {
 		return err
 	}
-	if err := n.registry.Register(n.admission); err != nil {
-		return err
-	}
 
 	for name, runtime := range n.stores {
 		labels := prometheus.Labels{"store": name}
@@ -38,7 +35,7 @@ func (n *Node) Describe(ch chan<- *prometheus.Desc) {
 
 func (n *Node) Collect(ch chan<- prometheus.Metric) {
 	ready := 0.0
-	if n.ready() {
+	if n.serving.Load() {
 		ready = 1
 	}
 	desc := prometheus.NewDesc(

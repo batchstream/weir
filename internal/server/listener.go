@@ -8,10 +8,7 @@ import (
 	"google.golang.org/grpc"
 )
 
-func (s *Server) Serving() <-chan struct{} { return s.serving }
-
 func (s *Server) Serve(listener net.Listener) error {
-	close(s.serving)
 	err := s.grpc.Serve(listener)
 	if errors.Is(err, grpc.ErrServerStopped) {
 		return nil
@@ -21,8 +18,8 @@ func (s *Server) Serve(listener net.Listener) error {
 
 // Shutdown stops admitting RPCs and waits for running handlers until ctx ends,
 // then cancels them.
-func (s *Server) Shutdown(ctx context.Context) error {
-	s.admission.BeginDrain()
+func (s *Server) Shutdown(ctx context.Context) {
+	s.BeginDrain()
 	stopped := make(chan struct{})
 	go func() {
 		s.grpc.GracefulStop()
@@ -34,5 +31,4 @@ func (s *Server) Shutdown(ctx context.Context) error {
 		s.grpc.Stop()
 		<-stopped
 	}
-	return nil
 }

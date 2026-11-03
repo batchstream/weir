@@ -72,7 +72,7 @@ func deadlineRuntime(t *testing.T, backend *deadlineBackend) (*Adapter, *store.R
 	handler := http.HandlerFunc(backend.serve)
 	server := httptest.NewServer(handler)
 	t.Cleanup(server.Close)
-	config := Config{Store: "search", URL: server.URL}
+	config := Config{URL: server.URL}
 	adapter, err := Open(t.Context(), config)
 	if err != nil {
 		t.Fatal(err)

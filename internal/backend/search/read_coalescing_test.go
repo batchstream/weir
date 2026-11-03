@@ -255,7 +255,7 @@ func BenchmarkMgetCoalescing(b *testing.B) {
 			})
 			server := httptest.NewServer(handler)
 			defer server.Close()
-			config := Config{Store: "search", URL: server.URL}
+			config := Config{URL: server.URL}
 			adapter := &Adapter{config: config, client: server.Client(), ctx: context.Background()}
 			works := make([]*execution.Plan, scenario.count)
 			groups := make([][]*execution.Plan, scenario.indexes)

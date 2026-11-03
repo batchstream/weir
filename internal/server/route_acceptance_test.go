@@ -44,9 +44,7 @@ func startRouteAcceptanceNode(t testing.TB, opts routeAcceptanceNodeOptions) *ro
 	if err != nil {
 		t.Fatal(err)
 	}
-	admission := NewAdmission()
-	config := Config{Stores: map[string]*store.Runtime{"records": local}, Limits: opts.limits, Admission: admission}
-	srv := New(config)
+	srv := New(map[string]*store.Runtime{"records": local}, opts.limits)
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -57,9 +55,7 @@ func startRouteAcceptanceNode(t testing.TB, opts routeAcceptanceNodeOptions) *ro
 	t.Cleanup(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer cancel()
-		if err := srv.Shutdown(ctx); err != nil {
-			t.Error(err)
-		}
+		srv.Shutdown(ctx)
 		_ = listener.Close()
 		if err := <-done; err != nil {
 			t.Error(err)
@@ -91,9 +87,9 @@ func assertRouteAcceptanceIdle(t testing.TB, nodes []*routeAcceptanceNode) {
 	t.Helper()
 	deadline := time.Now().Add(time.Second)
 	for _, node := range nodes {
-		for node.server.admission.activeRPCs.Load() != 0 {
+		for node.server.activeRPCs.Load() != 0 {
 			if time.Now().After(deadline) {
-				t.Fatal("RPC handlers did not return", node.server.admission.activeRPCs.Load())
+				t.Fatal("RPC handlers did not return", node.server.activeRPCs.Load())
 			}
 			time.Sleep(time.Millisecond)
 		}
@@ -157,12 +153,12 @@ func TestContinuousReadsAcrossConcurrentSessions(t *testing.T) {
 	}
 	// Hold the first results until all concurrent RPCs have returned a result. Each worker
 	// then verifies full record windows and repeated release and reacquisition.
-	for node.server.admission.activeRPCs.Load() != int64(sessions) {
+	for node.server.activeRPCs.Load() != int64(sessions) {
 		select {
 		case <-ctx.Done():
 			close(gate)
 			workers.Wait()
-			t.Fatal("concurrent reads did not occupy every session", ctx.Err(), node.server.admission.activeRPCs.Load())
+			t.Fatal("concurrent reads did not occupy every session", ctx.Err(), node.server.activeRPCs.Load())
 		default:
 			time.Sleep(time.Millisecond)
 		}
@@ -311,12 +307,12 @@ func TestConcurrentClientRPCsKeepResponseOwnershipAndBatchBounds(t *testing.T) {
 			}
 		})
 	}
-	for node.server.admission.activeRPCs.Load() != count+1 {
+	for node.server.activeRPCs.Load() != count+1 {
 		select {
 		case <-ctx.Done():
 			close(gate)
 			workers.Wait()
-			t.Fatal("single-record RPCs did not reach queue", node.server.admission.activeRPCs.Load())
+			t.Fatal("single-record RPCs did not reach queue", node.server.activeRPCs.Load())
 		case <-time.After(time.Millisecond):
 		}
 	}

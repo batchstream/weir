@@ -25,7 +25,7 @@ func statusLabel(err error) string {
 }
 
 type transportMetrics struct {
-	rpcs, watchdogs *prometheus.CounterVec
+	rpcs, watchdogs, rejections *prometheus.CounterVec
 }
 
 func newTransportMetrics() transportMetrics {
@@ -37,15 +37,23 @@ func newTransportMetrics() transportMetrics {
 		Name: "weir_watchdog_expirations_total",
 		Help: "RPCs canceled because input or output made no progress within the stall timeout.",
 	}
+	rejectionOpts := prometheus.CounterOpts{
+		Name: "weir_admission_rejections_total",
+		Help: "RPCs refused before reading request data.",
+	}
 	m := transportMetrics{
-		rpcs:      prometheus.NewCounterVec(rpcOpts, []string{"status"}),
-		watchdogs: prometheus.NewCounterVec(watchOpts, []string{"phase"}),
+		rpcs:       prometheus.NewCounterVec(rpcOpts, []string{"status"}),
+		watchdogs:  prometheus.NewCounterVec(watchOpts, []string{"phase"}),
+		rejections: prometheus.NewCounterVec(rejectionOpts, []string{"reason"}),
 	}
 	for _, label := range metricStatuses {
 		m.rpcs.WithLabelValues(label)
 	}
 	for _, phase := range []string{"input", "output"} {
 		m.watchdogs.WithLabelValues(phase)
+	}
+	for _, reason := range []string{"draining", "overload", "method", "execute"} {
+		m.rejections.WithLabelValues(reason)
 	}
 	return m
 }
@@ -55,4 +63,7 @@ func (s *Server) Describe(ch chan<- *prometheus.Desc) { prometheus.DescribeByCol
 func (s *Server) Collect(ch chan<- prometheus.Metric) {
 	s.metrics.rpcs.Collect(ch)
 	s.metrics.watchdogs.Collect(ch)
+	s.metrics.rejections.Collect(ch)
+	sessions := prometheus.NewDesc("weir_ingress_sessions", "Active business RPCs.", nil, nil)
+	ch <- prometheus.MustNewConstMetric(sessions, prometheus.GaugeValue, float64(s.activeRPCs.Load()))
 }

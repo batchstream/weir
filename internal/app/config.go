@@ -2,9 +2,7 @@ package app
 
 import (
 	"errors"
-	"net"
-	"strconv"
-	"strings"
+	"net/netip"
 	"time"
 
 	"github.com/batchstream/weir-protocol/api/protocol"
@@ -77,26 +75,9 @@ func (cfg Config) shutdownTimeout() time.Duration {
 	return time.Duration(cfg.ShutdownTimeout)
 }
 
-// Validate checks the configuration without performing IO. Credential files
-// must already be resolved, as Load does.
+// Validate checks the configuration without performing IO. Load has already
+// replaced credential files with their contents.
 func (cfg Config) Validate() error {
-	if err := cfg.validateShape(); err != nil {
-		return err
-	}
-	for _, definition := range cfg.Stores {
-		if c := definition.Authentication; c != nil && (c.UsernameFile != "" || c.PasswordFile != "") {
-			return errors.New("unresolved credential file")
-		}
-		if err := definition.validateBackend(); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// validateShape checks everything except credential file contents, so Load
-// rejects an invalid configuration before it reads any credential file.
-func (cfg Config) validateShape() error {
 	if err := cfg.Listeners.validate(); err != nil {
 		return err
 	}
@@ -115,22 +96,7 @@ func (cfg Config) validateShape() error {
 		if err := definition.runtimeLimits().Validate(); err != nil {
 			return err
 		}
-		standIn := definition
-		if c := definition.Authentication; c != nil {
-			if err := c.validateSources(); err != nil {
-				return err
-			}
-			// File sources stand in for their values until Load reads them.
-			sources := *c
-			if sources.UsernameFile != "" {
-				sources.Username, sources.UsernameFile = "file", ""
-			}
-			if sources.PasswordFile != "" {
-				sources.Password, sources.PasswordFile = "file", ""
-			}
-			standIn.Authentication = &sources
-		}
-		if err := standIn.validateBackend(); err != nil {
+		if err := definition.validateBackend(); err != nil {
 			return err
 		}
 	}
@@ -138,33 +104,16 @@ func (cfg Config) validateShape() error {
 }
 
 func (l Listeners) validate() error {
-	if !address(l.Application) {
+	if _, err := netip.ParseAddrPort(l.Application); err != nil {
 		return errors.New("listeners.application requires an explicit IP and port")
 	}
 	if l.Diagnostics == "" {
 		return nil
 	}
-	if !address(l.Diagnostics) {
+	if _, err := netip.ParseAddrPort(l.Diagnostics); err != nil {
 		return errors.New("listeners.diagnostics requires an explicit IP and port")
 	}
-	host, port, _ := net.SplitHostPort(l.Application)
-	diagnosticHost, diagnosticPort, _ := net.SplitHostPort(l.Diagnostics)
-	number, _ := strconv.Atoi(port)
-	diagnosticNumber, _ := strconv.Atoi(diagnosticPort)
-	ip, diagnosticIP := net.ParseIP(host), net.ParseIP(diagnosticHost)
-	// Each port 0 bind requests its own ephemeral port.
-	if number != 0 && number == diagnosticNumber && (ip.Equal(diagnosticIP) || ip.IsUnspecified() || diagnosticIP.IsUnspecified()) {
-		return errors.New("listeners.application and listeners.diagnostics overlap")
-	}
 	return nil
-}
-
-func address(value string) bool {
-	host, port, err := net.SplitHostPort(value)
-	number, portErr := strconv.Atoi(port)
-	return err == nil && net.ParseIP(host) != nil &&
-		port != "" && strings.Trim(port, "0123456789") == "" &&
-		portErr == nil && number >= 0 && number <= 65535
 }
 
 func (definition StoreConfig) validateBackend() error {
@@ -181,7 +130,7 @@ func (definition StoreConfig) runtimeLimits() store.Limits {
 		limits.BatchOperations = int(b.MaxOperations)
 	}
 	if b.MaxBytes != 0 {
-		limits.BatchBytes = boundedSize(b.MaxBytes)
+		limits.BatchBytes = int(b.MaxBytes)
 	}
 	if b.MaxWait != nil {
 		limits.BatchWait = time.Duration(*b.MaxWait)
@@ -201,27 +150,15 @@ func (definition StoreConfig) backendOptions() backend.Options {
 	return opts
 }
 
-// boundedSize maps sizes beyond the platform integer to an invalid bound.
-func boundedSize(size ByteSize) int {
-	if uint64(size) > uint64(^uint(0)>>1) {
-		return -1
-	}
-	return int(size)
-}
-
 func (definition StoreConfig) searchConfig() search.Config {
-	var connection *search.Connection
-	if definition.Authentication != nil || definition.TLS != nil {
-		connection = &search.Connection{}
-		if c := definition.Authentication; c != nil {
-			connection.Username, connection.Password = c.Username, c.Password
-		}
-		if tls := definition.TLS; tls != nil {
-			connection.CAFile = tls.CAFile
-		}
-	}
 	settings := definition.backendOptions()
-	cfg := search.Config{Options: &settings, Store: definition.Name, URL: definition.Search.URL, Connection: connection}
+	cfg := search.Config{Options: &settings, URL: definition.Search.URL}
+	if c := definition.Authentication; c != nil {
+		cfg.Username, cfg.Password = c.Username, c.Password
+	}
+	if tls := definition.TLS; tls != nil {
+		cfg.CAFile = tls.CAFile
+	}
 	return cfg
 }
 

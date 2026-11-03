@@ -21,7 +21,7 @@ type Limits struct {
 	CleanupTimeout, BatchWait   time.Duration
 	QueueOperations, QueueBytes int
 	BatchOperations, BatchBytes int
-	// MaxInFlight bounds running record batches; zero allows unlimited.
+	// MaxInFlight bounds running record batches.
 	// Batches that are not full run below an adaptive limit, one for
 	// mutations and one for reads, between MinInFlight, or a quarter of a
 	// batch when it is zero, and MaxInFlight; equal bounds fix it.
@@ -39,8 +39,8 @@ func DefaultLimits() Limits {
 
 func (limits Limits) Validate() error {
 	if limits.QueueOperations < 1 || limits.QueueBytes < 1 ||
-		limits.BatchOperations < 1 || limits.BatchBytes < 1 || limits.MaxInFlight < 0 || limits.MaxNative < 1 || limits.CleanupTimeout <= 0 || limits.BatchWait < 0 ||
-		limits.MinInFlight < 0 || limits.MaxInFlight > 0 && limits.MinInFlight > limits.MaxInFlight {
+		limits.BatchOperations < 1 || limits.BatchBytes < 1 || limits.MaxInFlight < 1 || limits.MaxNative < 1 || limits.CleanupTimeout <= 0 || limits.BatchWait < 0 ||
+		limits.MinInFlight < 0 || limits.MinInFlight > limits.MaxInFlight {
 		return fmt.Errorf("invalid batch, execution or queue bounds")
 	}
 	return nil
@@ -143,7 +143,7 @@ func New(adapter execution.Adapter, limits Limits) (*Runtime, error) {
 		adapter:     adapter,
 		limits:      limits,
 		metrics:     newRuntimeMetrics(),
-		adaptive:    limits.MaxInFlight > 0 && limits.MinInFlight < limits.MaxInFlight,
+		adaptive:    limits.MinInFlight < limits.MaxInFlight,
 		limit:       [2]executionLimit{newExecutionLimit(limits.MinInFlight, limits.MaxInFlight, now), newExecutionLimit(limits.MinInFlight, limits.MaxInFlight, now)},
 		batches:     make(map[*batch]struct{}),
 		keys:        make(map[resourceKey]*Ticket),
@@ -426,7 +426,7 @@ func (s *selection) group(key groupKey) *group {
 // returns the oldest ready group while a record slot is free.
 func (r *Runtime) selectLocked(now time.Time) ([]*Ticket, time.Time) {
 	var wakeAt time.Time
-	if r.limits.MaxInFlight > 0 && r.records >= r.limits.MaxInFlight {
+	if r.records >= r.limits.MaxInFlight {
 		return nil, wakeAt
 	}
 	s := &r.selection

@@ -21,8 +21,7 @@ import (
 )
 
 func secureConfig(b *testsearch.Backend) Config {
-	connection := &Connection{Username: b.Username, Password: b.Password, CAFile: b.CAFile}
-	cfg := Config{Store: "search", URL: b.URL, Connection: connection}
+	cfg := Config{URL: b.URL, Username: b.Username, Password: b.Password, CAFile: b.CAFile}
 	return cfg
 }
 func secureAdapter(t *testing.T, b *testsearch.Backend) *Adapter {
@@ -216,12 +215,9 @@ func secureReplyFault(t *testing.T, fixture *testsearch.SecureFixture, operation
 		w.WriteHeader(response.StatusCode)
 		_, _ = w.Write(raw)
 	})
-	proxy, connection := tlsEndpoint(t, handler, false)
-	connection.Username = b.Username
-	connection.Password = b.Password
-	cfg := secureConfig(b)
-	cfg.URL = proxy.URL
-	cfg.Connection = connection
+	proxy, cfg := tlsEndpoint(t, handler, false)
+	cfg.Username = b.Username
+	cfg.Password = b.Password
 	a, err := Open(context.Background(), cfg)
 	if err != nil {
 		t.Fatal(err)

@@ -47,7 +47,7 @@ func (s *Server) Execute(stream executeStream) error {
 	}
 	runtime, ok := s.stores[request.StoreName]
 	if !ok {
-		s.admission.rejections.WithLabelValues("execute").Inc()
+		s.metrics.rejections.WithLabelValues("execute").Inc()
 		return status.Error(codes.NotFound, "Store is not hosted here")
 	}
 	if commandKind(request.Command) == "native" {
@@ -186,8 +186,6 @@ type admission struct {
 func (r *recordStream) receive(ctx context.Context, first *pb.ExecuteRequests) receiveEnd {
 	storeName, kind := first.Requests[0].StoreName, commandKind(first.Requests[0].Command)
 	requests := first.Requests
-	// Execute validated the stream's first request.
-	validated := true
 	var index uint64
 	for {
 		end := receiveEnd{admitted: index}
@@ -208,13 +206,10 @@ func (r *recordStream) receive(ctx context.Context, first *pb.ExecuteRequests) r
 		}
 		request := requests[0]
 		requests = requests[1:]
-		if !validated {
-			if err := protocol.ValidateExecuteRequest(request); err != nil {
-				end.err = status.Error(codes.InvalidArgument, err.Error())
-				return end
-			}
+		if err := protocol.ValidateExecuteRequest(request); err != nil {
+			end.err = status.Error(codes.InvalidArgument, err.Error())
+			return end
 		}
-		validated = false
 		if request.CancelIndex != 0 {
 			if request.StoreName != storeName || request.CancelIndex > index {
 				end.err = status.Error(codes.InvalidArgument, "cancel requests must name an earlier record of the stream")

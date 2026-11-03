@@ -2,102 +2,39 @@ package search
 
 import (
 	"crypto/tls"
-	"crypto/x509"
 	"errors"
-	"net"
-	"net/netip"
 	"net/url"
-	"strconv"
 	"strings"
-	"unicode/utf8"
 
-	"github.com/batchstream/weir-protocol/api/protocol"
 	"github.com/batchstream/weir/internal/backend"
 )
-
-// Connection is static backend client configuration, never caller identity.
-// HTTPS without this block uses the system trust roots and no credentials.
-type Connection struct {
-	Username string
-	Password string
-	CAFile   string
-}
 
 // ValidateConfig is pure: app validates the complete graph with these same
 // rules before Open can read a CA file, resolve a hostname or contact a backend.
 func ValidateConfig(cfg Config) error {
-	if !protocol.ValidStoreName(cfg.Store) {
-		return errors.New("invalid Search configuration")
-	}
-
 	endpoint, err := canonicalURL(cfg.URL)
 	if err != nil {
 		return err
 	}
-	if c := cfg.Connection; c != nil {
-		if !strings.HasPrefix(endpoint, "https://") || c.Username == "" && c.Password == "" && c.CAFile == "" {
-			return errors.New("Search connection options require HTTPS and explicit content")
-		}
-		if (c.Username == "") != (c.Password == "") ||
-			strings.Contains(c.Username, ":") ||
-			!safeText(c.Username) || !safeText(c.Password) {
-			return errors.New("invalid Search credential pair")
-		}
-		if !safeText(c.CAFile) {
-			return errors.New("invalid Search CA file configuration")
-		}
+	if (cfg.Username != "" || cfg.CAFile != "") && !strings.HasPrefix(endpoint, "https://") {
+		return errors.New("Search credentials and CA file require HTTPS")
+	}
+	if (cfg.Username == "") != (cfg.Password == "") || strings.Contains(cfg.Username, ":") ||
+		!backend.ValidText(cfg.Username) || !backend.ValidText(cfg.Password) {
+		return errors.New("invalid Search credential pair")
 	}
 	return nil
 }
 
-func safeText(value string) bool {
-	if !utf8.ValidString(value) {
-		return false
-	}
-	for _, char := range value {
-		if char < 32 || char == 127 {
-			return false
-		}
-	}
-	return true
-}
-
+// canonicalURL requires an endpoint that names only a scheme, host and port.
+// A host that cannot be reached fails when Open qualifies the backend.
 func canonicalURL(raw string) (string, error) {
-	invalid := errors.New("Search requires one explicit HTTP or HTTPS host and port")
-	if strings.ContainsAny(raw, "%?#\\") || strings.TrimSpace(raw) != raw {
-		return "", invalid
-	}
 	u, err := url.Parse(raw)
-	if err != nil || u.Scheme != "http" && u.Scheme != "https" || u.User != nil || u.Opaque != "" || u.Path != "" || u.RawPath != "" || u.ForceQuery {
-		return "", invalid
+	if err != nil || u.Scheme != "http" && u.Scheme != "https" || u.User != nil || u.Path != "" ||
+		u.RawQuery != "" || u.ForceQuery || u.Fragment != "" || u.Port() == "" {
+		return "", errors.New("Search requires one explicit HTTP or HTTPS host and port")
 	}
-	host, port, err := net.SplitHostPort(u.Host)
-	number, portErr := strconv.Atoi(port)
-	if err != nil || portErr != nil || number < 1 || number > 65535 || strings.Trim(port, "0123456789") != "" {
-		return "", invalid
-	}
-	if ip, err := netip.ParseAddr(host); err == nil {
-		if ip.Zone() != "" || ip.IsUnspecified() || ip.IsMulticast() {
-			return "", invalid
-		}
-		host = ip.Unmap().String()
-	} else {
-		if len(host) == 0 || len(host) > 253 || strings.Trim(host, "0123456789.") == "" || strings.ContainsAny(u.Host, "[]") {
-			return "", invalid
-		}
-		for _, label := range strings.Split(host, ".") {
-			if len(label) == 0 || len(label) > 63 || label[0] == '-' || label[len(label)-1] == '-' {
-				return "", invalid
-			}
-			for _, c := range label {
-				if !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '-') {
-					return "", invalid
-				}
-			}
-		}
-		host = strings.ToLower(host)
-	}
-	return u.Scheme + "://" + net.JoinHostPort(host, strconv.Itoa(number)), nil
+	return u.Scheme + "://" + u.Host, nil
 }
 
 func connectionTLS(cfg Config) (*tls.Config, error) {
@@ -105,18 +42,12 @@ func connectionTLS(cfg Config) (*tls.Config, error) {
 		return nil, nil
 	}
 	config := &tls.Config{MinVersion: tls.VersionTLS12, NextProtos: []string{"http/1.1"}}
-	if cfg.Connection == nil || cfg.Connection.CAFile == "" {
-		return config, nil
+	if cfg.CAFile != "" {
+		roots, err := backend.CertPool(cfg.CAFile)
+		if err != nil {
+			return nil, err
+		}
+		config.RootCAs = roots
 	}
-	invalid := errors.New("Search CA file unavailable or invalid")
-	data, err := backend.ReadRegularFile(cfg.Connection.CAFile)
-	if err != nil {
-		return nil, invalid
-	}
-	roots := x509.NewCertPool()
-	if !roots.AppendCertsFromPEM(data) {
-		return nil, invalid
-	}
-	config.RootCAs = roots
 	return config, nil
 }

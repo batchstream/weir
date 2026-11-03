@@ -76,17 +76,13 @@ func TestSDKReadsEveryHostedStoreThroughOneAddress(t *testing.T) {
 				})
 			}
 			limits := server.DefaultLimits()
-			admission := server.NewAdmission()
-			serverConfig := server.Config{Stores: runtimes, Limits: limits, Admission: admission}
-			application := server.New(serverConfig)
+			application := server.New(runtimes, limits)
 			served := make(chan error, 1)
 			go func() { served <- application.Serve(listener) }()
 			t.Cleanup(func() {
 				ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 				defer cancel()
-				if err := application.Shutdown(ctx); err != nil {
-					t.Error(err)
-				}
+				application.Shutdown(ctx)
 				if err := <-served; err != nil {
 					t.Error(err)
 				}

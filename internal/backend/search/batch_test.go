@@ -84,7 +84,7 @@ func TestReadBatchSharesOneMget(t *testing.T) {
 	})
 	server := httptest.NewServer(handler)
 	defer server.Close()
-	cfg := Config{Store: "search", URL: server.URL}
+	cfg := Config{URL: server.URL}
 	a := &Adapter{dialect: ElasticsearchProduct, config: cfg, client: server.Client(), ctx: context.Background()}
 	works := []*execution.Plan{batchTestPlan(t, a, "read", "records/s:read"), batchTestPlan(t, a, "read", "records/s:missing")}
 	results := a.ExecuteRecords(context.Background(), works)
@@ -127,7 +127,7 @@ func TestMutationBatchSharesOneBulkAcrossEveryAction(t *testing.T) {
 	})
 	server := httptest.NewServer(handler)
 	defer server.Close()
-	cfg := Config{Store: "search", URL: server.URL}
+	cfg := Config{URL: server.URL}
 	a := &Adapter{dialect: ElasticsearchProduct, config: cfg, client: server.Client(), ctx: context.Background()}
 	actions := []string{"replace", "expression", "program", "put", "create", "delete"}
 	works := make([]*execution.Plan, len(actions))
@@ -194,7 +194,7 @@ func TestMixedWriteShardEvidenceNeverReplaysUnknown(t *testing.T) {
 				})
 				server := httptest.NewServer(handler)
 				defer server.Close()
-				cfg := Config{Store: "search", URL: server.URL}
+				cfg := Config{URL: server.URL}
 				a := &Adapter{dialect: ElasticsearchProduct, config: cfg, client: server.Client(), ctx: context.Background()}
 				actions := []string{"put", "expression", "program"}
 				works := make([]*execution.Plan, len(actions))
@@ -254,7 +254,7 @@ func TestMgetRequiresCompleteIDCorrespondenceAndIsolatesItemErrors(t *testing.T)
 			})
 			server := httptest.NewServer(handler)
 			defer server.Close()
-			cfg := Config{Store: "search", URL: server.URL}
+			cfg := Config{URL: server.URL}
 			a := &Adapter{dialect: ElasticsearchProduct, config: cfg, client: server.Client(), ctx: context.Background()}
 			works := []*execution.Plan{batchTestPlan(t, a, "read", "records/s:first"), batchTestPlan(t, a, "read", "records/s:second")}
 			results := a.ExecuteRecords(context.Background(), works)
@@ -286,7 +286,7 @@ func TestMgetRejectsInvalidNestedSourceWithoutReplay(t *testing.T) {
 			})
 			server := httptest.NewServer(handler)
 			defer server.Close()
-			cfg := Config{Store: "search", URL: server.URL}
+			cfg := Config{URL: server.URL}
 			a := &Adapter{config: cfg, client: server.Client(), ctx: t.Context()}
 			works := []*execution.Plan{batchTestPlan(t, a, "read", "records/s:first"), batchTestPlan(t, a, "read", "records/s:second")}
 			results := a.mgetUnique(t.Context(), works)
@@ -350,7 +350,7 @@ func TestMixedLuaCreateConflictRetriesOnlyConfirmedItem(t *testing.T) {
 			if mode == "single" {
 				settings.RetryAttempts = 1
 			}
-			cfg := Config{Store: "search", URL: server.URL, Options: &settings}
+			cfg := Config{URL: server.URL, Options: &settings}
 			a := &Adapter{dialect: ElasticsearchProduct, config: cfg, client: server.Client(), ctx: context.Background()}
 			works := []*execution.Plan{batchTestPlan(t, a, "program", "records/s:program"), batchTestPlan(t, a, "put", "records/s:put")}
 			results := a.ExecuteRecords(context.Background(), works)
@@ -402,7 +402,7 @@ func TestCanceledCallerSkippedAfterBatchReadWithoutCancelingPeer(t *testing.T) {
 	})
 	server := httptest.NewServer(handler)
 	defer server.Close()
-	cfg := Config{Store: "search", URL: server.URL}
+	cfg := Config{URL: server.URL}
 	a := &Adapter{dialect: ElasticsearchProduct, config: cfg, client: server.Client(), ctx: context.Background()}
 	replace := batchTestPlan(t, a, "replace", "records/s:replace")
 	replace.Context = caller

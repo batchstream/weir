@@ -28,8 +28,8 @@ func TestSearchTLSOrdinaryNativeSocketCloseBound(t *testing.T) {
 				started <- struct{}{}
 				<-r.Context().Done()
 			})
-			endpoint, c := tlsEndpoint(t, handler, false)
-			a := openTestTLS(t, endpoint.URL, c)
+			_, c := tlsEndpoint(t, handler, false)
+			a := openTestTLS(t, c)
 			var calls sync.WaitGroup
 			for i := 0; i < 3; i++ {
 				calls.Go(func() {
@@ -68,8 +68,8 @@ func TestSearchTLSNativeSlowConsumerCloseJoins(t *testing.T) {
 			io.WriteString(w, `{"data":"native"}`)
 		}
 	})
-	endpoint, c := tlsEndpoint(t, handler, false)
-	a := openTestTLS(t, endpoint.URL, c)
+	_, c := tlsEndpoint(t, handler, false)
+	a := openTestTLS(t, c)
 	started := make(chan struct{})
 	emit := func(event *pb.Event) error {
 		if event.GetChunk() == nil {
@@ -115,8 +115,8 @@ func TestSearchTLSResponseUsesCallerDeadline(t *testing.T) {
 			}
 			<-r.Context().Done()
 		})
-		endpoint, c := tlsEndpoint(t, handler, false)
-		a := openTestTLS(t, endpoint.URL, c)
+		_, c := tlsEndpoint(t, handler, false)
+		a := openTestTLS(t, c)
 		call := exchange{path: "/hard-deadline"}
 		start := time.Now()
 		ctx, cancel := context.WithTimeout(t.Context(), 80*time.Millisecond)

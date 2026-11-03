@@ -53,7 +53,7 @@ func TestNativeCompletionMetricsAreIndependentOfRPCAndHTTPStatus(t *testing.T) {
 			t.Cleanup(backend.Close)
 			ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
 			defer cancel()
-			config := search.Config{Store: "records", URL: backend.URL}
+			config := search.Config{URL: backend.URL}
 			adapter, err := search.Open(ctx, config)
 			if err != nil {
 				t.Fatal(err)

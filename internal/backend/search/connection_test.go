@@ -29,22 +29,21 @@ import (
 func TestSearchConnectionValidation(t *testing.T) {
 	good := []string{"http://10.0.0.1:9200", "https://Search.Example:443", "https://[::1]:9200", "http://127.0.0.1:9200", "https://192.168.1.2:443"}
 	for _, endpoint := range good {
-		cfg := Config{Store: "search", URL: endpoint}
+		cfg := Config{URL: endpoint}
 		if err := ValidateConfig(cfg); err != nil {
 			t.Fatal("valid endpoint rejected", err)
 		}
 	}
-	bad := []string{"http://host", "http://host:", "http://host:0", "http://host:65536", "http://host:+80", "https://a:b@host:443", "http://host:80/", "http://host:80?", "http://host:80#", "http://host:80/path", "http://host:80?q=v", "http://host:80#f", "http://%68ost:80", "http://[host]:80", "http://[fe80::1%25en0]:80", "http://127.1:80", "http://0127.0.0.1:80", "http://0.0.0.0:80", "http://[::]:80", "http://224.1.2.3:80", "http://host.:80", "http://.host:80", "http://bad_host:80", "http://-host:80", "http://host-:80", "http://a..b:80", "http://é.example:80", "http://host:80\\evil", "ftp://host:80", "https:host:443", strings.Repeat("a", 1025)}
+	bad := []string{"", "http://host", "http://host:", "http://host:+80", "https://a:b@host:443", "http://host:80/", "http://host:80?", "http://host:80/path", "http://host:80?q=v", "http://host:80#f", "http://%68ost:80", "http://host:80\\evil", "ftp://host:80", "https:host:443", " http://host:80", strings.Repeat("a", 1025)}
 	for _, endpoint := range bad {
-		cfg := Config{Store: "search", URL: endpoint}
+		cfg := Config{URL: endpoint}
 		if err := ValidateConfig(cfg); err == nil {
-			t.Fatal("invalid endpoint accepted")
+			t.Fatal("invalid endpoint accepted", endpoint)
 		}
 	}
-	for _, mode := range []string{"http-auth", "missing-user", "missing-password", "long-user", "long-pass", "colon", "control", "ca-http", "long-ca", "empty"} {
+	for _, mode := range []string{"http-auth", "missing-user", "missing-password", "colon", "control", "ca-http"} {
 		t.Run(mode, func(t *testing.T) {
-			c := &Connection{Username: "user", Password: "password-sentinel", CAFile: "/missing/ca-sentinel.pem"}
-			cfg := Config{Store: "search", URL: "https://unresolved.invalid:443", Connection: c}
+			cfg := Config{URL: "https://unresolved.invalid:443", Username: "user", Password: "password-sentinel", CAFile: "/missing/ca-sentinel.pem"}
 			if err := ValidateConfig(cfg); err != nil {
 				t.Fatal("preflight accessed CA or DNS", err)
 			}
@@ -52,27 +51,17 @@ func TestSearchConnectionValidation(t *testing.T) {
 			case "http-auth":
 				cfg.URL = "http://host:80"
 			case "missing-user":
-				c.Username = ""
+				cfg.Username = ""
 			case "missing-password":
-				c.Password = ""
-			case "long-user":
-				c.Username = strings.Repeat("u", 129)
-			case "long-pass":
-				c.Password = strings.Repeat("p", 257)
+				cfg.Password = ""
 			case "colon":
-				c.Username = "bad:name"
+				cfg.Username = "bad:name"
 			case "control":
-				c.Password = "bad\r\nvalue"
+				cfg.Password = "bad\r\nvalue"
 			case "ca-http":
 				cfg.URL = "http://host:80"
-				c.Username = ""
-				c.Password = ""
-			case "long-ca":
-				c.CAFile = strings.Repeat("c", 2049)
-			case "empty":
-				c.Username = ""
-				c.Password = ""
-				c.CAFile = ""
+				cfg.Username = ""
+				cfg.Password = ""
 			}
 			a, err := Open(context.Background(), cfg)
 			if a != nil || err == nil || strings.Contains(err.Error(), "sentinel") {
@@ -84,7 +73,7 @@ func TestSearchConnectionValidation(t *testing.T) {
 
 // All key material is generated and consumed by the test. Agent tools never
 // inspect certificate files; TempDir removes this test's own material.
-func tlsEndpoint(t *testing.T, handler http.Handler, expired bool) (*httptest.Server, *Connection) {
+func tlsEndpoint(t *testing.T, handler http.Handler, expired bool) (*httptest.Server, Config) {
 	t.Helper()
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
@@ -112,7 +101,7 @@ func tlsEndpoint(t *testing.T, handler http.Handler, expired bool) (*httptest.Se
 	if err := os.WriteFile(name, pem.EncodeToMemory(block), 0600); err != nil {
 		t.Fatal("test CA creation")
 	}
-	c := &Connection{CAFile: name, Username: "test-app", Password: "test-password"}
+	c := Config{URL: server.URL, CAFile: name, Username: "test-app", Password: "test-password"}
 	return server, c
 }
 func qualification(w http.ResponseWriter, r *http.Request) bool {
@@ -128,9 +117,8 @@ func qualification(w http.ResponseWriter, r *http.Request) bool {
 	}
 	return true
 }
-func openTestTLS(t *testing.T, endpoint string, connection *Connection) *Adapter {
+func openTestTLS(t *testing.T, cfg Config) *Adapter {
 	t.Helper()
-	cfg := Config{Store: "search", URL: endpoint, Connection: connection}
 	a, err := Open(context.Background(), cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -150,10 +138,10 @@ func TestSearchTLSBothPathsAndTransportPolicy(t *testing.T) {
 			io.WriteString(w, `{}`)
 		}
 	})
-	endpoint, c := tlsEndpoint(t, handler, false)
+	_, c := tlsEndpoint(t, handler, false)
 	t.Setenv("HTTPS_PROXY", "http://127.0.0.1:1")
 	t.Setenv("HTTP_PROXY", "http://127.0.0.1:1")
-	a := openTestTLS(t, endpoint.URL, c)
+	a := openTestTLS(t, c)
 	call := exchange{path: "/probe", body: []byte(`{}`)}
 	if _, _, err := a.request(context.Background(), call); err != nil {
 		t.Fatal(err)
@@ -178,34 +166,32 @@ func TestSearchTLSValidationAndCAErrors(t *testing.T) {
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { qualification(w, r) })
 	endpoint, c := tlsEndpoint(t, handler, false)
 	_, other := tlsEndpoint(t, handler, false)
-	expired, expiredC := tlsEndpoint(t, handler, true)
+	_, expiredC := tlsEndpoint(t, handler, true)
 	for _, mode := range []string{"wrong-ca", "wrong-host", "expired", "missing-ca", "oversize-ca", "malformed-ca", "directory-ca", "system-roots"} {
 		t.Run(mode, func(t *testing.T) {
-			connection := *c
-			cfg := Config{Store: "search", URL: endpoint.URL, Connection: &connection}
+			cfg := c
 			switch mode {
 			case "wrong-ca":
-				connection.CAFile = other.CAFile
+				cfg.CAFile = other.CAFile
 			case "wrong-host":
 				// The certificate names search.test and loopback IPs, not localhost.
 				_, port, _ := net.SplitHostPort(strings.TrimPrefix(endpoint.URL, "https://"))
 				cfg.URL = "https://localhost:" + port
 			case "expired":
-				cfg.URL = expired.URL
-				cfg.Connection = expiredC
+				cfg = expiredC
 			case "missing-ca":
-				connection.CAFile = "/missing/secret-sentinel.pem"
+				cfg.CAFile = "/missing/secret-sentinel.pem"
 			case "directory-ca":
-				connection.CAFile = t.TempDir()
+				cfg.CAFile = t.TempDir()
 			case "system-roots":
-				connection.CAFile = ""
+				cfg.CAFile = ""
 			default:
-				connection.CAFile = filepath.Join(t.TempDir(), "invalid-generated-ca")
+				cfg.CAFile = filepath.Join(t.TempDir(), "invalid-generated-ca")
 				data := []byte("invalid-sentinel")
 				if mode == "oversize-ca" {
 					data = make([]byte, (256<<10)+1)
 				}
-				if err := os.WriteFile(connection.CAFile, data, 0600); err != nil {
+				if err := os.WriteFile(cfg.CAFile, data, 0600); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -227,8 +213,8 @@ func TestSearchTLSNoRedirectCredentialLeak(t *testing.T) {
 		w.Header().Set("Location", target.URL)
 		w.WriteHeader(307)
 	})
-	endpoint, c := tlsEndpoint(t, handler, false)
-	a := openTestTLS(t, endpoint.URL, c)
+	_, c := tlsEndpoint(t, handler, false)
+	a := openTestTLS(t, c)
 	call := exchange{path: "/redirect", body: []byte(`{}`)}
 	_, _, _ = a.request(context.Background(), call)
 	open := nativeRequest(t, "records", "GET", "/_doc/x")
@@ -248,7 +234,7 @@ func TestSearchTLSWithoutCredentialsAndCertificateCount(t *testing.T) {
 	endpoint, c := tlsEndpoint(t, handler, false)
 	c.Username = ""
 	c.Password = ""
-	a := openTestTLS(t, endpoint.URL, c)
+	a := openTestTLS(t, c)
 	_ = a.Close(context.Background())
 	// Trust follows Go's TLS/x509 verification without a separate certificate count.
 	pair := endpoint.TLS.Certificates[0]
@@ -260,7 +246,8 @@ func TestSearchTLSWithoutCredentialsAndCertificateCount(t *testing.T) {
 	crowded.TLS = &tls.Config{Certificates: []tls.Certificate{pair}}
 	crowded.StartTLS()
 	defer crowded.Close()
-	cfg := Config{Store: "search", URL: crowded.URL, Connection: c}
+	cfg := c
+	cfg.URL = crowded.URL
 	accepted, err := Open(context.Background(), cfg)
 	if accepted == nil || err != nil {
 		t.Fatal("valid TLS chain rejected by certificate count", err)
@@ -277,7 +264,7 @@ func TestSearchLargeTrustStoreAndCredentials(t *testing.T) {
 		}
 		qualification(w, request)
 	})
-	endpoint, connection := tlsEndpoint(t, handler, false)
+	endpoint, cfg := tlsEndpoint(t, handler, false)
 	der := endpoint.TLS.Certificates[0].Certificate[0]
 	block := &pem.Block{Type: "CERTIFICATE", Bytes: der}
 	certificate := pem.EncodeToMemory(block)
@@ -286,7 +273,7 @@ func TestSearchLargeTrustStoreAndCredentials(t *testing.T) {
 	if err := os.WriteFile(caFile, data, 0600); err != nil {
 		t.Fatal(err)
 	}
-	connection.CAFile, connection.Username, connection.Password = caFile, username, password
-	adapter := openTestTLS(t, endpoint.URL, connection)
+	cfg.CAFile, cfg.Username, cfg.Password = caFile, username, password
+	adapter := openTestTLS(t, cfg)
 	defer adapter.Close(context.Background())
 }

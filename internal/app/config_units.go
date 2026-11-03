@@ -2,6 +2,7 @@ package app
 
 import (
 	"errors"
+	"math"
 	"strconv"
 	"time"
 
@@ -10,10 +11,6 @@ import (
 
 // Duration is a Go duration encoded as a string, including its unit.
 type Duration time.Duration
-
-func (value Duration) MarshalYAML() (any, error) {
-	return time.Duration(value).String(), nil
-}
 
 func (value *Duration) UnmarshalYAML(node *yaml.Node) error {
 	if node.Kind != yaml.ScalarNode || node.Tag != "!!str" {
@@ -45,28 +42,7 @@ func (value *Count) UnmarshalYAML(node *yaml.Node) error {
 }
 
 // ByteSize is an integer byte count encoded with an explicit binary unit.
-type ByteSize uint64
-
-func (value ByteSize) MarshalYAML() (any, error) {
-	return value.text(), nil
-}
-
-func (value ByteSize) text() string {
-	bytes := uint64(value)
-	for _, unit := range []struct {
-		name string
-		size uint64
-	}{
-		{"GiB", 1 << 30},
-		{"MiB", 1 << 20},
-		{"KiB", 1 << 10},
-	} {
-		if bytes != 0 && bytes%unit.size == 0 {
-			return strconv.FormatUint(bytes/unit.size, 10) + unit.name
-		}
-	}
-	return strconv.FormatUint(bytes, 10) + "B"
-}
+type ByteSize int
 
 func (value *ByteSize) UnmarshalYAML(node *yaml.Node) error {
 	if node.Kind != yaml.ScalarNode || node.Tag != "!!str" {
@@ -82,7 +58,7 @@ func (value *ByteSize) UnmarshalYAML(node *yaml.Node) error {
 		return errors.New("invalid byte size")
 	}
 
-	var multiplier uint64
+	var multiplier int
 	switch text[end:] {
 	case "B":
 		multiplier = 1
@@ -96,8 +72,8 @@ func (value *ByteSize) UnmarshalYAML(node *yaml.Node) error {
 		return errors.New("invalid byte size unit")
 	}
 
-	amount, err := strconv.ParseUint(text[:end], 10, 64)
-	if err != nil || amount > ^uint64(0)/multiplier {
+	amount, err := strconv.Atoi(text[:end])
+	if err != nil || amount > math.MaxInt/multiplier {
 		return errors.New("byte size exceeds bound")
 	}
 

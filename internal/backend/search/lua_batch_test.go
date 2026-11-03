@@ -54,7 +54,7 @@ func TestLuaRecordBatchIsolatesActionsAndPreservesBusinessSources(t *testing.T) 
 	})
 	server := httptest.NewServer(handler)
 	defer server.Close()
-	config := Config{Store: "search", URL: server.URL}
+	config := Config{URL: server.URL}
 	adapter := &Adapter{config: config, dialect: ElasticsearchProduct, client: server.Client(), ctx: t.Context()}
 	ids := []string{"replace", "keep", "reject", "invalid", "delete", "create"}
 	sources := []string{
@@ -134,7 +134,7 @@ func TestLuaBatchCallerCancellationAndDeadlineKeepPeers(t *testing.T) {
 			})
 			server := httptest.NewServer(handler)
 			defer server.Close()
-			config := Config{Store: "search", URL: server.URL}
+			config := Config{URL: server.URL}
 			adapter := &Adapter{config: config, dialect: ElasticsearchProduct, client: server.Client(), ctx: t.Context()}
 			cancelled := batchTestPlan(t, adapter, "program", "records/s:cancelled")
 			cancelled.Context = caller
@@ -199,7 +199,7 @@ func TestLuaBatchChunksLargeLegalSourcesBeforeEvaluation(t *testing.T) {
 	})
 	server := httptest.NewServer(handler)
 	defer server.Close()
-	config := Config{Store: "search", URL: server.URL}
+	config := Config{URL: server.URL}
 	adapter := &Adapter{config: config, dialect: ElasticsearchProduct, client: server.Client(), ctx: t.Context()}
 	works := make([]*execution.Plan, 0, records)
 	for i := range records {
@@ -240,7 +240,7 @@ func TestLuaBatchUsesAbsoluteBackendDeadlineBeyondFiveSeconds(t *testing.T) {
 	})
 	server := httptest.NewServer(handler)
 	defer server.Close()
-	config := Config{Store: "search", URL: server.URL}
+	config := Config{URL: server.URL}
 	adapter := &Adapter{config: config, dialect: ElasticsearchProduct, client: server.Client(), ctx: t.Context()}
 	work := batchTestPlan(t, adapter, "program", "records/s:program")
 	ctx, cancel := context.WithTimeout(t.Context(), 8*time.Second)

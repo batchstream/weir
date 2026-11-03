@@ -31,7 +31,7 @@ func TestRouteCallRelativeTargetAndLargeRead(t *testing.T) {
 	})
 	server := httptest.NewServer(handler)
 	defer server.Close()
-	config := Config{Store: "search", URL: server.URL}
+	config := Config{URL: server.URL}
 	adapter := &Adapter{config: config, dialect: ElasticsearchProduct, client: server.Client(), ctx: context.Background()}
 	request := &pb.ReadRequest{Resource: "records/s:a"}
 	operation := &pb.Command_Read{Read: request}
@@ -58,7 +58,7 @@ func TestRouteCallRelativeTargetAndLargeRead(t *testing.T) {
 }
 
 func TestRouteLuaParticipatesInNativeRecordBatch(t *testing.T) {
-	config := Config{Store: "search"}
+	config := Config{}
 	adapter := &Adapter{config: config}
 	program := &pb.LuaTransform{Source: []byte(`return function(current, incoming) return weir.keep() end`)}
 	form := &pb.Transform_Lua{Lua: program}
@@ -152,7 +152,7 @@ func TestRouteNativeBackendDeadlineAndOutputBackpressure(t *testing.T) {
 			})
 			server := httptest.NewServer(handler)
 			defer server.Close()
-			config := Config{Store: "search", URL: server.URL}
+			config := Config{URL: server.URL}
 			client := server.Client()
 			adapter := &Adapter{config: config, dialect: ElasticsearchProduct, client: client, nativeClient: client, ctx: context.Background()}
 			open := nativeRequest(t, "records", "GET", "/_doc/x")

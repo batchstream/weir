@@ -24,7 +24,7 @@ func TestSearchMutationPreparationPerformsNoBackendIO(t *testing.T) {
 			})
 			server := httptest.NewServer(handler)
 			t.Cleanup(server.Close)
-			config := Config{Store: "search", URL: server.URL}
+			config := Config{URL: server.URL}
 			lifetime, cancel := context.WithCancel(t.Context())
 			t.Cleanup(cancel)
 			client := server.Client()
@@ -52,7 +52,7 @@ func TestSearchRecordPreflightBeforeAnyCommand(t *testing.T) {
 			handler := http.HandlerFunc(func(http.ResponseWriter, *http.Request) { commands.Add(1) })
 			server := httptest.NewServer(handler)
 			defer server.Close()
-			config := Config{Store: "search", URL: server.URL}
+			config := Config{URL: server.URL}
 			lifetime, cancel := context.WithCancel(context.Background())
 			client := server.Client()
 			adapter := &Adapter{config: config, dialect: ElasticsearchProduct, client: client, nativeClient: client, ctx: lifetime, cancel: cancel}

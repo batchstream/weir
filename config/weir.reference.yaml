@@ -9,8 +9,8 @@ listeners:
   application: "127.0.0.1:7447"
 
   # HTTP diagnostics: /livez, /readyz and /metrics.
-  # Optional; omit to disable. Same address rules as application, and must not
-  # overlap it. Bind a non-loopback address only on a trusted network.
+  # Optional; omit to disable. Same address rules as application. Bind a
+  # non-loopback address only on a trusted network.
   diagnostics: "127.0.0.1:7449"
 
 # Drain admitted work for up to this long after SIGTERM before cancelling it.
@@ -24,15 +24,13 @@ stores:
     name: mongo
 
     mongodb:
-      # Standard mongodb://, at most 4096 bytes; every IP/DNS seed has a port.
-      # Discovery: 1..7 seeds + replicaSet; directConnection absent or false.
-      # Set name: 1..64 ASCII letters/digits/_/-.
+      # Standard mongodb://; a seed without a port uses 27017.
+      # Discovery: seeds + replicaSet; directConnection absent or false.
       # Direct: 1 endpoint, no replicaSet; directConnection absent or true.
       # Direct mode isolates one member and provides no failover.
       # No userinfo, database path, fragments, SRV, mongos or load balancing.
-      # Accepted URI options: replicaSet, directConnection,
-      # serverMonitoringMode=poll, authSource, authMechanism=SCRAM-SHA-256,
-      # tls=true. Duplicate/unknown options and canonical duplicate seeds fail.
+      # Accepted URI options: replicaSet, directConnection, authSource,
+      # authMechanism=SCRAM-SHA-256, tls=true. Any other option fails.
       # Authentication requires the credentials below plus explicit authSource,
       # SCRAM and TLS. Member certificates verify each discovered hostname/IP.
       # Example:

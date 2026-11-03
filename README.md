@@ -74,8 +74,8 @@ The [reference](config/weir.reference.yaml) describes every supported field, and
 [Configuration](docs/configuration.md) explains loading, addresses and defaults.
 
 The example intentionally uses isolated MongoDB **direct mode**, without failover.
-For automatic primary discovery in an ordinary replica set, configure one to seven
-explicit seeds and its set name instead, for example
+For automatic primary discovery in an ordinary replica set, configure its seeds
+and set name instead, for example
 `mongodb://mongo-a:27017,mongo-b:27017,mongo-c:27017/?replicaSet=orders`.
 Replica-set clients use a one-second topology polling interval; direct mode retains
 the driver default. Discovery restores new primary operations; it does not replay

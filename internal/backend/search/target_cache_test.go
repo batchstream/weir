@@ -35,7 +35,7 @@ func TestSearchRecordsResolveMetadataOncePerExecution(t *testing.T) {
 	})
 	server := httptest.NewServer(handler)
 	defer server.Close()
-	cfg := Config{Store: "search", URL: server.URL}
+	cfg := Config{URL: server.URL}
 	adapter := &Adapter{config: cfg, dialect: ElasticsearchProduct, client: server.Client(), ctx: context.Background()}
 	for range 2 {
 		for _, work := range []*execution.Plan{batchTestPlan(t, adapter, "read", "records/s:same"), batchTestPlan(t, adapter, "put", "records/s:same")} {
@@ -152,7 +152,7 @@ func TestSearchRecordPermissionsRemainPerExecution(t *testing.T) {
 	})
 	server := httptest.NewServer(handler)
 	defer server.Close()
-	cfg := Config{Store: "search", URL: server.URL}
+	cfg := Config{URL: server.URL}
 	adapter := &Adapter{config: cfg, dialect: ElasticsearchProduct, client: server.Client(), ctx: context.Background()}
 	read := batchTestPlan(t, adapter, "read", "records/s:same")
 	works := []*execution.Plan{read}

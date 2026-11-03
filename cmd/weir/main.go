@@ -131,9 +131,7 @@ func serveContext(ctx context.Context, cfg app.Config, output io.Writer) (result
 		}
 	}()
 
-	if err := node.Start(startup); err != nil {
-		return err
-	}
+	node.Start()
 	stop()
 
 	_, err = fmt.Fprintf(output, "Weir listening on %s\n", node.Address())

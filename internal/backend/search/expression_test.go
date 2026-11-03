@@ -21,7 +21,7 @@ func expressionOperation(resource, raw string) *pb.ExecuteRequest {
 }
 
 func TestSearchExpressionValidation(t *testing.T) {
-	cfg := Config{Store: "search"}
+	cfg := Config{}
 	a := &Adapter{dialect: ElasticsearchProduct, config: cfg}
 	allowed := []string{`{"doc":{"x":"` + strings.Repeat("x", (16<<10)) + `"}}`, `{"doc":{"x":[` + strings.Repeat("0,", (16<<10)) + `0]}}`, `{"doc":{}}`, `{"doc":{"_id":"other"}}`, `{"doc":{"a":{},"a.b":1}}`, `{"doc":{"nested":{"_id":"business","a.b":1,"":2,"a\u0000b":3}}}`, `{"doc":{"n":9223372036854775807,"null":null,"array":[1,{"x":true}],"data":{"$set":"literal"}}}`}
 	for _, raw := range allowed {

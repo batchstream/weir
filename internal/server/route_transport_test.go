@@ -77,17 +77,20 @@ func testGracefulDrain(t *testing.T, delay time.Duration) {
 	case <-ctx.Done():
 		t.Fatal("mutation was not admitted")
 	}
-	shutdown := make(chan error, 1)
-	go func() { shutdown <- srv.Shutdown(ctx) }()
+	shutdown := make(chan struct{})
+	go func() {
+		srv.Shutdown(ctx)
+		close(shutdown)
+	}()
 	select {
-	case <-srv.admission.draining:
+	case <-srv.draining:
 	case <-ctx.Done():
 		t.Fatal("server did not begin drain")
 	}
 	if delay > 0 {
 		select {
-		case err := <-shutdown:
-			t.Fatal("graceful drain ended before the caller's configured budget", err)
+		case <-shutdown:
+			t.Fatal("graceful drain ended before the caller's configured budget")
 		case <-time.After(delay):
 		}
 	}
@@ -95,8 +98,6 @@ func testGracefulDrain(t *testing.T, delay time.Duration) {
 	if err := <-resultDone; err != nil {
 		t.Fatal("admitted mutation lost its confirmation during graceful drain", err)
 	}
-	if err := <-shutdown; err != nil {
-		t.Fatal(err)
-	}
+	<-shutdown
 	waitIdle(t, srv)
 }

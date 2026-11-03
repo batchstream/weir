@@ -14,7 +14,7 @@ import (
 )
 
 func prepareTestRecord(adapter *Adapter, operation *pb.ExecuteRequest) (*execution.Plan, *pb.Failure) {
-	return testrecords.Prepare(context.Background(), adapter, adapter.config.Store, operation)
+	return testrecords.Prepare(context.Background(), adapter, "search", operation)
 }
 
 func testHTTPAdapter(t *testing.T, handler http.HandlerFunc) *Adapter {
@@ -24,7 +24,7 @@ func testHTTPAdapter(t *testing.T, handler http.HandlerFunc) *Adapter {
 	transport := newTransport(time.Second, backend.DefaultOptions().IdleTimeout)
 	t.Cleanup(transport.CloseIdleConnections)
 	client := &http.Client{Transport: transport, CheckRedirect: noRedirect}
-	config := Config{Store: "search", URL: server.URL}
+	config := Config{URL: server.URL}
 	adapter := &Adapter{dialect: ElasticsearchProduct, config: config, ctx: context.Background(), client: client}
 	return adapter
 }

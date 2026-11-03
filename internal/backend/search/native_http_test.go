@@ -100,7 +100,7 @@ func TestNativeHTTPHostCannotSelectBackend(t *testing.T) {
 	})
 	backend := httptest.NewServer(handler)
 	defer backend.Close()
-	config := Config{Store: "search", URL: backend.URL}
+	config := Config{URL: backend.URL}
 	adapter := &Adapter{config: config, dialect: ElasticsearchProduct, nativeClient: backend.Client(), ctx: context.Background()}
 	document := &pb.Document{ContentType: "application/http", Data: []byte("GET /_doc/x HTTP/1.1\r\nHost: evil.invalid\r\nX-Opaque-Id: evidence\r\n\r\n")}
 	request := &pb.NativeRequest{Resource: "records", Request: document}
@@ -154,7 +154,7 @@ func TestNativeHTTPPreservesEscapedPathsAndRootRequests(t *testing.T) {
 			})
 			backend := httptest.NewServer(handler)
 			defer backend.Close()
-			config := Config{Store: "search", URL: backend.URL}
+			config := Config{URL: backend.URL}
 			adapter := &Adapter{config: config, nativeClient: backend.Client(), ctx: context.Background()}
 			body := []byte(`{"doc":{"n":2}}`)
 			header := fmt.Sprintf("PATCH %s HTTP/1.1\r\nHost: ignored.invalid\r\nContent-Type: application/json\r\nContent-Length: %d\r\n\r\n", test.path, len(body))
@@ -191,7 +191,7 @@ func TestNativeHTTPPreservesCompressedResponse(t *testing.T) {
 	transport.DisableKeepAlives = true
 	defer transport.CloseIdleConnections()
 	client := &http.Client{Transport: transport, CheckRedirect: noRedirect}
-	config := Config{Store: "search", URL: backend.URL}
+	config := Config{URL: backend.URL}
 	adapter := &Adapter{config: config, nativeClient: client, ctx: context.Background()}
 	document := &pb.Document{ContentType: "application/http", Data: []byte("GET /_search HTTP/1.1\r\nAccept-Encoding: gzip\r\n\r\n")}
 	request := &pb.NativeRequest{Request: document}
@@ -220,7 +220,7 @@ func TestNativeHTTPRedirectCannotSelectAnotherBackend(t *testing.T) {
 	transport.DisableKeepAlives = true
 	defer transport.CloseIdleConnections()
 	client := &http.Client{Transport: transport, CheckRedirect: noRedirect}
-	config := Config{Store: "search", URL: backend.URL}
+	config := Config{URL: backend.URL}
 	adapter := &Adapter{config: config, nativeClient: client, ctx: context.Background()}
 	request := nativeRequest(t, "", "GET", "/_search")
 	end, capture := runNative(t, adapter, request, nil)
@@ -242,7 +242,7 @@ func TestNativeHTTPConfiguredTransportAcceptsFullMetadataBudget(t *testing.T) {
 	})
 	backend := httptest.NewServer(handler)
 	defer backend.Close()
-	config := Config{Store: "search", URL: backend.URL}
+	config := Config{URL: backend.URL}
 	adapter, err := Open(t.Context(), config)
 	if err != nil {
 		t.Fatal(err)

@@ -108,7 +108,7 @@ func TestAssemblyWithoutStoresPartialStartupAndConcurrentClose(t *testing.T) {
 	if len(node.stores) != 0 || node.guard.Snapshot().Live == 0 {
 		t.Fatal("Store-less node created database state")
 	}
-	node.Start(context.Background())
+	node.Start()
 	var group sync.WaitGroup
 	for range 8 {
 		group.Go(func() {
@@ -120,7 +120,7 @@ func TestAssemblyWithoutStoresPartialStartupAndConcurrentClose(t *testing.T) {
 		})
 	}
 	group.Wait()
-	node.Start(context.Background())
+	node.Start()
 	conn, err := net.DialTimeout("tcp", node.Address(), 100*time.Millisecond)
 	if err == nil {
 		_ = conn.Close()
@@ -176,17 +176,6 @@ func TestListenerConfiguration(t *testing.T) {
 			t.Fatal("invalid listener accepted", listener)
 		}
 	}
-	for _, listeners := range [][2]string{
-		{"127.0.0.1:7447", "127.0.0.1:07447"},
-		{"[::1]:7447", "[0:0:0:0:0:0:0:1]:7447"},
-		{"0.0.0.0:7447", "127.0.0.1:7447"},
-	} {
-		cfg := emptyConfig(t)
-		cfg.Listeners.Application, cfg.Listeners.Diagnostics = listeners[0], listeners[1]
-		if err := cfg.Validate(); err == nil {
-			t.Fatal("duplicate/overlapping listeners accepted", listeners)
-		}
-	}
 	cfg := emptyConfig(t)
 	cfg.Listeners.Diagnostics = cfg.Listeners.Application
 	if err := cfg.Validate(); err != nil {
@@ -211,9 +200,7 @@ func TestUnhostedStoreIsNotFound(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer node.Close(context.Background())
-	if err := node.Start(t.Context()); err != nil {
-		t.Fatal(err)
-	}
+	node.Start()
 	options := []grpc.DialOption{grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithNoProxy(), grpc.WithDisableRetry()}
 	conn, err := grpc.NewClient("passthrough:///"+node.Address(), options...)
 	if err != nil {

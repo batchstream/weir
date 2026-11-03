@@ -2,6 +2,8 @@
 package server
 
 import (
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/batchstream/weir-protocol/api/protocol"
@@ -22,13 +24,10 @@ const (
 	connectionWindowBytes = 16 << 20
 )
 
-// RecordStreamItems bounds the records one stream has queued or awaiting
-// delivery; clients rely on the protocol window.
-const RecordStreamItems = protocol.RecordWindow
-
 // Limits must start from DefaultLimits; zero values are not defaulted.
 type Limits struct {
-	// recordWindow is the protocol's stream window; only tests shrink it.
+	// recordWindow bounds the records one stream has queued or awaiting delivery;
+	// clients rely on the protocol's window, and only tests shrink it.
 	recordWindow      int
 	KeepaliveInterval time.Duration
 	KeepaliveTimeout  time.Duration
@@ -46,33 +45,29 @@ type Limits struct {
 }
 
 func DefaultLimits() Limits {
-	limits := Limits{recordWindow: RecordStreamItems, KeepaliveInterval: 30 * time.Second, KeepaliveTimeout: 5 * time.Second, KeepaliveMinPing: 5 * time.Second, Stall: 30 * time.Second, Handshake: 5 * time.Second, Idle: time.Minute, MaxConnectionAge: 5 * time.Minute}
+	limits := Limits{recordWindow: protocol.RecordWindow, KeepaliveInterval: 30 * time.Second, KeepaliveTimeout: 5 * time.Second, KeepaliveMinPing: 5 * time.Second, Stall: 30 * time.Second, Handshake: 5 * time.Second, Idle: time.Minute, MaxConnectionAge: 5 * time.Minute}
 	return limits
 }
 
-type Config struct {
-	Stores    map[string]*store.Runtime
-	Limits    Limits
-	Admission *Admission
-}
-
+// Server is also the process-wide gate for business RPCs.
 type Server struct {
-	stores    map[string]*store.Runtime
-	admission *Admission
-	limits    Limits
-	grpc      *grpc.Server
-	metrics   transportMetrics
-	serving   chan struct{}
+	stores     map[string]*store.Runtime
+	limits     Limits
+	grpc       *grpc.Server
+	metrics    transportMetrics
+	draining   chan struct{}
+	drain      sync.Once
+	overloaded atomic.Bool
+	activeRPCs atomic.Int64
 }
 
-func New(cfg Config) *Server {
-	l := cfg.Limits
+// New serves stores, which the caller may still add to until Serve.
+func New(stores map[string]*store.Runtime, l Limits) *Server {
 	s := &Server{
-		stores:    cfg.Stores,
-		admission: cfg.Admission,
-		limits:    l,
-		metrics:   newTransportMetrics(),
-		serving:   make(chan struct{}),
+		stores:   stores,
+		limits:   l,
+		metrics:  newTransportMetrics(),
+		draining: make(chan struct{}),
 	}
 	keepaliveParameters := keepalive.ServerParameters{Time: l.KeepaliveInterval, Timeout: l.KeepaliveTimeout, MaxConnectionIdle: l.Idle, MaxConnectionAge: l.MaxConnectionAge}
 	keepalivePolicy := keepalive.EnforcementPolicy{MinTime: l.KeepaliveMinPing, PermitWithoutStream: true}

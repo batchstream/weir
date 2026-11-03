@@ -73,7 +73,7 @@ func TestLuaTransformReevaluatesAfterSearchVersionConflict(t *testing.T) {
 	server := httptest.NewServer(handler)
 	defer server.Close()
 	a := &Adapter{dialect: ElasticsearchProduct,
-		config: Config{Store: "search", URL: server.URL},
+		config: Config{URL: server.URL},
 		client: server.Client(),
 		ctx:    context.Background(),
 	}
@@ -135,7 +135,7 @@ func TestLuaTransformRejectsUnqualifiedPipelines(t *testing.T) {
 			server := httptest.NewServer(handler)
 			defer server.Close()
 			a := &Adapter{dialect: ElasticsearchProduct,
-				config: Config{Store: "search", URL: server.URL},
+				config: Config{URL: server.URL},
 				client: server.Client(),
 				ctx:    context.Background(),
 			}

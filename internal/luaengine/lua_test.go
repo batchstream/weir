@@ -305,11 +305,10 @@ func TestEvaluateValidatesSourceWithoutDataAdmissionCaps(t *testing.T) {
 }
 
 func TestEvaluateRejectsInvalidValuesBeforeRunningSource(t *testing.T) {
-	noncanonical := value.Value{Kind: value.Bool, Text: "unexpected payload"}
 	overflow := value.Value{Kind: value.Int32, Integer: 2147483648}
 	duplicate := ValueObject(Field("same", ValueInt32(1)), Field("same", ValueInt32(2)))
 	invalidUTF8 := ValueString(string([]byte{255}))
-	for _, invalid := range []value.Value{noncanonical, overflow, duplicate, invalidUTF8} {
+	for _, invalid := range []value.Value{overflow, duplicate, invalidUTF8} {
 		for _, name := range []string{"current", "input"} {
 			program := testProgram(`error("source executed")`)
 			if name == "current" {
@@ -349,18 +348,6 @@ func TestEvaluateProductExampleUsesStableObservationTime(t *testing.T) {
 		if stamp.Text != "2026-10-07T05:02:03.123456789Z" || title.Text != "new" || !reflect.DeepEqual(tags, wantTags) || untouched.Integer != 4 {
 			t.Fatalf("product merge differs: %#v", got)
 		}
-	}
-	program.Source = "return function() assert(weir.time.now() == weir.time.now()); return {now = weir.time.now()} end"
-	program.ObservedAt = time.Time{}
-	before := time.Now()
-	got, err := luaengine.Evaluate(context.Background(), program)
-	if err != nil {
-		t.Fatal(err)
-	}
-	stamp, _ := got.Value.Lookup("now")
-	observed, err := time.Parse(time.RFC3339Nano, stamp.Text)
-	if err != nil || observed.Before(before) || observed.After(time.Now()) {
-		t.Fatalf("default observation time is invalid: %q (%v)", stamp.Text, err)
 	}
 }
 

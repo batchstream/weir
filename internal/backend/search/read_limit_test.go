@@ -35,7 +35,7 @@ func TestSearchReadPreservesLargeDocumentsAndLaterWrites(t *testing.T) {
 			})
 			server := httptest.NewServer(handler)
 			defer server.Close()
-			config := Config{Store: "search", URL: server.URL}
+			config := Config{URL: server.URL}
 			adapter := &Adapter{config: config, dialect: ElasticsearchProduct, client: server.Client(), ctx: context.Background()}
 			read := batchTestPlan(t, adapter, "read", "records/s:read")
 			writeSource := []byte(`{"pad":"` + strings.Repeat("x", 2048) + `"}`)

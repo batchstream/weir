@@ -384,7 +384,7 @@ func (stream *blockedOutputStream) Send(*pb.ExecuteResponses) error {
 }
 
 func TestRecordInputStopsAtCountBoundBehindSlowOutput(t *testing.T) {
-	for _, window := range []int{3, RecordStreamItems, 96} {
+	for _, window := range []int{3, protocol.RecordWindow, 96} {
 		t.Run(fmt.Sprint(window), func(t *testing.T) {
 			_, local := localStore(t, "records")
 			transport := DefaultLimits()
