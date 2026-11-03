@@ -110,7 +110,7 @@ func TestSearchMetadataFilterPreservesQualificationEvidence(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer through.Close(context.Background())
-			caps, failure := through.inspect(t.Context(), target, false)
+			caps, failure := through.inspect(t.Context(), target)
 			if test.unsupported {
 				if failure.GetCode() != pb.FailureCode_UNSUPPORTED {
 					t.Fatal("filtered metadata allowed an unsupported target", caps, failure)
@@ -144,7 +144,7 @@ func TestSearchMetadataFilterPreservesQualificationEvidence(t *testing.T) {
 		})
 	}
 	t.Run("missing_index", func(t *testing.T) {
-		_, failure := adapter.inspect(t.Context(), backend.Index+"_missing", false)
+		_, failure := adapter.inspect(t.Context(), backend.Index+"_missing")
 		if failure.GetCode() != pb.FailureCode_TARGET_NOT_FOUND {
 			t.Fatal("response filtering lost the native error classification", failure)
 		}

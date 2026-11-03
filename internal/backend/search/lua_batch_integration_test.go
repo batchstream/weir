@@ -127,7 +127,7 @@ func TestSearchLuaBatchUsesNativeOCCWithoutBusinessMetadataOrReplay(t *testing.T
 			}
 			ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 			defer cancel()
-			results := adapter.executeRecords(ctx, works)
+			results := adapter.ExecuteRecords(ctx, works)
 			wantCalls := int32(2)
 			outcome := pb.MutationOutcome_APPLIED
 			code := pb.FailureCode(0)

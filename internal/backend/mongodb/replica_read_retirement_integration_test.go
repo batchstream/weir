@@ -74,7 +74,7 @@ func replicaReadSubmit(t *testing.T, ctx context.Context, opts replicaReadSubmit
 	read := &pb.ReadRequest{Resource: opts.database + "/records/s:" + opts.id}
 	operation := &pb.Command_Read{Read: read}
 	command := &pb.Command{Operation: operation}
-	record, err := execution.NewRecord("mongo", opts.index, command)
+	record, err := execution.NewRecord(opts.index, command)
 	if err != nil {
 		t.Fatal(err)
 	}

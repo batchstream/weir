@@ -27,7 +27,7 @@ func TestRouteCallRelativeTargetAndLargeRead(t *testing.T) {
 	request := &pb.ReadRequest{Resource: "db/records/s:a"}
 	operation := &pb.Command_Read{Read: request}
 	command := &pb.Command{Operation: operation}
-	record, err := execution.NewRecord("mongo", 9, command)
+	record, err := execution.NewRecord(9, command)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -58,7 +58,7 @@ func TestRouteLuaPlanSharesBoundedTransaction(t *testing.T) {
 	mutation := &pb.MutateRequest{Resource: "db/records/s:a", Action: action}
 	operation := &pb.Command_Mutate{Mutate: mutation}
 	command := &pb.Command{Operation: operation}
-	record, err := execution.NewRecord("mongo", 1, command)
+	record, err := execution.NewRecord(1, command)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -86,17 +86,13 @@ func TestRouteNativeBackendDeadlineExcludesOutputStall(t *testing.T) {
 	native := open
 	variant := &pb.Command_Native{Native: native}
 	call := &pb.Command{Operation: variant}
-	work, failure := adapter.PrepareNative(context.Background(), call)
-	if failure != nil {
-		t.Fatal(failure)
-	}
 
 	emit := func(event *pb.Event) error {
 		time.Sleep(75 * time.Millisecond)
 		return nil
 	}
 	started := time.Now()
-	end := adapter.ExecuteNative(context.Background(), work, emit)
+	end := adapter.ExecuteNative(context.Background(), call, emit)
 	if end.GetCompletion() != pb.NativeCompletion_RESPONSE_COMPLETE || end.GetFailure() != nil || time.Since(started) < 150*time.Millisecond {
 		t.Fatal("output stalls consumed backend deadline", end, time.Since(started))
 	}
@@ -121,10 +117,6 @@ func TestRouteNativeDeliveryFailureEndsIncomplete(t *testing.T) {
 			request := &pb.NativeRequest{Resource: "db", Request: body}
 			variant := &pb.Command_Native{Native: request}
 			call := &pb.Command{Operation: variant}
-			work, failure := adapter.PrepareNative(t.Context(), call)
-			if failure != nil {
-				t.Fatal(failure)
-			}
 			chunks := 0
 			emit := func(event *pb.Event) error {
 				if event.GetChunk() != nil {
@@ -135,7 +127,7 @@ func TestRouteNativeDeliveryFailureEndsIncomplete(t *testing.T) {
 				}
 				return nil
 			}
-			end := adapter.ExecuteNative(t.Context(), work, emit)
+			end := adapter.ExecuteNative(t.Context(), call, emit)
 			if chunks == 0 {
 				t.Fatal("Native reply sent no chunk")
 			}

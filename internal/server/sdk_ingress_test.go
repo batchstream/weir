@@ -19,17 +19,14 @@ import (
 
 type sdkIngressReadAdapter struct{}
 
-func (a *sdkIngressReadAdapter) PrepareNative(context.Context, *pb.Command) (*execution.Plan, *pb.Failure) {
-	return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "read fixture")
-}
-
 func (a *sdkIngressReadAdapter) PrepareRecord(ctx context.Context, record *execution.Record) (*execution.Plan, *pb.Failure) {
-	command := record.Command()
+	command := record.Command
 	request := command.GetRead()
 	if request == nil {
 		return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "read fixture")
 	}
-	plan := &execution.Plan{Command: command, Key: request.Resource, BatchKey: "reads", Bytes: record.Bytes()}
+	plan := record.Plan(ctx, nil)
+	plan.BatchKey = "reads"
 	return plan, nil
 }
 
@@ -43,7 +40,7 @@ func (a *sdkIngressReadAdapter) ExecuteRecords(_ context.Context, plans []*execu
 	return events
 }
 
-func (a *sdkIngressReadAdapter) ExecuteNative(context.Context, *execution.Plan, execution.Emit) *pb.NativeEnd {
+func (a *sdkIngressReadAdapter) ExecuteNative(context.Context, *pb.Command, execution.Emit) *pb.NativeEnd {
 	failure := protocol.Fail(pb.FailureCode_UNSUPPORTED, "read fixture")
 	return protocol.NativeFailure(false, failure)
 }

@@ -10,22 +10,14 @@ import (
 
 // Record borrows one validated immutable request and its decoded resource path.
 type Record struct {
-	index    uint64
-	command  *pb.Command
-	store    string
-	segments []string
-	key      string
-	bytes    int
+	Index    uint64
+	Command  *pb.Command
+	Segments []string
+	Key      string
+	Bytes    int
 }
 
-func (r *Record) Index() uint64        { return r.index }
-func (r *Record) Command() *pb.Command { return r.command }
-func (r *Record) StoreName() string    { return r.store }
-func (r *Record) Segments() []string   { return r.segments }
-func (r *Record) Key() string          { return r.key }
-func (r *Record) Bytes() int           { return r.bytes }
-
-func NewRecord(store string, index uint64, command *pb.Command) (*Record, error) {
+func NewRecord(index uint64, command *pb.Command) (*Record, error) {
 	resource := command.GetMutate().GetResource()
 	if read := command.GetRead(); read != nil {
 		resource = read.Resource
@@ -52,6 +44,6 @@ func NewRecord(store string, index uint64, command *pb.Command) (*Record, error)
 		}
 		remaining = rest
 	}
-	record := &Record{index: index, command: command, store: store, segments: parts, key: resource, bytes: proto.Size(command)}
+	record := &Record{Index: index, Command: command, Segments: parts, Key: resource, Bytes: proto.Size(command)}
 	return record, nil
 }

@@ -105,7 +105,7 @@ func deadlineMutation(t *testing.T, runtime *store.Runtime, action string) *exec
 	}
 	operation := &pb.Command_Mutate{Mutate: request}
 	command := &pb.Command{Operation: operation}
-	record, err := execution.NewRecord("search", 1, command)
+	record, err := execution.NewRecord(1, command)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -256,8 +256,7 @@ func TestBulkUnknownRetainsSanitizedFailureCause(t *testing.T) {
 			adapter := &Adapter{}
 			work := unsentWritePlan()
 			works := []*execution.Plan{work}
-			bulkReply := bulkResponse{works: works, status: test.status, raw: []byte(test.raw), err: test.err}
-			results := adapter.bulkResults(context.Background(), bulkReply)
+			results, _ := adapter.bulkResults(works, test.status, []byte(test.raw), test.err)
 			mutation := results[0].GetMutationResult()
 			if mutation.GetOutcome() != pb.MutationOutcome_UNKNOWN || mutation.GetFailure().GetCode() != test.code || mutation.GetFailure().GetMessage() != test.message {
 				t.Fatal("uncertainty or sanitized cause changed", mutation)

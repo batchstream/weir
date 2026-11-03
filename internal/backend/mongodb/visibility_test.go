@@ -44,7 +44,7 @@ func TestMongoVisibilityUsesMajorityAcknowledgementForEitherOption(t *testing.T)
 			t.Fatal("visibility option unsupported", wait, failure)
 		}
 		works := []*execution.Plan{work}
-		mutation := adapter.executeRecords(t.Context(), works)[0].GetMutationResult()
+		mutation := adapter.ExecuteRecords(t.Context(), works)[0].GetMutationResult()
 		if mutation.GetOutcome() != pb.MutationOutcome_APPLIED || mutation.GetFailure() != nil || writes != 1 {
 			t.Fatal("majority acknowledgement changed with visibility option", wait, mutation, writes)
 		}

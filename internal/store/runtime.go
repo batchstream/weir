@@ -14,7 +14,6 @@ import (
 	"github.com/batchstream/weir-protocol/api/protocol"
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 	"github.com/batchstream/weir/internal/execution"
-	"google.golang.org/protobuf/proto"
 )
 
 // Limits bounds waiting work, physical batch size and per-Store adapter invocations.
@@ -182,47 +181,27 @@ func (r *Runtime) PrepareRecord(ctx context.Context, record *execution.Record) (
 		return nil, refusal
 	}
 	plan, failure := r.adapter.PrepareRecord(ctx, record)
-	if failure != nil {
-		r.metrics.rejections.WithLabelValues("prepare").Inc()
-		return nil, failure
+	if failure == nil {
+		return plan, nil
 	}
-	if plan == nil || plan.Command != record.Command() {
-		return nil, protocol.Fail(pb.FailureCode_INTERNAL, "invalid prepared record")
+	r.metrics.rejections.WithLabelValues("prepare").Inc()
+	if ctx.Err() != nil {
+		failure = protocol.ContextFailure(ctx)
 	}
-	plan.Bytes = max(plan.Bytes, record.Bytes())
-	plan.Index = record.Index()
-	return plan, nil
-}
-
-func (r *Runtime) PrepareNative(ctx context.Context, command *pb.Command) (*execution.Plan, *pb.Failure) {
-	plan, failure := r.adapter.PrepareNative(ctx, command)
-	if failure != nil {
-		r.metrics.rejections.WithLabelValues("prepare").Inc()
-		return nil, failure
-	}
-	if plan == nil || plan.Command != command {
-		return nil, protocol.Fail(pb.FailureCode_INTERNAL, "invalid prepared Native command")
-	}
-	plan.Bytes = max(plan.Bytes, proto.Size(command))
-	return plan, nil
+	return nil, failure
 }
 
 // Submit queues a prepared record. It waits for queue space and fails when the
 // Store drains, the process is overloaded or the caller's context ends.
 func (r *Runtime) Submit(ctx context.Context, plan *execution.Plan, session *Session) (*Ticket, *pb.Failure) {
-	if plan == nil || plan.Command.GetRead() == nil && plan.Command.GetMutate() == nil || session != nil && session.runtime != r {
-		return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid record plan")
-	}
 	ticket := &Ticket{plan: plan, session: session}
 	return r.enqueue(ctx, ticket)
 }
 
 // SubmitNative waits for a free Native slot and starts the command. Its
 // response head and chunks are sent through emit.
-func (r *Runtime) SubmitNative(ctx context.Context, plan *execution.Plan, emit execution.Emit) (*Ticket, *pb.Failure) {
-	if plan == nil || plan.Command.GetNative() == nil || emit == nil {
-		return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid Native plan")
-	}
+func (r *Runtime) SubmitNative(ctx context.Context, command *pb.Command, emit execution.Emit) (*Ticket, *pb.Failure) {
+	plan := &execution.Plan{Command: command}
 	ticket := &Ticket{plan: plan, emit: emit}
 	return r.enqueue(ctx, ticket)
 }
@@ -268,10 +247,8 @@ func (r *Runtime) enqueue(ctx context.Context, ticket *Ticket) (*Ticket, *pb.Fai
 		}
 		r.mu.Lock()
 	}
-	plan := *ticket.plan
 	ticket.ctx, ticket.cancel = context.WithCancel(ctx)
-	plan.Context = ticket.ctx
-	ticket.plan = &plan
+	ticket.plan.Context = ticket.ctx
 	ticket.queuedAt = time.Now()
 	ticket.done = make(chan struct{})
 	ticket.stop = context.AfterFunc(ticket.ctx, r.signal)
@@ -281,7 +258,7 @@ func (r *Runtime) enqueue(ctx context.Context, ticket *Ticket) (*Ticket, *pb.Fai
 		return ticket, nil
 	}
 	r.queue = append(r.queue, ticket)
-	r.queueBytes += plan.Bytes
+	r.queueBytes += ticket.plan.Bytes
 	r.signal()
 	return ticket, nil
 }
@@ -683,8 +660,6 @@ func (b *batch) waits() bool {
 	return slices.ContainsFunc(b.items, func(t *Ticket) bool { return t.plan.Waits })
 }
 
-var errInvalidNativeEvent = errors.New("adapter emitted an invalid Native event")
-
 func (r *Runtime) execute(b *batch) {
 	started := time.Now()
 	events := r.run(b)
@@ -761,15 +736,7 @@ func answered(events []*pb.Event) bool {
 func (r *Runtime) run(b *batch) []*pb.Event {
 	first := b.items[0]
 	if b.native() {
-		emit := func(event *pb.Event) error {
-			switch event.GetValue().(type) {
-			case *pb.Event_Head, *pb.Event_Chunk:
-				return first.emit(event)
-			default:
-				return errInvalidNativeEvent
-			}
-		}
-		end := r.adapter.ExecuteNative(b.ctx, first.plan, emit)
+		end := r.adapter.ExecuteNative(b.ctx, first.plan.Command, first.emit)
 		if end == nil {
 			failure := protocol.Fail(pb.FailureCode_INTERNAL, "adapter returned no NativeEnd")
 			end = protocol.NativeFailure(true, failure)

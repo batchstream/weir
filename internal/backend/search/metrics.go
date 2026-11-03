@@ -65,13 +65,8 @@ func (m *searchMetrics) observeHTTP(observation httpObservation) {
 		operation = "other"
 	}
 	visibility := "none"
-	if operation == "bulk" {
-		switch observation.request.URL.Query().Get("refresh") {
-		case "wait_for":
-			visibility = "wait_for"
-		case "true":
-			visibility = "immediate"
-		}
+	if observation.call.visible {
+		visibility = "wait_for"
 	}
 	outcome := "success"
 	if observation.err != nil {

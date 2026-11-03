@@ -72,14 +72,9 @@ func TestMongoNativeRealErrorsBoundsAndReplyLoss(t *testing.T) {
 			raw, _ := bson.Marshal(command)
 			nativeBody := &pb.Document{ContentType: "application/bson", Data: []byte{5, 0, 0, 0, 0}}
 			open := &pb.NativeRequest{Resource: db, Request: nativeBody}
-			plan, f := a.prepareNative(open)
-			if f != nil {
-				t.Fatal(f)
-			}
 			capture := &nativeCapture{}
 			open.Request.Data = raw
-			plan.Command = testutil.NativeCommand(open)
-			end := a.executeNative(ctx, plan, capture.Emit)
+			end := a.ExecuteNative(ctx, testutil.NativeCommand(open), capture.Emit)
 			expected := pb.NativeCompletion_RESPONSE_COMPLETE
 			if mode == "drop" {
 				expected = pb.NativeCompletion_RESPONSE_INCOMPLETE
@@ -140,15 +135,10 @@ func runMongoNativeCommand(t *testing.T, adapter *Adapter, resource string, comm
 	}
 	body := &pb.Document{ContentType: "application/bson", Data: raw}
 	request := &pb.NativeRequest{Resource: resource, Request: body}
-	work, failure := adapter.prepareNative(request)
-	if failure != nil {
-		t.Fatal(failure)
-	}
-	work.Command = testutil.NativeCommand(request)
 	capture := &nativeCapture{}
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
-	end := adapter.executeNative(ctx, work, capture.Emit)
+	end := adapter.ExecuteNative(ctx, testutil.NativeCommand(request), capture.Emit)
 	if end.Completion != pb.NativeCompletion_RESPONSE_COMPLETE || end.Failure != nil || capture.head == nil || capture.head.BodyContentType != "application/bson" {
 		t.Fatal("native command incomplete", command, end)
 	}
@@ -336,16 +326,11 @@ func TestMongoNativeCallerDeadlineCancelsBackendWithoutReplay(t *testing.T) {
 	}
 	body := &pb.Document{ContentType: "application/bson", Data: raw}
 	request := &pb.NativeRequest{Resource: backend.DB, Request: body}
-	work, failure := adapter.prepareNative(request)
-	if failure != nil {
-		t.Fatal(failure)
-	}
-	work.Command = testutil.NativeCommand(request)
 	capture := &nativeCapture{}
 	ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
 	defer cancel()
 	started := time.Now()
-	end := adapter.executeNative(ctx, work, capture.Emit)
+	end := adapter.ExecuteNative(ctx, testutil.NativeCommand(request), capture.Emit)
 	elapsed := time.Since(started)
 	if end.Completion != pb.NativeCompletion_RESPONSE_INCOMPLETE || end.GetFailure().GetCode() != pb.FailureCode_DEADLINE_EXCEEDED || capture.head != nil || calls.Load() != 1 || elapsed > 300*time.Millisecond {
 		t.Fatal("Native caller deadline lost or command replayed", end, calls.Load(), elapsed)

@@ -38,7 +38,7 @@ func TestMongoCrossNamespaceAuthorizationIsolationPersistsAllowedWrites(t *testi
 	adapter := testAdapter(t, opts)
 	resources := []string{fixture.DB + "/records/s:first", fixture.DB + "/denied/s:first", fixture.DB + "/records/s:second"}
 	plans := authorizationPlans(t, adapter, resources)
-	results := adapter.executeRecords(t.Context(), plans)
+	results := adapter.ExecuteRecords(t.Context(), plans)
 	for i, result := range results {
 		want := pb.MutationOutcome_APPLIED
 		if i == 1 {

@@ -57,7 +57,7 @@ func TestMongoCrossNamespaceBulkPreservesIndexesAndPartialFailures(t *testing.T)
 	if plans[0].BatchKey != plans[1].BatchKey || plans[0].Key == plans[1].Key {
 		t.Fatal("cross-target writes cannot batch or share a false ordering conflict")
 	}
-	results := adapter.executeRecords(t.Context(), plans)
+	results := adapter.ExecuteRecords(t.Context(), plans)
 	if results[0].GetMutationResult().GetOutcome() != pb.MutationOutcome_NOT_APPLIED || results[0].GetMutationResult().GetFailure().GetCode() != pb.FailureCode_PRECONDITION_FAILED || results[1].GetMutationResult().GetOutcome() != pb.MutationOutcome_APPLIED {
 		t.Fatal("out-of-order partial failure lost caller correspondence", results)
 	}
@@ -104,7 +104,7 @@ func TestMongoCrossNamespaceBulkSplitsWithinNativeByteWindow(t *testing.T) {
 		}
 		plans = append(plans, work)
 	}
-	for _, result := range adapter.executeRecords(t.Context(), plans) {
+	for _, result := range adapter.ExecuteRecords(t.Context(), plans) {
 		if result.GetMutationResult().GetOutcome() != pb.MutationOutcome_APPLIED {
 			t.Fatal("byte split failed a legal write", result)
 		}

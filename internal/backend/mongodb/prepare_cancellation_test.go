@@ -27,60 +27,6 @@ func (ctx *cancelDuringConversion) Err() error {
 	return ctx.Context.Err()
 }
 
-func TestMongoAdmittedPreparationCancellationKeepsCallerFailure(t *testing.T) {
-	items := make(bson.A, 10000)
-	for i := range items {
-		items[i] = int32(i)
-	}
-	document := bson.D{{Key: "_id", Value: "item"}, {Key: "items", Value: items}}
-	raw := expressionBSON(t, document)
-	config := Config{Store: "mongo"}
-	adapter := &Adapter{config: config}
-	initializeTestLifetime(adapter)
-	for _, action := range []string{"put", "lua", "expression"} {
-		t.Run(action, func(t *testing.T) {
-			body := &pb.Document{ContentType: "application/bson", Data: raw}
-			request := &pb.MutateRequest{Resource: "db/records/s:item"}
-			switch action {
-			case "put":
-				put := &pb.MutateRequest_Put{Put: body}
-				request.Action = put
-			case "lua":
-				program := &pb.LuaTransform{Source: []byte("return function(current, incoming) return incoming end"), Input: body}
-				form := &pb.Transform_Lua{Lua: program}
-				transform := &pb.Transform{Form: form}
-				atomic := &pb.MutateRequest_AtomicTransform{AtomicTransform: transform}
-				request.Action = atomic
-			case "expression":
-				fields := bson.D{{Key: "items", Value: items}}
-				update := bson.D{{Key: "$set", Value: fields}}
-				body = &pb.Document{ContentType: ExpressionContentType, Data: expressionBSON(t, update)}
-				form := &pb.Transform_BackendExpression{BackendExpression: body}
-				transform := &pb.Transform{Form: form}
-				atomic := &pb.MutateRequest_AtomicTransform{AtomicTransform: transform}
-				request.Action = atomic
-			}
-			operation := &pb.Command_Mutate{Mutate: request}
-			command := &pb.Command{Operation: operation}
-			record, err := execution.NewRecord("mongo", 1, command)
-			if err != nil {
-				t.Fatal(err)
-			}
-			base, cancel := context.WithCancel(t.Context())
-			defer cancel()
-			ctx := &cancelDuringConversion{Context: base, cancel: cancel}
-			work, failure := adapter.PrepareRecord(ctx, record)
-			if failure != nil || work == nil || ctx.Err() != nil {
-				t.Fatal("raw preparation materialized the payload", failure)
-			}
-			failure = adapter.validateRecord(ctx, work)
-			if failure.GetCode() != pb.FailureCode_CANCELLED || ctx.Err() != context.Canceled {
-				t.Fatal("admitted conversion cancellation became invalid data", failure)
-			}
-		})
-	}
-}
-
 func TestMongoStoredProgramDecodeCancellationNeverWrites(t *testing.T) {
 	items := make(bson.A, 10000)
 	for i := range items {
@@ -90,11 +36,11 @@ func TestMongoStoredProgramDecodeCancellationNeverWrites(t *testing.T) {
 	raw := expressionBSON(t, document)
 	program := &luaengine.Program{Source: "return function(current, incoming) return current end"}
 	native := &plan{id: "item", program: program}
-	work := &execution.Plan{Backend: native}
-	batch := &programBatch{plans: []*execution.Plan{work}, results: make([]*pb.MutationResult, 1)}
 	base, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	ctx := &cancelDuringConversion{Context: base, cancel: cancel}
+	work := &execution.Plan{Backend: native, Context: ctx}
+	batch := &programBatch{plans: []*execution.Plan{work}, results: make([]*pb.MutationResult, 1)}
 	adapter := &Adapter{}
 	initializeTestLifetime(adapter)
 	positions := []int{0}

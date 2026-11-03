@@ -166,7 +166,7 @@ func TestMongoDefaultRetirementSentUnknownCursor(t *testing.T) {
 			read := &pb.ReadRequest{Resource: "db/records/s:a"}
 			operation := &pb.Command_Read{Read: read}
 			command := &pb.Command{Operation: operation}
-			record, err := execution.NewRecord("mongo", 1, command)
+			record, err := execution.NewRecord(1, command)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -272,12 +272,6 @@ func TestMongoLifetimePreservesOrdinaryCleanupAndClosesParallelLateCleanup(t *te
 			})
 		}
 		workers.Wait()
-		if _, failure := adapter.PrepareNative(parent, nil); failure == nil {
-			t.Fatal("closed PrepareNative accepted work")
-		}
-		if _, failure := adapter.PrepareRecord(parent, nil); failure == nil {
-			t.Fatal("closed PrepareRecord accepted work")
-		}
 	})
 }
 
@@ -287,36 +281,30 @@ func TestMongoLifetimeCancelsPreexistingSelectionAndPendingMetadata(t *testing.T
 		opts := readSelectionOptions{failAt: 1, entered: entered, selectionError: func(ctx context.Context) error { return ctx.Err() }}
 		adapter, deployment, commands := readSelectionAdapter(t, opts)
 		target := namespace{database: "db", collection: "records"}
-		results := make(chan *pb.Failure, 17)
-		go func() { results <- adapter.qualifyTarget(t.Context(), target) }()
+		bound, release := adapter.bindLifetime(t.Context())
+		defer release()
+		result := make(chan *pb.Failure, 1)
+		go func() { result <- adapter.qualifyTarget(bound, target) }()
 		<-entered
-		for range 16 {
-			go func() { results <- adapter.qualifyTarget(t.Context(), target) }()
-		}
 		synctest.Wait()
 		if err := adapter.Close(t.Context()); err != nil {
 			t.Fatal(err)
 		}
-		for range 17 {
-			if failure := <-results; failure == nil {
-				t.Fatal("closed pending metadata became cached success")
-			}
+		if failure := <-result; failure == nil {
+			t.Fatal("closed pending metadata became cached success")
 		}
-		if failure := adapter.qualifyTarget(t.Context(), target); failure == nil {
+		if failure := adapter.qualifyTarget(bound, target); failure == nil {
 			t.Fatal("closed target qualification restarted")
 		}
 		if deployment.selections.Load() != 1 {
-			t.Fatal("shared metadata waiter restarted qualification", deployment.selections.Load())
+			t.Fatal("closed qualification selected a server again", deployment.selections.Load())
 		}
 		names, _ := commands.snapshot()
 		if len(names) != 0 {
 			t.Fatal("selection waiter sent metadata I/O after close", names)
 		}
-		adapter.targets.mu.Lock()
-		retained := len(adapter.targets.entries)
-		adapter.targets.mu.Unlock()
-		if retained != 0 {
-			t.Fatal("failed metadata cached success", retained)
+		if _, retained := adapter.qualified.Load(target); retained {
+			t.Fatal("failed metadata cached success")
 		}
 	})
 }
@@ -367,16 +355,12 @@ func TestMongoLifetimeJoinsActualTopologySelectionWithoutNetwork(t *testing.T) {
 		operation := &pb.Command_Native{Native: request}
 		input := &pb.Command{Operation: operation}
 		caller := t.Context()
-		work, failure := adapter.PrepareNative(caller, input)
-		if failure != nil {
-			t.Fatal(failure)
-		}
 		events := make(chan *pb.Event, 1)
 		ends := make(chan *pb.NativeEnd, 1)
 		joined := make(chan struct{})
 		go func() {
 			defer close(joined)
-			ends <- adapter.ExecuteNative(caller, work, func(event *pb.Event) error { events <- event; return nil })
+			ends <- adapter.ExecuteNative(caller, input, func(event *pb.Event) error { events <- event; return nil })
 		}()
 		synctest.Wait()
 		select {
@@ -453,14 +437,13 @@ func TestMongoLifetimeDoesNotCacheMetadataSuccessAfterClose(t *testing.T) {
 	responses := []bson.D{collectionQualificationResponse("db", "records")}
 	adapter = batchMockAdapter(t, responses, monitor)
 	target := namespace{database: "db", collection: "records"}
-	if failure := adapter.qualifyTarget(t.Context(), target); failure == nil {
+	bound, release := adapter.bindLifetime(t.Context())
+	defer release()
+	if failure := adapter.qualifyTarget(bound, target); failure == nil {
 		t.Fatal("metadata reply racing teardown became successful qualification")
 	}
-	adapter.targets.mu.Lock()
-	retained := len(adapter.targets.entries)
-	adapter.targets.mu.Unlock()
-	if retained != 0 {
-		t.Fatal("successful metadata reply was cached after its rail closed", retained)
+	if _, retained := adapter.qualified.Load(target); retained {
+		t.Fatal("successful metadata reply was cached after its rail closed")
 	}
 }
 

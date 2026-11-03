@@ -189,13 +189,13 @@ func replicaProxyWork(t *testing.T, ctx context.Context, opts replicaProxyWorkOp
 	adapter, fixture, id := opts.adapter, opts.fixture, opts.id
 	work := putPlan(t, adapter, fixture.DB, id)
 	plans := []*execution.Plan{work}
-	results := adapter.executeRecords(ctx, plans)
+	results := adapter.ExecuteRecords(ctx, plans)
 	if len(results) != 1 || results[0].GetMutationResult().GetOutcome() != pb.MutationOutcome_APPLIED || results[0].GetMutationResult().GetFailure() != nil {
 		t.Fatal("typed write through frontend", results)
 	}
 	read := prepareCounter(t, adapter, fixture.DB+"/records/s:"+id)
 	plans = []*execution.Plan{read}
-	results = adapter.executeRecords(ctx, plans)
+	results = adapter.ExecuteRecords(ctx, plans)
 	if len(results) != 1 || results[0].GetReadResult().GetDocument() == nil || results[0].GetReadResult().GetFailure() != nil {
 		t.Fatal("typed read through frontend", results)
 	}
@@ -210,13 +210,8 @@ func replicaProxyWork(t *testing.T, ctx context.Context, opts replicaProxyWorkOp
 	}
 	document := &pb.Document{ContentType: "application/bson", Data: raw}
 	request := &pb.NativeRequest{Resource: fixture.DB, Request: document}
-	native, failure := adapter.prepareNative(request)
-	if failure != nil {
-		t.Fatal(failure)
-	}
-	native.Command = testutil.NativeCommand(request)
 	capture := &nativeCapture{}
-	end := adapter.executeNative(ctx, native, capture.Emit)
+	end := adapter.ExecuteNative(ctx, testutil.NativeCommand(request), capture.Emit)
 	if end.GetCompletion() != pb.NativeCompletion_RESPONSE_COMPLETE || end.Failure != nil {
 		t.Fatal("Native frontend completion", end)
 	}
@@ -306,7 +301,7 @@ func replicaProxyRecover(t *testing.T, ctx context.Context, adapter *Adapter, da
 	for {
 		work := prepareCounter(t, adapter, database+"/records/s:initial")
 		plans := []*execution.Plan{work}
-		replies := adapter.executeRecords(ctx, plans)
+		replies := adapter.ExecuteRecords(ctx, plans)
 		if len(replies) == 1 && replies[0].GetReadResult().GetDocument() != nil && replies[0].GetReadResult().GetFailure() == nil {
 			return
 		}

@@ -34,7 +34,7 @@ func TestSearchMultipleRequestTargets(t *testing.T) {
 	leftRead := batchTestPlan(t, a, "read", searchResource(indexes[0], "same"))
 	rightRead := batchTestPlan(t, a, "read", searchResource(indexes[1], "same"))
 	works := []*execution.Plan{leftRead, rightRead}
-	results := a.executeRecords(context.Background(), works)
+	results := a.ExecuteRecords(context.Background(), works)
 	if len(results) != len(works) {
 		t.Fatal("mixed target cardinality", len(results))
 	}
@@ -60,7 +60,7 @@ func TestSearchMultipleRequestTargets(t *testing.T) {
 		left := batchTestPlan(t, a, actions.left, searchResource(indexes[0], actions.id))
 		right := batchTestPlan(t, a, actions.right, searchResource(indexes[1], actions.id))
 		works := []*execution.Plan{left, right}
-		results := a.executeRecords(context.Background(), works)
+		results := a.ExecuteRecords(context.Background(), works)
 		if len(results) != len(works) {
 			t.Fatal("cross-index mutation cardinality", actions, len(results))
 		}
@@ -84,7 +84,7 @@ func TestSearchMultipleRequestTargets(t *testing.T) {
 				time.Sleep(50 * time.Millisecond)
 				single := []*execution.Plan{works[i]}
 				var replies []*pb.Event
-				replies = a.executeRecords(context.Background(), single)
+				replies = a.ExecuteRecords(context.Background(), single)
 				if len(replies) != 1 {
 					t.Fatal("single target mutation result position", actions, replies)
 				}
@@ -98,7 +98,7 @@ func TestSearchMultipleRequestTargets(t *testing.T) {
 		left := batchTestPlan(t, a, "read", searchResource(indexes[0], "same"))
 		right := batchTestPlan(t, a, "read", searchResource(indexes[1], "same"))
 		concurrent.Go(func() {
-			results := a.executeRecords(context.Background(), []*execution.Plan{left, right})
+			results := a.ExecuteRecords(context.Background(), []*execution.Plan{left, right})
 			if string(results[0].GetReadResult().GetDocument().GetData()) != `{"n":2}` || string(results[1].GetReadResult().GetDocument().GetData()) != `{"n":3}` {
 				t.Error("same service concurrent index isolation failed", results)
 			}

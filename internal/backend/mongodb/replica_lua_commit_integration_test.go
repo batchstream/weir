@@ -49,7 +49,7 @@ func replicaLuaCommitRuntime(t *testing.T, opts replicaLuaRuntimeOptions, abortC
 		mutate := &pb.MutateRequest{Resource: opts.fixture.DB + "/records/s:" + id, Action: atomicTransform}
 		operation := &pb.Command_Mutate{Mutate: mutate}
 		command := &pb.Command{Operation: operation}
-		record, err := execution.NewRecord("mongo", uint64(701+i), command)
+		record, err := execution.NewRecord(uint64(701+i), command)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -118,7 +118,7 @@ func replicaLuaCommitRuntime(t *testing.T, opts replicaLuaRuntimeOptions, abortC
 		recovery, stop := context.WithDeadline(t.Context(), usable.Add(5*time.Second))
 		newID := id + "-new-work"
 		prepared := putPlan(t, opts.delegate.Adapter, opts.fixture.DB, newID)
-		newRecord, err := execution.NewRecord("mongo", uint64(801+i), prepared.Command)
+		newRecord, err := execution.NewRecord(uint64(801+i), prepared.Command)
 		if err != nil {
 			t.Fatal(err)
 		}

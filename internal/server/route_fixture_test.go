@@ -34,17 +34,14 @@ func newRecordAdapter(name string) *recordAdapter {
 	return adapter
 }
 
-func (*recordAdapter) PrepareNative(context.Context, *pb.Command) (*execution.Plan, *pb.Failure) {
-	return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "record fixture")
-}
-
-func (*recordAdapter) ExecuteNative(context.Context, *execution.Plan, execution.Emit) *pb.NativeEnd {
+func (*recordAdapter) ExecuteNative(context.Context, *pb.Command, execution.Emit) *pb.NativeEnd {
 	failure := protocol.Fail(pb.FailureCode_UNSUPPORTED, "record fixture")
 	return protocol.NativeFailure(false, failure)
 }
 
 func (a *recordAdapter) PrepareRecord(ctx context.Context, record *execution.Record) (*execution.Plan, *pb.Failure) {
-	plan := &execution.Plan{Command: record.Command(), Key: record.Key(), BatchKey: "records", Bytes: record.Bytes()}
+	plan := record.Plan(context.Background(), nil)
+	plan.BatchKey = "records"
 	return plan, nil
 }
 

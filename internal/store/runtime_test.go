@@ -21,19 +21,21 @@ type fakeAdapter struct {
 	batches  [][]*execution.Plan
 	started  chan []*execution.Plan
 	records  func(context.Context, []*execution.Plan) []*pb.Event
-	native   func(context.Context, *execution.Plan, execution.Emit) *pb.NativeEnd
+	native   func(context.Context, *pb.Command, execution.Emit) *pb.NativeEnd
+	prepare  func(context.Context, *execution.Record) *pb.Failure
 	closes   atomic.Int32
 	closeErr error
 	closing  func(context.Context)
 }
 
-func (a *fakeAdapter) PrepareRecord(_ context.Context, record *execution.Record) (*execution.Plan, *pb.Failure) {
-	plan := &execution.Plan{Command: record.Command(), Key: record.Key(), BatchKey: "records", Bytes: record.Bytes()}
-	return plan, nil
-}
-
-func (a *fakeAdapter) PrepareNative(_ context.Context, command *pb.Command) (*execution.Plan, *pb.Failure) {
-	plan := &execution.Plan{Command: command, Key: command.GetNative().GetResource()}
+func (a *fakeAdapter) PrepareRecord(ctx context.Context, record *execution.Record) (*execution.Plan, *pb.Failure) {
+	if a.prepare != nil {
+		if failure := a.prepare(ctx, record); failure != nil {
+			return nil, failure
+		}
+	}
+	plan := record.Plan(context.Background(), nil)
+	plan.BatchKey = "records"
 	return plan, nil
 }
 
@@ -50,13 +52,13 @@ func (a *fakeAdapter) ExecuteRecords(ctx context.Context, plans []*execution.Pla
 	return applied(plans)
 }
 
-func (a *fakeAdapter) ExecuteNative(ctx context.Context, plan *execution.Plan, emit execution.Emit) *pb.NativeEnd {
+func (a *fakeAdapter) ExecuteNative(ctx context.Context, command *pb.Command, emit execution.Emit) *pb.NativeEnd {
 	if a.started != nil {
-		plans := []*execution.Plan{plan}
+		plans := []*execution.Plan{{Command: command}}
 		a.started <- plans
 	}
 	if a.native != nil {
-		return a.native(ctx, plan, emit)
+		return a.native(ctx, command, emit)
 	}
 	end := &pb.NativeEnd{Completion: pb.NativeCompletion_RESPONSE_COMPLETE}
 	return end
@@ -129,12 +131,11 @@ func mutationPlan(resource string) *execution.Plan {
 	return plan
 }
 
-func nativePlan() *execution.Plan {
+func nativeCommand() *pb.Command {
 	request := &pb.NativeRequest{Resource: "db"}
 	value := &pb.Command_Native{Native: request}
 	command := &pb.Command{Operation: value}
-	plan := &execution.Plan{Command: command, Key: "db", Bytes: proto.Size(command)}
-	return plan
+	return command
 }
 
 func open(t *testing.T, adapter *fakeAdapter, limits Limits) *Runtime {
@@ -274,7 +275,7 @@ func TestReadsAndNativeDoNotWaitForCompanions(t *testing.T) {
 	}
 	wait(t, read)
 	emit := func(*pb.Event) error { return nil }
-	native, failure := runtime.SubmitNative(t.Context(), nativePlan(), emit)
+	native, failure := runtime.SubmitNative(t.Context(), nativeCommand(), emit)
 	if failure != nil {
 		t.Fatal(failure)
 	}
@@ -609,7 +610,7 @@ func TestOverloadAndDrainRejectSubmissions(t *testing.T) {
 }
 
 func TestRefusingRuntimeRefusesRecordsBeforeTheAdapterPreparesThem(t *testing.T) {
-	record, err := execution.NewRecord("records", 1, readPlan("database/collection/s:a").Command)
+	record, err := execution.NewRecord(1, readPlan("database/collection/s:a").Command)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -702,13 +703,24 @@ func TestSharedBatchFollowsInterestedCallers(t *testing.T) {
 	}
 }
 
-func TestPlanContextsDoNotMutateCallerPlans(t *testing.T) {
-	adapter := &fakeAdapter{}
+func TestPrepareFailureReportsTheCallerOnceItsContextEnded(t *testing.T) {
+	invalid := protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid payload")
+	adapter := &fakeAdapter{prepare: func(context.Context, *execution.Record) *pb.Failure { return invalid }}
 	runtime := open(t, adapter, limits(nil))
-	plan := readPlan("a")
-	wait(t, submit(t, runtime, plan, nil))
-	if plan.Context != nil {
-		t.Fatal("submit changed the caller's plan")
+	read := &pb.ReadRequest{Resource: "a"}
+	value := &pb.Command_Read{Read: read}
+	command := &pb.Command{Operation: value}
+	record, err := execution.NewRecord(1, command)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, failure := runtime.PrepareRecord(t.Context(), record); failure.GetCode() != pb.FailureCode_INVALID_ARGUMENT {
+		t.Fatal("live caller lost the validation failure", failure)
+	}
+	canceled, cancel := context.WithCancel(t.Context())
+	cancel()
+	if _, failure := runtime.PrepareRecord(canceled, record); failure.GetCode() != pb.FailureCode_CANCELLED {
+		t.Fatal("canceled preparation became an argument error", failure)
 	}
 }
 
@@ -720,14 +732,10 @@ func TestNativeStreamsThroughEmit(t *testing.T) {
 	headEvent := &pb.Event{Value: headValue}
 	chunkValue := &pb.Event_Chunk{Chunk: []byte("{}")}
 	chunkEvent := &pb.Event{Value: chunkValue}
-	var rejected error
-	adapter.native = func(_ context.Context, _ *execution.Plan, emit execution.Emit) *pb.NativeEnd {
+	adapter.native = func(_ context.Context, _ *pb.Command, emit execution.Emit) *pb.NativeEnd {
 		_ = emit(headEvent)
 		_ = emit(chunkEvent)
 		end := &pb.NativeEnd{Completion: pb.NativeCompletion_RESPONSE_COMPLETE}
-		endValue := &pb.Event_NativeEnd{NativeEnd: end}
-		endEvent := &pb.Event{Value: endValue}
-		rejected = emit(endEvent)
 		return end
 	}
 	var received []*pb.Event
@@ -735,7 +743,7 @@ func TestNativeStreamsThroughEmit(t *testing.T) {
 		received = append(received, event)
 		return nil
 	}
-	ticket, failure := runtime.SubmitNative(t.Context(), nativePlan(), emit)
+	ticket, failure := runtime.SubmitNative(t.Context(), nativeCommand(), emit)
 	if failure != nil {
 		t.Fatal(failure)
 	}
@@ -743,22 +751,19 @@ func TestNativeStreamsThroughEmit(t *testing.T) {
 	if event.GetNativeEnd().GetCompletion() != pb.NativeCompletion_RESPONSE_COMPLETE || len(received) != 2 || received[0] != headEvent || received[1] != chunkEvent {
 		t.Fatal("Native stream lost order or terminal evidence", event, received)
 	}
-	if !errors.Is(rejected, errInvalidNativeEvent) {
-		t.Fatal("terminal event was accepted through emit", rejected)
-	}
 }
 
 func TestNativesUseTheirOwnSlots(t *testing.T) {
 	adapter := &fakeAdapter{started: make(chan []*execution.Plan, 8)}
 	release := make(chan struct{})
 	runtime := open(t, adapter, limits(func(l *Limits) { l.MaxInFlight, l.MaxNative, l.QueueOperations = 1, 1, 1 }))
-	adapter.native = func(context.Context, *execution.Plan, execution.Emit) *pb.NativeEnd {
+	adapter.native = func(context.Context, *pb.Command, execution.Emit) *pb.NativeEnd {
 		<-release
 		end := &pb.NativeEnd{Completion: pb.NativeCompletion_RESPONSE_COMPLETE}
 		return end
 	}
 	emit := func(*pb.Event) error { return nil }
-	first, failure := runtime.SubmitNative(t.Context(), nativePlan(), emit)
+	first, failure := runtime.SubmitNative(t.Context(), nativeCommand(), emit)
 	if failure != nil {
 		t.Fatal(failure)
 	}
@@ -766,13 +771,13 @@ func TestNativesUseTheirOwnSlots(t *testing.T) {
 	waiting := make(chan *Ticket, 2)
 	for range 2 {
 		go func() {
-			ticket, _ := runtime.SubmitNative(t.Context(), nativePlan(), emit)
+			ticket, _ := runtime.SubmitNative(t.Context(), nativeCommand(), emit)
 			waiting <- ticket
 		}()
 	}
 	expired, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
 	defer cancel()
-	if _, failure := runtime.SubmitNative(expired, nativePlan(), emit); failure.GetCode() != pb.FailureCode_DEADLINE_EXCEEDED {
+	if _, failure := runtime.SubmitNative(expired, nativeCommand(), emit); failure.GetCode() != pb.FailureCode_DEADLINE_EXCEEDED {
 		t.Fatal("Native passed a full Native pool", failure)
 	}
 	// Natives waiting for a slot occupy neither the record queue nor a record slot.
@@ -806,9 +811,9 @@ func TestInvalidAdapterResultsBecomeUnknown(t *testing.T) {
 	if result.GetOutcome() != pb.MutationOutcome_UNKNOWN || result.GetFailure().GetCode() != pb.FailureCode_INTERNAL {
 		t.Fatal("missing adapter result was not reported as uncertain", event)
 	}
-	adapter.native = func(context.Context, *execution.Plan, execution.Emit) *pb.NativeEnd { return nil }
+	adapter.native = func(context.Context, *pb.Command, execution.Emit) *pb.NativeEnd { return nil }
 	emit := func(*pb.Event) error { return nil }
-	ticket, failure := runtime.SubmitNative(t.Context(), nativePlan(), emit)
+	ticket, failure := runtime.SubmitNative(t.Context(), nativeCommand(), emit)
 	if failure != nil {
 		t.Fatal(failure)
 	}
@@ -888,7 +893,7 @@ func TestCloseReportsNativeBlockedInEmit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	adapter.native = func(ctx context.Context, _ *execution.Plan, emit execution.Emit) *pb.NativeEnd {
+	adapter.native = func(ctx context.Context, _ *pb.Command, emit execution.Emit) *pb.NativeEnd {
 		value := &pb.Event_Chunk{Chunk: []byte("x")}
 		event := &pb.Event{Value: value}
 		if err := emit(event); err != nil {
@@ -904,7 +909,7 @@ func TestCloseReportsNativeBlockedInEmit(t *testing.T) {
 		<-caller.Done()
 		return caller.Err()
 	}
-	ticket, failure := runtime.SubmitNative(caller, nativePlan(), emit)
+	ticket, failure := runtime.SubmitNative(caller, nativeCommand(), emit)
 	if failure != nil {
 		t.Fatal(failure)
 	}

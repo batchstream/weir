@@ -93,7 +93,7 @@ func TestMongoCrossNamespaceAuthorizationRejectionIsolatesWrites(t *testing.T) {
 			adapter := batchMockAdapter(t, responses, monitor)
 			resources := []string{"db/allowed/s:first", "db/denied/s:first", "other/allowed/s:first", "db/allowed/s:second"}
 			plans := authorizationPlans(t, adapter, resources)
-			results := adapter.executeRecords(t.Context(), plans)
+			results := adapter.ExecuteRecords(t.Context(), plans)
 			for i, result := range results {
 				want := pb.MutationOutcome_APPLIED
 				if i == 1 {

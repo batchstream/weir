@@ -45,7 +45,7 @@ func TestMongoCrossNamespaceNativeBulkPersistsAndIsolatesFailure(t *testing.T) {
 		}
 		plans = append(plans, work)
 	}
-	results := adapter.executeRecords(t.Context(), plans)
+	results := adapter.ExecuteRecords(t.Context(), plans)
 	if results[0].GetMutationResult().GetOutcome() != pb.MutationOutcome_NOT_APPLIED || results[0].GetMutationResult().GetFailure().GetCode() != pb.FailureCode_PRECONDITION_FAILED || results[1].GetMutationResult().GetOutcome() != pb.MutationOutcome_APPLIED || results[2].GetMutationResult().GetOutcome() != pb.MutationOutcome_NOT_STARTED || results[2].GetMutationResult().GetFailure().GetCode() != pb.FailureCode_TARGET_NOT_FOUND {
 		t.Fatal("cross-namespace partial failure lost mutation evidence", results)
 	}

@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/batchstream/weir-protocol/api/protocol"
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
@@ -44,17 +45,18 @@ type Adapter struct {
 	closeErr         error
 	lifetime         context.Context
 	cancelLifetime   context.CancelFunc
-	targets          targetCache
-	lua              *luaengine.Metrics
+	// qualified remembers the collections that passed qualifyTarget. Only
+	// collections that exist enter it, so the deployment bounds its size.
+	qualified sync.Map
+	lua       *luaengine.Metrics
 }
 
 type plan struct {
-	target    namespace
-	id        any
-	document  bson.Raw
-	action    string
-	program   *luaengine.Program
-	validated bool
+	target   namespace
+	id       any
+	document bson.Raw
+	action   string
+	program  *luaengine.Program
 }
 
 func (a *Adapter) options() backend.Options {
@@ -124,8 +126,6 @@ func Open(ctx context.Context, cfg Config) (*Adapter, error) {
 		config:         cfg,
 		lua:            luaengine.NewMetrics(),
 	}
-	a.targets.entries = make(map[namespace]*targetCheck)
-	a.targets.capacity = settings.MetadataCacheEntries
 	if err = a.qualify(ctx, profile.replicaSet); err != nil {
 		cleanup, cancel := context.WithTimeout(context.Background(), settings.CleanupTimeout)
 		_ = a.Close(cleanup)
@@ -191,9 +191,11 @@ func (a *Adapter) Close(ctx context.Context) error {
 	return a.closeErr
 }
 
-func (a *Adapter) prepareRecord(ctx context.Context, record *execution.Record) (*execution.Plan, *pb.Failure) {
-	op := record.Command()
-	s := record.Segments()
+// PrepareRecord validates a record once, without backend I/O. Both visibility
+// choices use primary reads and majority-acknowledged writes: MongoDB has no
+// separate search refresh stage to wait for.
+func (a *Adapter) PrepareRecord(ctx context.Context, record *execution.Record) (*execution.Plan, *pb.Failure) {
+	s := record.Segments
 	if len(s) != 3 || !validNamespace(s) {
 		return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid MongoDB record target")
 	}
@@ -202,57 +204,42 @@ func (a *Adapter) prepareRecord(ctx context.Context, record *execution.Record) (
 		return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid record identity")
 	}
 	target := namespace{database: s[0], collection: s[1]}
-	native := &plan{target: target, id: id}
-	p := &execution.Plan{Command: op, Key: record.Key(), Backend: native, Bytes: record.Bytes()}
-	if r := op.GetRead(); r != nil {
-		native.action = "read"
-	} else {
-		// Both visibility choices use primary reads and majority-acknowledged
-		// writes. MongoDB has no separate search refresh stage to wait for.
-		m := op.GetMutate()
-		var d *pb.Document
-		switch v := m.Action.(type) {
-		case *pb.MutateRequest_Put:
-			native.action = "put"
-			d = v.Put
-		case *pb.MutateRequest_Create:
-			native.action = "create"
-			d = v.Create
-		case *pb.MutateRequest_Replace:
-			native.action = "replace"
-			d = v.Replace
-		case *pb.MutateRequest_Delete:
-			native.action = "delete"
-		case *pb.MutateRequest_AtomicTransform:
-			if program := v.AtomicTransform.GetLua(); program != nil {
-				if program.Input != nil && program.Input.ContentType != "application/bson" {
-					return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "MongoDB Lua input must use BSON")
-				}
-
-				native.action = "program"
-				native.program = &luaengine.Program{}
-			} else {
-				expression := v.AtomicTransform.GetBackendExpression()
-				if expression.ContentType != ExpressionContentType {
-					return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "unsupported MongoDB expression profile")
-				}
-				native.action = "expression"
-				native.document = expression.Data
-			}
-		}
-		if d != nil {
-			if d.ContentType != "application/bson" {
-				return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "only raw BSON is supported")
-			}
-			if !validBSONDocument(d.Data, 0) {
-				return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid BSON document")
-			}
-			native.document = d.Data
-		}
+	native := &plan{target: target, id: id, action: "read"}
+	work := record.Plan(ctx, native)
+	// Reads share a find per collection, and writes share a bulkWrite across
+	// collections. Programs share a transaction, which has one collection here.
+	work.BatchKey = target.String()
+	mutation := record.Command.GetMutate()
+	if mutation == nil {
+		return work, nil
 	}
-	// BSON filters, model envelopes and write-command overhead fit this conservative charge.
-	p.Bytes = record.Bytes()
-	return p, nil
+	work.BatchKey = "records"
+	switch action := mutation.Action.(type) {
+	case *pb.MutateRequest_Put:
+		native.action = "put"
+		return work, native.setDocument(action.Put)
+	case *pb.MutateRequest_Create:
+		native.action = "create"
+		return work, native.setDocument(action.Create)
+	case *pb.MutateRequest_Replace:
+		native.action = "replace"
+		return work, native.setDocument(action.Replace)
+	case *pb.MutateRequest_Delete:
+		native.action = "delete"
+		return work, nil
+	case *pb.MutateRequest_AtomicTransform:
+		if program := action.AtomicTransform.GetLua(); program != nil {
+			native.action = "program"
+			native.program = &luaengine.Program{Source: string(program.Source), ObservedAt: time.Now()}
+			work.BatchKey = target.String() + "/lua"
+			return work, validateProgramInput(ctx, program.Input)
+		}
+		expression := action.AtomicTransform.GetBackendExpression()
+		native.action = "expression"
+		native.document = expression.GetData()
+		return work, validateExpression(ctx, expression)
+	}
+	return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "mutation unsupported")
 }
 
 func parseID(s string) (any, error) {

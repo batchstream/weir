@@ -12,26 +12,6 @@ import (
 	"go.mongodb.org/mongo-driver/v2/x/mongo/driver/description"
 )
 
-func (a *Adapter) prepareNative(request *pb.NativeRequest) (*execution.Plan, *pb.Failure) {
-	if f := protocol.ValidateNative(request); f != nil {
-		return nil, f
-	}
-	parts, _ := protocol.ParseRelativeResource(request.Resource)
-	if len(parts) > 1 {
-		return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid MongoDB Native target")
-	}
-	if request.Request.ContentType != "application/bson" {
-		return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "MongoDB Native requires application/bson")
-	}
-
-	database := ""
-	if len(parts) == 1 {
-		database = parts[0]
-	}
-	p := &execution.Plan{Backend: database, Key: request.Resource}
-	return p, nil
-}
-
 func (a *Adapter) nativeCommand(raw []byte) *pb.Failure {
 	command := bson.Raw(raw)
 	if !bsonFraming(raw) || command.Validate() != nil {
@@ -43,9 +23,22 @@ func (a *Adapter) nativeCommand(raw []byte) *pb.Failure {
 	return nil
 }
 
-func (a *Adapter) executeNative(ctx context.Context, work *execution.Plan, emit execution.Emit) *pb.NativeEnd {
-	raw := work.Command.GetNative().Request.Data
-	database := work.Backend.(string)
+func (a *Adapter) ExecuteNative(ctx context.Context, command *pb.Command, emit execution.Emit) *pb.NativeEnd {
+	ctx, release := a.bindLifetime(ctx)
+	defer release()
+	request := command.GetNative()
+	parts, _ := protocol.ParseRelativeResource(request.Resource)
+	if len(parts) > 1 {
+		return protocol.NativeFailure(false, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid MongoDB Native target"))
+	}
+	if request.Request.ContentType != "application/bson" {
+		return protocol.NativeFailure(false, protocol.Fail(pb.FailureCode_UNSUPPORTED, "MongoDB Native requires application/bson"))
+	}
+	database := ""
+	if len(parts) == 1 {
+		database = parts[0]
+	}
+	raw := request.Request.Data
 	if f := a.nativeCommand(raw); f != nil {
 		return protocol.NativeFailure(false, f)
 	}

@@ -102,7 +102,7 @@ func TestSearchQueuedReadCompletesBeforeUnrelatedSlowWrite(t *testing.T) {
 			request := &pb.MutateRequest{Resource: resource, Action: action}
 			command.Operation = &pb.Command_Mutate{Mutate: request}
 		}
-		record, err := execution.NewRecord("search", 1, command)
+		record, err := execution.NewRecord(1, command)
 		if err != nil {
 			t.Fatal(err)
 		}

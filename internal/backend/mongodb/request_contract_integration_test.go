@@ -27,7 +27,7 @@ func TestMongoLuaBusinessFunctionCreatesMissingRecord(t *testing.T) {
 	input := &pb.Document{ContentType: "application/bson", Data: raw}
 	request.Command.GetMutate().GetAtomicTransform().GetLua().Input = input
 	// Prepare from the complete public request so the Lua input is decoded normally.
-	record, err := execution.NewRecord("mongo", 1, request.Command)
+	record, err := execution.NewRecord(1, request.Command)
 	if err != nil {
 		t.Fatal(err)
 	}

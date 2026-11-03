@@ -101,10 +101,6 @@ type closeBlockingAdapter struct {
 	release chan struct{}
 }
 
-func (*closeBlockingAdapter) PrepareNative(context.Context, *pb.Command) (*execution.Plan, *pb.Failure) {
-	return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "close fixture")
-}
-
 func (*closeBlockingAdapter) PrepareRecord(context.Context, *execution.Record) (*execution.Plan, *pb.Failure) {
 	return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "close fixture")
 }
@@ -113,7 +109,7 @@ func (*closeBlockingAdapter) ExecuteRecords(context.Context, []*execution.Plan) 
 	return nil
 }
 
-func (*closeBlockingAdapter) ExecuteNative(context.Context, *execution.Plan, execution.Emit) *pb.NativeEnd {
+func (*closeBlockingAdapter) ExecuteNative(context.Context, *pb.Command, execution.Emit) *pb.NativeEnd {
 	failure := protocol.Fail(pb.FailureCode_UNSUPPORTED, "close fixture")
 	return protocol.NativeFailure(false, failure)
 }

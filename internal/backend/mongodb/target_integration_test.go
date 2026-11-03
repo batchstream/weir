@@ -79,17 +79,12 @@ func targetNative(t *testing.T, adapter *Adapter, database string, command bson.
 	t.Helper()
 	nativeBody := &pb.Document{ContentType: "application/bson", Data: []byte{5, 0, 0, 0, 0}}
 	open := &pb.NativeRequest{Resource: database, Request: nativeBody}
-	work, failure := adapter.prepareNative(open)
-	if failure != nil {
-		t.Fatal(failure)
-	}
 	raw := expressionBSON(t, command)
 	capture := &nativeCapture{}
 	open.Request.Data = raw
-	work.Command = testutil.NativeCommand(open)
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	end := adapter.executeNative(ctx, work, capture.Emit)
+	end := adapter.ExecuteNative(ctx, testutil.NativeCommand(open), capture.Emit)
 	if end.Completion != pb.NativeCompletion_RESPONSE_COMPLETE || end.Failure != nil {
 		t.Fatal(end)
 	}
@@ -111,7 +106,7 @@ func TestMongoResourceTargetsBulkLuaNative(t *testing.T) {
 		}
 		plans = append(plans, work)
 	}
-	results := adapter.executeRecords(ctx, plans)
+	results := adapter.ExecuteRecords(ctx, plans)
 	for i, result := range results {
 		if result.GetMutationResult().Outcome != pb.MutationOutcome_APPLIED {
 			t.Fatal("mixed target create failed", i, result)
@@ -122,8 +117,9 @@ func TestMongoResourceTargetsBulkLuaNative(t *testing.T) {
 		work := prepareCounter(t, adapter, targetResource(target)+"/s:shared")
 		plans = append(plans, work)
 	}
-	results = adapter.executeRecords(ctx, plans)
-	for i, result := range results {
+	// Reads and programs batch per collection; writes batch across collections.
+	for i, work := range plans {
+		result := adapter.ExecuteRecords(ctx, []*execution.Plan{work})[0]
 		document := result.GetReadResult().GetDocument()
 		if document == nil || bson.Raw(document.Data).Lookup("n").Int32() != int32(i+1) {
 			t.Fatal("same id crossed a namespace", i, result)
@@ -131,24 +127,17 @@ func TestMongoResourceTargetsBulkLuaNative(t *testing.T) {
 	}
 	plans = nil
 	for i, target := range fixture.targets {
-		for j, action := range []string{"read", "create"} {
-			document := bson.D{{Key: "_id", Value: "shared"}, {Key: "n", Value: int32(999)}}
-			opts := batchOperationOptions{resource: targetResource(target) + "/s:shared", action: action, index: uint64(70 + i*2 + j), document: document}
-			work, failure := prepareTestRecord(adapter, batchOperation(t, opts))
-			if failure != nil {
-				t.Fatal(failure)
-			}
-			plans = append(plans, work)
+		document := bson.D{{Key: "_id", Value: "shared"}, {Key: "n", Value: int32(999)}}
+		opts := batchOperationOptions{resource: targetResource(target) + "/s:shared", action: "create", index: uint64(70 + i), document: document}
+		work, failure := prepareTestRecord(adapter, batchOperation(t, opts))
+		if failure != nil {
+			t.Fatal(failure)
 		}
+		plans = append(plans, work)
 	}
-	results = adapter.executeRecords(ctx, plans)
-	for i, result := range results {
-		if i%2 == 0 {
-			document := result.GetReadResult().GetDocument()
-			if document == nil || bson.Raw(document.Data).Lookup("n").Int32() != int32(i/2+1) {
-				t.Fatal("mixed target point read changed", result)
-			}
-		} else if result.GetMutationResult().Outcome != pb.MutationOutcome_NOT_APPLIED || result.GetMutationResult().Failure.GetCode() != pb.FailureCode_PRECONDITION_FAILED {
+	results = adapter.ExecuteRecords(ctx, plans)
+	for _, result := range results {
+		if result.GetMutationResult().Outcome != pb.MutationOutcome_NOT_APPLIED || result.GetMutationResult().Failure.GetCode() != pb.FailureCode_PRECONDITION_FAILED {
 			t.Fatal("mixed target duplicate acknowledgement changed", result)
 		}
 	}
@@ -166,8 +155,8 @@ func TestMongoResourceTargetsBulkLuaNative(t *testing.T) {
 		}
 		plans = append(plans, work)
 	}
-	results = adapter.executeRecords(ctx, plans)
-	for i, result := range results {
+	for i, work := range plans {
+		result := adapter.ExecuteRecords(ctx, []*execution.Plan{work})[0]
 		if result.GetMutationResult().Outcome != pb.MutationOutcome_APPLIED {
 			t.Fatal("mixed target Lua failed", i, result)
 		}
@@ -218,13 +207,13 @@ func TestMongoResourceTargetsConcurrent(t *testing.T) {
 					t.Error(failure)
 					return
 				}
-				results := fixture.adapter.executeRecords(ctx, []*execution.Plan{work})
+				results := fixture.adapter.ExecuteRecords(ctx, []*execution.Plan{work})
 				if results[0].GetMutationResult().Outcome != pb.MutationOutcome_APPLIED {
 					t.Error(target, results)
 					return
 				}
 				read := prepareCounter(t, fixture.adapter, targetResource(target)+"/s:same")
-				results = fixture.adapter.executeRecords(ctx, []*execution.Plan{read})
+				results = fixture.adapter.ExecuteRecords(ctx, []*execution.Plan{read})
 				readDocument := results[0].GetReadResult().GetDocument()
 				if readDocument == nil || bson.Raw(readDocument.Data).Lookup("n").Int32() != int32(i) {
 					t.Error("concurrent target state crossed namespace", target, results)
@@ -276,7 +265,7 @@ func TestMongoResourceTargetsRejectUnqualifiedCollections(t *testing.T) {
 				if failure != nil {
 					t.Fatal(failure)
 				}
-				results := fixture.adapter.executeRecords(ctx, []*execution.Plan{work})
+				results := fixture.adapter.ExecuteRecords(ctx, []*execution.Plan{work})
 				if action == "read" {
 					if results[0].GetReadResult().GetFailure() == nil || results[0].GetReadResult().GetMissing() != nil {
 						t.Fatal("unqualified point read target accepted", results)

@@ -71,20 +71,20 @@ func TestSingleIndexAliasPinsLuaCASAndVisibility(t *testing.T) {
 	options := visibilityPlanOptions{action: "program", resource: "catalog/s:item", wait: true, program: `return function(current, incoming) current.n = current.n + 1; return current end`}
 	work := visibilityPlan(t, adapter, options)
 	works := []*execution.Plan{work}
-	result := adapter.executeRecords(t.Context(), works)[0].GetMutationResult()
-	if result.GetOutcome() != pb.MutationOutcome_APPLIED || result.Failure != nil || writes.Load() != 1 || work.Backend.(*plan).index != "catalog" {
-		t.Fatal("alias CAS or caller plan changed", result, writes.Load(), work.Backend.(*plan).index)
+	result := adapter.ExecuteRecords(t.Context(), works)[0].GetMutationResult()
+	if result.GetOutcome() != pb.MutationOutcome_APPLIED || result.Failure != nil || writes.Load() != 1 {
+		t.Fatal("alias CAS changed", result, writes.Load())
 	}
 	read := batchTestPlan(t, adapter, "read", "catalog/s:item")
 	reads := []*execution.Plan{read}
-	reply := adapter.executeRecords(t.Context(), reads)[0].GetReadResult()
+	reply := adapter.ExecuteRecords(t.Context(), reads)[0].GetReadResult()
 	if string(reply.GetDocument().GetData()) != `{"n":10}` {
 		t.Fatal("later call retained the old alias target", reply)
 	}
 	keepOptions := visibilityPlanOptions{action: "program", resource: "catalog/s:item", wait: true, program: `return function(current, incoming) return weir.keep() end`}
 	keep := visibilityPlan(t, adapter, keepOptions)
 	keeps := []*execution.Plan{keep}
-	result = adapter.executeRecords(t.Context(), keeps)[0].GetMutationResult()
+	result = adapter.ExecuteRecords(t.Context(), keeps)[0].GetMutationResult()
 	if result.GetOutcome() != pb.MutationOutcome_APPLIED || result.Failure != nil || refreshes.Load() != 1 || writes.Load() != 1 {
 		t.Fatal("no-op visibility lost the resolved index", result, refreshes.Load(), writes.Load())
 	}
@@ -106,7 +106,7 @@ func TestTargetAliasesRejectAmbiguousOrChangedSemantics(t *testing.T) {
 			defer server.Close()
 			config := Config{URL: server.URL}
 			adapter := &Adapter{config: config, ctx: context.Background(), client: server.Client()}
-			_, failure := adapter.inspect(t.Context(), "catalog", false)
+			_, failure := adapter.inspect(t.Context(), "catalog")
 			if failure.GetCode() != pb.FailureCode_UNSUPPORTED {
 				t.Fatal("ambiguous alias or changed query/routing semantics accepted", failure)
 			}

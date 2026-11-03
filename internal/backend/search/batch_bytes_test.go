@@ -139,7 +139,7 @@ func TestBulkFramingUsesSmallerConfiguredByteWindow(t *testing.T) {
 				}
 				works = append(works, work)
 			}
-			for _, result := range adapter.executeRecords(t.Context(), works) {
+			for _, result := range adapter.ExecuteRecords(t.Context(), works) {
 				if result.GetMutationResult().GetOutcome() != pb.MutationOutcome_APPLIED || result.GetMutationResult().GetFailure() != nil {
 					t.Fatal("legal input failed", result)
 				}
@@ -191,6 +191,10 @@ func TestLuaGeneratedBytesFlushBeforeNextRead(t *testing.T) {
 			if tc.oversize {
 				settings.BatchBytes--
 			}
+			if tc.splitReads {
+				// One retained pre-read per exchange.
+				settings.ExchangeBytes = settings.BatchBytes
+			}
 			adapter.config.Options = &settings
 			works := make([]*execution.Plan, 0, 3)
 			for i := range 3 {
@@ -198,7 +202,7 @@ func TestLuaGeneratedBytesFlushBeforeNextRead(t *testing.T) {
 				work.Backend.(*plan).program.Source = `return function(current) current.payload = current.payload .. current.payload; return current end`
 				works = append(works, work)
 			}
-			for _, result := range adapter.executeRecords(t.Context(), works) {
+			for _, result := range adapter.ExecuteRecords(t.Context(), works) {
 				if result.GetMutationResult().GetOutcome() != pb.MutationOutcome_APPLIED || result.GetMutationResult().GetFailure() != nil {
 					t.Fatal("Lua expansion failed", result)
 				}

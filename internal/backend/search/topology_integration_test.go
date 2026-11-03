@@ -49,7 +49,7 @@ func TestSearchSingleIndexAliasMultiplePrimaryShards(t *testing.T) {
 		options := visibilityPlanOptions{action: "program", resource: alias + "/s:item", wait: true, program: source}
 		work := visibilityPlan(t, adapter, options)
 		works := []*execution.Plan{work}
-		result := adapter.executeRecords(t.Context(), works)[0].GetMutationResult()
+		result := adapter.ExecuteRecords(t.Context(), works)[0].GetMutationResult()
 		if result.GetOutcome() != pb.MutationOutcome_APPLIED || result.Failure != nil {
 			t.Fatal("multi-shard alias mutation", result)
 		}
@@ -81,7 +81,7 @@ func TestSearchSingleIndexAliasMultiplePrimaryShards(t *testing.T) {
 	assertVisible(42)
 	read := batchTestPlan(t, adapter, "read", alias+"/s:item")
 	reads := []*execution.Plan{read}
-	reply := adapter.executeRecords(t.Context(), reads)[0].GetReadResult()
+	reply := adapter.ExecuteRecords(t.Context(), reads)[0].GetReadResult()
 	if reply.GetFailure() != nil || !strings.Contains(string(reply.GetDocument().GetData()), `"n":42`) {
 		t.Fatal("alias read did not follow current target", reply)
 	}

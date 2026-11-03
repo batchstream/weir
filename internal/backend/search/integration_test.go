@@ -64,7 +64,7 @@ func TestSearchMixedBulk(t *testing.T) {
 	works := []*execution.Plan{good, existing, bad, missing}
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	results := a.executeRecords(ctx, works)
+	results := a.ExecuteRecords(ctx, works)
 
 	assertOutcome(t, results[0], pb.MutationOutcome_APPLIED, 0)
 	assertOutcome(t, results[1], pb.MutationOutcome_NOT_APPLIED, pb.FailureCode_PRECONDITION_FAILED)

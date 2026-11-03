@@ -60,15 +60,9 @@ func (a *Adapter) reject(errorType string, status int) *pb.Failure {
 	}
 }
 
-type bulkResponse struct {
-	works  []*execution.Plan
-	status int
-	raw    []byte
-	err    error
-}
-
-func (a *Adapter) bulkResults(ctx context.Context, response bulkResponse) []*pb.Event {
-	works, status, raw, err := response.works, response.status, response.raw, response.err
+// bulkResults turns one _bulk exchange into a result per work, and returns the
+// reply's items when they correspond to the works.
+func (a *Adapter) bulkResults(works []*execution.Plan, status int, raw []byte, err error) ([]*pb.Event, []bulkItem) {
 	results := make([]*pb.Event, len(works))
 	outcome := pb.MutationOutcome_UNKNOWN
 	failure := protocol.Fail(pb.FailureCode_UNAVAILABLE, "backend write acknowledgement invalid or incomplete")
@@ -97,15 +91,7 @@ func (a *Adapter) bulkResults(ctx context.Context, response bulkResponse) []*pb.
 		return results
 	}
 	if err != nil {
-		return unacknowledged()
-	}
-	if validateJSON(ctx, raw) != nil {
-		if ctx.Err() != nil {
-			for i, work := range works {
-				results[i] = execution.FailedEvent(work.Command, pb.MutationOutcome_UNKNOWN, protocol.ContextFailure(ctx))
-			}
-		}
-		return unacknowledged()
+		return unacknowledged(), nil
 	}
 	if status != 200 {
 		failure = protocol.Fail(pb.FailureCode_UNAVAILABLE, "backend write HTTP status "+strconv.Itoa(status)+"; acknowledgement unavailable")
@@ -127,15 +113,15 @@ func (a *Adapter) bulkResults(ctx context.Context, response bulkResponse) []*pb.
 				for i, work := range works {
 					results[i] = execution.FailedEvent(work.Command, pb.MutationOutcome_NOT_APPLIED, failure)
 				}
-				return results
+				return results, nil
 			}
 		}
-		return results
+		return results, nil
 	}
 	// Validate the entire positional correspondence before trusting any item.
 	reply, ok := decodeBulkReply(raw, works)
 	if !ok {
-		return unacknowledged()
+		return unacknowledged(), nil
 	}
 	for i, work := range works {
 		native := work.Backend.(*plan)
@@ -198,7 +184,7 @@ func (a *Adapter) bulkResults(ctx context.Context, response bulkResponse) []*pb.
 		}
 		results[i] = execution.FailedEvent(work.Command, pb.MutationOutcome_APPLIED, postWriteFailure)
 	}
-	return unacknowledged()
+	return unacknowledged(), reply.items
 }
 
 // Metadata/read failures describe availability, without claiming a write outcome.
@@ -207,7 +193,7 @@ func (a *Adapter) nativeResponseFailure(ctx context.Context, status int, raw []b
 		Error  *nativeError
 		Status int
 	}
-	if validateJSON(ctx, raw) == nil && json.Unmarshal(raw, &envelope) == nil && envelope.Error != nil && envelope.Status == status {
+	if json.Unmarshal(raw, &envelope) == nil && envelope.Error != nil && envelope.Status == status {
 		if failure := a.reject(envelope.Error.Type, status); failure != nil {
 			return failure
 		}

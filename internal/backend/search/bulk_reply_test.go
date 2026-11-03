@@ -1,7 +1,6 @@
 package search
 
 import (
-	"context"
 	"fmt"
 	"strings"
 	"testing"
@@ -11,7 +10,7 @@ import (
 )
 
 // bulkReplyFixture is a 200 _bulk reply that indexes count documents.
-func bulkReplyFixture(count int) bulkResponse {
+func bulkReplyFixture(count int) ([]*execution.Plan, []byte) {
 	works := make([]*execution.Plan, count)
 	items := make([]string, count)
 	for i := range count {
@@ -23,12 +22,11 @@ func bulkReplyFixture(count int) bulkResponse {
 		items[i] = fmt.Sprintf(`{"index":{"_index":"records","_id":"%d","_version":3,"result":"updated","forced_refresh":false,"_shards":{"total":2,"successful":1,"failed":0},"_seq_no":%d,"_primary_term":1,"status":200}}`, i, 100+i)
 	}
 	raw := []byte(`{"errors":false,"took":12,"items":[` + strings.Join(items, ",") + `]}`)
-	response := bulkResponse{works: works, status: 200, raw: raw}
-	return response
+	return works, raw
 }
 
 func TestBulkReplyDecodingMatchesItsActions(t *testing.T) {
-	works := bulkReplyFixture(2).works
+	works, _ := bulkReplyFixture(2)
 	item := func(id, extra string) string {
 		return `{"index":{"_index":"records","_id":"` + id + `","result":"updated","_version":2,"_seq_no":5,"_primary_term":1,"_shards":{"total":2,"successful":1,"failed":0},"status":200` + extra + `}}`
 	}
@@ -70,7 +68,7 @@ func TestBulkReplyDecodingMatchesItsActions(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			if validateJSON(context.Background(), []byte(c.raw)) != nil {
+			if !validJSON([]byte(c.raw)) {
 				t.Fatal("fixture is not valid JSON", c.raw)
 			}
 			decoded, ok := decodeBulkReply([]byte(c.raw), works)
@@ -96,11 +94,11 @@ func TestBulkReplyDecodingMatchesItsActions(t *testing.T) {
 
 func BenchmarkBulkResults(b *testing.B) {
 	a := &Adapter{dialect: ElasticsearchProduct}
-	response := bulkReplyFixture(128)
+	works, raw := bulkReplyFixture(128)
 	b.ReportAllocs()
-	b.SetBytes(int64(len(response.raw)))
+	b.SetBytes(int64(len(raw)))
 	for b.Loop() {
-		results := a.bulkResults(context.Background(), response)
+		results, _ := a.bulkResults(works, 200, raw, nil)
 		if results[127].GetMutationResult().GetOutcome() != pb.MutationOutcome_APPLIED {
 			b.Fatal("fixture was not acknowledged")
 		}

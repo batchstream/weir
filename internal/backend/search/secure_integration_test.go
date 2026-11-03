@@ -73,7 +73,7 @@ func TestSecureSearchQualification(t *testing.T) {
 			t.Fatal("int64 source changed")
 		}
 		works := []*execution.Plan{searchPlan(t, a, "put", searchResource(b.Index, "bulk-a")), searchPlan(t, a, "put", searchResource(b.Index, "bulk-b"))}
-		replies := a.executeRecords(context.Background(), works)
+		replies := a.ExecuteRecords(context.Background(), works)
 		if len(replies) != 2 {
 			t.Fatal("bulk association")
 		}
@@ -285,7 +285,7 @@ func secureReplyFault(t *testing.T, fixture *testsearch.SecureFixture, operation
 				t.Fatal("drain exceeded its bound", time.Since(start))
 			}
 		} else {
-			replies = a.executeRecords(context.Background(), works)
+			replies = a.ExecuteRecords(context.Background(), works)
 		}
 		for _, reply := range replies {
 			assertOutcome(t, reply, wantOutcome, wantCode)

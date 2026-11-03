@@ -300,7 +300,7 @@ func TestMongoRuntimeDrainCancelsUnsentReadWithoutRemoteCleanup(t *testing.T) {
 	read := &pb.ReadRequest{Resource: "db/records/s:a"}
 	operation := &pb.Command_Read{Read: read}
 	command := &pb.Command{Operation: operation}
-	record, err := execution.NewRecord("mongo", 1, command)
+	record, err := execution.NewRecord(1, command)
 	if err != nil {
 		t.Fatal(err)
 	}

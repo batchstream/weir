@@ -44,7 +44,7 @@ func TestMgetDuplicateReadsShareOneObservationAcrossReadWindows(t *testing.T) {
 		works[i] = batchTestPlan(t, adapter, "read", "records/s:same")
 	}
 	works[0].Context = cancelled
-	results := adapter.executeRecords(t.Context(), works)
+	results := adapter.ExecuteRecords(t.Context(), works)
 	if results[0].GetReadResult().GetFailure().GetCode() != pb.FailureCode_CANCELLED {
 		t.Fatal("cancelled duplicate lost its caller result", results[0])
 	}

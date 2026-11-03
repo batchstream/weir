@@ -39,11 +39,9 @@ type retirementNodeAdapter struct {
 	failure     error
 }
 
-func (a *retirementNodeAdapter) PrepareNative(context.Context, *pb.Command) (*execution.Plan, *pb.Failure) {
-	return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "record fixture")
-}
 func (a *retirementNodeAdapter) PrepareRecord(_ context.Context, record *execution.Record) (*execution.Plan, *pb.Failure) {
-	work := &execution.Plan{Command: record.Command(), Key: record.Key(), BatchKey: "records", Bytes: record.Bytes()}
+	work := record.Plan(context.Background(), nil)
+	work.BatchKey = "records"
 	return work, nil
 }
 func (a *retirementNodeAdapter) ExecuteRecords(ctx context.Context, plans []*execution.Plan) []*pb.Event {
@@ -60,7 +58,7 @@ func (a *retirementNodeAdapter) ExecuteRecords(ctx context.Context, plans []*exe
 	}
 	return events
 }
-func (a *retirementNodeAdapter) ExecuteNative(context.Context, *execution.Plan, execution.Emit) *pb.NativeEnd {
+func (a *retirementNodeAdapter) ExecuteNative(context.Context, *pb.Command, execution.Emit) *pb.NativeEnd {
 	failure := protocol.Fail(pb.FailureCode_UNSUPPORTED, "record fixture")
 	return protocol.NativeFailure(false, failure)
 }

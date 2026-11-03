@@ -228,7 +228,7 @@ func (r *recordStream) receive(ctx context.Context, first *pb.ExecuteRequests) r
 			end.err = status.Error(codes.InvalidArgument, "requests must preserve Store, kind and consecutive indices")
 			return end
 		}
-		record, err := execution.NewRecord(storeName, index, request.Command)
+		record, err := execution.NewRecord(index, request.Command)
 		if err != nil {
 			end.err = status.Error(codes.Internal, "validated resource could not be decoded")
 			return end
@@ -272,8 +272,8 @@ func (r *recordStream) admit() {
 			_, failure = r.runtime.Submit(next.ctx, plan, r.session)
 		}
 		if failure != nil {
-			event := execution.FailedEvent(next.record.Command(), pb.MutationOutcome_NOT_STARTED, failure)
-			r.results <- store.Result{Index: next.record.Index(), Event: event}
+			event := execution.FailedEvent(next.record.Command, pb.MutationOutcome_NOT_STARTED, failure)
+			r.results <- store.Result{Index: next.record.Index, Event: event}
 		}
 	}
 }
@@ -290,7 +290,7 @@ func (r *recordStream) cancelRecord(index uint64) {
 	canceled.cancel()
 	if canceled.claimed.CompareAndSwap(false, true) {
 		failure := protocol.ContextFailure(canceled.ctx)
-		event := execution.FailedEvent(canceled.record.Command(), pb.MutationOutcome_NOT_STARTED, failure)
+		event := execution.FailedEvent(canceled.record.Command, pb.MutationOutcome_NOT_STARTED, failure)
 		r.results <- store.Result{Index: index, Event: event}
 	}
 }
@@ -362,12 +362,8 @@ func commandKind(command *pb.Command) string {
 
 func (s *Server) executeNative(stream executeStream, runtime *store.Runtime, command *pb.Command) error {
 	ctx := stream.Context()
-	plan, failure := runtime.PrepareNative(ctx, command)
-	if failure != nil {
-		return s.send(stream, 1, nativeFailure(failure))
-	}
 	output := &nativeOutput{server: s, stream: stream}
-	ticket, failure := runtime.SubmitNative(ctx, plan, output.emit)
+	ticket, failure := runtime.SubmitNative(ctx, command, output.emit)
 	if failure != nil {
 		return s.send(stream, 1, nativeFailure(failure))
 	}

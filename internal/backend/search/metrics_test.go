@@ -71,7 +71,7 @@ func TestSearchMetricsMeasureActualRecordRequestsAndLua(t *testing.T) {
 				opts := visibilityPlanOptions{action: "program", id: id, wait: visible, program: `return function(current) current.n = 2; return current end`}
 				works = append(works, visibilityPlan(t, adapter, opts))
 			}
-			for _, result := range adapter.executeRecords(t.Context(), works) {
+			for _, result := range adapter.ExecuteRecords(t.Context(), works) {
 				if result.GetMutationResult().GetOutcome() != pb.MutationOutcome_APPLIED || result.GetMutationResult().GetFailure() != nil {
 					t.Fatal(result)
 				}
@@ -139,7 +139,7 @@ func TestSearchHTTPMetricsClassifyFailuresAndBoundLabels(t *testing.T) {
 			if err := registry.Register(adapter); err != nil {
 				t.Fatal(err)
 			}
-			call := exchange{path: "/private-index/_bulk?refresh=wait_for", body: []byte("{}\n"), operation: tc.operation, records: 3}
+			call := exchange{path: "/private-index/_bulk?refresh=wait_for", body: []byte("{}\n"), operation: tc.operation, visible: tc.operation == "bulk", records: 3}
 			_, _, _ = adapter.request(t.Context(), call)
 			families := searchMetricFamilies(t, registry)
 			operation, visibility := tc.operation, "none"
@@ -235,7 +235,7 @@ func TestSearchHTTPMetricsCountCancellationAfterDispatchOnly(t *testing.T) {
 				ctx, cancel = context.WithTimeout(t.Context(), time.Second)
 			}
 			defer cancel()
-			call := exchange{path: "/_bulk?refresh=wait_for", body: []byte("{}\n"), operation: "bulk", records: 4, mutation: true}
+			call := exchange{path: "/_bulk?refresh=wait_for", body: []byte("{}\n"), operation: "bulk", visible: true, records: 4, mutation: true}
 			done := make(chan error, 1)
 			go func() {
 				_, _, err := adapter.request(ctx, call)
@@ -302,8 +302,8 @@ func TestSearchLuaMetricsExcludeSourceDecodingAndClassifyFailures(t *testing.T) 
 			native := &plan{program: program}
 			found := len(tc.stored) != 0
 			current := &getReply{Found: &found, Source: tc.stored}
-			work := &execution.Plan{Backend: native}
-			_, _ = adapter.evaluateProgram(tc.context, work, current)
+			work := &execution.Plan{Context: tc.context, Backend: native}
+			_, _ = adapter.evaluateProgram(work, current)
 			families := searchMetricFamilies(t, registry)
 			if tc.outcome == "" {
 				if families["weir_lua_evaluation_seconds"] != nil {

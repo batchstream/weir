@@ -36,7 +36,7 @@ func TestSearchRealBackendCongestion(t *testing.T) {
 				<-start
 				ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 				defer cancel()
-				results := a.executeRecords(ctx, works)
+				results := a.ExecuteRecords(ctx, works)
 				sample := sample{works: works, results: results}
 				replies <- sample
 			})

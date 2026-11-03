@@ -118,9 +118,9 @@ the same Store terminal point. Its only label is the fixed `completion`
 vocabulary: `not_started` (`NATIVE_NOT_STARTED`), `response_complete`
 (`RESPONSE_COMPLETE`) or `response_incomplete` (`RESPONSE_INCOMPLETE`). Exactly
 these three series are initialized to zero; no enum string, failure detail, HTTP
-status, resource or identity becomes a label. Preparation and admission
-rejections, and Natives abandoned while waiting for a slot, do not count as
-completions.
+status, resource or identity becomes a label. A Native the adapter refuses
+counts as `not_started`. Admission rejections and Natives abandoned while waiting
+for a slot do not count as completions.
 Scrapes do not count again.
 
 This is **Native forwarding terminal evidence**, not backend business success,

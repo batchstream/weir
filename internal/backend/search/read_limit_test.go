@@ -14,7 +14,7 @@ import (
 	"github.com/batchstream/weir/internal/execution"
 )
 
-func TestSearchReadPreservesLargeDocumentsAndPeerWrites(t *testing.T) {
+func TestSearchReadPreservesLargeDocumentsAndLaterWrites(t *testing.T) {
 	sizes := []int{1024, (16 << 10) + 1, 70 << 10, (2 << 20), (2 << 20) + 1}
 	for _, size := range sizes {
 		t.Run(fmt.Sprintf("size=%d", size), func(t *testing.T) {
@@ -48,14 +48,14 @@ func TestSearchReadPreservesLargeDocumentsAndPeerWrites(t *testing.T) {
 			if failure != nil {
 				t.Fatal("read boundary affected mutation admission", failure)
 			}
-			works := []*execution.Plan{read, write}
-			results := adapter.executeRecords(context.Background(), works)
-			result := results[0].GetReadResult()
+			reads := adapter.ExecuteRecords(context.Background(), []*execution.Plan{read})
+			result := reads[0].GetReadResult()
 			if document := result.GetDocument(); document == nil || len(document.Data) != size {
 				t.Fatal("read document rejected or shortened", size, result.GetFailure())
 			}
-			if writes.Load() != 1 || results[1].GetMutationResult().Outcome != pb.MutationOutcome_APPLIED || results[1].GetMutationResult().Failure != nil {
-				t.Fatal("acknowledged write was affected by a read limit", results[1], writes.Load())
+			applied := adapter.ExecuteRecords(context.Background(), []*execution.Plan{write})[0].GetMutationResult()
+			if writes.Load() != 1 || applied.Outcome != pb.MutationOutcome_APPLIED || applied.Failure != nil {
+				t.Fatal("acknowledged write was affected by a read limit", applied, writes.Load())
 			}
 		})
 	}

@@ -78,7 +78,7 @@ func replicaStableReplyLoss(t *testing.T, opts replicaHeldOptions) []*testmongo.
 			}
 			plans := []*execution.Plan{plan}
 			go func() {
-				results := a.executeRecords(ctx, plans)
+				results := a.ExecuteRecords(ctx, plans)
 				valid := len(results) == 1 && results[0].GetMutationResult().GetOutcome() == pb.MutationOutcome_UNKNOWN && results[0].GetMutationResult().GetFailure() != nil
 				done <- valid
 			}()
@@ -93,15 +93,9 @@ func replicaStableReplyLoss(t *testing.T, opts replicaHeldOptions) []*testmongo.
 			}
 			body := &pb.Document{ContentType: "application/bson", Data: raw}
 			request := &pb.NativeRequest{Resource: f.DB, Request: body}
-			plan, failure := a.prepareNative(request)
-			if failure != nil {
-				cancel()
-				t.Fatal(failure)
-			}
-			plan.Command = testutil.NativeCommand(request)
 			capture := &nativeCapture{}
 			go func() {
-				end := a.executeNative(ctx, plan, capture.Emit)
+				end := a.ExecuteNative(ctx, testutil.NativeCommand(request), capture.Emit)
 				done <- end.GetCompletion() == pb.NativeCompletion_RESPONSE_INCOMPLETE && end.Failure != nil
 			}()
 		}

@@ -2,70 +2,13 @@ package mongodb
 
 import (
 	"context"
-	"sync"
 	"sync/atomic"
 	"testing"
-	"time"
 
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/event"
 )
-
-func TestMongoConcurrentTargetQualificationUsesOneCommand(t *testing.T) {
-	started := make(chan struct{})
-	release := make(chan struct{})
-	defer func() {
-		select {
-		case <-release:
-		default:
-			close(release)
-		}
-	}()
-	var commands atomic.Int32
-	monitor := &event.CommandMonitor{Started: func(_ context.Context, event *event.CommandStartedEvent) {
-		if event.CommandName != "listCollections" {
-			return
-		}
-		if commands.Add(1) == 1 {
-			close(started)
-			<-release
-		}
-	}}
-	responses := []bson.D{collectionQualificationResponse("db", "records")}
-	adapter := batchMockAdapter(t, responses, monitor)
-	target := namespace{database: "db", collection: "records"}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	var workers sync.WaitGroup
-	workers.Go(func() {
-		if failure := adapter.qualifyTarget(ctx, target); failure != nil {
-			t.Error(failure)
-		}
-	})
-	select {
-	case <-started:
-	case <-ctx.Done():
-		t.Fatal("first qualification did not start")
-	}
-	for range 16 {
-		workers.Go(func() {
-			if failure := adapter.qualifyTarget(ctx, target); failure != nil {
-				t.Error(failure)
-			}
-		})
-	}
-	waiter, stop := context.WithTimeout(ctx, 10*time.Millisecond)
-	defer stop()
-	if failure := adapter.qualifyTarget(waiter, target); failure.GetCode() != pb.FailureCode_DEADLINE_EXCEEDED {
-		t.Fatal("metadata waiter ignored cancellation", failure)
-	}
-	close(release)
-	workers.Wait()
-	if commands.Load() != 1 {
-		t.Fatal("concurrent target qualification duplicated metadata I/O", commands.Load())
-	}
-}
 
 func TestMongoQualificationFailureIsNotCached(t *testing.T) {
 	missing := collectionQualificationResponse("db", "records")

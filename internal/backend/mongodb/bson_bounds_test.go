@@ -3,13 +3,14 @@ package mongodb
 import (
 	"context"
 	"fmt"
+	"strings"
+	"testing"
+
 	"github.com/batchstream/weir/internal/backend"
 	"github.com/batchstream/weir/internal/execution"
 	"github.com/batchstream/weir/internal/value"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/event"
-	"strings"
-	"testing"
 )
 
 func TestOrdinaryBSONUsesNativeBounds(t *testing.T) {
@@ -65,7 +66,7 @@ func TestLargeReadSplitsAtMongoNativeCommandBoundary(t *testing.T) {
 		}
 		plans = append(plans, work)
 	}
-	results := adapter.executeRecords(t.Context(), plans)
+	results := adapter.ExecuteRecords(t.Context(), plans)
 	for _, result := range results {
 		if result.GetReadResult().GetFailure() != nil {
 			t.Fatalf("5000 reads not split into valid native commands; largest observed find=%d; failure=%v", largest, result.GetReadResult().GetFailure())

@@ -25,13 +25,8 @@ func nativeBusinessReply(ctx context.Context, adapter *Adapter, database string,
 	}
 	body := &pb.Document{ContentType: "application/bson", Data: raw}
 	request := &pb.NativeRequest{Resource: database, Request: body}
-	work, failure := adapter.prepareNative(request)
-	if failure != nil {
-		return nil, fmt.Errorf("prepare Native: %v", failure)
-	}
-	work.Command = testutil.NativeCommand(request)
 	capture := &nativeCapture{}
-	end := adapter.executeNative(ctx, work, capture.Emit)
+	end := adapter.ExecuteNative(ctx, testutil.NativeCommand(request), capture.Emit)
 	if end.Completion != pb.NativeCompletion_RESPONSE_COMPLETE || end.Failure != nil {
 		return nil, fmt.Errorf("incomplete Native reply: %v", end)
 	}
@@ -308,7 +303,7 @@ func TestMongoLargeTypedRecordsBeyondByteWindow(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
-	results := adapter.executeRecords(ctx, []*execution.Plan{work})
+	results := adapter.ExecuteRecords(ctx, []*execution.Plan{work})
 	if result := results[0].GetMutationResult(); result.Outcome != pb.MutationOutcome_APPLIED || result.Failure != nil {
 		t.Fatal("single valid BSON could not cross the exchange byte target", result)
 	}
@@ -318,7 +313,7 @@ func TestMongoLargeTypedRecordsBeyondByteWindow(t *testing.T) {
 	if failure != nil {
 		t.Fatal(failure)
 	}
-	results = adapter.executeRecords(ctx, []*execution.Plan{work})
+	results = adapter.ExecuteRecords(ctx, []*execution.Plan{work})
 	read := results[0].GetReadResult()
 	if read.GetFailure() != nil || len(read.GetDocument().Data) <= 4<<20 || bson.Raw(read.GetDocument().Data).Lookup("pad").StringValue() != document[1].Value {
 		t.Fatal("large typed read failed", read.GetFailure())

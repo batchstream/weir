@@ -33,7 +33,7 @@ func TestSearchTLSOrdinaryNativeSocketCloseBound(t *testing.T) {
 			var calls sync.WaitGroup
 			for i := 0; i < 3; i++ {
 				calls.Go(func() {
-					call := exchange{path: "/slow", native: i == 2}
+					call := exchange{path: "/slow"}
 					ctx, cancel := context.WithTimeout(t.Context(), 80*time.Millisecond)
 					_, _, err := a.request(ctx, call)
 					cancel()
@@ -82,13 +82,8 @@ func TestSearchTLSNativeSlowConsumerCloseJoins(t *testing.T) {
 	open := nativeRequest(t, "records", "GET", "/_doc/x")
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	work, failure := a.prepareNative(open)
-	if failure != nil {
-		t.Fatal(failure)
-	}
-	work.Command = testutil.NativeCommand(open)
 	done := make(chan *pb.NativeEnd, 1)
-	go func() { end := a.executeNative(ctx, work, emit); done <- end }()
+	go func() { end := a.ExecuteNative(ctx, testutil.NativeCommand(open), emit); done <- end }()
 	select {
 	case <-started:
 	case <-time.After(time.Second):

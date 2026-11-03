@@ -27,33 +27,21 @@ type programBatch struct {
 	results []*pb.MutationResult
 }
 
-// Programs with one target and distinct typed identities share a snapshot
-// transaction. Caller contexts govern evaluation; the batch context governs IO.
+// Programs of a batch name one collection and distinct records, so they share a
+// snapshot transaction. Caller contexts govern evaluation; the batch context
+// governs I/O.
 func (a *Adapter) executePrograms(ctx context.Context, plans []*execution.Plan) []*pb.Event {
+	batch := &programBatch{plans: plans, results: make([]*pb.MutationResult, len(plans))}
+	a.runPrograms(ctx, batch)
 	results := make([]*pb.Event, len(plans))
-	for start := 0; start < len(plans); {
-		target := plans[start].Backend.(*plan).target
-		ids := make(map[any]bool)
-		end := start
-		for end < len(plans) {
-			native := plans[end].Backend.(*plan)
-			if native.target != target || ids[native.id] {
-				break
-			}
-			ids[native.id] = true
-			end++
-		}
-		batch := &programBatch{plans: plans[start:end], results: make([]*pb.MutationResult, end-start)}
-		a.runPrograms(ctx, batch)
-		for i, result := range batch.results {
-			value := &pb.Event_MutationResult{MutationResult: result}
-			event := &pb.Event{Value: value}
-			results[start+i] = event
-		}
-		start = end
+	for i, result := range batch.results {
+		value := &pb.Event_MutationResult{MutationResult: result}
+		event := &pb.Event{Value: value}
+		results[i] = event
 	}
 	return results
 }
+
 func (a *Adapter) runPrograms(ctx context.Context, batch *programBatch) {
 	for i, work := range batch.plans {
 		if result := unstarted(ctx, work); result != nil {
@@ -116,7 +104,6 @@ func (a *Adapter) runPrograms(ctx context.Context, batch *programBatch) {
 		failure = protocol.ContextFailure(ctx)
 	}
 	batch.fail(outcome, failure)
-	return
 }
 
 type programAttemptStatus uint8
@@ -141,7 +128,7 @@ type programAttempt struct {
 func filterCancelled(ctx context.Context, batch *programBatch, writes []*execution.Plan, positions []int) ([]*execution.Plan, []int) {
 	kept := 0
 	for i, position := range positions {
-		if failure := programCallerFailure(ctx, batch.plans[position]); failure != nil {
+		if failure := batch.plans[position].Ended(ctx); failure != nil {
 			batch.results[position] = protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, failure)
 			continue
 		}
@@ -282,21 +269,11 @@ func (b *programBatch) fail(outcome pb.MutationOutcome, failure *pb.Failure) {
 func (b *programBatch) cancelled(ctx context.Context) {
 	for i, work := range b.plans {
 		if b.results[i] == nil {
-			if failure := programCallerFailure(ctx, work); failure != nil {
+			if failure := work.Ended(ctx); failure != nil {
 				b.results[i] = protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, failure)
 			}
 		}
 	}
-}
-
-func programCallerFailure(ctx context.Context, work *execution.Plan) *pb.Failure {
-	if work.Context != nil && work.Context.Err() != nil {
-		return protocol.ContextFailure(work.Context)
-	}
-	if ctx.Err() != nil {
-		return protocol.ContextFailure(ctx)
-	}
-	return nil
 }
 
 func (a *Adapter) splitPrograms(ctx context.Context, batch *programBatch, positions []int) {
@@ -311,7 +288,6 @@ func (a *Adapter) splitPrograms(ctx context.Context, batch *programBatch, positi
 			batch.results[position] = child.results[i]
 		}
 	}
-	return
 }
 
 // MongoDB applies its native response boundary. Only an explicitly smaller
@@ -405,35 +381,19 @@ func (a *Adapter) transformPrograms(ctx context.Context, batch *programBatch, po
 	return writes, writePositions
 }
 
-func (a *Adapter) transformProgram(ctx context.Context, work *execution.Plan, raw bson.Raw) (*execution.Plan, *pb.MutationResult) {
-	if failure := programCallerFailure(ctx, work); failure != nil {
-		return nil, protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, failure)
-	}
-	if work.Context != nil {
-		programContext, cancel := context.WithCancel(ctx)
-		deadlineInstalled := false
-		if deadline, exists := work.Context.Deadline(); exists {
-			cancel()
-			programContext, cancel = context.WithDeadline(ctx, deadline)
-			deadlineInstalled = true
+// transformProgram evaluates one program under its caller's context, which ends
+// no later than the batch does.
+func (a *Adapter) transformProgram(batch context.Context, work *execution.Plan, raw bson.Raw) (*execution.Plan, *pb.MutationResult) {
+	ended := func() *pb.MutationResult {
+		if failure := work.Ended(batch); failure != nil {
+			return protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, failure)
 		}
-		forwarded := make(chan struct{})
-		stop := context.AfterFunc(work.Context, func() {
-			defer close(forwarded)
-			// The child already has this deadline. Forward explicit cancellation
-			// only: cancel() racing its timer would erase deadline evidence.
-			if !deadlineInstalled || work.Context.Err() != context.DeadlineExceeded {
-				cancel()
-			}
-		})
-		defer func() {
-			if !stop() {
-				<-forwarded
-			}
-		}()
-		defer cancel()
-		ctx = programContext
+		return nil
 	}
+	if result := ended(); result != nil {
+		return nil, result
+	}
+	ctx := work.Context
 	input := work.Command.GetMutate().GetAtomicTransform().GetLua().GetInput()
 	native := work.Backend.(*plan)
 	missing := raw == nil
@@ -442,15 +402,12 @@ func (a *Adapter) transformProgram(ctx context.Context, work *execution.Plan, ra
 		var err error
 		current, err = Decode(ctx, raw)
 		if err != nil {
-			if failure := programCallerFailure(ctx, work); failure != nil {
-				return nil, protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, failure)
+			if result := ended(); result != nil {
+				return nil, result
 			}
 			failure := protocol.Fail(pb.FailureCode_UNSUPPORTED, "stored document contains unsupported BSON values")
 			return nil, protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, failure)
 		}
-	}
-	if native.program.ObservedAt.IsZero() {
-		native.program.ObservedAt = time.Now()
 	}
 	program := *native.program
 	program.Current = current
@@ -462,8 +419,8 @@ func (a *Adapter) transformProgram(ctx context.Context, work *execution.Plan, ra
 		program.Input = decoded
 	}
 	transformed, transformErr := a.lua.Evaluate(ctx, program)
-	if failure := programCallerFailure(ctx, work); failure != nil {
-		return nil, protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, failure)
+	if result := ended(); result != nil {
+		return nil, result
 	}
 	if transformErr != nil {
 		return nil, execution.LuaFailure(ctx, transformErr)
@@ -492,16 +449,16 @@ func (a *Adapter) transformProgram(ctx context.Context, work *execution.Plan, ra
 		}
 		replacement, valid := withMongoIdentity(ctx, transformed.Value, identity, native.id)
 		if identityErr != nil || !valid {
-			if failure := programCallerFailure(ctx, work); failure != nil {
-				return nil, protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, failure)
+			if result := ended(); result != nil {
+				return nil, result
 			}
 			failure := protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "Lua replacement changes record identity")
 			return nil, protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, failure)
 		}
 		encoded, encodeErr := Encode(ctx, replacement)
 		if encodeErr != nil {
-			if failure := programCallerFailure(ctx, work); failure != nil {
-				return nil, protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, failure)
+			if result := ended(); result != nil {
+				return nil, result
 			}
 			failure := protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "Lua replacement contains invalid BSON values")
 			return nil, protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, failure)
@@ -518,8 +475,8 @@ func (a *Adapter) transformProgram(ctx context.Context, work *execution.Plan, ra
 		failure := protocol.Fail(pb.FailureCode_INTERNAL, "Lua evaluation returned an invalid action")
 		return nil, protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, failure)
 	}
-	if failure := programCallerFailure(ctx, work); failure != nil {
-		return nil, protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, failure)
+	if result := ended(); result != nil {
+		return nil, result
 	}
 	write := &execution.Plan{Command: work.Command, Backend: prepared}
 	return write, nil
