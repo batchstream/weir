@@ -60,6 +60,11 @@ func (a *Adapter) qualifyTarget(ctx context.Context, target namespace) *pb.Failu
 		return nil
 	}
 	failure := a.inspectTarget(ctx, target)
+	// The bound context learns of Close asynchronously, so a reply racing
+	// teardown is checked against the lifetime itself.
+	if a.lifetime.Err() != nil {
+		return protocol.ContextFailure(a.lifetime)
+	}
 	if ctx.Err() != nil {
 		return protocol.ContextFailure(ctx)
 	}
