@@ -303,8 +303,9 @@ sessions and close backend connections. An expired best-effort session cleanup
 is neither confirmed remote cleanup nor permission to replay. Disconnect errors
 and work that does not stop within the budget are reported as shutdown failures,
 never as a clean stop. Results not yet acknowledged by the consumer stay charged
-until Ack or stream closure. During rolling updates, terminating Pods can retain connections while new Pods start;
-`maxSurge: 0` does not cap that overlap. Scaling replicas adds backend
+until Ack or stream closure. During rolling updates, a replacement starts before
+a replica stops and terminating Pods can retain connections, so a group briefly
+runs more replicas than its count. Scaling replicas adds backend
 connections and does not add database capacity; the adaptive limit keeps their
 combined requests near what the database can take, and new replicas start at
 two record batches per operation, or `min_in_flight` when that is higher, until
