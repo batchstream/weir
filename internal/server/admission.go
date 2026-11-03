@@ -4,10 +4,30 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/batchstream/weir-protocol/api/protocol"
+	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/protoadapt"
 )
+
+// A stream turned away before any of it was read carries a Failure as a status
+// detail. UNAVAILABLE alone also reports a lost connection, after which records
+// may have taken effect; the detail tells a client that none did.
+var (
+	errDraining   = refusedStream("draining")
+	errOverloaded = refusedStream("process overloaded")
+)
+
+func refusedStream(message string) error {
+	failure := protocol.Fail(pb.FailureCode_UNAVAILABLE, message)
+	refused, err := status.New(codes.Unavailable, message).WithDetails(protoadapt.MessageV1Of(failure))
+	if err != nil {
+		panic(err)
+	}
+	return refused.Err()
+}
 
 // Admission is the process-wide gate for business RPCs.
 type Admission struct {
@@ -38,12 +58,12 @@ func (a *Admission) check() error {
 	select {
 	case <-a.draining:
 		a.rejections.WithLabelValues("draining").Inc()
-		return status.Error(codes.Unavailable, "draining")
+		return errDraining
 	default:
 	}
 	if a.overloaded.Load() {
 		a.rejections.WithLabelValues("overload").Inc()
-		return status.Error(codes.Unavailable, "process overloaded")
+		return errOverloaded
 	}
 	return nil
 }
