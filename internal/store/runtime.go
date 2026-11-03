@@ -122,10 +122,9 @@ type batch struct {
 	cancel context.CancelFunc
 	items  []*Ticket
 	stops  []func() bool
-	// probe marks the limit's probe, settles one after the Store's first
-	// pause, full a batch of max_operations records or max_bytes, and partial
-	// one the adaptive limit counts.
-	probe, settles, full, partial bool
+	// probe marks the limit's probe, full a batch of max_operations records or
+	// max_bytes, and partial one the adaptive limit counts.
+	probe, full, partial bool
 }
 
 func New(adapter execution.Adapter, limits Limits) (*Runtime, error) {
@@ -524,7 +523,7 @@ func (r *Runtime) holdsBack(g *group, now time.Time) (bool, time.Time) {
 	if admitted {
 		return false, retry
 	}
-	limit.holdBack(now)
+	limit.lastHeld = now
 	return true, retry
 }
 
@@ -577,7 +576,6 @@ func (r *Runtime) launchLocked(items []*Ticket) *batch {
 	}
 	b := newBatch(items)
 	b.probe, b.full = r.probeNext, r.fullNext
-	b.settles = b.probe && r.probes.paused
 	r.probeNext, r.fullNext = false, false
 	r.batches[b] = struct{}{}
 	if b.native() {
@@ -594,7 +592,7 @@ func (r *Runtime) launchLocked(items []*Ticket) *batch {
 			// Every operation with a running batch now shares the backend.
 			for other, count := range r.running {
 				if count > 0 {
-					r.limit[other].overlap()
+					r.limit[other].together = true
 				}
 			}
 		}
@@ -700,7 +698,7 @@ func (r *Runtime) execute(b *batch) {
 			for _, t := range b.items {
 				bytes += t.plan.Bytes
 			}
-			done := finishedBatch{started: started, finished: finished, key: key, size: len(b.items), bytes: bytes, full: b.full, probe: b.probe, settles: b.settles}
+			done := finishedBatch{started: started, finished: finished, key: key, size: len(b.items), bytes: bytes, full: b.full, probe: b.probe}
 			r.limit[op].observe(done)
 		}
 		if r.adaptive && r.running[op] == 0 && !r.queuesLocked(op) {

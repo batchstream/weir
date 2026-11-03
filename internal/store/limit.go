@@ -28,12 +28,13 @@ import (
 // running, or whose limit held one back, pauses all its record batches at the
 // same wall-clock instants, letting the backend empty, and then sends one probe
 // batch of each operation at a random moment; the probe's time renews the
-// baseline. A limit starts at two batches and grows only after its Store's
-// second probe, at an instant of the interval its executions choose, which
-// replicas in front of the same backend share, or longestUnsettled after it
-// first held a batch back. So replicas added in front of a queueing backend do
-// not flood it before a probe shows them the queue, and those in front of a
-// backend with room soon use it.
+// baseline. A Store's first pause comes at the next instant of the shortest
+// interval, however long its executions take, so that a replica soon sees the
+// queue. A limit starts at two batches and grows only once it settled, one and
+// a quarter probe intervals after its first execution, which leaves a pause
+// behind a Store under load. Replicas added in front of a queueing backend
+// therefore do not flood it before a probe shows them the queue, and those in
+// front of a backend with room soon use it.
 const (
 	// queueingRatio is the median execution time over its baseline, across
 	// one window, that halves the limit. Backends vary below it without
@@ -53,11 +54,6 @@ const (
 	// added in front of a queueing backend do not flood it, and more than one,
 	// so that one slow execution does not hold the others back.
 	startingLimit = 2.0
-	// longestUnsettled is how long after it first held a batch back a limit
-	// settles without a probe: twice the longest probe interval, within which
-	// a Store under steady load settles anyway, so that short bursts that never
-	// reach a probe's instant are not held back for good.
-	longestUnsettled = 160 * time.Second
 	// limitWindow is the shortest decision window. A window also lasts at
 	// least the typical execution time, so a change shows before the next,
 	// and holds windowExecutions, so a few slower records, such as the reads
@@ -102,34 +98,32 @@ type executionLimit struct {
 	// typical is a moving average of execution time.
 	typical time.Duration
 	// The current window. A window contended for the backend when the limit
-	// held a batch back or batches ran together.
-	windowStart        time.Time
-	ratios             []float64
-	heldBack, together bool
+	// held a batch back during it or batches ran together.
+	windowStart time.Time
+	ratios      []float64
+	together    bool
 	// cutAt is when the limit last halved; executions that started earlier
 	// show the old limit and do not count.
 	cutAt time.Time
 	// ratio is the last window's median execution time over its baseline.
 	ratio float64
-	// firstHeld and lastHeld are when the limit first and last held a batch
-	// back.
-	firstHeld, lastHeld time.Time
+	// lastHeld is when the limit last held a batch back.
+	lastHeld time.Time
 	// lastFinished is when the last observed batch that was not full finished,
 	// and lastStarted when the last batch the limit counts started.
 	lastFinished, lastStarted time.Time
-	// idle is set while the Store runs and queues no batch of the limit's
-	// operation, and busySince is when it last stopped being idle.
-	idle      bool
+	// busySince is when the Store began running or queueing batches of the
+	// limit's operation, and zero while it does neither.
 	busySince time.Time
-	// lastSeen is when the last observed execution finished.
-	lastSeen time.Time
-	// settled is set once the execution of a probe after the Store's first
-	// pause was observed, or an execution finished longestUnsettled after the
-	// limit first held a batch back; the limit grows only after it. starting
-	// is set until the limit first halves after that, and until then
-	// a window without queueing doubles it.
-	settled, starting bool
-	// every is the Store's current probe interval.
+	// firstSeen and lastSeen are when the first and last observed executions
+	// finished.
+	firstSeen, lastSeen time.Time
+	// settled is set once an execution finishes one and a quarter probe
+	// intervals after the first, which leaves a pause behind a Store under load;
+	// the limit grows only after that.
+	settled bool
+	// every is the Store's current probe interval, whose pause takes at most
+	// probeShare of it.
 	every time.Duration
 }
 
@@ -138,11 +132,9 @@ type executionLimit struct {
 // and each operation then sends one probe batch.
 type probes struct {
 	limits *[2]executionLimit
-	// interval is the shortest probe interval and every the current one,
-	// whose pause takes at most share of it.
-	interval, every time.Duration
-	share           float64
-	start           time.Time
+	// interval is the shortest probe interval.
+	interval time.Duration
+	start    time.Time
 	// active is set when a limit held a batch back, or its operation kept
 	// batches running, through the previous interval. paused is set once an
 	// active pause ended.
@@ -151,7 +143,6 @@ type probes struct {
 	// may then start, and the rest wait until end.
 	sendAt [2]time.Time
 	end    time.Time
-	sent   [2]bool
 }
 
 // gate is what a probe allows now.
@@ -169,8 +160,6 @@ type finishedBatch struct {
 	key               groupKey
 	size, bytes       int
 	full, probe       bool
-	// settles marks a probe after the Store's first pause.
-	settles bool
 }
 
 func newExecutionLimit(minimum, maximum int, now time.Time) executionLimit {
@@ -181,12 +170,12 @@ func newExecutionLimit(minimum, maximum int, now time.Time) executionLimit {
 	// A replica that starts cannot tell how much its backend already queues,
 	// so it runs few batches until a probe shows that.
 	start := min(float64(maximum), max(floor, startingLimit))
-	limit := executionLimit{min: floor, max: float64(maximum), value: start, fastest: make(map[groupKey]*[2][sizeClasses]time.Duration), generation: now, windowStart: now, idle: true, every: probeInterval, starting: true}
+	limit := executionLimit{min: floor, max: float64(maximum), value: start, fastest: make(map[groupKey]*[2][sizeClasses]time.Duration), generation: now, windowStart: now, every: probeInterval}
 	return limit
 }
 
 func newProbes(limits *[2]executionLimit) probes {
-	schedule := probes{limits: limits, interval: probeInterval, every: probeInterval, share: probeShare}
+	schedule := probes{limits: limits, interval: probeInterval}
 	return schedule
 }
 
@@ -224,25 +213,11 @@ func (l *executionLimit) admits(running int, now time.Time) (bool, time.Time) {
 	return false, next
 }
 
-// holdBack records that the limit kept a ready batch waiting.
-func (l *executionLimit) holdBack(now time.Time) {
-	l.heldBack = true
-	l.lastHeld = now
-	if l.firstHeld.IsZero() {
-		l.firstHeld = now
-	}
-}
-
-// overlap records that a record batch started while another ran.
-func (l *executionLimit) overlap() {
-	l.together = true
-}
-
 // busy records that a record batch started; counted marks one the limit
 // counts.
 func (l *executionLimit) busy(now time.Time, counted bool) {
-	if l.idle {
-		l.idle, l.busySince = false, now
+	if l.busySince.IsZero() {
+		l.busySince = now
 	}
 	if counted {
 		l.lastStarted = now
@@ -252,7 +227,7 @@ func (l *executionLimit) busy(now time.Time, counted bool) {
 // recent reports whether an execution of the limit's operation finished
 // since a time, so that its typical execution time still applies.
 func (l *executionLimit) recent(since time.Time) bool {
-	return !l.lastSeen.IsZero() && !l.lastSeen.Before(since)
+	return !l.lastSeen.Before(since)
 }
 
 // loaded reports whether the limit held a batch back since a time, or its
@@ -260,8 +235,8 @@ func (l *executionLimit) recent(since time.Time) bool {
 // may have learned its baseline from a queue, so it counts as loaded while it
 // runs batches, however recently it started.
 func (l *executionLimit) loaded(since time.Time) bool {
-	held := !l.lastHeld.IsZero() && !l.lastHeld.Before(since)
-	busy := !l.idle && l.recent(since) && (!l.busySince.After(since) || !l.settled)
+	held := !l.lastHeld.Before(since)
+	busy := !l.busySince.IsZero() && l.recent(since) && (!l.busySince.After(since) || !l.settled)
 	return held || busy
 }
 
@@ -284,26 +259,25 @@ func (p *probes) gate(op operation, now time.Time) (gate, time.Time) {
 	// only those that ran in the current interval size the pause.
 	drain, window := probeDrainMin, probeWindowMin
 	for i := range p.limits {
-		if !p.limits[i].recent(now.Add(-p.every)) {
+		l := &p.limits[i]
+		if !l.recent(now.Add(-l.every)) {
 			continue
 		}
-		typical := p.limits[i].typical
-		drain = max(drain, min(2*typical, probeDrainMax))
-		window = max(window, min(typical, probeWindowMax))
-	}
-	// A Store that has not paused yet pauses at the next instant of the
-	// shortest interval, so replicas that start together soon probe together.
-	share := p.share
-	if !p.paused {
-		share = 1
+		drain = max(drain, min(2*l.typical, probeDrainMax))
+		window = max(window, min(l.typical, probeWindowMax))
 	}
 	every := p.interval
-	for float64(drain+window) > share*float64(every) {
+	for float64(drain+window) > probeShare*float64(every) {
 		every *= 2
 	}
-	p.every = every
 	for i := range p.limits {
 		p.limits[i].every = every
+	}
+	// A Store that has not paused yet pauses at the next instant of the
+	// shortest interval, so that it does not run on a baseline learned from a
+	// queue for as long as its own interval.
+	if !p.paused {
+		every = p.interval
 	}
 	start := now.Truncate(every)
 	if !p.start.Equal(start) {
@@ -311,15 +285,12 @@ func (p *probes) gate(op operation, now time.Time) (gate, time.Time) {
 		p.start, p.end, p.active = start, start.Add(drain+window), false
 		for i := range p.limits {
 			p.active = p.active || p.limits[i].loaded(previous)
-			p.sendAt[i], p.sent[i] = start.Add(drain+rand.N(window)), false
+			p.sendAt[i] = start.Add(drain + rand.N(window))
 		}
 	}
 	var open time.Time
 	if !p.pausing(now) {
 		return gateOpen, open
-	}
-	if p.sent[op] {
-		return gateClosed, p.end
 	}
 	if now.Before(p.sendAt[op]) {
 		return gateClosed, p.sendAt[op]
@@ -332,9 +303,10 @@ func (p *probes) pausing(now time.Time) bool {
 	return p.active && !now.Before(p.start) && now.Before(p.end)
 }
 
-// send records that the probe batch of an operation started.
+// send records that the probe batch of an operation started, so that the
+// operation's other batches wait until the pause ends.
 func (p *probes) send(op operation) {
-	p.sent[op] = true
+	p.sendAt[op] = p.end
 }
 
 // rest records that the Store runs and queues no batch of an operation. A
@@ -343,7 +315,7 @@ func (p *probes) rest(op operation, now time.Time) {
 	if p.pausing(now) {
 		return
 	}
-	p.limits[op].idle = true
+	p.limits[op].busySince = time.Time{}
 }
 
 // sizeClass is the class of a batch of size records and bytes.
@@ -409,11 +381,13 @@ func (l *executionLimit) observe(e finishedBatch) {
 	if e.finished.After(l.lastSeen) {
 		l.lastSeen = e.finished
 	}
-	if !l.firstHeld.IsZero() && e.finished.Sub(l.firstHeld) >= longestUnsettled {
+	if l.firstSeen.IsZero() {
+		l.firstSeen = e.finished
+	}
+	if e.finished.Sub(l.firstSeen) >= l.every+l.every/4 {
 		l.settled = true
 	}
 	if e.probe {
-		l.settled = l.settled || e.settles
 		return
 	}
 	if l.typical == 0 {
@@ -435,16 +409,11 @@ func (l *executionLimit) observe(e finishedBatch) {
 	// contend for the backend, and executions slower than the fastest of
 	// their group then show different work rather than queueing.
 	switch {
-	case l.ratio > queueingRatio && (l.heldBack || l.together):
+	case l.ratio > queueingRatio && (l.together || !l.lastHeld.Before(l.windowStart)):
 		l.value = max(l.min, l.value/2)
 		l.cutAt = e.finished
-		l.starting = l.starting && !l.settled
 	case l.ratio <= queueingRatio && l.settled:
-		growth := limitGrowth * min(l.value, 1)
-		if l.starting {
-			growth = l.value
-		}
-		l.value = min(l.max, l.value+growth)
+		l.value = min(l.max, l.value+limitGrowth*min(l.value, 1))
 	}
-	l.windowStart, l.ratios, l.heldBack, l.together = e.finished, l.ratios[:0], false, false
+	l.windowStart, l.ratios, l.together = e.finished, l.ratios[:0], false
 }
