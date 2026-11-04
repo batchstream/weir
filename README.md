@@ -11,7 +11,7 @@ Weir is a server that combines concurrent database requests into bounded batches
 | Backends | MongoDB, Elasticsearch, OpenSearch |
 | Operations | Typed reads and mutations, Lua transforms, native backend commands |
 | Client | [Go SDK](https://github.com/batchstream/weir-go) |
-| Deployment | Binary, container image or [Helm chart](https://github.com/batchstream/weir-charts) |
+| Deployment | [Release archive](https://github.com/batchstream/weir/releases), container image `ghcr.io/batchstream/weir` or [Helm chart](https://github.com/batchstream/weir-charts) |
 
 ### How it works
 
@@ -27,7 +27,7 @@ Weir is a server that combines concurrent database requests into bounded batches
 | --- | --- |
 | Store | A named backend connection in `weir.yaml`. |
 | Search | Elasticsearch or OpenSearch. |
-| Resource | The path of one record in a Store. MongoDB: `database/collection/s:key`. Search: `index/s:key`. |
+| Resource | The path of one record in a Store. MongoDB: `database/collection/s:key`. Search: `index/s:key`. MongoDB keys can also use `i:` for a 64-bit integer or `oid:` for an ObjectId. |
 | Mutation | A create, put, replace, delete or atomic transform of one record. |
 | Native command | A backend's own command, sent without batching. Use it for queries, scans and counts, and to create collections and indices. |
 | Replica | One Weir server process. All replicas behind an address host the same Stores and share nothing. Scale by adding replicas. |
@@ -67,13 +67,13 @@ See [Performance](docs/performance.md) for the full results.
 ## Quick start
 
 This runs MongoDB in Docker, starts Weir and sends a write and a read. It also
-requires Docker and `curl`.
+requires Docker, `git` and `curl`.
 
 **Step 1.** Start MongoDB as a one-member replica set and create a collection.
 
 ```sh
-docker run -d --name weir-mongo -p 127.0.0.1:27017:27017 mongo:8.0 --replSet rs0
-sleep 5
+docker run -d --name weir-mongo -p 127.0.0.1:27017:27017 mongo:8.0.32 --replSet rs0
+until docker exec weir-mongo mongosh --quiet --eval 'db.hello()' >/dev/null 2>&1; do sleep 1; done
 docker exec weir-mongo mongosh --quiet --eval '
   rs.initiate();
   while (!db.hello().isWritablePrimary) sleep(100);
@@ -138,13 +138,13 @@ completed 1 reads with indexed stream responses
 **Step 6.** Stop the server with `Ctrl-C`, then remove MongoDB.
 
 ```sh
-docker rm -f weir-mongo
+docker rm -fv weir-mongo
 ```
 
 This setup uses MongoDB direct mode, which has no failover. For production, see
 [Configuration](docs/configuration.md#mongodb) and
 [weir-charts](https://github.com/batchstream/weir-charts). To write your own
-client, see [weir-go](https://github.com/batchstream/weir-go).
+application, see [weir-go](https://github.com/batchstream/weir-go).
 
 ## Documentation
 
@@ -159,7 +159,7 @@ client, see [weir-go](https://github.com/batchstream/weir-go).
 | [Operations](docs/operations.md) | Health, metrics, alerts, memory pressure and failure handling |
 | [Protocols](docs/protocols.md) | Public contract and module boundaries |
 | [Performance](docs/performance.md) | Benchmark setup and results |
-| [Development](docs/development.md) | Integration, load and fault tests, and releases |
+| [Development](docs/development.md) | Integration, load and fault tests, releases and images |
 
 ## Development
 
