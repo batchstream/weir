@@ -52,7 +52,9 @@ func replicaCLILuaTopologyBegin(t *testing.T, lifetime *replyLossLifetime, trans
 		if err := lifetime.proxy.ArmLuaConflict(lifetime.primary, c.watch); err != nil {
 			t.Fatal(err)
 		}
-		c.ctx, c.cancel = context.WithTimeout(t.Context(), 12*time.Second)
+		// The commit call waits through a primary_loss election, which MongoDB's
+		// default settings can take 11.5s to finish.
+		c.ctx, c.cancel = context.WithTimeout(t.Context(), 20*time.Second)
 		c.done = make(chan replicaCLILuaReceipt, 1)
 		c.joined = make(chan struct{})
 		t.Cleanup(func() {
