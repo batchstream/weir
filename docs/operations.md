@@ -56,11 +56,18 @@ or ready diagnostics response alone does not prove backend service usability.
 Caller deadlines still bound unavailable selection; do not increase them or
 resubmit a possibly applied mutation to conceal a failed recovery.
 
-An unclean primary loss takes longer to recover from than a stepdown. MongoDB's
-default `electionTimeoutMillis` of 10 seconds, plus its random offset of up to
-15%, means a new primary can take about 10 to 11.5 seconds to appear. A call
-whose deadline is shorter can end with its deadline error during a healthy
-election. Set deadlines for the elections your callers must wait through.
+An unclean primary loss takes longer to recover from than a stepdown. In 24 kills
+of the primary in a three-member replica set with MongoDB's default settings, a
+new primary appeared after 8 to 11.5 seconds in 23 runs. The other run took about
+20 seconds, because a split vote forced a second election. These are observations,
+not limits. Weir's one-second topology polling and the operation itself add to
+them.
+
+A call can reach its deadline during a healthy election. It then returns a
+deadline error, and a mutation in that call may already have applied, so reconcile
+it before resubmitting it. Set deadlines in advance for the elections your callers
+must wait through. That is different from raising one afterward to conceal a
+failed recovery.
 
 Weir retains primary reads and majority-acknowledged typed writes, disables
 automatic read/write replay, and does not promise transparent migration of
