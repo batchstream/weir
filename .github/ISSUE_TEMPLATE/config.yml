@@ -1,0 +1,11 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Documentation
+    url: https://github.com/batchstream/weir/tree/main/docs
+    about: Architecture, batching, configuration, operations, protocols and Lua guides.
+  - name: Go SDK issues
+    url: https://github.com/batchstream/weir-go/issues
+    about: Report problems specific to the Go SDK.
+  - name: Security vulnerability
+    url: https://github.com/batchstream/weir/security/advisories/new
+    about: Report a vulnerability privately.
