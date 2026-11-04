@@ -55,7 +55,13 @@ func replicaLuaTopologyBegin(t *testing.T, opts replicaLuaRuntimeOptions, transi
 		if err := opts.proxy.ArmLuaConflict(opts.primary, c.watch); err != nil {
 			t.Fatal(err)
 		}
-		c.ctx, c.cancel = context.WithTimeout(t.Context(), 12*time.Second)
+		// These calls start before the transition and end after the new primary
+		// confirms the commit: setup, a primary_loss election (up to 11.6s measured),
+		// then up to the 5s this test allows for recovery. The earlier stepdown's 30s
+		// freeze leaves one candidate, so a split vote does not extend the election.
+		// The abort call needs the same budget because finish checks its deadline
+		// after the commit returns.
+		c.ctx, c.cancel = context.WithTimeout(t.Context(), 20*time.Second)
 		t.Cleanup(c.cancel)
 		opts.proxy.SeedLua(t, c.ctx, c.watch)
 		input := bson.D{{Key: "attempt", Value: int32(0)}}

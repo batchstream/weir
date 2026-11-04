@@ -52,8 +52,12 @@ func replicaCLILuaTopologyBegin(t *testing.T, lifetime *replyLossLifetime, trans
 		if err := lifetime.proxy.ArmLuaConflict(lifetime.primary, c.watch); err != nil {
 			t.Fatal(err)
 		}
-		// The commit call waits through a primary_loss election, which MongoDB's
-		// default settings can take 11.5s to finish.
+		// These calls start before the transition and end after the new primary
+		// confirms the commit: setup, a primary_loss election (up to 11.6s measured),
+		// then up to the 5s this test allows for recovery. The earlier stepdown's 30s
+		// freeze leaves one candidate, so a split vote does not extend the election.
+		// The abort call needs the same budget because finish checks its deadline
+		// after the commit returns.
 		c.ctx, c.cancel = context.WithTimeout(t.Context(), 20*time.Second)
 		c.done = make(chan replicaCLILuaReceipt, 1)
 		c.joined = make(chan struct{})
