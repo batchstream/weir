@@ -1,3 +1,18 @@
+<p align="center">
+  <img src=".github/assets/banner.svg" alt="Weir: concurrent requests in, bounded batches out." width="100%">
+</p>
+
+<p align="center">
+  <a href="https://github.com/batchstream/weir/actions/workflows/ci.yml"><img src="https://github.com/batchstream/weir/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI"></a>
+  <a href="https://github.com/batchstream/weir/actions/workflows/vulnerabilities.yml"><img src="https://github.com/batchstream/weir/actions/workflows/vulnerabilities.yml/badge.svg?branch=main" alt="Vulnerabilities"></a>
+  <a href="go.mod"><img src="https://img.shields.io/github/go-mod/go-version/batchstream/weir" alt="Go version"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT license"></a>
+</p>
+
+<p align="center">
+  <strong>Server</strong> &nbsp;·&nbsp; <a href="https://github.com/batchstream/weir-go">Go SDK</a> &nbsp;·&nbsp; <a href="https://github.com/batchstream/weir-protocol">Protocol</a> &nbsp;·&nbsp; <a href="https://github.com/batchstream/weir-charts">Helm chart</a> &nbsp;·&nbsp; <a href="https://github.com/batchstream/weir-tests">System tests</a>
+</p>
+
 # Weir
 
 Weir combines concurrent database requests into bounded batches. It supports
@@ -7,6 +22,13 @@ transforms and native backend commands.
 Clients connect to one Weir address and name the Store in each request. Every
 server behind the address hosts the same Stores, so servers share nothing and
 scale by adding replicas. Each server runs one process, including Lua evaluation.
+
+```mermaid
+flowchart LR
+  Clients["Many clients<br/>single-record calls"] -->|gRPC| Weir["Weir replicas<br/>same Stores, nothing shared"]
+  Weir -->|bulkWrite| MongoDB[(MongoDB)]
+  Weir -->|"_bulk"| Search[(Elasticsearch / OpenSearch)]
+```
 
 ## Why Weir
 
@@ -244,3 +266,22 @@ source commit as `revision`. Build the image locally with:
 ```sh
 docker buildx build --build-arg REVISION=$(git rev-parse HEAD) --load -t weir .
 ```
+
+## Repositories
+
+| Repository | Purpose |
+| --- | --- |
+| [weir](https://github.com/batchstream/weir) | Server |
+| [weir-go](https://github.com/batchstream/weir-go) | Typed Go SDK |
+| [weir-protocol](https://github.com/batchstream/weir-protocol) | Public protobuf schemas, generated Go types and shared validation |
+| [weir-charts](https://github.com/batchstream/weir-charts) | Helm chart for Kubernetes |
+| [weir-tests](https://github.com/batchstream/weir-tests) | Independent blackbox integration tests, soak tests and throughput comparisons |
+
+## Contributing and security
+
+Read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request, and report
+vulnerabilities as described in [SECURITY.md](SECURITY.md).
+
+## License
+
+Weir is released under the [MIT License](LICENSE).
