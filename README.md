@@ -1,5 +1,7 @@
 # Weir
 
+[![CI](https://github.com/batchstream/weir/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/batchstream/weir/actions/workflows/ci.yml) [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
 Weir combines concurrent database requests into bounded batches. It supports
 MongoDB, Elasticsearch and OpenSearch, with typed reads and mutations, Lua
 transforms and native backend commands.
