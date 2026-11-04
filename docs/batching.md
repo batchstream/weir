@@ -125,10 +125,10 @@ execution: 12.5 seconds when executions typically take less than about 80 ms,
 and 100 seconds when they take a third of a second or more. A Store that runs
 batches first pauses at the next 10-second instant, whatever its interval, and
 until its limits settle at every instant of its interval after that, so a Store
-under load soon sees the queue and has paused before it settles. Replicas added
-in front of a queueing backend therefore send few, large batches from the start,
-instead of many small ones until their first probe, and a cold start in front of
-one backs off within a few seconds of that probe.
+under load soon sees the queue. Replicas added in front of a queueing backend
+therefore send few, large batches from the start, instead of many small ones
+until their first probe, and a cold start in front of one backs off within a few
+seconds of that probe.
 
 Until it settled a Store runs that many batches of each operation that are not
 full at a time, and fewer once executions slow down; full batches still use every

@@ -551,7 +551,6 @@ func TestAnUnsettledReplicaPausesAtOnce(t *testing.T) {
 	}
 }
 
-// A baseline lasts until the next probe can renew it.
 func TestAStoreThatNeverPausedPausesWithinTheShortestInterval(t *testing.T) {
 	longest := 8 * probeInterval
 	start := time.Unix(1_000_000, 0).Truncate(longest).Add(probeInterval)
@@ -574,6 +573,7 @@ func TestAStoreThatNeverPausedPausesWithinTheShortestInterval(t *testing.T) {
 	}
 }
 
+// A baseline lasts until the next probe can renew it.
 func TestBaselinesOutlastTheProbeInterval(t *testing.T) {
 	start := time.Unix(1_000_000, 0).Truncate(8 * probeInterval)
 	s := newProbeStore(start, probeInterval)
@@ -784,7 +784,7 @@ func TestAStoreUnderLoadPausesBeforeItSettlesAndGrows(t *testing.T) {
 	deadline := time.Now().Add(15 * time.Second)
 	for time.Now().Before(deadline) {
 		runtime.mu.Lock()
-		settled, value, paused := runtime.limit[operationMutate].settled, runtime.limit[operationMutate].value, runtime.probes.active
+		settled, value, paused := runtime.limit[operationMutate].settled, runtime.limit[operationMutate].value, runtime.probes.paused
 		runtime.mu.Unlock()
 		if settled && !paused {
 			t.Fatal("a limit settled before its Store paused")
@@ -1125,7 +1125,7 @@ type sharingRun struct {
 
 // throughput runs writers that each wait for one record at a time, spread over
 // replicas sharing one backend, and returns the records per second it applied
-// over several probes, after the limits settled.
+// once the limits settled and converged, which can take over ten seconds.
 func throughput(t *testing.T, run sharingRun) float64 {
 	t.Helper()
 	backend := &sharedBackend{workers: make(chan struct{}, 2), overhead: 2 * time.Millisecond, perRecord: 20 * time.Microsecond}
@@ -1155,9 +1155,9 @@ func throughput(t *testing.T, run sharingRun) float64 {
 			}
 		})
 	}
-	time.Sleep(2 * time.Second)
+	time.Sleep(15 * time.Second)
 	before := backend.records.Load()
-	measure := 6 * time.Second
+	measure := 10 * time.Second
 	time.Sleep(measure)
 	applied := backend.records.Load() - before
 	cancel()
@@ -1170,7 +1170,7 @@ func throughput(t *testing.T, run sharingRun) float64 {
 // and the backend spends its time on their overhead.
 func TestReplicasSharingASlowBackendKeepTheirThroughput(t *testing.T) {
 	if testing.Short() || raceEnabled {
-		t.Skip("measures throughput for several seconds")
+		t.Skip("measures throughput for over a minute")
 	}
 	adaptive := DefaultLimits()
 	fixed := DefaultLimits()
