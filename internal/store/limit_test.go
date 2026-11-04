@@ -1183,7 +1183,7 @@ func TestReplicasSharingASlowBackendKeepTheirThroughput(t *testing.T) {
 	fewRate := throughput(t, few)
 	manyRate := throughput(t, many)
 	fixedRate := throughput(t, fixedMany)
-	t.Logf("records/s: 2 replicas %.0f, 6 replicas %.0f, 6 replicas with fixed slots %.0f", fewRate, manyRate, fixedRate)
+	t.Logf("records/s: 2 replicas %.0f, 6 replicas %.0f, 6 replicas with fixed slots %.0f; ratios: 6/2 replicas %.3f, adaptive/fixed slots %.2f", fewRate, manyRate, fixedRate, manyRate/fewRate, manyRate/fixedRate)
 	if manyRate < 0.7*fewRate {
 		t.Fatalf("six replicas applied %.0f records/s against %.0f for two", manyRate, fewRate)
 	}
