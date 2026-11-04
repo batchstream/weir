@@ -31,7 +31,7 @@ go vet -tags=integration ./...
 ```
 
 Default tests need no backends.
-[Integration, load and fault tests](README.md#integration-tests) use Docker and the
+[Integration, load and fault tests](docs/development.md#integration-tests) use Docker and the
 local fixtures under `scripts/`.
 
 ## Prepare a pull request
