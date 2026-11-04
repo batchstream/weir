@@ -35,7 +35,8 @@ jobs:
           echo "$sdk"
           test -z "$sdk"
       - name: Tests
-        run: CGO_ENABLED=0 go test -count=1 -timeout=180s ./...
+        # -v keeps the throughput ratios in passing logs, so their gates can be set from data.
+        run: CGO_ENABLED=0 go test -v -count=1 -timeout=180s ./...
       - name: Race tests
         run: go test -race -count=1 -timeout=180s ./...
 
