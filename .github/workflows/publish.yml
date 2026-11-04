@@ -78,7 +78,8 @@ jobs:
               -ldflags "-buildid= -X main.revision=$GITHUB_SHA" -o "$dist/$name/weir" ./cmd/weir
             cp README.md LICENSE "$dist/$name/"
             cp config/weir.reference.yaml "$dist/$name/config/"
-            tar -czf "$dist/$name.tar.gz" --owner=0 --group=0 --numeric-owner -C "$dist/$name" weir README.md LICENSE config
+            cp -R docs "$dist/$name/docs"
+            tar -czf "$dist/$name.tar.gz" --owner=0 --group=0 --numeric-owner -C "$dist/$name" weir README.md LICENSE config docs
           done
           cd "$dist" && sha256sum weir-*.tar.gz > SHA256SUMS
       - name: Attach archives to the release
