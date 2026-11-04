@@ -308,8 +308,8 @@ a replica stops and terminating Pods can retain connections, so a group briefly
 runs more replicas than its count. Scaling replicas adds backend
 connections and does not add database capacity; the adaptive limit keeps their
 combined requests near what the database can take, and new replicas start at
-two record batches per operation, or `min_in_flight` when that is higher, until
-their second probe or 160 seconds after they first hold a batch back.
+two record batches per operation, or `min_in_flight` when that is higher, for a
+little over one probe interval after their first execution.
 
 Validate the real deployment with persisted reads/writes, visibility
 requirements, slow consumers, cancellation, memory bursts and rolling
