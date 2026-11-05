@@ -427,7 +427,6 @@ func processClient(t *testing.T, address string) pb.StoreServiceClient {
 	return pb.NewStoreServiceClient(conn)
 }
 
-// sdkClient returns an SDK client for a Weir application address.
 // readRecord returns the result of one read, nil when an error left it unconfirmed.
 func readRecord(ctx context.Context, client *weirclient.Client, store string, request *weirclient.ReadRequest) (*weirclient.ReadResult, error) {
 	results, err := client.Read(ctx, store, weirclient.WithRequests(request))
@@ -440,6 +439,7 @@ func mutateRecord(ctx context.Context, client *weirclient.Client, store string, 
 	return results[0], err
 }
 
+// sdkClient returns an SDK client for a Weir application address.
 func sdkClient(t *testing.T, address string) *weirclient.Client {
 	t.Helper()
 	client, err := weirclient.New(address)

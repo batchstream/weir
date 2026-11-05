@@ -200,9 +200,9 @@ func runLowLoadReliability(t *testing.T, probe reliabilityProbe) {
 		metrics := testmetrics.Gather(t, probe.node.server)
 		return stats.Queued == 0 && stats.Active == 0 && testmetrics.Sum(metrics, "weir_ingress_sessions") == 0
 	})
-	metrics := testmetrics.Gather(t, probe.node.server)
-	if rejected := testmetrics.Sum(metrics, "weir_admission_rejections_total"); rejected != 0 {
-		t.Fatal("low-load calls experienced admission rejection", rejected)
+	metrics := testmetrics.Registry(t, probe.node.registry)
+	if refused := refusedWork(metrics); refused != 0 {
+		t.Fatal("low-load calls were refused", refused)
 	}
 	memory := probe.node.guard.Snapshot()
 	if memory.Overloaded {

@@ -139,7 +139,7 @@ func runProcessLoad(t *testing.T, process *cliContainer, datasets []*loadDataset
 		t.Fatal("SDK client", err)
 	}
 	t.Cleanup(func() { _ = client.Close() })
-	workload := loadWorkload{process: process, client: client, datasets: datasets, duration: duration, rejections: loadRejections(initial)}
+	workload := loadWorkload{process: process, client: client, datasets: datasets, duration: duration, refused: refusedWork(initial)}
 	runLoadWorkload(t, workload)
 	for _, dataset := range datasets {
 		verifyLoadOracle(t, dataset)
@@ -219,16 +219,16 @@ func seedLoadDataset(t *testing.T, dataset *loadDataset) {
 }
 
 type loadWorkload struct {
-	process    *cliContainer
-	client     *weirclient.Client
-	datasets   []*loadDataset
-	duration   time.Duration
-	ctx        context.Context
-	results    chan loadResult
-	tokens     chan struct{}
-	pending    *sync.WaitGroup
-	inFlight   *atomic.Int64
-	rejections float64
+	process  *cliContainer
+	client   *weirclient.Client
+	datasets []*loadDataset
+	duration time.Duration
+	ctx      context.Context
+	results  chan loadResult
+	tokens   chan struct{}
+	pending  *sync.WaitGroup
+	inFlight *atomic.Int64
+	refused  float64
 }
 
 func runLoadWorkload(t *testing.T, work loadWorkload) {
@@ -333,8 +333,8 @@ func runLoadWorkload(t *testing.T, work loadWorkload) {
 			t.Logf("all 32 slow consumers canceled and joined at %s; %s", time.Since(measurement), result.message)
 		case <-ticker.C:
 			metrics := work.process.sample(t)
-			if rejections := loadRejections(metrics); rejections != work.rejections {
-				t.Fatal("normal workload was rejected", rejections-work.rejections)
+			if refused := refusedWork(metrics); refused != work.refused {
+				t.Fatal("normal workload was refused", refused-work.refused)
 			}
 			for _, dataset := range work.datasets {
 				labels := map[string]string{"store": dataset.store}
@@ -370,8 +370,8 @@ func runLoadWorkload(t *testing.T, work loadWorkload) {
 	deadline := time.Now().Add(5 * time.Second)
 	for {
 		metrics := work.process.sample(t)
-		if rejections := loadRejections(metrics); rejections != work.rejections {
-			t.Fatal("work was rejected during final recovery", rejections-work.rejections)
+		if refused := refusedWork(metrics); refused != work.refused {
+			t.Fatal("work was refused during final recovery", refused-work.refused)
 		}
 		idle := testmetrics.Sum(metrics, "weir_memory_overloaded") == 0
 		for _, name := range []string{"weir_store_queued_operations", "weir_store_queued_bytes", "weir_store_active_executions", "weir_store_active_natives", "weir_ingress_sessions"} {
@@ -388,10 +388,18 @@ func runLoadWorkload(t *testing.T, work loadWorkload) {
 	}
 }
 
-// loadRejections counts work refused before execution.
-func loadRejections(metrics map[string]*dto.MetricFamily) float64 {
-	rejections := testmetrics.Sum(metrics, "weir_store_rejections_total") + testmetrics.Sum(metrics, "weir_admission_rejections_total")
-	return rejections
+// refusedWork counts what a server turned away or failed. The SDK sends refused
+// work again, so a call that succeeds does not prove its first send was accepted.
+func refusedWork(metrics map[string]*dto.MetricFamily) float64 {
+	refused := testmetrics.Sum(metrics, "weir_store_rejections_total") + testmetrics.Sum(metrics, "weir_admission_rejections_total") + testmetrics.Sum(metrics, "weir_store_record_failures_total")
+	for _, metric := range metrics["weir_store_native_completions_total"].GetMetric() {
+		for _, label := range metric.GetLabel() {
+			if label.GetName() == "completion" && label.GetValue() == "not_started" {
+				refused += metric.GetCounter().GetValue()
+			}
+		}
+	}
+	return refused
 }
 
 func requireGauge(t *testing.T, metrics map[string]*dto.MetricFamily, name string, labels map[string]string) float64 {
@@ -627,12 +635,12 @@ func reportLoadStats(t *testing.T, stats map[string]*loadStats, gate bool) {
 		slices.Sort(entry.lags)
 		n := len(entry.latencies)
 		p99 := entry.latencies[(n*99+99)/100-1]
-		recordsPerRPC := 1
+		recordsPerCall := 1
 		if strings.HasSuffix(key, "/Batch4") {
-			recordsPerRPC = 4
+			recordsPerCall = 4
 		}
 		job := entry.maximum.job
-		t.Logf("distribution %s offered=%d completed=%d records_per_RPC=%d payload_counts_1KiB_256KiB_2MiB=%v p50=%s p95=%s p99=%s max=%s service_p99=%s driver_lag_p99=%s driver_lag_max=%s max_sequence=%d max_payload=%d", key, entry.offered, entry.completed, recordsPerRPC, entry.payloads, entry.latencies[(n*50+99)/100-1], entry.latencies[(n*95+99)/100-1], p99, entry.latencies[n-1], entry.service[(n*99+99)/100-1], entry.lags[(n*99+99)/100-1], entry.lags[n-1], job.sequence, job.payload)
+		t.Logf("distribution %s offered=%d completed=%d records_per_call=%d payload_counts_1KiB_256KiB_2MiB=%v p50=%s p95=%s p99=%s max=%s service_p99=%s driver_lag_p99=%s driver_lag_max=%s max_sequence=%d max_payload=%d", key, entry.offered, entry.completed, recordsPerCall, entry.payloads, entry.latencies[(n*50+99)/100-1], entry.latencies[(n*95+99)/100-1], p99, entry.latencies[n-1], entry.service[(n*99+99)/100-1], entry.lags[(n*99+99)/100-1], entry.lags[n-1], job.sequence, job.payload)
 		limit := 250 * time.Millisecond
 		if strings.HasSuffix(key, "/Read") {
 			limit = 100 * time.Millisecond
