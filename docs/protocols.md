@@ -78,4 +78,4 @@ schemas, generated Go bindings and shared validation. Both Weir and
 The SDK has no dependency on the server, and the server binary does not use the
 SDK; only server tests consume it. Clients in other languages can generate the
 public schema and implement load balancing and typed completion handling. Weir
-uses protocol v0.17.0 and Go SDK v0.19.0.
+uses protocol v0.17.0 and Go SDK v0.24.1.
