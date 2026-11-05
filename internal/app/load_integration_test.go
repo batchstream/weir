@@ -26,7 +26,6 @@ import (
 	dto "github.com/prometheus/client_model/go"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
 )
 
 type loadRecord struct {
@@ -445,8 +444,7 @@ func executeLoadJob(ctx context.Context, client *weirclient.Client, dataset *loa
 	switch job.kind {
 	case 0:
 		request := &weirclient.ReadRequest{Resource: dataset.root + "/s:" + id}
-		opts := weirclient.ReadOneOptions{StoreName: dataset.store, Request: request}
-		result, err := client.ReadOne(ctx, opts)
+		result, err := readRecord(ctx, client, dataset.store, request)
 		if err != nil {
 			return err
 		}
@@ -464,8 +462,7 @@ func executeLoadJob(ctx context.Context, client *weirclient.Client, dataset *loa
 			body = append(body, chunk...)
 			return nil
 		}
-		opts := weirclient.NativeOptions{StoreName: dataset.store, Request: dataset.native[job.payload], Consume: consume}
-		result, err := client.Native(ctx, opts)
+		result, err := client.Native(ctx, dataset.store, dataset.native[job.payload], weirclient.WithChunks(consume))
 		if err != nil {
 			return err
 		}
@@ -507,9 +504,8 @@ func executeLoadJob(ctx context.Context, client *weirclient.Client, dataset *loa
 		return nil
 	case 3:
 		lua := &weirclient.LuaTransform{Source: []byte(`return function(current, incoming) current.n = current.n + 1; return current end`)}
-		request := &weirclient.AtomicTransformRequest{Resource: fmt.Sprintf("%s/s:lua-%03d", dataset.root, job.counter), Lua: lua}
-		opts := weirclient.AtomicTransformOptions{StoreName: dataset.store, Request: request}
-		result, err := client.AtomicTransform(ctx, opts)
+		request := &weirclient.MutateRequest{Resource: fmt.Sprintf("%s/s:lua-%03d", dataset.root, job.counter), Action: weirclient.MutationAtomicTransform, Lua: lua}
+		result, err := mutateRecord(ctx, client, dataset.store, request)
 		return requireMutationApplied(result, err)
 	default:
 		count := 1
@@ -534,14 +530,7 @@ func executeLoadJob(ctx context.Context, client *weirclient.Client, dataset *loa
 			document := &pb.Document{ContentType: dataset.media, Data: raw}
 			requests[index] = &weirclient.MutateRequest{Resource: dataset.root + "/s:" + id, Action: weirclient.MutationPut, Document: document}
 		}
-		if job.kind == 1 {
-			request := &weirclient.WriteRequest{Resource: requests[0].Resource, Document: requests[0].Document}
-			opts := weirclient.WriteOptions{StoreName: dataset.store, Request: request}
-			result, err := client.Put(ctx, opts)
-			return requireMutationApplied(result, err)
-		}
-		opts := weirclient.MutateOptions{StoreName: dataset.store, Requests: requests}
-		results, err := client.Mutate(ctx, opts)
+		results, err := client.Mutate(ctx, dataset.store, weirclient.WithRequests(requests...))
 		if err != nil {
 			return err
 		}
@@ -674,12 +663,13 @@ func runSlowConsumers(ctx context.Context, work loadWorkload, measurement time.T
 	duration := min(120*time.Second, work.duration/2)
 	phase, cancel := context.WithTimeout(ctx, duration)
 	defer cancel()
-	connection, err := grpc.NewClient("passthrough:///"+work.process.address, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithNoProxy(), grpc.WithDisableRetry(), grpc.WithDisableServiceConfig(), grpc.WithStaticStreamWindowSize(64<<10), grpc.WithStaticConnWindowSize(4<<20))
+	// Small flow-control windows make a slow consumer hold its stream back.
+	windows := weirclient.WithDialOptions(grpc.WithStaticStreamWindowSize(64<<10), grpc.WithStaticConnWindowSize(4<<20))
+	client, err := weirclient.New(work.process.address, windows)
 	if err != nil {
 		return "", err
 	}
-	defer connection.Close()
-	client := pb.NewStoreServiceClient(connection)
+	defer client.Close()
 	errors := make(chan error, 32)
 	progress := make([]atomic.Int64, 32)
 	callbacks := make([]atomic.Int64, 32)
@@ -714,8 +704,7 @@ func runSlowConsumers(ctx context.Context, work loadWorkload, measurement time.T
 						return nil
 					}
 				}
-				opts := weirclient.NativeOptions{StoreName: dataset.store, Request: dataset.native[3], Consume: consume}
-				result, err := weirclient.Native(phase, client, opts)
+				result, err := client.Native(phase, dataset.store, dataset.native[3], weirclient.WithChunks(consume))
 				if phase.Err() != nil {
 					return
 				}

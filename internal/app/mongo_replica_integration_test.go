@@ -167,8 +167,7 @@ func TestMongoReplicaCLIRecovery(t *testing.T) {
 
 func replicaCLIHealth(ctx context.Context, client *weirclient.Client, database string) error {
 	request := &weirclient.ReadRequest{Resource: database + "/records/s:health"}
-	opts := weirclient.ReadOneOptions{StoreName: "mongo", Request: request}
-	result, err := client.ReadOne(ctx, opts)
+	result, err := readRecord(ctx, client, "mongo", request)
 	if err != nil {
 		return err
 	}
@@ -200,15 +199,13 @@ func replicaCLIWork(t *testing.T, ctx context.Context, opts replicaCLIWorkOption
 		t.Fatal(err)
 	}
 	document := &pb.Document{ContentType: "application/bson", Data: raw}
-	write := &weirclient.WriteRequest{Resource: resource, Document: document}
-	put := weirclient.WriteOptions{StoreName: "mongo", Request: write}
-	result, err := client.Put(ctx, put)
+	write := &weirclient.MutateRequest{Resource: resource, Action: weirclient.MutationPut, Document: document}
+	result, err := mutateRecord(ctx, client, "mongo", write)
 	if err != nil || result == nil || result.Outcome != weirclient.MutationApplied || result.Failure != nil {
 		t.Fatal("new typed mutation", result, err)
 	}
 	read := &weirclient.ReadRequest{Resource: resource}
-	readOptions := weirclient.ReadOneOptions{StoreName: "mongo", Request: read}
-	found, err := client.ReadOne(ctx, readOptions)
+	found, err := readRecord(ctx, client, "mongo", read)
 	if err != nil || found == nil || found.Failure != nil || found.Document == nil {
 		t.Fatal("new typed read", found, err)
 	}
@@ -237,8 +234,7 @@ func replicaCLIWork(t *testing.T, ctx context.Context, opts replicaCLIWorkOption
 		body = append(body, chunk...)
 		return nil
 	}
-	native := weirclient.NativeOptions{StoreName: "mongo", Request: nativeRequest, Consume: consume}
-	response, err := client.Native(ctx, native)
+	response, err := client.Native(ctx, "mongo", nativeRequest, weirclient.WithChunks(consume))
 	if err != nil || response == nil || response.Failure != nil || response.Completion != weirclient.NativeResponseComplete {
 		t.Fatal("new Native mutation", response, err)
 	}
@@ -252,9 +248,8 @@ func replicaCLIWork(t *testing.T, ctx context.Context, opts replicaCLIWorkOption
 		t.Fatal("Native reply effect")
 	}
 	lua := &weirclient.LuaTransform{Source: []byte(`return function(current, incoming) current.n = current.n + 1; return current end`)}
-	transform := &weirclient.AtomicTransformRequest{Resource: resource, Lua: lua}
-	transformOptions := weirclient.AtomicTransformOptions{StoreName: "mongo", Request: transform}
-	applied, err := client.AtomicTransform(ctx, transformOptions)
+	transform := &weirclient.MutateRequest{Resource: resource, Action: weirclient.MutationAtomicTransform, Lua: lua}
+	applied, err := mutateRecord(ctx, client, "mongo", transform)
 	if err != nil || applied == nil || applied.Failure != nil || applied.Outcome != weirclient.MutationApplied {
 		t.Fatal("new Lua transaction", applied, err)
 	}

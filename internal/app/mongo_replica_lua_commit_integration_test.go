@@ -40,8 +40,7 @@ func replicaCLILuaCommit(t *testing.T, lifetime *replyLossLifetime, abortCases [
 		}
 		document := &pb.Document{ContentType: "application/bson", Data: raw}
 		lua := &weirclient.LuaTransform{Source: []byte(testmongo.ReplicaLuaSource), Input: document}
-		request := &weirclient.AtomicTransformRequest{Resource: lifetime.fixture.DB + "/records/s:" + id, Lua: lua}
-		opts := weirclient.AtomicTransformOptions{StoreName: "mongo", Request: request}
+		request := &weirclient.MutateRequest{Resource: lifetime.fixture.DB + "/records/s:" + id, Action: weirclient.MutationAtomicTransform, Lua: lua}
 		done := make(chan replicaCLILuaReceipt, 1)
 		joined := make(chan struct{})
 		defer func() {
@@ -54,7 +53,7 @@ func replicaCLILuaCommit(t *testing.T, lifetime *replyLossLifetime, abortCases [
 		}()
 		go func() {
 			defer close(joined)
-			result, err := lifetime.client.AtomicTransform(ctx, opts)
+			result, err := mutateRecord(ctx, lifetime.client, "mongo", request)
 			receipt := replicaCLILuaReceipt{result: result, err: err}
 			done <- receipt
 		}()

@@ -96,8 +96,7 @@ func TestSDKReadsEveryHostedStoreThroughOneAddress(t *testing.T) {
 				sdkIngressRead(t, client, name)
 			}
 			request := &weirclient.ReadRequest{Resource: "records/s:key"}
-			missing := weirclient.ReadOptions{StoreName: "missing", Requests: []*weirclient.ReadRequest{request}}
-			if _, err := client.Read(t.Context(), missing); status.Code(err) != codes.NotFound {
+			if _, err := client.Read(t.Context(), "missing", weirclient.WithRequests(request)); status.Code(err) != codes.NotFound {
 				t.Fatal("unhosted Store did not fail with NotFound through the SDK", err)
 			}
 		})
@@ -113,8 +112,7 @@ func sdkIngressRead(t *testing.T, client *weirclient.Client, storeName string) {
 		request := &weirclient.ReadRequest{Resource: fmt.Sprintf("records/s:key-%d", i)}
 		requests[i] = request
 	}
-	options := weirclient.ReadOptions{StoreName: storeName, Requests: requests}
-	results, err := client.Read(ctx, options)
+	results, err := client.Read(ctx, storeName, weirclient.WithRequests(requests...))
 	if err != nil || len(results) != len(requests) {
 		t.Fatalf("Store %s batch read failed: results=%v error=%v", storeName, results, err)
 	}

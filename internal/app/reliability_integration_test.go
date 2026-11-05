@@ -98,13 +98,10 @@ func runLowLoadReliability(t *testing.T, probe reliabilityProbe) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = client.Close() })
-	write := &weirclient.WriteRequest{Resource: probe.resource}
-	writeOptions := weirclient.WriteOptions{StoreName: "records", Request: write}
+	write := &weirclient.MutateRequest{Resource: probe.resource, Action: weirclient.MutationPut}
 	read := &weirclient.ReadRequest{Resource: probe.resource}
-	readOptions := weirclient.ReadOneOptions{StoreName: "records", Request: read}
 	lua := &weirclient.LuaTransform{Source: []byte(`return function(current, incoming) current.n = current.n + 1; return current end`)}
-	transform := &weirclient.AtomicTransformRequest{Resource: probe.resource, Lua: lua}
-	transformOptions := weirclient.AtomicTransformOptions{StoreName: "records", Request: transform}
+	transform := &weirclient.MutateRequest{Resource: probe.resource, Action: weirclient.MutationAtomicTransform, Lua: lua}
 	type phase struct {
 		name  string
 		count int
@@ -131,9 +128,9 @@ func runLowLoadReliability(t *testing.T, probe reliabilityProbe) {
 				case "put", "lua":
 					var result *weirclient.MutationResult
 					if phase.name == "put" {
-						result, err = client.Put(ctx, writeOptions)
+						result, err = mutateRecord(ctx, client, "records", write)
 					} else {
-						result, err = client.AtomicTransform(ctx, transformOptions)
+						result, err = mutateRecord(ctx, client, "records", transform)
 					}
 					if err == nil && (result == nil || result.Failure != nil || result.Outcome != weirclient.MutationApplied) {
 						err = fmt.Errorf("mutation lacked successful application evidence: %v", result)
@@ -147,8 +144,7 @@ func runLowLoadReliability(t *testing.T, probe reliabilityProbe) {
 						body = append(body, chunk...)
 						return nil
 					}
-					options := weirclient.NativeOptions{StoreName: "records", Request: probe.native, Consume: consume}
-					result, callErr := client.Native(ctx, options)
+					result, callErr := client.Native(ctx, "records", probe.native, weirclient.WithChunks(consume))
 					err = callErr
 					if err == nil && (result == nil || result.Failure != nil || result.Completion != weirclient.NativeResponseComplete || len(body) == 0) {
 						err = fmt.Errorf("native query lacked complete response: %v, bytes=%d", result, len(body))
@@ -157,7 +153,7 @@ func runLowLoadReliability(t *testing.T, probe reliabilityProbe) {
 						err = validateReliabilityNative(result, body)
 					}
 				default:
-					result, callErr := client.ReadOne(ctx, readOptions)
+					result, callErr := readRecord(ctx, client, "records", read)
 					err = callErr
 					if err == nil && (result == nil || result.Failure != nil || result.Missing || result.Document == nil) {
 						err = fmt.Errorf("read lost acknowledged document: %v", result)
@@ -173,7 +169,7 @@ func runLowLoadReliability(t *testing.T, probe reliabilityProbe) {
 				elapsed := time.Since(started)
 				// Verify each distinct acknowledged write outside the Put timer.
 				if err == nil && phase.name == "put" {
-					result, callErr := client.ReadOne(ctx, readOptions)
+					result, callErr := readRecord(ctx, client, "records", read)
 					err = callErr
 					if err == nil && (result == nil || result.Document == nil || result.Failure != nil) {
 						err = fmt.Errorf("write readback failed: %v", result)

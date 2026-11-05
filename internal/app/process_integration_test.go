@@ -368,15 +368,13 @@ func TestIndependentWeirProcess(t *testing.T) {
 		}
 		doc := processDocument(t, kind, "initialized", 7)
 		relative := root + "/s:initialized"
-		writeRequest := &weirclient.WriteRequest{Resource: relative, Document: doc}
-		writeOptions := weirclient.WriteOptions{StoreName: kind, Request: writeRequest}
-		applied, err := client.Put(ctx, writeOptions)
+		writeRequest := &weirclient.MutateRequest{Resource: relative, Action: weirclient.MutationPut, Document: doc}
+		applied, err := mutateRecord(ctx, client, kind, writeRequest)
 		if err != nil || applied.GetOutcome() != weirclient.MutationApplied {
 			t.Fatal("SDK mutation", applied, err)
 		}
 		readRequest := &weirclient.ReadRequest{Resource: relative}
-		readOptions := weirclient.ReadOneOptions{StoreName: kind, Request: readRequest}
-		found, err := client.ReadOne(ctx, readOptions)
+		found, err := readRecord(ctx, client, kind, readRequest)
 		if err != nil || processRecordNumber(t, found.Document) != 7 {
 			t.Fatal("SDK persisted read", found, err)
 		}
@@ -430,6 +428,18 @@ func processClient(t *testing.T, address string) pb.StoreServiceClient {
 }
 
 // sdkClient returns an SDK client for a Weir application address.
+// readRecord returns the result of one read, nil when an error left it unconfirmed.
+func readRecord(ctx context.Context, client *weirclient.Client, store string, request *weirclient.ReadRequest) (*weirclient.ReadResult, error) {
+	results, err := client.Read(ctx, store, weirclient.WithRequests(request))
+	return results[0], err
+}
+
+// mutateRecord returns the result of one mutation, nil when an error left it unconfirmed.
+func mutateRecord(ctx context.Context, client *weirclient.Client, store string, request *weirclient.MutateRequest) (*weirclient.MutationResult, error) {
+	results, err := client.Mutate(ctx, store, weirclient.WithRequests(request))
+	return results[0], err
+}
+
 func sdkClient(t *testing.T, address string) *weirclient.Client {
 	t.Helper()
 	client, err := weirclient.New(address)

@@ -77,11 +77,10 @@ func replicaCLILuaTopologyBegin(t *testing.T, lifetime *replyLossLifetime, trans
 		}
 		document := &pb.Document{ContentType: "application/bson", Data: raw}
 		lua := &weirclient.LuaTransform{Source: []byte(testmongo.ReplicaLuaSource), Input: document}
-		request := &weirclient.AtomicTransformRequest{Resource: lifetime.fixture.DB + "/records/s:" + id, Lua: lua}
-		opts := weirclient.AtomicTransformOptions{StoreName: "mongo", Request: request}
+		request := &weirclient.MutateRequest{Resource: lifetime.fixture.DB + "/records/s:" + id, Action: weirclient.MutationAtomicTransform, Lua: lua}
 		go func() {
 			defer close(c.joined)
-			result, err := lifetime.client.AtomicTransform(c.ctx, opts)
+			result, err := mutateRecord(c.ctx, lifetime.client, "mongo", request)
 			receipt := replicaCLILuaReceipt{result: result, err: err}
 			c.done <- receipt
 		}()

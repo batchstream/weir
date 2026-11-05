@@ -9,7 +9,6 @@ import (
 	"time"
 
 	weirclient "github.com/batchstream/weir-go"
-	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 	"github.com/batchstream/weir/internal/backend"
 	"github.com/batchstream/weir/internal/backend/mongodb"
 	"github.com/batchstream/weir/internal/store"
@@ -17,8 +16,18 @@ import (
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
+func sdkClient(t *testing.T, address string) *weirclient.Client {
+	t.Helper()
+	client, err := weirclient.New(address)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = client.Close() })
+	return client
+}
+
 type sdkMongoCommand struct {
-	client   pb.StoreServiceClient
+	client   *weirclient.Client
 	database string
 	command  bson.D
 }
@@ -32,14 +41,13 @@ func executeSDKMongoCommand(t *testing.T, opts sdkMongoCommand) bson.Raw {
 	document := &weirclient.Document{ContentType: "application/bson", Data: raw}
 	request := &weirclient.NativeRequest{Resource: opts.database, Request: document}
 	var output bytes.Buffer
-	options := weirclient.NativeOptions{StoreName: "records", Request: request}
-	options.Consume = func(_ context.Context, _ *weirclient.NativeResponse, data []byte) error {
+	consume := func(_ context.Context, _ *weirclient.NativeResponse, data []byte) error {
 		_, err := output.Write(data)
 		return err
 	}
 	ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
 	defer cancel()
-	result, err := weirclient.Native(ctx, opts.client, options)
+	result, err := opts.client.Native(ctx, "records", request, weirclient.WithChunks(consume))
 	if err != nil || result == nil || result.Completion != weirclient.NativeResponseComplete || result.Failure != nil || result.Response == nil || result.Response.BodyContentType != "application/bson" {
 		t.Fatal("SDK Native did not complete", result, err)
 	}
@@ -65,7 +73,7 @@ func TestSDKMongoLargeNativeCursorAndTypedRecords(t *testing.T) {
 	window.QueueBytes, window.BatchBytes = 64<<10, 64<<10
 	nodeOptions := routeAcceptanceNodeOptions{adapter: adapter, store: window}
 	node := startRouteAcceptanceNode(t, nodeOptions)
-	client := routeAcceptanceClient(t, node.address)
+	client := sdkClient(t, node.address)
 	blob := bytes.Repeat([]byte("x"), 5<<20)
 	first := bson.D{{Key: "_id", Value: "first"}, {Key: "blob", Value: blob}}
 	second := bson.D{{Key: "_id", Value: "second"}, {Key: "blob", Value: blob}}
@@ -111,17 +119,19 @@ func TestSDKMongoLargeNativeCursorAndTypedRecords(t *testing.T) {
 		t.Fatal(err)
 	}
 	document := &weirclient.Document{ContentType: "application/bson", Data: raw}
-	write := &weirclient.WriteRequest{Resource: fixture.DB + "/records/s:first", Document: document}
-	writeOptions := weirclient.WriteOptions{StoreName: "records", Request: write}
-	result, err := weirclient.Put(ctx, client, writeOptions)
-	if err != nil || result == nil || result.Outcome != weirclient.MutationApplied || result.Failure != nil {
-		t.Fatal("large typed write was rejected by processing windows", result, err)
+	write := &weirclient.MutateRequest{Resource: fixture.DB + "/records/s:first", Action: weirclient.MutationPut, Document: document}
+	results, err := client.Mutate(ctx, "records", weirclient.WithRequests(write))
+	if err != nil || results[0] == nil || results[0].Outcome != weirclient.MutationApplied || results[0].Failure != nil {
+		t.Fatal("large typed write was rejected by processing windows", results, err)
 	}
 	read := &weirclient.ReadRequest{Resource: write.Resource}
-	readOptions := weirclient.ReadOneOptions{StoreName: "records", Request: read}
-	value, err := weirclient.ReadOne(ctx, client, readOptions)
-	if err != nil || value.Document == nil || !bytes.Equal(value.Document.Data, raw) {
+	reads, err := client.Read(ctx, "records", weirclient.WithRequests(read))
+	if err != nil || reads[0] == nil || reads[0].Document == nil || !bytes.Equal(reads[0].Document.Data, raw) {
 		t.Fatal("large typed read changed BSON bytes", err)
+	}
+	// Shared streams outlive their calls, so the handlers return once the Client closes.
+	if err := client.Close(); err != nil {
+		t.Fatal(err)
 	}
 	nodes := []*routeAcceptanceNode{node}
 	assertRouteAcceptanceIdle(t, nodes)
