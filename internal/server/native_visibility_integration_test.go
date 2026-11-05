@@ -12,7 +12,6 @@ import (
 	"time"
 
 	weirclient "github.com/batchstream/weir-go"
-	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 	"github.com/batchstream/weir/internal/backend/search"
 	"github.com/batchstream/weir/internal/testutil/testsearch"
 )
@@ -22,7 +21,7 @@ type sdkVisibleSearchOptions struct {
 	wantN   int
 }
 
-func assertSDKVisibleSearch(t *testing.T, client pb.StoreServiceClient, opts sdkVisibleSearchOptions) {
+func assertSDKVisibleSearch(t *testing.T, client *weirclient.Client, opts sdkVisibleSearchOptions) {
 	t.Helper()
 	path := "/" + opts.backend.Index + "/_search?filter_path=hits.hits._id,hits.hits._source"
 	body := `{"query":{"ids":{"values":["sdk"]}}}`
@@ -36,8 +35,7 @@ func assertSDKVisibleSearch(t *testing.T, client pb.StoreServiceClient, opts sdk
 		t.Fatal("SDK Native backend root", err)
 	}
 	var observed bytes.Buffer
-	options := weirclient.NativeOptions{StoreName: "records", Request: native}
-	options.Consume = func(_ context.Context, _ *weirclient.NativeResponse, chunk []byte) error {
+	consume := func(_ context.Context, _ *weirclient.NativeResponse, chunk []byte) error {
 		if observed.Len()+len(chunk) > 64<<10 {
 			return errors.New("fixture search response exceeded its bound")
 		}
@@ -46,7 +44,7 @@ func assertSDKVisibleSearch(t *testing.T, client pb.StoreServiceClient, opts sdk
 	}
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
-	result, err := weirclient.Native(ctx, client, options)
+	result, err := client.Native(ctx, "records", native, weirclient.WithChunks(consume))
 	if err != nil || result == nil || result.Completion != weirclient.NativeResponseComplete || result.Failure != nil {
 		t.Fatal("SDK Native search completion", err, result)
 	}
@@ -87,26 +85,27 @@ func TestSDKExecuteSearchVisibilityAndNativeBackendRoot(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	nodes, client := routeBackendServer(t, adapter)
+	nodeOptions := routeAcceptanceNodeOptions{adapter: adapter}
+	node := startRouteAcceptanceNode(t, nodeOptions)
+	client := sdkClient(t, node.address)
+	calls := ownStream(ctx)
 	resource := backend.Index + "/" + weirclient.EncodeSegment("s:sdk")
 	document := &weirclient.Document{ContentType: "application/json", Data: []byte(`{"n":1,"business":"kept"}`)}
-	mutationOptions := &weirclient.MutationOptions{Visibility: weirclient.MutationQueryVisible}
-	put := &weirclient.WriteRequest{Resource: resource, Document: document, Options: mutationOptions}
-	writeOptions := weirclient.WriteOptions{StoreName: "records", Request: put}
-	result, err := weirclient.Put(ctx, client, writeOptions)
-	if err != nil || result == nil || result.Outcome != weirclient.MutationApplied || result.Failure != nil {
-		t.Fatal("SDK visible Put acknowledgement", err, result)
+	put := &weirclient.MutateRequest{Resource: resource, Action: weirclient.MutationPut, Document: document}
+	results, err := client.Mutate(calls, "records", weirclient.WithRequests(put), weirclient.WithQueryVisible())
+	if err != nil || results[0] == nil || results[0].Outcome != weirclient.MutationApplied || results[0].Failure != nil {
+		t.Fatal("SDK visible Put acknowledgement", err, results[0])
 	}
 	searchOptions := sdkVisibleSearchOptions{backend: backend, wantN: 1}
 	assertSDKVisibleSearch(t, client, searchOptions)
 	program := &weirclient.LuaTransform{Source: []byte(`return function(current, incoming) current.n = current.n + 1; return current end`)}
-	transform := &weirclient.AtomicTransformRequest{Resource: resource, Lua: program, Options: mutationOptions}
-	transformOptions := weirclient.AtomicTransformOptions{StoreName: "records", Request: transform}
-	result, err = weirclient.AtomicTransform(ctx, client, transformOptions)
-	if err != nil || result == nil || result.Outcome != weirclient.MutationApplied || result.Failure != nil {
-		t.Fatal("SDK visible Lua acknowledgement", err, result)
+	transform := &weirclient.MutateRequest{Resource: resource, Action: weirclient.MutationAtomicTransform, Lua: program}
+	results, err = client.Mutate(calls, "records", weirclient.WithRequests(transform), weirclient.WithQueryVisible())
+	if err != nil || results[0] == nil || results[0].Outcome != weirclient.MutationApplied || results[0].Failure != nil {
+		t.Fatal("SDK visible Lua acknowledgement", err, results[0])
 	}
 	searchOptions.wantN = 2
 	assertSDKVisibleSearch(t, client, searchOptions)
+	nodes := []*routeAcceptanceNode{node}
 	assertRouteAcceptanceIdle(t, nodes)
 }

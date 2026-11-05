@@ -134,15 +134,14 @@ func verifyNativeProgress(t *testing.T, fixture nativeProgressFixture) {
 		}
 		time.Sleep(time.Millisecond)
 	}
-	client := routeAcceptanceClient(t, node.address)
+	client := sdkClient(t, node.address)
 	read := &weirclient.ReadRequest{Resource: fixture.resource}
-	readOptions := weirclient.ReadOneOptions{StoreName: "records", Request: read}
 	started := time.Now()
-	result, err := weirclient.ReadOne(ctx, client, readOptions)
-	if err != nil || result == nil || result.Failure != nil || result.Document == nil {
-		t.Fatal("healthy typed query waited behind Native output", result, err)
+	results, err := client.Read(ownStream(ctx), "records", weirclient.WithRequests(read))
+	if err != nil || results[0] == nil || results[0].Failure != nil || results[0].Document == nil {
+		t.Fatal("healthy typed query waited behind Native output", results[0], err)
 	}
-	if err := verifyProgressDocument(result.Document); err != nil {
+	if err := verifyProgressDocument(results[0].Document); err != nil {
 		t.Fatal(err)
 	}
 	var body []byte
@@ -153,8 +152,7 @@ func verifyNativeProgress(t *testing.T, fixture nativeProgressFixture) {
 		body = append(body, chunk...)
 		return nil
 	}
-	nativeOptions := weirclient.NativeOptions{StoreName: "records", Request: fixture.native, Consume: consume}
-	nativeResult, err := weirclient.Native(ctx, client, nativeOptions)
+	nativeResult, err := client.Native(ctx, "records", fixture.native, weirclient.WithChunks(consume))
 	if err != nil || nativeResult == nil || nativeResult.Failure != nil || nativeResult.Completion != weirclient.NativeResponseComplete {
 		t.Fatal("healthy Native query waited behind Native output", nativeResult, err)
 	}

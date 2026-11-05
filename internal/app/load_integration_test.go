@@ -26,7 +26,6 @@ import (
 	dto "github.com/prometheus/client_model/go"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
 )
 
 type loadRecord struct {
@@ -140,7 +139,7 @@ func runProcessLoad(t *testing.T, process *cliContainer, datasets []*loadDataset
 		t.Fatal("SDK client", err)
 	}
 	t.Cleanup(func() { _ = client.Close() })
-	workload := loadWorkload{process: process, client: client, datasets: datasets, duration: duration, rejections: loadRejections(initial)}
+	workload := loadWorkload{process: process, client: client, datasets: datasets, duration: duration, refused: refusedWork(initial)}
 	runLoadWorkload(t, workload)
 	for _, dataset := range datasets {
 		verifyLoadOracle(t, dataset)
@@ -220,16 +219,16 @@ func seedLoadDataset(t *testing.T, dataset *loadDataset) {
 }
 
 type loadWorkload struct {
-	process    *cliContainer
-	client     *weirclient.Client
-	datasets   []*loadDataset
-	duration   time.Duration
-	ctx        context.Context
-	results    chan loadResult
-	tokens     chan struct{}
-	pending    *sync.WaitGroup
-	inFlight   *atomic.Int64
-	rejections float64
+	process  *cliContainer
+	client   *weirclient.Client
+	datasets []*loadDataset
+	duration time.Duration
+	ctx      context.Context
+	results  chan loadResult
+	tokens   chan struct{}
+	pending  *sync.WaitGroup
+	inFlight *atomic.Int64
+	refused  float64
 }
 
 func runLoadWorkload(t *testing.T, work loadWorkload) {
@@ -334,8 +333,8 @@ func runLoadWorkload(t *testing.T, work loadWorkload) {
 			t.Logf("all 32 slow consumers canceled and joined at %s; %s", time.Since(measurement), result.message)
 		case <-ticker.C:
 			metrics := work.process.sample(t)
-			if rejections := loadRejections(metrics); rejections != work.rejections {
-				t.Fatal("normal workload was rejected", rejections-work.rejections)
+			if refused := refusedWork(metrics); refused != work.refused {
+				t.Fatal("normal workload was refused", refused-work.refused)
 			}
 			for _, dataset := range work.datasets {
 				labels := map[string]string{"store": dataset.store}
@@ -371,8 +370,8 @@ func runLoadWorkload(t *testing.T, work loadWorkload) {
 	deadline := time.Now().Add(5 * time.Second)
 	for {
 		metrics := work.process.sample(t)
-		if rejections := loadRejections(metrics); rejections != work.rejections {
-			t.Fatal("work was rejected during final recovery", rejections-work.rejections)
+		if refused := refusedWork(metrics); refused != work.refused {
+			t.Fatal("work was refused during final recovery", refused-work.refused)
 		}
 		idle := testmetrics.Sum(metrics, "weir_memory_overloaded") == 0
 		for _, name := range []string{"weir_store_queued_operations", "weir_store_queued_bytes", "weir_store_active_executions", "weir_store_active_natives", "weir_ingress_sessions"} {
@@ -389,10 +388,18 @@ func runLoadWorkload(t *testing.T, work loadWorkload) {
 	}
 }
 
-// loadRejections counts work refused before execution.
-func loadRejections(metrics map[string]*dto.MetricFamily) float64 {
-	rejections := testmetrics.Sum(metrics, "weir_store_rejections_total") + testmetrics.Sum(metrics, "weir_admission_rejections_total")
-	return rejections
+// refusedWork counts what a server turned away or failed. The SDK sends refused
+// work again, so a call that succeeds does not prove its first send was accepted.
+func refusedWork(metrics map[string]*dto.MetricFamily) float64 {
+	refused := testmetrics.Sum(metrics, "weir_store_rejections_total") + testmetrics.Sum(metrics, "weir_admission_rejections_total") + testmetrics.Sum(metrics, "weir_store_record_failures_total")
+	for _, metric := range metrics["weir_store_native_completions_total"].GetMetric() {
+		for _, label := range metric.GetLabel() {
+			if label.GetName() == "completion" && label.GetValue() == "not_started" {
+				refused += metric.GetCounter().GetValue()
+			}
+		}
+	}
+	return refused
 }
 
 func requireGauge(t *testing.T, metrics map[string]*dto.MetricFamily, name string, labels map[string]string) float64 {
@@ -445,8 +452,7 @@ func executeLoadJob(ctx context.Context, client *weirclient.Client, dataset *loa
 	switch job.kind {
 	case 0:
 		request := &weirclient.ReadRequest{Resource: dataset.root + "/s:" + id}
-		opts := weirclient.ReadOneOptions{StoreName: dataset.store, Request: request}
-		result, err := client.ReadOne(ctx, opts)
+		result, err := readRecord(ctx, client, dataset.store, request)
 		if err != nil {
 			return err
 		}
@@ -464,8 +470,7 @@ func executeLoadJob(ctx context.Context, client *weirclient.Client, dataset *loa
 			body = append(body, chunk...)
 			return nil
 		}
-		opts := weirclient.NativeOptions{StoreName: dataset.store, Request: dataset.native[job.payload], Consume: consume}
-		result, err := client.Native(ctx, opts)
+		result, err := client.Native(ctx, dataset.store, dataset.native[job.payload], weirclient.WithChunks(consume))
 		if err != nil {
 			return err
 		}
@@ -507,9 +512,8 @@ func executeLoadJob(ctx context.Context, client *weirclient.Client, dataset *loa
 		return nil
 	case 3:
 		lua := &weirclient.LuaTransform{Source: []byte(`return function(current, incoming) current.n = current.n + 1; return current end`)}
-		request := &weirclient.AtomicTransformRequest{Resource: fmt.Sprintf("%s/s:lua-%03d", dataset.root, job.counter), Lua: lua}
-		opts := weirclient.AtomicTransformOptions{StoreName: dataset.store, Request: request}
-		result, err := client.AtomicTransform(ctx, opts)
+		request := &weirclient.MutateRequest{Resource: fmt.Sprintf("%s/s:lua-%03d", dataset.root, job.counter), Action: weirclient.MutationAtomicTransform, Lua: lua}
+		result, err := mutateRecord(ctx, client, dataset.store, request)
 		return requireMutationApplied(result, err)
 	default:
 		count := 1
@@ -534,14 +538,7 @@ func executeLoadJob(ctx context.Context, client *weirclient.Client, dataset *loa
 			document := &pb.Document{ContentType: dataset.media, Data: raw}
 			requests[index] = &weirclient.MutateRequest{Resource: dataset.root + "/s:" + id, Action: weirclient.MutationPut, Document: document}
 		}
-		if job.kind == 1 {
-			request := &weirclient.WriteRequest{Resource: requests[0].Resource, Document: requests[0].Document}
-			opts := weirclient.WriteOptions{StoreName: dataset.store, Request: request}
-			result, err := client.Put(ctx, opts)
-			return requireMutationApplied(result, err)
-		}
-		opts := weirclient.MutateOptions{StoreName: dataset.store, Requests: requests}
-		results, err := client.Mutate(ctx, opts)
+		results, err := client.Mutate(ctx, dataset.store, weirclient.WithRequests(requests...))
 		if err != nil {
 			return err
 		}
@@ -638,12 +635,12 @@ func reportLoadStats(t *testing.T, stats map[string]*loadStats, gate bool) {
 		slices.Sort(entry.lags)
 		n := len(entry.latencies)
 		p99 := entry.latencies[(n*99+99)/100-1]
-		recordsPerRPC := 1
+		recordsPerCall := 1
 		if strings.HasSuffix(key, "/Batch4") {
-			recordsPerRPC = 4
+			recordsPerCall = 4
 		}
 		job := entry.maximum.job
-		t.Logf("distribution %s offered=%d completed=%d records_per_RPC=%d payload_counts_1KiB_256KiB_2MiB=%v p50=%s p95=%s p99=%s max=%s service_p99=%s driver_lag_p99=%s driver_lag_max=%s max_sequence=%d max_payload=%d", key, entry.offered, entry.completed, recordsPerRPC, entry.payloads, entry.latencies[(n*50+99)/100-1], entry.latencies[(n*95+99)/100-1], p99, entry.latencies[n-1], entry.service[(n*99+99)/100-1], entry.lags[(n*99+99)/100-1], entry.lags[n-1], job.sequence, job.payload)
+		t.Logf("distribution %s offered=%d completed=%d records_per_call=%d payload_counts_1KiB_256KiB_2MiB=%v p50=%s p95=%s p99=%s max=%s service_p99=%s driver_lag_p99=%s driver_lag_max=%s max_sequence=%d max_payload=%d", key, entry.offered, entry.completed, recordsPerCall, entry.payloads, entry.latencies[(n*50+99)/100-1], entry.latencies[(n*95+99)/100-1], p99, entry.latencies[n-1], entry.service[(n*99+99)/100-1], entry.lags[(n*99+99)/100-1], entry.lags[n-1], job.sequence, job.payload)
 		limit := 250 * time.Millisecond
 		if strings.HasSuffix(key, "/Read") {
 			limit = 100 * time.Millisecond
@@ -674,12 +671,13 @@ func runSlowConsumers(ctx context.Context, work loadWorkload, measurement time.T
 	duration := min(120*time.Second, work.duration/2)
 	phase, cancel := context.WithTimeout(ctx, duration)
 	defer cancel()
-	connection, err := grpc.NewClient("passthrough:///"+work.process.address, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithNoProxy(), grpc.WithDisableRetry(), grpc.WithDisableServiceConfig(), grpc.WithStaticStreamWindowSize(64<<10), grpc.WithStaticConnWindowSize(4<<20))
+	// Small flow-control windows make a slow consumer hold its stream back.
+	windows := weirclient.WithDialOptions(grpc.WithStaticStreamWindowSize(64<<10), grpc.WithStaticConnWindowSize(4<<20))
+	client, err := weirclient.New(work.process.address, windows)
 	if err != nil {
 		return "", err
 	}
-	defer connection.Close()
-	client := pb.NewStoreServiceClient(connection)
+	defer client.Close()
 	errors := make(chan error, 32)
 	progress := make([]atomic.Int64, 32)
 	callbacks := make([]atomic.Int64, 32)
@@ -714,8 +712,7 @@ func runSlowConsumers(ctx context.Context, work loadWorkload, measurement time.T
 						return nil
 					}
 				}
-				opts := weirclient.NativeOptions{StoreName: dataset.store, Request: dataset.native[3], Consume: consume}
-				result, err := weirclient.Native(phase, client, opts)
+				result, err := client.Native(phase, dataset.store, dataset.native[3], weirclient.WithChunks(consume))
 				if phase.Err() != nil {
 					return
 				}

@@ -74,17 +74,15 @@ func TestProcessSearchCRUD(t *testing.T) {
 		t.Fatal(err)
 	}
 	document := &pb.Document{ContentType: "application/json", Data: raw}
-	write := &weirclient.WriteRequest{Resource: backend.Index + "/s:hot-0", Document: document}
-	writeOptions := weirclient.WriteOptions{StoreName: "search", Request: write}
-	updated, err := client.Put(ctx, writeOptions)
+	write := &weirclient.MutateRequest{Resource: backend.Index + "/s:hot-0", Action: weirclient.MutationPut, Document: document}
+	updated, err := mutateRecord(ctx, client, "search", write)
 	if err := requireMutationApplied(updated, err); err != nil {
 		t.Fatal("Update", err)
 	}
 	expected["hot-0"] = update
 	putJob := loadJob{sequence: 1}
-	deleteRequest := &weirclient.DeleteRequest{Resource: backend.Index + "/s:" + loadWriteID(putJob, 0)}
-	deleteOptions := weirclient.DeleteOptions{StoreName: "search", Request: deleteRequest}
-	deleted, err := client.Delete(ctx, deleteOptions)
+	deleteRequest := &weirclient.MutateRequest{Resource: backend.Index + "/s:" + loadWriteID(putJob, 0), Action: weirclient.MutationDelete}
+	deleted, err := mutateRecord(ctx, client, "search", deleteRequest)
 	if err := requireMutationApplied(deleted, err); err != nil {
 		t.Fatal("Delete", err)
 	}

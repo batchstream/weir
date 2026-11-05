@@ -43,8 +43,7 @@ func replicaCLILuaLifecycleStart(t *testing.T, lifetime *replyLossLifetime, phas
 	}
 	document := &pb.Document{ContentType: "application/bson", Data: raw}
 	lua := &weirclient.LuaTransform{Source: []byte(testmongo.ReplicaLuaSource), Input: document}
-	request := &weirclient.AtomicTransformRequest{Resource: lifetime.fixture.DB + "/records/s:" + op.ID, Lua: lua}
-	opts := weirclient.AtomicTransformOptions{StoreName: "mongo", Request: request}
+	request := &weirclient.MutateRequest{Resource: lifetime.fixture.DB + "/records/s:" + op.ID, Action: weirclient.MutationAtomicTransform, Lua: lua}
 	ctx, cancel := context.WithTimeout(t.Context(), 12*time.Second)
 	call := &replicaCLILuaCall{ctx: ctx, cancel: cancel, done: make(chan replicaCLILuaReceipt, 1), joined: make(chan struct{}), watch: watch}
 	t.Cleanup(func() {
@@ -57,7 +56,7 @@ func replicaCLILuaLifecycleStart(t *testing.T, lifetime *replyLossLifetime, phas
 	})
 	go func() {
 		defer close(call.joined)
-		result, err := lifetime.client.AtomicTransform(ctx, opts)
+		result, err := mutateRecord(ctx, lifetime.client, "mongo", request)
 		receipt := replicaCLILuaReceipt{result: result, err: err}
 		call.done <- receipt
 	}()

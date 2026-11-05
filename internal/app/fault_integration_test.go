@@ -204,8 +204,7 @@ func processFaultNative(backend processFaultBackend, id string, increment bool) 
 
 func processFaultRead(ctx context.Context, client *weirclient.Client, backend processFaultBackend, id string) error {
 	request := &weirclient.ReadRequest{Resource: backend.root + "/s:" + id}
-	opts := weirclient.ReadOneOptions{StoreName: backend.store, Request: request}
-	result, err := client.ReadOne(ctx, opts)
+	result, err := readRecord(ctx, client, backend.store, request)
 	if err != nil {
 		return err
 	}
@@ -239,8 +238,7 @@ func processFaultNativeRead(ctx context.Context, client *weirclient.Client, back
 		body = append(body, chunk...)
 		return nil
 	}
-	opts := weirclient.NativeOptions{StoreName: backend.store, Request: request, Consume: consume}
-	result, err := client.Native(ctx, opts)
+	result, err := client.Native(ctx, backend.store, request, weirclient.WithChunks(consume))
 	if err != nil {
 		return err
 	}
@@ -412,7 +410,7 @@ func processFaultLostAck(t *testing.T, suite *processFaultSuite, backend process
 	start := time.Now()
 	if typed {
 		lua := &weirclient.LuaTransform{Source: []byte(`return function(current, incoming) current.n = current.n + 1; return current end`)}
-		request := &weirclient.AtomicTransformRequest{Resource: backend.root + "/s:" + id, Lua: lua}
+		request := &weirclient.MutateRequest{Resource: backend.root + "/s:" + id, Action: weirclient.MutationAtomicTransform, Lua: lua}
 		if backend.mongo != nil {
 			amount := bson.D{{Key: "n", Value: int64(1)}}
 			update := bson.D{{Key: "$inc", Value: amount}}
@@ -426,8 +424,7 @@ func processFaultLostAck(t *testing.T, suite *processFaultSuite, backend process
 			request.Lua = nil
 			request.BackendExpression = &pb.Document{ContentType: "application/vnd.weir.mongodb-update.v1+bson", Data: raw}
 		}
-		opts := weirclient.AtomicTransformOptions{StoreName: backend.store, Request: request}
-		result, err := suite.client.AtomicTransform(ctx, opts)
+		result, err := mutateRecord(ctx, suite.client, backend.store, request)
 		if err != nil || result == nil || result.Outcome != weirclient.MutationUnknown {
 			t.Fatal("acknowledged typed increment must be UNKNOWN", result, err)
 		}
@@ -437,8 +434,7 @@ func processFaultLostAck(t *testing.T, suite *processFaultSuite, backend process
 			t.Fatal(err)
 		}
 		consume := func(context.Context, *weirclient.NativeResponse, []byte) error { return nil }
-		opts := weirclient.NativeOptions{StoreName: backend.store, Request: request, Consume: consume}
-		result, err := suite.client.Native(ctx, opts)
+		result, err := suite.client.Native(ctx, backend.store, request, weirclient.WithChunks(consume))
 		if err != nil || result == nil || result.Completion != weirclient.NativeResponseIncomplete || result.Failure == nil {
 			t.Fatal("acknowledged Native increment lost reply must be INCOMPLETE", result, err)
 		}
@@ -472,8 +468,7 @@ func processFaultCancelAfterAck(t *testing.T, suite *processFaultSuite, backend 
 	done := make(chan error, 1)
 	go func() {
 		consume := func(context.Context, *weirclient.NativeResponse, []byte) error { return nil }
-		opts := weirclient.NativeOptions{StoreName: backend.store, Request: request, Consume: consume}
-		_, err := suite.client.Native(ctx, opts)
+		_, err := suite.client.Native(ctx, backend.store, request, weirclient.WithChunks(consume))
 		done <- err
 	}()
 	processFaultWait(t, gate.ack, "ack held before caller cancellation")
@@ -615,9 +610,8 @@ func processFaultCRUD(t *testing.T, suite *processFaultSuite, backend processFau
 		}
 	}
 	document := &pb.Document{ContentType: backend.media, Data: raw}
-	write := &weirclient.WriteRequest{Resource: backend.root + "/s:" + id, Document: document}
-	writeOptions := weirclient.WriteOptions{StoreName: backend.store, Request: write}
-	result, err := suite.client.Put(ctx, writeOptions)
+	write := &weirclient.MutateRequest{Resource: backend.root + "/s:" + id, Action: weirclient.MutationPut, Document: document}
+	result, err := mutateRecord(ctx, suite.client, backend.store, write)
 	if err != nil || result == nil || result.Outcome != weirclient.MutationApplied || result.Failure != nil {
 		t.Fatal("healthy CRUD write", result, err)
 	}
@@ -629,15 +623,13 @@ func processFaultCRUD(t *testing.T, suite *processFaultSuite, backend processFau
 	if n != 0 {
 		t.Fatal("healthy CRUD independent oracle", n)
 	}
-	deleteRequest := &weirclient.DeleteRequest{Resource: write.Resource}
-	deleteOptions := weirclient.DeleteOptions{StoreName: backend.store, Request: deleteRequest}
-	result, err = suite.client.Delete(ctx, deleteOptions)
+	deleteRequest := &weirclient.MutateRequest{Resource: write.Resource, Action: weirclient.MutationDelete}
+	result, err = mutateRecord(ctx, suite.client, backend.store, deleteRequest)
 	if err != nil || result == nil || result.Outcome != weirclient.MutationApplied || result.Failure != nil {
 		t.Fatal("healthy CRUD delete", result, err)
 	}
 	read := &weirclient.ReadRequest{Resource: write.Resource}
-	readOptions := weirclient.ReadOneOptions{StoreName: backend.store, Request: read}
-	missing, err := suite.client.ReadOne(ctx, readOptions)
+	missing, err := readRecord(ctx, suite.client, backend.store, read)
 	if err != nil || missing == nil || missing.Failure != nil || missing.Document != nil {
 		t.Fatal("healthy CRUD deleted record still present", missing, err)
 	}
@@ -712,8 +704,7 @@ func processFaultShutdown(t *testing.T, suite *processFaultSuite, backend proces
 	done := make(chan error, 1)
 	go func() {
 		consume := func(context.Context, *weirclient.NativeResponse, []byte) error { return nil }
-		opts := weirclient.NativeOptions{StoreName: backend.store, Request: request, Consume: consume}
-		_, err := suite.client.Native(ctx, opts)
+		_, err := suite.client.Native(ctx, backend.store, request, weirclient.WithChunks(consume))
 		done <- err
 	}()
 	processFaultWait(t, gate.ack, "ack lost while service receives SIGTERM")

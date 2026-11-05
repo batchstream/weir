@@ -38,12 +38,11 @@ func replicaCLIReadStart(t *testing.T, lifetime *replyLossLifetime, watch *testm
 	t.Helper()
 	// Preparation is outside the original 12s caller clock; never reset it.
 	request := &weirclient.ReadRequest{Resource: lifetime.fixture.DB + "/records/s:" + id}
-	opts := weirclient.ReadOneOptions{StoreName: "mongo", Request: request}
 	ctx, cancel := context.WithTimeout(t.Context(), 12*time.Second)
 	deadline, _ := ctx.Deadline()
 	call := &replicaCLIRead{ctx: ctx, cancel: cancel, deadline: deadline, done: make(chan replicaReadReceipt, 1), watch: watch}
 	go func() {
-		result, err := lifetime.client.ReadOne(ctx, opts)
+		result, err := readRecord(ctx, lifetime.client, "mongo", request)
 		receipt := replicaReadReceipt{err: err}
 		if result != nil {
 			receipt.failure = result.Failure != nil

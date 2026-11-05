@@ -249,17 +249,15 @@ func replyLossCase(t *testing.T, lifetime *replyLossLifetime, transition string)
 		t.Fatal(err)
 	}
 	expression := &pb.Document{ContentType: "application/vnd.weir.mongodb-update.v1+bson", Data: raw}
-	transform := &weirclient.AtomicTransformRequest{Resource: lifetime.fixture.DB + "/records/s:" + record.id, BackendExpression: expression}
-	typedOptions := weirclient.AtomicTransformOptions{StoreName: "mongo", Request: transform}
+	transform := &weirclient.MutateRequest{Resource: lifetime.fixture.DB + "/records/s:" + record.id, Action: weirclient.MutationAtomicTransform, BackendExpression: expression}
 	nativeRequest := replyLossNativeRequest(t, lifetime.fixture.DB, request)
 	consume := func(context.Context, *weirclient.NativeResponse, []byte) error {
 		return fmt.Errorf("lost response unexpectedly delivered body")
 	}
-	nativeOptions := weirclient.NativeOptions{StoreName: "mongo", Request: nativeRequest, Consume: consume}
 	go func() {
 		receipt := replyLossReceipt{}
 		if lifetime.kind == "bulkWrite" {
-			result, err := lifetime.client.AtomicTransform(ctx, typedOptions)
+			result, err := mutateRecord(ctx, lifetime.client, "mongo", transform)
 			receipt.err = err
 			receipt.valid = err == nil && result != nil && result.Outcome == weirclient.MutationUnknown && result.Failure != nil
 			receipt.description = fmt.Sprintf("%v", result)
@@ -267,7 +265,7 @@ func replyLossCase(t *testing.T, lifetime *replyLossLifetime, transition string)
 				receipt.description = fmt.Sprintf("actual_outcome=%v actual_failure=%v", result.Outcome, result.Failure)
 			}
 		} else {
-			result, err := lifetime.client.Native(ctx, nativeOptions)
+			result, err := lifetime.client.Native(ctx, "mongo", nativeRequest, weirclient.WithChunks(consume))
 			receipt.err = err
 			receipt.valid = err == nil && result != nil && result.Completion == weirclient.NativeResponseIncomplete && result.Failure != nil
 			receipt.description = fmt.Sprintf("%v", result)
@@ -434,9 +432,8 @@ func replyLossNewWork(t *testing.T, ctx context.Context, lifetime *replyLossLife
 		t.Fatal(err)
 	}
 	document := &pb.Document{ContentType: "application/bson", Data: raw}
-	write := &weirclient.WriteRequest{Resource: lifetime.fixture.DB + "/records/s:" + id, Document: document}
-	put := weirclient.WriteOptions{StoreName: "mongo", Request: write}
-	result, err := lifetime.client.Put(ctx, put)
+	write := &weirclient.MutateRequest{Resource: lifetime.fixture.DB + "/records/s:" + id, Action: weirclient.MutationPut, Document: document}
+	result, err := mutateRecord(ctx, lifetime.client, "mongo", write)
 	if err != nil || result == nil || result.Outcome != weirclient.MutationApplied || result.Failure != nil {
 		t.Fatal("new-ID typed business work", result, err)
 	}
@@ -449,8 +446,7 @@ func replyLossNewWork(t *testing.T, ctx context.Context, lifetime *replyLossLife
 		body = append(body, chunk...)
 		return nil
 	}
-	nativeOptions := weirclient.NativeOptions{StoreName: "mongo", Request: request, Consume: consume}
-	native, err := lifetime.client.Native(ctx, nativeOptions)
+	native, err := lifetime.client.Native(ctx, "mongo", request, weirclient.WithChunks(consume))
 	if err != nil || native == nil || native.Completion != weirclient.NativeResponseComplete || native.Failure != nil {
 		t.Fatal("new-ID Native business work", native, err)
 	}
@@ -518,9 +514,8 @@ func replyLossBusinessErrors(t *testing.T, lifetime *replyLossLifetime) {
 			body = append(body, chunk...)
 			return nil
 		}
-		nativeOptions := weirclient.NativeOptions{StoreName: "mongo", Request: request, Consume: consume}
 		ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
-		result, err := lifetime.client.Native(ctx, nativeOptions)
+		result, err := lifetime.client.Native(ctx, "mongo", request, weirclient.WithChunks(consume))
 		cancel()
 		if err != nil || result == nil || result.Completion != weirclient.NativeResponseComplete || result.Failure != nil {
 			t.Fatal("complete business error became forwarding failure", kind, result, err)
