@@ -14,6 +14,7 @@ import (
 	"github.com/batchstream/weir/internal/store"
 	"github.com/batchstream/weir/internal/testutil/testmongo"
 	"go.mongodb.org/mongo-driver/v2/bson"
+	"google.golang.org/grpc/metadata"
 )
 
 func sdkClient(t *testing.T, address string) *weirclient.Client {
@@ -24,6 +25,13 @@ func sdkClient(t *testing.T, address string) *weirclient.Client {
 	}
 	t.Cleanup(func() { _ = client.Close() })
 	return client
+}
+
+// ownStream gives a context's calls a gRPC stream of their own instead of a shared
+// one, so that a handler returning proves the stream ended normally after half-close
+// rather than on the Client's cancellation.
+func ownStream(ctx context.Context) context.Context {
+	return metadata.AppendToOutgoingContext(ctx, "weir-test", "own-stream")
 }
 
 type sdkMongoCommand struct {
@@ -120,18 +128,15 @@ func TestSDKMongoLargeNativeCursorAndTypedRecords(t *testing.T) {
 	}
 	document := &weirclient.Document{ContentType: "application/bson", Data: raw}
 	write := &weirclient.MutateRequest{Resource: fixture.DB + "/records/s:first", Action: weirclient.MutationPut, Document: document}
-	results, err := client.Mutate(ctx, "records", weirclient.WithRequests(write))
+	calls := ownStream(ctx)
+	results, err := client.Mutate(calls, "records", weirclient.WithRequests(write))
 	if err != nil || results[0] == nil || results[0].Outcome != weirclient.MutationApplied || results[0].Failure != nil {
-		t.Fatal("large typed write was rejected by processing windows", results, err)
+		t.Fatal("large typed write was rejected by processing windows", results[0], err)
 	}
 	read := &weirclient.ReadRequest{Resource: write.Resource}
-	reads, err := client.Read(ctx, "records", weirclient.WithRequests(read))
+	reads, err := client.Read(calls, "records", weirclient.WithRequests(read))
 	if err != nil || reads[0] == nil || reads[0].Document == nil || !bytes.Equal(reads[0].Document.Data, raw) {
 		t.Fatal("large typed read changed BSON bytes", err)
-	}
-	// Shared streams outlive their calls, so the handlers return once the Client closes.
-	if err := client.Close(); err != nil {
-		t.Fatal(err)
 	}
 	nodes := []*routeAcceptanceNode{node}
 	assertRouteAcceptanceIdle(t, nodes)

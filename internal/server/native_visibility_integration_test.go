@@ -85,28 +85,27 @@ func TestSDKExecuteSearchVisibilityAndNativeBackendRoot(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	nodes, _ := routeBackendServer(t, adapter)
-	client := sdkClient(t, nodes[0].address)
+	nodeOptions := routeAcceptanceNodeOptions{adapter: adapter}
+	node := startRouteAcceptanceNode(t, nodeOptions)
+	client := sdkClient(t, node.address)
+	calls := ownStream(ctx)
 	resource := backend.Index + "/" + weirclient.EncodeSegment("s:sdk")
 	document := &weirclient.Document{ContentType: "application/json", Data: []byte(`{"n":1,"business":"kept"}`)}
 	put := &weirclient.MutateRequest{Resource: resource, Action: weirclient.MutationPut, Document: document}
-	results, err := client.Mutate(ctx, "records", weirclient.WithRequests(put), weirclient.WithQueryVisible())
+	results, err := client.Mutate(calls, "records", weirclient.WithRequests(put), weirclient.WithQueryVisible())
 	if err != nil || results[0] == nil || results[0].Outcome != weirclient.MutationApplied || results[0].Failure != nil {
-		t.Fatal("SDK visible Put acknowledgement", err, results)
+		t.Fatal("SDK visible Put acknowledgement", err, results[0])
 	}
 	searchOptions := sdkVisibleSearchOptions{backend: backend, wantN: 1}
 	assertSDKVisibleSearch(t, client, searchOptions)
 	program := &weirclient.LuaTransform{Source: []byte(`return function(current, incoming) current.n = current.n + 1; return current end`)}
 	transform := &weirclient.MutateRequest{Resource: resource, Action: weirclient.MutationAtomicTransform, Lua: program}
-	results, err = client.Mutate(ctx, "records", weirclient.WithRequests(transform), weirclient.WithQueryVisible())
+	results, err = client.Mutate(calls, "records", weirclient.WithRequests(transform), weirclient.WithQueryVisible())
 	if err != nil || results[0] == nil || results[0].Outcome != weirclient.MutationApplied || results[0].Failure != nil {
-		t.Fatal("SDK visible Lua acknowledgement", err, results)
+		t.Fatal("SDK visible Lua acknowledgement", err, results[0])
 	}
 	searchOptions.wantN = 2
 	assertSDKVisibleSearch(t, client, searchOptions)
-	// Shared streams outlive their calls, so the handlers return once the Client closes.
-	if err := client.Close(); err != nil {
-		t.Fatal(err)
-	}
+	nodes := []*routeAcceptanceNode{node}
 	assertRouteAcceptanceIdle(t, nodes)
 }

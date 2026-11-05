@@ -137,9 +137,9 @@ func verifyNativeProgress(t *testing.T, fixture nativeProgressFixture) {
 	client := sdkClient(t, node.address)
 	read := &weirclient.ReadRequest{Resource: fixture.resource}
 	started := time.Now()
-	results, err := client.Read(ctx, "records", weirclient.WithRequests(read))
+	results, err := client.Read(ownStream(ctx), "records", weirclient.WithRequests(read))
 	if err != nil || results[0] == nil || results[0].Failure != nil || results[0].Document == nil {
-		t.Fatal("healthy typed query waited behind Native output", results, err)
+		t.Fatal("healthy typed query waited behind Native output", results[0], err)
 	}
 	if err := verifyProgressDocument(results[0].Document); err != nil {
 		t.Fatal(err)
@@ -193,10 +193,6 @@ func verifyNativeProgress(t *testing.T, fixture nativeProgressFixture) {
 	}
 	t.Logf("backend=%s slow_Native=%d healthy_typed_and_Native=%s; default Stall=%s; no watchdog release", fixture.native.Request.ContentType, stalled, time.Since(started), DefaultLimits().Stall)
 	_ = conn.Close()
-	// Shared streams outlive their calls, so the handlers return once the Client closes.
-	if err := client.Close(); err != nil {
-		t.Fatal(err)
-	}
 	assertRouteAcceptanceIdle(t, []*routeAcceptanceNode{node})
 }
 
