@@ -110,7 +110,9 @@ distinct indexes without retaining metadata between invocations.
 
 Both adapters make up to five attempts after a confirmed conflict or abort.
 Possible writes and ambiguous commits are never replayed. MongoDB may retry
-confirmation of the same commit separately.
+confirmation of the same commit separately. When a MongoDB Lua transaction of
+several records exhausts its attempts, the batch is halved and each half gets
+fresh attempts, so only the contended records end with `CONFLICT`.
 
 ## Authentication
 

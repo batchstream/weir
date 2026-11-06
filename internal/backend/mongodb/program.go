@@ -94,6 +94,14 @@ func (a *Adapter) runPrograms(ctx context.Context, batch *programBatch) {
 		}
 		break
 	}
+	// Without an ambiguous commit, every attempt rolled back and no member
+	// applied. Halving isolates the contended records, so records that never
+	// conflicted are not failed with them.
+	remaining := batch.active()
+	if !ambiguous && ctx.Err() == nil && len(remaining) > 1 {
+		a.splitPrograms(ctx, batch, remaining)
+		return
+	}
 	outcome := pb.MutationOutcome_NOT_APPLIED
 	failure := protocol.Fail(pb.FailureCode_CONFLICT, "MongoDB transaction retry limit exceeded")
 	if ambiguous {

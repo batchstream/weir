@@ -5,6 +5,8 @@ package mongodb
 import (
 	"context"
 	"fmt"
+	"slices"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -572,6 +574,96 @@ func TestMongoLuaConflictRetriesStopAtAttemptBound(t *testing.T) {
 	results = adapter.executePrograms(canceled, plans)
 	if results[0].GetMutationResult().GetOutcome() != pb.MutationOutcome_NOT_STARTED || reads.Load() != int32(settings.RetryAttempts) || writes.Load() != int32(settings.RetryAttempts) {
 		t.Fatal("cancelled caller started a new transaction", results[0], reads.Load(), writes.Load())
+	}
+}
+
+// A record that conflicts on every attempt fails alone; the peer sharing its
+// transaction applies once after the exhausted batch is halved.
+func TestMongoLuaConflictExhaustionIsolatesContendedRecord(t *testing.T) {
+	fixture := testmongo.Open(t)
+	collection := fixture.Admin.Database(fixture.DB).Collection("records")
+	for _, id := range []string{"counter", "peer"} {
+		document := bson.D{{Key: "_id", Value: id}, {Key: "n", Value: int32(0)}}
+		if _, err := collection.InsertOne(t.Context(), document); err != nil {
+			t.Fatal(err)
+		}
+	}
+	filter := bson.D{{Key: "_id", Value: "counter"}}
+	increment := bson.D{{Key: "n", Value: int32(1)}}
+	update := bson.D{{Key: "$inc", Value: increment}}
+	var mu sync.Mutex
+	var reads []string
+	contended := map[int64]bool{}
+	var commits atomic.Int32
+	monitor := &event.CommandMonitor{
+		Started: func(_ context.Context, command *event.CommandStartedEvent) {
+			if command.CommandName == "commitTransaction" {
+				commits.Add(1)
+			}
+			if command.CommandName != "find" {
+				return
+			}
+			values, err := command.Command.Lookup("filter", "_id", "$in").Array().Values()
+			if err != nil {
+				t.Error(err)
+				return
+			}
+			var ids []string
+			for _, id := range values {
+				ids = append(ids, id.StringValue())
+			}
+			mu.Lock()
+			defer mu.Unlock()
+			reads = append(reads, strings.Join(ids, ","))
+			contended[command.RequestID] = slices.Contains(ids, "counter")
+		},
+		Succeeded: func(_ context.Context, command *event.CommandSucceededEvent) {
+			mu.Lock()
+			conflict := command.CommandName == "find" && contended[command.RequestID]
+			mu.Unlock()
+			if !conflict {
+				return
+			}
+			ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+			defer cancel()
+			if _, err := collection.UpdateOne(ctx, filter, update); err != nil {
+				t.Error("external conflicting write", err)
+			}
+		},
+	}
+	adapterOptions := adapterTestOptions{fixture: fixture, monitor: monitor}
+	adapter := testAdapter(t, adapterOptions)
+	settings := adapter.options()
+	settings.RetryAttempts = 3
+	settings.RetryBackoff = 0
+	adapter.config.Options = &settings
+	var plans []*execution.Plan
+	for _, id := range []string{"counter", "peer"} {
+		operation := batchOperationOptions{resource: fixture.DB + "/records/s:" + id, program: incrementProgram}
+		plans = append(plans, prepareBatchProgram(t, adapter, operation))
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	results := adapter.executePrograms(ctx, plans)
+	counter, peer := results[0].GetMutationResult(), results[1].GetMutationResult()
+	if counter.GetOutcome() != pb.MutationOutcome_NOT_APPLIED || counter.GetFailure().GetCode() != pb.FailureCode_CONFLICT {
+		t.Fatal("contended record did not exhaust its conflict retries", counter)
+	}
+	if peer.GetOutcome() != pb.MutationOutcome_APPLIED || peer.GetFailure() != nil {
+		t.Fatal("uncontended peer failed with the contended record", peer)
+	}
+	want := []string{"counter,peer", "counter,peer", "counter,peer", "counter", "counter", "counter", "peer"}
+	mu.Lock()
+	defer mu.Unlock()
+	if !slices.Equal(reads, want) || commits.Load() != 1 {
+		t.Fatal("exhausted batch was not halved once", reads, commits.Load())
+	}
+	for id, n := range map[string]int32{"counter": 6, "peer": 1} {
+		document := bson.D{{Key: "_id", Value: id}}
+		raw, err := collection.FindOne(t.Context(), document).Raw()
+		if err != nil || raw.Lookup("n").Int32() != n {
+			t.Fatal("stored value after isolation", id, raw, err)
+		}
 	}
 }
 
