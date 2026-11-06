@@ -188,6 +188,9 @@ func OpenSecure(t *testing.T) *SecureFixture {
 		t.Fatal("fixture Basic administrator bootstrap failed", status)
 	}
 	verifyVersion(t, raw, profile, f.name)
+	if f.compatibility {
+		verifyNodeVersion(t, f.Admin, compatibilityVersion)
+	}
 	if err := os.WriteFile(filepath.Join(f.Root, "version.json"), raw, 0600); err != nil {
 		t.Fatal("cannot retain backend build fingerprint")
 	}

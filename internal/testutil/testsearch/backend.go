@@ -102,9 +102,34 @@ func Open(t *testing.T) *Backend {
 		t.Fatal("wrong isolated backend", status)
 	}
 	verifyVersion(t, raw, selected.profile, selected.container)
+	if selected.compatibility {
+		verifyNodeVersion(t, b, compatibilityVersion)
+	}
 	t.Cleanup(transport.CloseIdleConnections)
 	b.Create(t, index, `{"settings":{"number_of_shards":1,"number_of_replicas":0},"mappings":{"properties":{"n":{"type":"long"}}}}`)
 	return b
+}
+
+// compatibilityVersion is the OpenSearch release behind the compatibility
+// profile, whose root reports 7.10.2 instead.
+const compatibilityVersion = "2.17.1"
+
+// verifyNodeVersion checks the release the node itself reports, which
+// compatibility mode does not rewrite.
+func verifyNodeVersion(t *testing.T, b *Backend, want string) {
+	t.Helper()
+	status, raw := b.Do(t, "GET", "/_nodes/_local?filter_path=nodes.*.version", "")
+	var nodes struct {
+		Nodes map[string]struct{ Version string }
+	}
+	if status != 200 || json.Unmarshal(raw, &nodes) != nil || len(nodes.Nodes) != 1 {
+		t.Fatal("isolated backend node version unavailable", status)
+	}
+	for _, node := range nodes.Nodes {
+		if node.Version != want {
+			t.Fatalf("isolated backend runs OpenSearch %q, want %s", node.Version, want)
+		}
+	}
 }
 
 func verifyVersion(t *testing.T, raw []byte, profile, cluster string) {

@@ -130,6 +130,9 @@ func (a *Adapter) qualify(ctx context.Context) error {
 	var info struct {
 		Tagline string
 		Version struct {
+			// Only compatibility mode is identified by its number, so other
+			// products may report any type.
+			Number       any
 			Distribution string
 			BuildFlavor  string `json:"build_flavor"`
 		}
@@ -145,7 +148,7 @@ func (a *Adapter) qualify(ctx context.Context) error {
 	// compatibility.override_main_response_version, which AWS OpenSearch
 	// Service domains often enable, makes OpenSearch report Elasticsearch
 	// 7.10.2 without a distribution. Its tagline still names OpenSearch.
-	case info.Version.Distribution == "" && info.Version.BuildFlavor == "" && info.Tagline == openSearchTagline:
+	case info.Version.Number == "7.10.2" && info.Version.Distribution == "" && info.Version.BuildFlavor == "" && info.Tagline == openSearchTagline:
 		a.dialect = OpenSearchProduct
 	default:
 		return errors.New("unsupported Search server product")

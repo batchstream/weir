@@ -22,7 +22,10 @@ func TestSearchSecurityInputBoundary(t *testing.T) {
 		return
 	}
 	if b.Profile == "opensearch-2.17.1-compat" {
-		t.Skip("OpenSearch 2.17 has no search.query.max_query_string_length; this probes the backend, not Weir")
+		// The limit fixes CVE-2025-9624, a query_string denial of service,
+		// and first shipped in OpenSearch 2.19.4. The profile matches the
+		// 2.17 production domain, so it is a known-unpatched build.
+		t.Skip("OpenSearch 2.17 predates search.query.max_query_string_length (CVE-2025-9624); this probes the backend, not Weir")
 	}
 	// This disposable cluster has no external users. Restore the temporary limit
 	// independently of the test result; production Weir never changes settings.

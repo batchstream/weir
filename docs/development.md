@@ -28,9 +28,9 @@ fixtures:
   runs Elasticsearch 8.19.22 on `127.0.0.1:19200`, OpenSearch 3.3.0 on
   `127.0.0.1:19202`, or OpenSearch 2.17.1 with
   `compatibility.override_main_response_version=true` on `127.0.0.1:19203` in
-  Docker. The last matches AWS OpenSearch Service domains that report
-  Elasticsearch 7.10.2 to older clients. Use `normal` capacity for ordinary runs; the
-  default `overload` profile shrinks the write thread pool for the Search
+  Docker. The last matches AWS OpenSearch Service domains whose root reports
+  Elasticsearch 7.10.2 to every client. Use `normal` capacity for ordinary
+  runs; the default `overload` profile shrinks the write thread pool for the Search
   capacity-rejection tests. `start` waits until the cluster is green and the
   write thread pool has stayed idle for 5 seconds, so startup system-index
   writes do not compete with tests. Each fixture container runs a 1 GiB heap

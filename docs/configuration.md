@@ -109,10 +109,11 @@ Idle backend connections close after 30s. Each adapter invocation qualifies its
 distinct indexes without retaining metadata between invocations.
 
 At startup Weir identifies the product from `GET /`: Elasticsearch by build
-flavor `default`, and OpenSearch by distribution `opensearch`. OpenSearch with
-`compatibility.override_main_response_version`, which AWS OpenSearch Service
-domains often enable, reports Elasticsearch 7.10.2 without either field; Weir
-recognizes it by the OpenSearch tagline. Any other product stops startup.
+flavor `default` with no distribution, and OpenSearch by distribution
+`opensearch`. OpenSearch with `compatibility.override_main_response_version`,
+which AWS OpenSearch Service domains often enable, reports version 7.10.2
+without either field; Weir recognizes it by that version and the OpenSearch
+tagline. Any other product stops startup.
 
 Both adapters make up to five attempts after a confirmed conflict or abort.
 Possible writes and ambiguous commits are never replayed. MongoDB may retry
