@@ -123,6 +123,66 @@ func TestMongoProgramCommitRetries(t *testing.T) {
 	}
 }
 
+// An ambiguous commit leaves every member UNKNOWN. The batch is never halved
+// or reread, even though its context has time left.
+func TestMongoLuaBatchAmbiguousCommitNeverSplits(t *testing.T) {
+	ambiguousLabels := bson.A{"UnknownTransactionCommitResult"}
+	ambiguous := programCommitError(ambiguousLabels)
+	first := bson.D{{Key: "_id", Value: "a"}, {Key: "n", Value: int32(1)}}
+	second := bson.D{{Key: "_id", Value: "b"}, {Key: "n", Value: int32(1)}}
+	documents := bson.A{first, second}
+	cursor := bson.D{{Key: "id", Value: int64(0)}, {Key: "ns", Value: "db.records"}, {Key: "firstBatch", Value: documents}}
+	findReply := bson.D{{Key: "ok", Value: 1}, {Key: "cursor", Value: cursor}}
+	firstItem := bson.D{{Key: "ok", Value: 1}, {Key: "idx", Value: 0}, {Key: "n", Value: 1}, {Key: "nModified", Value: 1}}
+	secondItem := bson.D{{Key: "ok", Value: 1}, {Key: "idx", Value: 1}, {Key: "n", Value: 1}, {Key: "nModified", Value: 1}}
+	items := bson.A{firstItem, secondItem}
+	writeReply := programBulkResponse(items, 2)
+	qualification := collectionQualificationResponse("db", "records")
+	responses := []bson.D{qualification, findReply, writeReply}
+	for range 5 {
+		responses = append(responses, ambiguous)
+	}
+	var finds, commits int
+	monitor := &event.CommandMonitor{Started: func(ctx context.Context, ev *event.CommandStartedEvent) {
+		switch ev.CommandName {
+		case "find":
+			finds++
+		case "commitTransaction":
+			commits++
+		}
+	}}
+	deployment := drivertest.NewMockDeployment(responses...)
+	opts := options.Client().SetRetryWrites(false).SetRetryReads(false).SetMaxAdaptiveRetries(0).SetMonitor(monitor)
+	opts.Deployment = deployment
+	client, err := mongo.Connect(opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Disconnect(context.Background())
+	a := &Adapter{client: client}
+	initializeTestLifetime(a)
+	a.config.Store = "mongo"
+	var plans []*execution.Plan
+	for _, id := range []string{"a", "b"} {
+		operationOpts := batchOperationOptions{resource: "db/records/s:" + id, action: "program", program: `return function(current, incoming) current.n = current.n + 1; return current end`}
+		work, failure := prepareTestRecord(a, batchOperation(t, operationOpts))
+		if failure != nil {
+			t.Fatal(failure)
+		}
+		plans = append(plans, work)
+	}
+	results := a.executePrograms(t.Context(), plans)
+	for _, event := range results {
+		result := event.GetMutationResult()
+		if result.GetOutcome() != pb.MutationOutcome_UNKNOWN || result.GetFailure().GetCode() != pb.FailureCode_UNAVAILABLE {
+			t.Fatal("ambiguous commit did not leave the member UNKNOWN", result)
+		}
+	}
+	if finds != 1 || commits != 5 {
+		t.Fatalf("ambiguous batch was reread: finds=%d commits=%d", finds, commits)
+	}
+}
+
 func programCommitError(labels bson.A) bson.D {
 	response := bson.D{{Key: "ok", Value: 0}, {Key: "code", Value: 251}, {Key: "codeName", Value: "NoSuchTransaction"}, {Key: "errmsg", Value: "transaction aborted"}, {Key: "errorLabels", Value: labels}}
 	return response

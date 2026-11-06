@@ -87,7 +87,8 @@ not undo earlier effects. There is no durable deduplication or exactly-once clai
 
 MongoDB Lua groups use short snapshot transactions. A confirmed abort can allow a
 fresh read/evaluation/write attempt. An ambiguous commit can only retry confirmation
-of that same commit. Search uses real-time reads and version-conditional writes;
+of that same commit. A group that runs out of attempts on write conflicts is halved
+until only the contended records fail. Search uses real-time reads and version-conditional writes;
 only confirmed conflicts allow reevaluation of affected items. Neither adapter
 adds revision fields to business documents. Query visibility is requested
 explicitly and remains part of completion.
