@@ -738,7 +738,9 @@ func TestMongoLuaTransientExhaustionDoesNotSplit(t *testing.T) {
 	labels := bson.A{"TransientTransactionError"}
 	commands := bson.A{"bulkWrite"}
 	data := bson.D{{Key: "failCommands", Value: commands}, {Key: "appName", Value: "weir:mongo"}, {Key: "errorCode", Value: 24}, {Key: "errorLabels", Value: labels}}
-	testmongo.FailCommand(t, f.admin, data, 1000)
+	// Fail exactly the attempts the batch makes, so the fail point cannot
+	// outlive the test on the shared fixture.
+	testmongo.FailCommand(t, f.admin, data, 3)
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
 	results := f.adapter.executePrograms(ctx, f.plans)
