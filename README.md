@@ -60,7 +60,7 @@ See [Performance](docs/performance.md) for the full results.
 | Go | 1.27.3, to build from source |
 | Operating system | Linux or macOS, amd64 or arm64 |
 | MongoDB | A nonsharded replica set with the client `bulkWrite` command (MongoDB 8.0 or later). Tested with 8.0.32. Lua transforms also require transactions. |
-| Search | Tested with Elasticsearch 8.19.22 and OpenSearch 3.3.0 |
+| Search | Tested with Elasticsearch 8.19.22, OpenSearch 3.3.0, and OpenSearch 2.17.1 with `compatibility.override_main_response_version` |
 | Collections and indices | Must exist before typed reads and mutations. Native commands can create them. |
 | Network | The application listener uses plaintext gRPC. Run it on an isolated network. Backend authentication stays local. |
 

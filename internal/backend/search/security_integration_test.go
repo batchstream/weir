@@ -21,6 +21,9 @@ func TestSearchSecurityInputBoundary(t *testing.T) {
 		t.Log("new native ES min_hash cap rejects 10001 before filter construction; no OOM input")
 		return
 	}
+	if b.Profile == "opensearch-2.17.1-compat" {
+		t.Skip("OpenSearch 2.17 has no search.query.max_query_string_length; this probes the backend, not Weir")
+	}
 	// This disposable cluster has no external users. Restore the temporary limit
 	// independently of the test result; production Weir never changes settings.
 	t.Cleanup(func() {
