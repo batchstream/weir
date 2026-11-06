@@ -30,9 +30,11 @@ stores:
       # Direct mode isolates one member and provides no failover.
       # No userinfo, database path, fragments, SRV, mongos or load balancing.
       # Accepted URI options: replicaSet, directConnection, authSource,
-      # authMechanism=SCRAM-SHA-256, tls=true. Any other option fails.
+      # authMechanism=SCRAM-SHA-256, tls. Any other option fails.
       # Authentication requires the credentials below plus explicit authSource,
-      # SCRAM and TLS. Member certificates verify each discovered hostname/IP.
+      # SCRAM and tls. Prefer tls=true; tls=false sends data unencrypted and
+      # suits only an isolated network. Member certificates verify each
+      # discovered hostname/IP.
       # Example:
       # mongodb://mongo-a:27017,mongo-b:27017/?replicaSet=orders&authSource=admin&authMechanism=SCRAM-SHA-256&tls=true
       # CA files belong in tls.ca_file; URI tlsCAFile is rejected.

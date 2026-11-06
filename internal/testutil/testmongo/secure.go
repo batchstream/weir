@@ -38,6 +38,7 @@ type SecureFixture struct {
 	Client *mongo.Client
 
 	startup        context.Context
+	tlsMode        string
 	owned          bool
 	root           string
 	process        *exec.Cmd
@@ -55,11 +56,24 @@ type SecureFixture struct {
 
 var secureFixtureSequence atomic.Uint64
 
+// OpenSecure starts a mongod that requires TLS and SCRAM.
 func OpenSecure(t *testing.T) *SecureFixture {
+	t.Helper()
+	return openSecure(t, "requireTLS")
+}
+
+// OpenSecureAllowingPlaintext starts a mongod that requires SCRAM and accepts
+// both TLS and plaintext connections.
+func OpenSecureAllowingPlaintext(t *testing.T) *SecureFixture {
+	t.Helper()
+	return openSecure(t, "preferTLS")
+}
+
+func openSecure(t *testing.T, tlsMode string) *SecureFixture {
 	t.Helper()
 	startup, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 	defer cancel()
-	fixture := &SecureFixture{startup: startup}
+	fixture := &SecureFixture{startup: startup, tlsMode: tlsMode}
 	t.Cleanup(func() { fixture.cleanup(t) })
 	fixture.prepareRoot(t)
 	fixture.startMongo(t)
@@ -263,7 +277,7 @@ func (fixture *SecureFixture) startMongo(t *testing.T) {
 		"--replSet", "weir_mongo_secure",
 		"--auth",
 		"--keyFile", filepath.Join(fixture.root, "keyfile"),
-		"--tlsMode", "requireTLS",
+		"--tlsMode", fixture.tlsMode,
 		"--tlsCertificateKeyFile", filepath.Join(fixture.root, "server.pem"),
 		"--tlsCAFile", fixture.caFile,
 		"--tlsAllowConnectionsWithoutCertificates",

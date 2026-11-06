@@ -33,6 +33,12 @@ func TestValidateMongoConfigProfiles(t *testing.T) {
 			t.Fatal("supported credential values rejected or static validation accessed CA/DNS", err)
 		}
 	}
+
+	// SCRAM over an isolated plaintext network must say so with tls=false.
+	plaintext := Config{URI: "mongodb://unresolved.invalid:27028/?authMechanism=SCRAM-SHA-256&authSource=admin&tls=false", Username: "user", Password: "password"}
+	if err := ValidateConfig(plaintext); err != nil {
+		t.Fatal("explicit tls=false SCRAM rejected", err)
+	}
 }
 
 func TestValidateMongoConfigRejectsOutsideProfile(t *testing.T) {
@@ -78,7 +84,6 @@ func TestValidateMongoConfigRejectsOutsideProfile(t *testing.T) {
 		"mongodb://unresolved.invalid:27028/?authMechanism=SCRAM-SHA-256&authSource=admin",
 		"mongodb://unresolved.invalid:27028/?authMechanism=SCRAM-SHA-256&tls=true",
 		"mongodb://unresolved.invalid:27028/?authMechanism=SCRAM-SHA-256&authSource=invalid.name&tls=true",
-		"mongodb://unresolved.invalid:27028/?authMechanism=SCRAM-SHA-256&authSource=admin&tls=false",
 		"mongodb://unresolved.invalid:27028/?authMechanism=SCRAM-SHA-256&authSource=admin&tls=true&tlsInsecure=true",
 		"mongodb://unresolved.invalid:27028/?authMechanism=SCRAM-SHA-256&authSource=admin&tls=true&tlsCAFile=",
 		"mongodb://unresolved.invalid:27028/?authMechanism=SCRAM-SHA-256&authSource=admin&tls=true&tlsCAFile=private-sentinel%0Apath",
@@ -88,6 +93,14 @@ func TestValidateMongoConfigRejectsOutsideProfile(t *testing.T) {
 		invalid.URI = uri
 		cases = append(cases, invalid)
 	}
+	// A CA file cannot apply without TLS, and tls=false needs credentials.
+	plaintext := secure
+	plaintext.URI = "mongodb://unresolved.invalid:27028/?authMechanism=SCRAM-SHA-256&authSource=admin&tls=false"
+	plaintext.CAFile = "/missing/ca-private-sentinel.pem"
+	cases = append(cases, plaintext)
+	anonymous := base
+	anonymous.URI = "mongodb://127.0.0.1:27028/?tls=false"
+	cases = append(cases, anonymous)
 	for _, pair := range []struct{ username, password string }{
 		{"", "password-private-sentinel"},
 		{"user-private-sentinel", ""},

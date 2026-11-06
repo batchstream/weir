@@ -22,9 +22,9 @@ func parseConfig(cfg Config) (*connstring.ConnString, error) {
 	if err != nil {
 		return nil, err
 	}
-	// parseURI allows TLS only with SCRAM, so this covers both.
-	if (cfg.Username != "") != uri.SSL {
-		return nil, errors.New("MongoDB credentials and SCRAM with TLS require each other")
+	// parseURI allows tls only with SCRAM, so this covers both.
+	if (cfg.Username != "") != (uri.AuthMechanism != "") {
+		return nil, errors.New("MongoDB credentials and SCRAM require each other")
 	}
 	if cfg.CAFile != "" && !uri.SSL {
 		return nil, errors.New("MongoDB CA file requires TLS")
@@ -62,9 +62,12 @@ func parseURI(raw string) (*connstring.ConnString, error) {
 	} else if len(uri.Hosts) != 1 || uri.DirectConnectionSet && !uri.DirectConnection {
 		return nil, errors.New("MongoDB discovery requires an explicit replica-set name")
 	}
+	// Authentication must state tls. tls=false sends SCRAM-SHA-256, which never
+	// reveals the password, and all data unencrypted, so it belongs only on a
+	// network that only the backend and its clients can reach.
 	if uri.AuthMechanism != "" || uri.AuthSourceSet || uri.SSLSet {
-		if uri.AuthMechanism != "SCRAM-SHA-256" || !uri.AuthSourceSet || !validDatabaseName(uri.AuthSource) || !uri.SSL {
-			return nil, errors.New("MongoDB URI authentication requires explicit SCRAM-SHA-256, authSource, and TLS")
+		if uri.AuthMechanism != "SCRAM-SHA-256" || !uri.AuthSourceSet || !validDatabaseName(uri.AuthSource) || !uri.SSLSet {
+			return nil, errors.New("MongoDB URI authentication requires explicit SCRAM-SHA-256, authSource, and tls")
 		}
 	}
 	return uri, nil

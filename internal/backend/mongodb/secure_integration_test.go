@@ -82,6 +82,75 @@ func TestMongoSCRAMTLSProductionOpen(t *testing.T) {
 	}
 }
 
+// plaintextConfig turns a fixture configuration into SCRAM over tls=false.
+func plaintextConfig(t *testing.T, cfg Config) Config {
+	t.Helper()
+	parsed, err := url.Parse(cfg.URI)
+	if err != nil {
+		t.Fatal("invalid owned MongoDB fixture URI")
+	}
+	query := parsed.Query()
+	query.Set("tls", "false")
+	parsed.RawQuery = query.Encode()
+	cfg.URI = parsed.String()
+	cfg.CAFile = ""
+	return cfg
+}
+
+// With an explicit tls=false, SCRAM-SHA-256 authenticates over plaintext:
+// writes and reads work, a wrong password still fails, and a server that
+// requires TLS refuses the connection.
+func TestMongoSCRAMWithoutTLSOpen(t *testing.T) {
+	fixture := testmongo.OpenSecureAllowingPlaintext(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)
+	defer cancel()
+	cfg := Config{URI: fixture.URI, Store: "mongo"}
+	cfg = plaintextConfig(t, mongoFixtureConfig(t, cfg))
+	adapter, err := Open(ctx, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer adapter.Close(context.Background())
+	doc := bson.D{{Key: "_id", Value: "plaintext"}, {Key: "n", Value: int64(7)}}
+	raw, _ := bson.Marshal(doc)
+	document := &pb.Document{ContentType: "application/bson", Data: raw}
+	put := &pb.MutateRequest_Put{Put: document}
+	request := &pb.MutateRequest{Resource: fixture.DB + "/records/s:plaintext", Action: put}
+	operation := &pb.Command_Mutate{Mutate: request}
+	command := &pb.Command{Operation: operation}
+	op := &pb.ExecuteRequest{Index: 1, Command: command}
+	plan, failure := prepareTestRecord(adapter, op)
+	if failure != nil {
+		t.Fatal(failure)
+	}
+	result := adapter.ExecuteRecords(ctx, []*execution.Plan{plan})
+	if result[0].GetMutationResult().GetOutcome() != pb.MutationOutcome_APPLIED {
+		t.Fatal(result)
+	}
+	read := prepareCounter(t, adapter, fixture.DB+"/records/s:plaintext")
+	result = adapter.ExecuteRecords(ctx, []*execution.Plan{read})
+	if result[0].GetReadResult().GetDocument() == nil {
+		t.Fatal(result)
+	}
+	badConfig := Config{URI: fixture.BadPassURI, Store: "mongo"}
+	badConfig = plaintextConfig(t, mongoFixtureConfig(t, badConfig))
+	badContext, badCancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer badCancel()
+	if bad, err := Open(badContext, badConfig); err == nil {
+		bad.Close(context.Background())
+		t.Fatal("wrong password authenticated over plaintext")
+	}
+	strict := testmongo.OpenSecure(t)
+	strictConfig := Config{URI: strict.URI, Store: "mongo"}
+	strictConfig = plaintextConfig(t, mongoFixtureConfig(t, strictConfig))
+	strictContext, strictCancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer strictCancel()
+	if connected, err := Open(strictContext, strictConfig); err == nil {
+		connected.Close(context.Background())
+		t.Fatal("tls=false connected to a server that requires TLS")
+	}
+}
+
 func TestMongoSCRAMTLSRepeatedFailureAndClose(t *testing.T) {
 	fixture := testmongo.OpenSecure(t)
 	baseline := connectionCount(t, fixture.Admin)
