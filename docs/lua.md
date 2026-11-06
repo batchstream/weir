@@ -117,10 +117,16 @@ It explicitly constructs empty arrays and recognizes typed leaves.
 Source, input and result sizes follow the [payload contracts](payloads.md);
 backend document-format limits apply, and cyclic values and invalid types are
 errors. Call depth and stack slots use the VM native limits; there is no
-instruction budget. Compilation, top-level execution and the callback inherit
-the caller context, so the caller's deadline bounds evaluation. Evaluations run concurrently inside the main Weir process within the
+instruction budget. Top-level execution and the callback inherit the caller
+context, so the caller's deadline bounds evaluation. Evaluations run concurrently inside the main Weir process within the
 Store's execution slots; each creates its own VM, globals, library tables and
 string metatable.
+
+Each process compiles a distinct source once and reuses the compiled program
+for later evaluations, keeping up to 256 sources and 4 MiB of source text. A
+compiled program takes about five times its source in memory. A source over
+4 MiB is compiled on every evaluation. Reuse does not carry state: top-level code,
+globals and upvalues start fresh in every evaluation.
 
 Lua has no per-evaluation memory limit. A transform can run and allocate as much
 as its caller's deadline allows, so only deploy trusted transforms and give

@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"unicode/utf8"
 
-	"github.com/iceisfun/golua/compiler"
-	"github.com/iceisfun/golua/parser"
 	"github.com/iceisfun/golua/vm"
 )
 
@@ -35,11 +33,7 @@ func evaluate(ctx context.Context, program Program) (Result, error) {
 	if err := validateProgram(ctx, program); err != nil {
 		return empty, err
 	}
-	block, err := parser.Parse("transform.lua", program.Source)
-	if err != nil {
-		return empty, err
-	}
-	prototype, err := compiler.Compile("transform.lua", block)
+	prototype, err := compiledPrograms.compile(program.Source)
 	if err != nil {
 		return empty, err
 	}

@@ -16,7 +16,7 @@ type Metrics struct {
 func NewMetrics() *Metrics {
 	opts := prometheus.HistogramOpts{
 		Name:    "weir_lua_evaluation_seconds",
-		Help:    "Lua evaluation time, including compilation and document conversion.",
+		Help:    "Lua evaluation time, including document conversion and compilation of uncached sources.",
 		Buckets: []float64{.000001, .00001, .0001, .001, .01, .1, 1, 10},
 	}
 	metrics := &Metrics{duration: prometheus.NewHistogramVec(opts, []string{"outcome"})}
