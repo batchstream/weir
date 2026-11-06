@@ -123,10 +123,11 @@ Store's execution slots; each creates its own VM, globals, library tables and
 string metatable.
 
 Each process compiles a distinct source once and reuses the compiled program
-for later evaluations, keeping up to 256 sources and 1 MiB of source text. A
-compiled program usually takes about five times its source in memory and up to
-about twenty times for code made of many small functions, so the cache holds at
-most about 20 MiB. A source over 1 MiB is compiled on every evaluation. Reuse
+for later evaluations. A compiled program usually takes about five times its
+source in memory, and up to about thirty times for code made of many small
+functions. The cache keeps up to 256 programs and 16 MiB of source and compiled
+code, measured by an estimate that allocator overhead exceeds by up to about a
+third. A program larger than that budget is compiled on every evaluation. Reuse
 does not carry state: top-level code, globals and upvalues start fresh in every
 evaluation.
 
