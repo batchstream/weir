@@ -24,10 +24,13 @@ fixtures:
   `mongod` on `127.0.0.1:27028`. `WEIR_MONGOD` selects another binary and
   `WEIR_MONGO_BIND` adds comma-separated literal, non-wildcard IP bind
   addresses. A running fixture is reused only when its bind matches.
-- `scripts/search-local.sh start elasticsearch|opensearch normal|overload` runs
-  Elasticsearch 8.19.22 on `127.0.0.1:19200` or OpenSearch 3.3.0 on
-  `127.0.0.1:19202` in Docker. Use `normal` capacity for ordinary runs; the
-  default `overload` profile shrinks the write thread pool for the Search
+- `scripts/search-local.sh start elasticsearch|opensearch|opensearch-compat normal|overload`
+  runs Elasticsearch 8.19.22 on `127.0.0.1:19200`, OpenSearch 3.3.0 on
+  `127.0.0.1:19202`, or OpenSearch 2.17.1 with
+  `compatibility.override_main_response_version=true` on `127.0.0.1:19203` in
+  Docker. The last matches AWS OpenSearch Service domains whose root reports
+  Elasticsearch 7.10.2 to every client. Use `normal` capacity for ordinary
+  runs; the default `overload` profile shrinks the write thread pool for the Search
   capacity-rejection tests. `start` waits until the cluster is green and the
   write thread pool has stayed idle for 5 seconds, so startup system-index
   writes do not compete with tests. Each fixture container runs a 1 GiB heap
@@ -37,8 +40,8 @@ fixtures:
 The TLS and replica-set tests start their own `mongod` processes from the same
 binary. The HTTPS Search tests start their own 1.5 GiB container from the image
 `scripts/search-local.sh` pulled, so the whole suite needs about 3.5 GiB of
-Docker memory. `WEIR_SEARCH_PRODUCT` selects `elasticsearch` (the default) or
-`opensearch`.
+Docker memory. `WEIR_SEARCH_PRODUCT` selects `elasticsearch` (the default),
+`opensearch` or `opensearch-compat`.
 Run packages one at a time, because MongoDB fault injection uses a server-global
 failpoint:
 

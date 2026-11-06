@@ -23,6 +23,8 @@ import (
 const ElasticsearchProduct = "elasticsearch"
 const OpenSearchProduct = "opensearch"
 
+const openSearchTagline = "The OpenSearch Project: https://opensearch.org/"
+
 // Config is static backend client configuration; credentials are never caller
 // identity. HTTPS without a CAFile uses the system trust roots.
 type Config struct {
@@ -126,7 +128,11 @@ func (a *Adapter) qualify(ctx context.Context) error {
 	call := exchange{path: "/"}
 	status, raw, err := a.request(ctx, call)
 	var info struct {
+		Tagline string
 		Version struct {
+			// Only compatibility mode is identified by its number, so other
+			// products may report any type.
+			Number       any
 			Distribution string
 			BuildFlavor  string `json:"build_flavor"`
 		}
@@ -138,6 +144,11 @@ func (a *Adapter) qualify(ctx context.Context) error {
 	case info.Version.BuildFlavor == "default" && info.Version.Distribution == "":
 		a.dialect = ElasticsearchProduct
 	case info.Version.Distribution == "opensearch":
+		a.dialect = OpenSearchProduct
+	// compatibility.override_main_response_version, which AWS OpenSearch
+	// Service domains often enable, makes OpenSearch report Elasticsearch
+	// 7.10.2 without a distribution. Its tagline still names OpenSearch.
+	case info.Version.Number == "7.10.2" && info.Version.Distribution == "" && info.Version.BuildFlavor == "" && info.Tagline == openSearchTagline:
 		a.dialect = OpenSearchProduct
 	default:
 		return errors.New("unsupported Search server product")

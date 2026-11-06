@@ -30,15 +30,6 @@ import (
 
 const secureOwner = "weir-mongo-local1"
 
-// searchImages are the platform images that scripts/search-local.sh pulls. The
-// secure fixture runs them without pulling.
-var searchImages = map[string]string{
-	"elasticsearch/amd64": "docker.elastic.co/elasticsearch/elasticsearch@sha256:f1e3d88299cb0db2131fc2ab9060faefccd88fd684d11a49256ae00d7dc3c857",
-	"elasticsearch/arm64": "docker.elastic.co/elasticsearch/elasticsearch@sha256:c2a3ed5f968be6d59c960aa0c60cfdaee667b6bc8211142021a41d0e85b43237",
-	"opensearch/amd64":    "opensearchproject/opensearch@sha256:59e9e49ac00f19c2af9094e367c8e6586f7d07e6c06465c3f4c43b40934309f2",
-	"opensearch/arm64":    "opensearchproject/opensearch@sha256:d96afaf6cbd2a6a3695aeb2f1d48c9a16ad5c8918eb849e5cbf43475f0f8e146",
-}
-
 // SecureFixture owns one native TLS database. Admin is used only for bootstrap
 // and independent observation. Backend contains the restricted application pair.
 // No process-global lookup by index, URL or database exists.
@@ -48,19 +39,21 @@ type SecureFixture struct {
 	Denied               *Backend
 	Root                 string
 	name, image, product string
+	compatibility        bool
 	materials            string
 	created              bool
 }
 
 func OpenSecure(t *testing.T) *SecureFixture {
 	t.Helper()
-	product := searchProduct(t)
-	image, ok := searchImages[product+"/"+runtime.GOARCH]
+	selected := selectedFixture(t)
+	product, profile := selected.product, selected.profile
+	image, ok := selected.images[runtime.GOARCH]
 	if !ok {
-		t.Fatalf("no pinned %s image for %s", product, runtime.GOARCH)
+		t.Fatalf("no pinned %s image for %s", profile, runtime.GOARCH)
 	}
 	suffix := fmt.Sprintf("%d-%d-%s", os.Getpid(), sequence.Add(1), randomPassword(t)[:12])
-	f := &SecureFixture{product: product, name: "weir-search-secure-" + product + "-" + suffix, image: image}
+	f := &SecureFixture{product: product, compatibility: selected.compatibility, name: "weir-search-secure-" + product + "-" + suffix, image: image}
 	parent := filepath.Join(testutil.Root(t), ".testdata")
 	if err := os.MkdirAll(parent, 0700); err != nil {
 		t.Fatal("fixture parent unavailable")
@@ -134,10 +127,6 @@ func OpenSecure(t *testing.T) *SecureFixture {
 		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 	}
 	t.Cleanup(transport.CloseIdleConnections)
-	profile := "elasticsearch-8.19.22"
-	if product == "opensearch" {
-		profile = "opensearch-3.3.0"
-	}
 	index := "weir_search_secure_" + strings.ReplaceAll(suffix, "-", "_")
 	f.Admin = &Backend{
 		URL:      "https://" + port,
@@ -199,6 +188,9 @@ func OpenSecure(t *testing.T) *SecureFixture {
 		t.Fatal("fixture Basic administrator bootstrap failed", status)
 	}
 	verifyVersion(t, raw, profile, f.name)
+	if f.compatibility {
+		verifyNodeVersion(t, f.Admin, compatibilityVersion)
+	}
 	if err := os.WriteFile(filepath.Join(f.Root, "version.json"), raw, 0600); err != nil {
 		t.Fatal("cannot retain backend build fingerprint")
 	}
@@ -374,7 +366,7 @@ plugins.security.ssl.http.clientauth_mode: OPTIONAL
 plugins.security.nodes_dn: ['CN=weir-node']
 plugins.security.authcz.admin_dn: ['CN=weir-admin']
 plugins.security.allow_default_init_securityindex: false
-`, 0644)
+`+compatibilitySetting(f.compatibility), 0644)
 	if err := os.Mkdir(filepath.Join(f.materials, "security"), 0755); err != nil {
 		t.Fatal("fixture security directory")
 	}
@@ -485,4 +477,11 @@ func (f *SecureFixture) cleanup(t *testing.T) {
 		t.Error("fixture temporary materials cleanup failed")
 	}
 	t.Log("fixture stopped; owned container/data/materials removed; log:", f.Root)
+}
+
+func compatibilitySetting(enabled bool) string {
+	if !enabled {
+		return ""
+	}
+	return "compatibility.override_main_response_version: true\n"
 }

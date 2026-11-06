@@ -235,8 +235,8 @@ func secureReplyFault(t *testing.T, fixture *testsearch.SecureFixture, operation
 		switch b.Profile {
 		case "elasticsearch-8.19.22":
 			wantOutcome, wantCode = pb.MutationOutcome_NOT_APPLIED, pb.FailureCode_UNAUTHENTICATED
-		case "opensearch-3.3.0":
-			// This fixture returns an unstructured 401, so the adapter cannot prove non-application.
+		case "opensearch-3.3.0", "opensearch-2.17.1-compat":
+			// These fixtures return an unstructured 401, so the adapter cannot prove non-application.
 			wantOutcome, wantCode = pb.MutationOutcome_UNKNOWN, pb.FailureCode_UNAVAILABLE
 		default:
 			t.Fatal("unqualified native authentication response profile", b.Profile)

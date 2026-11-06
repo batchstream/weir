@@ -37,7 +37,22 @@ case "$product" in
    image=opensearchproject/opensearch@sha256:59e9e49ac00f19c2af9094e367c8e6586f7d07e6c06465c3f4c43b40934309f2
   fi
   ;;
- *) echo 'product must be elasticsearch or opensearch' >&2; exit 1;;
+ opensearch-compat)
+  # AWS OpenSearch Service domains often enable this mode for Elasticsearch
+  # 7.10 clients: GET / then reports 7.10.2 without a distribution.
+  name=weir-local-opensearch-2.17-compat
+  port=19203
+  version=7.10.2
+  # The root reports 7.10.2, so the node itself confirms the release.
+  node_version=2.17.1
+  if [ "$platform" = linux/arm64 ]; then
+   image=opensearchproject/opensearch@sha256:7d961ff222c267093b7b95fc2e397d31a06a42b6f3c42ee67fc5788417a274bf
+  else
+   image=opensearchproject/opensearch@sha256:ab6db8c14062060cda5f0428364e76ffe2a6f03ad265589b70182c0cecb7f9d7
+  fi
+  set -- "$@" -e compatibility.override_main_response_version=true
+  ;;
+ *) echo 'product must be elasticsearch, opensearch or opensearch-compat' >&2; exit 1;;
 esac
 if docker container inspect "$name" >/dev/null 2>&1; then
  test "$(docker inspect -f '{{index .Config.Labels "weir.owner"}}' "$name")" = weir-search-local
@@ -77,7 +92,10 @@ case "$action" in
   ready=false
   for attempt in $(seq 1 90); do
    if curl -fsS --max-time 2 "http://127.0.0.1:$port/" > /dev/null 2>&1; then
-    curl -fsS --max-time 2 "http://127.0.0.1:$port/" | python3 -c 'import json,sys; x=json.load(sys.stdin); v=x["version"]; assert x["cluster_name"]==sys.argv[1] and v["number"]==sys.argv[2]; assert (v.get("distribution")=="opensearch") if sys.argv[3].startswith("opensearch") else (v.get("distribution", "")=="" and v.get("build_flavor")=="default"); print(json.dumps(x,sort_keys=True))' "$name" "$version" "$product"
+    curl -fsS --max-time 2 "http://127.0.0.1:$port/" | python3 -c 'import json,sys; x=json.load(sys.stdin); v=x["version"]; assert x["cluster_name"]==sys.argv[1] and v["number"]==sys.argv[2]; assert (v.get("distribution")=="opensearch") if sys.argv[3]=="opensearch" else (v.get("distribution", "")=="" and "build_flavor" not in v and x["tagline"]=="The OpenSearch Project: https://opensearch.org/") if sys.argv[3]=="opensearch-compat" else (v.get("distribution", "")=="" and v.get("build_flavor")=="default"); print(json.dumps(x,sort_keys=True))' "$name" "$version" "$product"
+    if [ -n "${node_version:-}" ]; then
+     curl -fsS --max-time 2 "http://127.0.0.1:$port/_nodes/_local?filter_path=nodes.*.version" | python3 -c 'import json,sys; n=list(json.load(sys.stdin)["nodes"].values()); assert len(n)==1 and n[0]["version"]==sys.argv[1], n' "$node_version"
+    fi
     ready=true
     break
    fi
@@ -128,5 +146,5 @@ case "$action" in
   docker logs "$name" > ".testdata/$name-$id.log" 2>&1
   docker rm "$name"
   ;;
- *) echo 'usage: scripts/search-local.sh start|stop elasticsearch|opensearch [normal|overload]' >&2;exit 1;;
+ *) echo 'usage: scripts/search-local.sh start|stop elasticsearch|opensearch|opensearch-compat [normal|overload]' >&2;exit 1;;
 esac

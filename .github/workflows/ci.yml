@@ -45,7 +45,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        product: [elasticsearch, opensearch]
+        product: [elasticsearch, opensearch, opensearch-compat]
     runs-on: ubuntu-24.04
     timeout-minutes: 50
     env:
@@ -82,7 +82,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        product: [elasticsearch, opensearch]
+        product: [elasticsearch, opensearch, opensearch-compat]
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     env:

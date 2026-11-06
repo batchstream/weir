@@ -74,11 +74,7 @@ func containerHostAddress(t *testing.T, address string) string {
 // container so a CLI container reaches Search without a host round trip.
 func searchContainerURL(t *testing.T, backend *testsearch.Backend) string {
 	t.Helper()
-	name := "weir-local-elasticsearch"
-	if backend.Product == "opensearch" {
-		name = "weir-local-opensearch-3.3"
-	}
-	raw := runDocker(t, "inspect", "--type", "container", "--format", `{{index .Config.Labels "weir.owner"}} {{(index .NetworkSettings.Networks "bridge").IPAddress}} {{.State.Running}}`, name)
+	raw := runDocker(t, "inspect", "--type", "container", "--format", `{{index .Config.Labels "weir.owner"}} {{(index .NetworkSettings.Networks "bridge").IPAddress}} {{.State.Running}}`, backend.Container)
 	fields := strings.Fields(raw)
 	if len(fields) != 3 || fields[0] != "weir-search-local" || fields[2] != "true" {
 		t.Fatal("local Search fixture container is not running", raw)
