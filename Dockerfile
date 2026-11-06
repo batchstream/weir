@@ -4,10 +4,10 @@ COPY go.mod go.sum ./
 RUN go mod download
 COPY cmd cmd
 COPY internal internal
-ARG TARGETOS TARGETARCH REVISION
+ARG TARGETOS TARGETARCH REVISION VERSION
 RUN --mount=type=cache,target=/root/.cache/go-build \
     CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
-    go build -trimpath -ldflags "-buildid= -X main.revision=$REVISION" -o /weir ./cmd/weir
+    go build -trimpath -ldflags "-buildid= -X main.revision=$REVISION -X main.version=$VERSION" -o /weir ./cmd/weir
 
 FROM gcr.io/distroless/static-debian13@sha256:e2e927ec666bae08560abb3c55d0659eceabb657f56b6782ab500a9fc7f555e3
 COPY LICENSE /LICENSE

@@ -40,7 +40,10 @@ jobs:
         with:
           context: .
           platforms: linux/amd64,linux/arm64
-          build-args: REVISION=${{ github.sha }}
+          # Only release builds carry a version; main builds report "dev".
+          build-args: |
+            REVISION=${{ github.sha }}
+            VERSION=${{ github.event_name == 'release' && github.event.release.tag_name || '' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           sbom: true
@@ -49,10 +52,12 @@ jobs:
       - name: Smoke-run the published image
         env:
           IMAGE: ghcr.io/batchstream/weir@${{ steps.build.outputs.digest }}
+          TAG: ${{ github.event_name == 'release' && github.event.release.tag_name || 'dev' }}
         run: |
           version=$(docker run --rm --pull=always --network=none "$IMAGE" version)
           echo "$version"
           test "$(jq -r .revision <<<"$version")" = "$GITHUB_SHA"
+          test "$(jq -r .version <<<"$version")" = "$TAG"
 
   archives:
     if: github.repository == 'batchstream/weir' && github.event_name == 'release'
@@ -75,7 +80,7 @@ jobs:
             name=weir-${target%/*}-${target#*/}
             mkdir -p "$dist/$name/config"
             CGO_ENABLED=0 GOOS=${target%/*} GOARCH=${target#*/} go build -trimpath -buildvcs=false \
-              -ldflags "-buildid= -X main.revision=$GITHUB_SHA" -o "$dist/$name/weir" ./cmd/weir
+              -ldflags "-buildid= -X main.revision=$GITHUB_SHA -X main.version=$GITHUB_REF_NAME" -o "$dist/$name/weir" ./cmd/weir
             cp README.md LICENSE "$dist/$name/"
             cp config/weir.reference.yaml "$dist/$name/config/"
             cp -R docs "$dist/$name/docs"
