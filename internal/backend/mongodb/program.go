@@ -25,6 +25,9 @@ var errProgramReadEvidence = errors.New("program read acknowledgement incomplete
 type programBatch struct {
 	plans   []*execution.Plan
 	results []*pb.MutationResult
+	// attempted records that a transaction exchange has run, so members that
+	// end later report NOT_APPLIED rather than NOT_STARTED.
+	attempted bool
 }
 
 // Programs of a batch name one collection and distinct records, so they share a
@@ -43,9 +46,13 @@ func (a *Adapter) executePrograms(ctx context.Context, plans []*execution.Plan) 
 }
 
 func (a *Adapter) runPrograms(ctx context.Context, batch *programBatch) {
+	unstartedOutcome := pb.MutationOutcome_NOT_STARTED
+	if batch.attempted {
+		unstartedOutcome = pb.MutationOutcome_NOT_APPLIED
+	}
 	for i, work := range batch.plans {
-		if result := unstarted(ctx, work); result != nil {
-			batch.results[i] = result.GetMutationResult()
+		if failure := work.Ended(ctx); failure != nil {
+			batch.results[i] = protocol.Mutation(unstartedOutcome, failure)
 		}
 	}
 	active := batch.active()
@@ -54,7 +61,7 @@ func (a *Adapter) runPrograms(ctx context.Context, batch *programBatch) {
 	}
 	target := batch.plans[active[0]].Backend.(*plan).target
 	if failure := a.qualifyTarget(ctx, target); failure != nil {
-		batch.fail(pb.MutationOutcome_NOT_STARTED, failure)
+		batch.fail(unstartedOutcome, failure)
 		return
 	}
 	session, err := a.client.StartSession()
@@ -62,7 +69,7 @@ func (a *Adapter) runPrograms(ctx context.Context, batch *programBatch) {
 		batch.fail(pb.MutationOutcome_NOT_APPLIED, backendFailure(ctx, err))
 		return
 	}
-	ambiguous := false
+	ambiguous, conflicted := false, false
 	defer func() {
 		cleanup, cancel := a.cleanupContext(ctx)
 		defer cancel()
@@ -83,22 +90,26 @@ func (a *Adapter) runPrograms(ctx context.Context, batch *programBatch) {
 			return
 		}
 		state := &programAttempt{batch: batch, session: session, active: active, number: attempt, ambiguous: &ambiguous}
-		switch a.runProgramAttempt(ctx, state) {
+		status := a.runProgramAttempt(ctx, state)
+		conflicted = status == programAttemptConflict
+		switch status {
 		case programAttemptFinished:
 			return
 		case programAttemptSplit:
 			a.splitPrograms(ctx, batch, batch.active())
 			return
-		case programAttemptRetry:
+		case programAttemptRetry, programAttemptConflict:
 			continue
 		}
 		break
 	}
-	// Without an ambiguous commit, every attempt rolled back and no member
-	// applied. Halving isolates the contended records, so records that never
-	// conflicted are not failed with them.
+	// The attempts ran out on a write conflict without an ambiguous commit, so
+	// every attempt rolled back and no member applied. Halving isolates the
+	// contended records, so records that never conflicted are not failed with
+	// them. Other transient errors usually affect the whole collection, which
+	// halving cannot isolate.
 	remaining := batch.active()
-	if !ambiguous && ctx.Err() == nil && len(remaining) > 1 {
+	if conflicted && !ambiguous && ctx.Err() == nil && len(remaining) > 1 {
 		a.splitPrograms(ctx, batch, remaining)
 		return
 	}
@@ -119,6 +130,9 @@ type programAttemptStatus uint8
 const (
 	programAttemptFinished programAttemptStatus = iota
 	programAttemptRetry
+	// programAttemptConflict retries after a rollback caused by a write
+	// conflict.
+	programAttemptConflict
 	programAttemptSplit
 	programAttemptExhausted
 )
@@ -154,6 +168,9 @@ func (a *Adapter) runProgramAttempt(ctx context.Context, state *programAttempt) 
 		readPlans[i] = batch.plans[position]
 	}
 	documents, readErr := a.readPrograms(txctx, readPlans)
+	if !errors.Is(readErr, errProgramBatchBound) {
+		batch.attempted = true
+	}
 	if readErr != nil {
 		var commandError mongo.CommandError
 		settled := errors.As(readErr, &commandError) && len(commandError.Raw) != 0 || errors.Is(readErr, errProgramBatchBound)
@@ -166,7 +183,7 @@ func (a *Adapter) runProgramAttempt(ctx context.Context, state *programAttempt) 
 			return programAttemptSplit
 		}
 		if programHasLabel(readErr, "TransientTransactionError") && pauseProgram(ctx, a.options().RetryBackoff) {
-			return programAttemptRetry
+			return transientRetry(readErr)
 		}
 		batch.fail(pb.MutationOutcome_NOT_APPLIED, backendFailure(ctx, readErr))
 		return programAttemptFinished
@@ -190,12 +207,12 @@ func (a *Adapter) runProgramAttempt(ctx context.Context, state *programAttempt) 
 			return programAttemptSplit
 		}
 		if programHasLabel(writeErr, "TransientTransactionError") && pauseProgram(ctx, a.options().RetryBackoff) {
-			return programAttemptRetry
+			return transientRetry(writeErr)
 		}
 		batch.fail(pb.MutationOutcome_NOT_APPLIED, backendFailure(ctx, writeErr))
 		return programAttemptFinished
 	}
-	rejected, retry := false, false
+	rejected, retry, conflict := false, false, false
 	for i, reply := range replies {
 		if reply == nil || reply.Outcome == pb.MutationOutcome_UNKNOWN {
 			rejected = true
@@ -205,7 +222,10 @@ func (a *Adapter) runProgramAttempt(ctx context.Context, state *programAttempt) 
 			rejected = true
 			// A missing insert can race an external writer. One fresh
 			// snapshot distinguishes that race from a stable constraint.
-			if reply.GetFailure().GetCode() == pb.FailureCode_CONFLICT || writes[i].Backend.(*plan).action == "create" && attempt == 0 {
+			if reply.GetFailure().GetCode() == pb.FailureCode_CONFLICT {
+				retry, conflict = true, true
+			}
+			if writes[i].Backend.(*plan).action == "create" && attempt == 0 {
 				retry = true
 			}
 		}
@@ -227,12 +247,16 @@ func (a *Adapter) runProgramAttempt(ctx context.Context, state *programAttempt) 
 				return programAttemptFinished
 			}
 		}
-		if pauseProgram(ctx, a.options().RetryBackoff) {
-			return programAttemptRetry
+		if !pauseProgram(ctx, a.options().RetryBackoff) {
+			return programAttemptExhausted
 		}
-		return programAttemptExhausted
+		if conflict {
+			return programAttemptConflict
+		}
+		return programAttemptRetry
 	}
 	retryTransaction := false
+	var commitErr error
 	for commitAttempt := 0; commitAttempt < a.options().RetryAttempts && ctx.Err() == nil; commitAttempt++ {
 		commitContext, release := nativeAttemptContext(txctx)
 		err := session.CommitTransaction(commitContext)
@@ -242,7 +266,7 @@ func (a *Adapter) runProgramAttempt(ctx context.Context, state *programAttempt) 
 			return programAttemptFinished
 		}
 		if !*state.ambiguous && !programHasLabel(err, "UnknownTransactionCommitResult") && programHasLabel(err, "TransientTransactionError") {
-			retryTransaction = true
+			retryTransaction, commitErr = true, err
 			break
 		}
 		*state.ambiguous = true
@@ -252,6 +276,16 @@ func (a *Adapter) runProgramAttempt(ctx context.Context, state *programAttempt) 
 	}
 	if !retryTransaction || !pauseProgram(ctx, a.options().RetryBackoff) {
 		return programAttemptExhausted
+	}
+	return transientRetry(commitErr)
+}
+
+// transientRetry classifies a rolled-back attempt: MongoDB's WriteConflict
+// (code 112) means another writer held a member, which halving can isolate.
+func transientRetry(err error) programAttemptStatus {
+	var server mongo.ServerError
+	if errors.As(err, &server) && server.HasErrorCode(112) {
+		return programAttemptConflict
 	}
 	return programAttemptRetry
 }
@@ -290,7 +324,7 @@ func (a *Adapter) splitPrograms(ctx context.Context, batch *programBatch, positi
 		for i, position := range part {
 			plans[i] = batch.plans[position]
 		}
-		child := &programBatch{plans: plans, results: make([]*pb.MutationResult, len(plans))}
+		child := &programBatch{plans: plans, results: make([]*pb.MutationResult, len(plans)), attempted: batch.attempted}
 		a.runPrograms(ctx, child)
 		for i, position := range part {
 			batch.results[position] = child.results[i]

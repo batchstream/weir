@@ -577,28 +577,41 @@ func TestMongoLuaConflictRetriesStopAtAttemptBound(t *testing.T) {
 	}
 }
 
-// A record that conflicts on every attempt fails alone; the peer sharing its
-// transaction applies once after the exhausted batch is halved.
-func TestMongoLuaConflictExhaustionIsolatesContendedRecord(t *testing.T) {
+// conflictFixture makes every transaction that reads counter conflict, by
+// incrementing counter outside the transaction after each such read.
+type conflictFixture struct {
+	admin      *mongo.Client
+	collection *mongo.Collection
+	adapter    *Adapter
+	plans      []*execution.Plan
+	mu         sync.Mutex
+	reads      []string
+	commits    int
+	// onRead runs as each find starts, with the number of finds so far.
+	onRead func(reads int)
+}
+
+func openConflictFixture(t *testing.T, ids []string) *conflictFixture {
+	t.Helper()
 	fixture := testmongo.Open(t)
-	collection := fixture.Admin.Database(fixture.DB).Collection("records")
-	for _, id := range []string{"counter", "peer"} {
+	f := &conflictFixture{admin: fixture.Admin, collection: fixture.Admin.Database(fixture.DB).Collection("records")}
+	for _, id := range ids {
 		document := bson.D{{Key: "_id", Value: id}, {Key: "n", Value: int32(0)}}
-		if _, err := collection.InsertOne(t.Context(), document); err != nil {
+		if _, err := f.collection.InsertOne(t.Context(), document); err != nil {
 			t.Fatal(err)
 		}
 	}
 	filter := bson.D{{Key: "_id", Value: "counter"}}
 	increment := bson.D{{Key: "n", Value: int32(1)}}
 	update := bson.D{{Key: "$inc", Value: increment}}
-	var mu sync.Mutex
-	var reads []string
-	contended := map[int64]bool{}
-	var commits atomic.Int32
+	// Program finds run one at a time, so the read in flight is the last one.
+	contended := false
 	monitor := &event.CommandMonitor{
 		Started: func(_ context.Context, command *event.CommandStartedEvent) {
+			f.mu.Lock()
+			defer f.mu.Unlock()
 			if command.CommandName == "commitTransaction" {
-				commits.Add(1)
+				f.commits++
 			}
 			if command.CommandName != "find" {
 				return
@@ -608,62 +621,137 @@ func TestMongoLuaConflictExhaustionIsolatesContendedRecord(t *testing.T) {
 				t.Error(err)
 				return
 			}
-			var ids []string
+			var read []string
 			for _, id := range values {
-				ids = append(ids, id.StringValue())
+				read = append(read, id.StringValue())
 			}
-			mu.Lock()
-			defer mu.Unlock()
-			reads = append(reads, strings.Join(ids, ","))
-			contended[command.RequestID] = slices.Contains(ids, "counter")
+			f.reads = append(f.reads, strings.Join(read, ","))
+			contended = slices.Contains(read, "counter")
+			if f.onRead != nil {
+				f.onRead(len(f.reads))
+			}
 		},
 		Succeeded: func(_ context.Context, command *event.CommandSucceededEvent) {
-			mu.Lock()
-			conflict := command.CommandName == "find" && contended[command.RequestID]
-			mu.Unlock()
+			f.mu.Lock()
+			conflict := command.CommandName == "find" && contended
+			f.mu.Unlock()
 			if !conflict {
 				return
 			}
 			ctx, cancel := context.WithTimeout(t.Context(), time.Second)
 			defer cancel()
-			if _, err := collection.UpdateOne(ctx, filter, update); err != nil {
+			if _, err := f.collection.UpdateOne(ctx, filter, update); err != nil {
 				t.Error("external conflicting write", err)
 			}
 		},
 	}
 	adapterOptions := adapterTestOptions{fixture: fixture, monitor: monitor}
-	adapter := testAdapter(t, adapterOptions)
-	settings := adapter.options()
+	f.adapter = testAdapter(t, adapterOptions)
+	settings := f.adapter.options()
 	settings.RetryAttempts = 3
 	settings.RetryBackoff = 0
-	adapter.config.Options = &settings
-	var plans []*execution.Plan
-	for _, id := range []string{"counter", "peer"} {
+	f.adapter.config.Options = &settings
+	for _, id := range ids {
 		operation := batchOperationOptions{resource: fixture.DB + "/records/s:" + id, program: incrementProgram}
-		plans = append(plans, prepareBatchProgram(t, adapter, operation))
+		f.plans = append(f.plans, prepareBatchProgram(t, f.adapter, operation))
 	}
-	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	return f
+}
+
+func (f *conflictFixture) stored(t *testing.T, id string) int32 {
+	t.Helper()
+	filter := bson.D{{Key: "_id", Value: id}}
+	raw, err := f.collection.FindOne(t.Context(), filter).Raw()
+	if err != nil {
+		t.Fatal(id, err)
+	}
+	return raw.Lookup("n").Int32()
+}
+
+// A record that conflicts on every attempt fails alone. The peers sharing its
+// transaction apply once, after the exhausted batch is halved down to it.
+func TestMongoLuaConflictExhaustionIsolatesContendedRecord(t *testing.T) {
+	f := openConflictFixture(t, []string{"counter", "a", "b", "c"})
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
-	results := adapter.executePrograms(ctx, plans)
-	counter, peer := results[0].GetMutationResult(), results[1].GetMutationResult()
+	results := f.adapter.executePrograms(ctx, f.plans)
+	counter := results[0].GetMutationResult()
 	if counter.GetOutcome() != pb.MutationOutcome_NOT_APPLIED || counter.GetFailure().GetCode() != pb.FailureCode_CONFLICT {
 		t.Fatal("contended record did not exhaust its conflict retries", counter)
 	}
-	if peer.GetOutcome() != pb.MutationOutcome_APPLIED || peer.GetFailure() != nil {
-		t.Fatal("uncontended peer failed with the contended record", peer)
-	}
-	want := []string{"counter,peer", "counter,peer", "counter,peer", "counter", "counter", "counter", "peer"}
-	mu.Lock()
-	defer mu.Unlock()
-	if !slices.Equal(reads, want) || commits.Load() != 1 {
-		t.Fatal("exhausted batch was not halved once", reads, commits.Load())
-	}
-	for id, n := range map[string]int32{"counter": 6, "peer": 1} {
-		document := bson.D{{Key: "_id", Value: id}}
-		raw, err := collection.FindOne(t.Context(), document).Raw()
-		if err != nil || raw.Lookup("n").Int32() != n {
-			t.Fatal("stored value after isolation", id, raw, err)
+	for _, result := range results[1:] {
+		if result.GetMutationResult().GetOutcome() != pb.MutationOutcome_APPLIED || result.GetMutationResult().GetFailure() != nil {
+			t.Fatal("uncontended peer failed with the contended record", result)
 		}
+	}
+	want := []string{
+		"counter,a,b,c", "counter,a,b,c", "counter,a,b,c",
+		"counter,a", "counter,a", "counter,a",
+		"counter", "counter", "counter",
+		"a", "b,c",
+	}
+	f.mu.Lock()
+	reads, commits := f.reads, f.commits
+	f.mu.Unlock()
+	if !slices.Equal(reads, want) || commits != 2 {
+		t.Fatal("exhausted batch was not halved down to the contended record", reads, commits)
+	}
+	for id, n := range map[string]int32{"counter": 9, "a": 1, "b": 1, "c": 1} {
+		if got := f.stored(t, id); got != n {
+			t.Fatalf("%s stored n=%d, want %d", id, got, n)
+		}
+	}
+}
+
+// Members that already ran in the halved batch report NOT_APPLIED, not
+// NOT_STARTED, when the batch ends while an earlier half still retries.
+func TestMongoLuaConflictSplitCancellationKeepsAttemptedOutcome(t *testing.T) {
+	f := openConflictFixture(t, []string{"counter", "peer"})
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+	f.onRead = func(reads int) {
+		if reads == 5 {
+			cancel()
+		}
+	}
+	results := f.adapter.executePrograms(ctx, f.plans)
+	for _, result := range results {
+		if result.GetMutationResult().GetOutcome() != pb.MutationOutcome_NOT_APPLIED {
+			t.Fatal("attempted member did not report NOT_APPLIED", result)
+		}
+	}
+	if code := results[1].GetMutationResult().GetFailure().GetCode(); code != pb.FailureCode_CANCELLED {
+		t.Fatal("peer did not report the batch cancellation", results[1])
+	}
+	f.mu.Lock()
+	reads := len(f.reads)
+	f.mu.Unlock()
+	if reads != 5 || f.stored(t, "peer") != 0 {
+		t.Fatal("cancelled batch kept working", reads, f.stored(t, "peer"))
+	}
+}
+
+// Exhaustion by transient errors other than write conflicts fails the batch
+// without halving, since every half would fail the same way.
+func TestMongoLuaTransientExhaustionDoesNotSplit(t *testing.T) {
+	f := openConflictFixture(t, []string{"a", "b", "c", "d"})
+	labels := bson.A{"TransientTransactionError"}
+	commands := bson.A{"bulkWrite"}
+	data := bson.D{{Key: "failCommands", Value: commands}, {Key: "appName", Value: "weir:mongo"}, {Key: "errorCode", Value: 24}, {Key: "errorLabels", Value: labels}}
+	testmongo.FailCommand(t, f.admin, data, 1000)
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+	results := f.adapter.executePrograms(ctx, f.plans)
+	for _, result := range results {
+		if result.GetMutationResult().GetOutcome() != pb.MutationOutcome_NOT_APPLIED {
+			t.Fatal("lock timeouts applied a record", result)
+		}
+	}
+	f.mu.Lock()
+	reads := len(f.reads)
+	f.mu.Unlock()
+	if reads != 3 {
+		t.Fatal("transient exhaustion was halved", f.reads)
 	}
 }
 
