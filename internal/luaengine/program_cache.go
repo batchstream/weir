@@ -95,8 +95,10 @@ var (
 )
 
 // prototypeBytes estimates the heap a prototype tree retains from its slice
-// capacities and strings. It leaves out allocator rounding, which adds up to
-// about a third for code with many locals or upvalues per function.
+// capacities and strings. golua's lexer keeps each name and string literal in
+// a buffer of up to twice its length, so strings count double. Allocator
+// rounding is left out; it adds up to about a third for functions with many
+// locals or upvalues.
 func prototypeBytes(root *compiler.Proto) int {
 	total := 0
 	pending := []*compiler.Proto{root}
@@ -108,13 +110,13 @@ func prototypeBytes(root *compiler.Proto) int {
 		total += cap(p.Constants)*constantSize + cap(p.Protos)*pointerSize
 		total += cap(p.Upvalues)*upvalueSize + cap(p.Locals)*localSize
 		for _, constant := range p.Constants {
-			total += len(constant.SVal)
+			total += 2 * len(constant.SVal)
 		}
 		for _, upvalue := range p.Upvalues {
-			total += len(upvalue.Name)
+			total += 2 * len(upvalue.Name)
 		}
 		for _, local := range p.Locals {
-			total += len(local.Name)
+			total += 2 * len(local.Name)
 		}
 		pending = append(pending, p.Protos...)
 	}

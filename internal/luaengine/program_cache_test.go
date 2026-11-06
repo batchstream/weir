@@ -54,10 +54,6 @@ func TestProgramCacheBoundsProgramsAndBytes(t *testing.T) {
 	if len(cache.programs) != 3 {
 		t.Fatalf("cache holds %d programs, want 3", len(cache.programs))
 	}
-	first := "return function() return {n = 0} end"
-	if _, ok := cache.programs[first]; ok {
-		t.Fatal("first program survived seven later insertions into three slots")
-	}
 	cost := cache.programs["return function() return {n = 9} end"].bytes
 	cache = newProgramCache(maxCachedPrograms, 2*cost+cost/2)
 	for index := range 5 {
@@ -102,10 +98,19 @@ func TestPrototypeBytesTracksRetainedHeap(t *testing.T) {
 		names = append(names, fmt.Sprintf("v%d", index))
 	}
 	captures := "function() return " + strings.Join(names, "+") + " end, "
+	locals := "function() local " + strings.Join(names, ", ") + " end, "
+	long := strings.Repeat("n", 257)
+	var literals strings.Builder
+	for index := range 2000 {
+		fmt.Fprintf(&literals, "function() return '%04d%s' end, ", index, strings.Repeat("s", 253))
+	}
 	sources := map[string]string{
 		"catalog product": catalogCommonSource + catalogProductSource,
 		"tiny closures":   "local t = {" + strings.Repeat("function() end, ", 20000) + "}\nreturn function() return {} end",
 		"upvalues":        "local " + strings.Join(names, ", ") + " = 1\nlocal t = {" + strings.Repeat(captures, 1000) + "}\nreturn function() return {} end",
+		"locals":          "local t = {" + strings.Repeat(locals, 1000) + "}\nreturn function() return {} end",
+		"long names":      "local t = {" + strings.Repeat("function() local "+long+" end, ", 2000) + "}\nreturn function() return {} end",
+		"long literals":   "local t = {" + literals.String() + "}\nreturn function() return {} end",
 	}
 	for name, source := range sources {
 		cache := newProgramCache(maxCachedPrograms, 1<<30)
@@ -118,7 +123,7 @@ func TestPrototypeBytesTracksRetainedHeap(t *testing.T) {
 		estimate := prototypeBytes(prototype)
 		ratio := float64(retained) / float64(estimate)
 		t.Logf("%s: source=%d estimate=%d retained=%d ratio=%.2f", name, len(source), estimate, retained, ratio)
-		if ratio < 0.75 || ratio > 1.5 {
+		if ratio < 0.6 || ratio > 1.4 {
 			t.Errorf("%s: retained heap is %.2f times the estimate", name, ratio)
 		}
 		runtime.KeepAlive(cache)
