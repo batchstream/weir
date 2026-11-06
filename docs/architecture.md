@@ -112,7 +112,8 @@ carry it too. The CLI sets that limit to 90% of the container's cgroup v2 memory
 [operations](operations.md#memory-pressure).
 
 Lua programs run within the caller's deadline and the VM's call-depth and stack
-limits. There is no per-evaluation memory or instruction limit, so transforms
+limits. Compiled programs are cached per process, bounded at 256 programs and
+an estimated 16 MiB. There is no per-evaluation memory or instruction limit, so transforms
 must be trusted. See
 [Lua](lua.md).
 

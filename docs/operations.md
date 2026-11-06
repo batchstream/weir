@@ -148,8 +148,8 @@ Search HTTP metrics include failed attempts and exclude Native relay. HTTP
 success does not prove every bulk item succeeded. Bulk elapsed time includes
 `refresh=wait_for`; concurrent durations overlap and cannot be summed as wall
 time. Framed request byte counts exclude headers and do not prove delivery. Lua
-evaluation time includes compilation and document conversion, not the backend's
-own decoding or encoding. Metrics use bounded labels without document or target
+evaluation time includes document conversion and, when the source is not
+cached, compilation, not the backend's own decoding or encoding. Metrics use bounded labels without document or target
 identities.
 
 ## Alerts
