@@ -117,3 +117,23 @@ func BenchmarkBridgeKind(b *testing.B) {
 		})
 	}
 }
+
+// BenchmarkEvaluateCatalogProduct runs a production-sized merge whose source
+// is larger than the documents it merges.
+func BenchmarkEvaluateCatalogProduct(b *testing.B) {
+	current, err := value.DecodeJSON(b.Context(), []byte(`{"uid":"old","uids":["old","shared"],"title":"keep","brand":"café","first_found_at":"first","comment_count":12,"allowed_countries":["US"],"offers":[{"uid":"seller","id":"s","name":"old"}]}`))
+	if err != nil {
+		b.Fatal(err)
+	}
+	incoming, err := value.DecodeJSON(b.Context(), []byte(`{"observed_at":"2026-10-14T00:00:00Z","document":{"uid":"new","uids":["shared","new"],"title":"title","brand":"straße café","comment_count":3,"allowed_countries":["US","CA"],"offers":[{"uid":"seller","id":"s","name":"new"}]}}`))
+	if err != nil {
+		b.Fatal(err)
+	}
+	program := Program{Source: catalogCommonSource + catalogProductSource, Current: current, Input: incoming, ObservedAt: time.Unix(1, 0)}
+	b.ReportAllocs()
+	for b.Loop() {
+		if _, err := Evaluate(b.Context(), program); err != nil {
+			b.Fatal(err)
+		}
+	}
+}

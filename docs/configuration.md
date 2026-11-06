@@ -115,9 +115,14 @@ which AWS OpenSearch Service domains often enable, reports version 7.10.2
 without either field; Weir recognizes it by that version and the OpenSearch
 tagline. Any other product stops startup.
 
-Both adapters make up to five attempts after a confirmed conflict or abort.
-Possible writes and ambiguous commits are never replayed. MongoDB may retry
-confirmation of the same commit separately.
+Both adapters make up to five attempts per transaction or compare-and-swap
+after a confirmed conflict or abort. Possible writes and ambiguous commits are
+never replayed. MongoDB may retry confirmation of the same commit separately.
+When a MongoDB Lua transaction of several records runs out of attempts on write
+conflicts, it is halved and each half gets five fresh attempts, down to single
+records, so records that never conflicted still apply unless the deadline runs
+out first. The halves run one after another, and the Lua of a record in a batch of n can run up to
+5 × (⌈log₂ n⌉ + 1) times.
 
 ## Authentication
 

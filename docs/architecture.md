@@ -87,7 +87,8 @@ not undo earlier effects. There is no durable deduplication or exactly-once clai
 
 MongoDB Lua groups use short snapshot transactions. A confirmed abort can allow a
 fresh read/evaluation/write attempt. An ambiguous commit can only retry confirmation
-of that same commit. Search uses real-time reads and version-conditional writes;
+of that same commit. A group that runs out of attempts on write conflicts is halved
+until only the contended records fail. Search uses real-time reads and version-conditional writes;
 only confirmed conflicts allow reevaluation of affected items. Neither adapter
 adds revision fields to business documents. Query visibility is requested
 explicitly and remains part of completion.
@@ -112,7 +113,8 @@ carry it too. The CLI sets that limit to 90% of the container's cgroup v2 memory
 [operations](operations.md#memory-pressure).
 
 Lua programs run within the caller's deadline and the VM's call-depth and stack
-limits. There is no per-evaluation memory or instruction limit, so transforms
+limits. Compiled programs are cached per process, bounded at 256 programs and
+an estimated 16 MiB. There is no per-evaluation memory or instruction limit, so transforms
 must be trusted. See
 [Lua](lua.md).
 
