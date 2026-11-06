@@ -35,9 +35,15 @@ func TestValidateMongoConfigProfiles(t *testing.T) {
 	}
 
 	// SCRAM over an isolated plaintext network must say so with tls=false.
-	plaintext := Config{URI: "mongodb://unresolved.invalid:27028/?authMechanism=SCRAM-SHA-256&authSource=admin&tls=false", Username: "user", Password: "password"}
-	if err := ValidateConfig(plaintext); err != nil {
-		t.Fatal("explicit tls=false SCRAM rejected", err)
+	// Option names are case-insensitive, as elsewhere in the URI.
+	for _, uri := range []string{
+		"mongodb://unresolved.invalid:27028/?authMechanism=SCRAM-SHA-256&authSource=admin&tls=false",
+		"mongodb://unresolved.invalid:27028/?authMechanism=SCRAM-SHA-256&authSource=admin&TLS=false",
+	} {
+		plaintext := Config{URI: uri, Username: "user", Password: "password"}
+		if err := ValidateConfig(plaintext); err != nil {
+			t.Fatal("explicit tls=false SCRAM rejected", uri, err)
+		}
 	}
 }
 
@@ -85,6 +91,12 @@ func TestValidateMongoConfigRejectsOutsideProfile(t *testing.T) {
 		"mongodb://unresolved.invalid:27028/?authMechanism=SCRAM-SHA-256&tls=true",
 		"mongodb://unresolved.invalid:27028/?authMechanism=SCRAM-SHA-256&authSource=invalid.name&tls=true",
 		"mongodb://unresolved.invalid:27028/?authMechanism=SCRAM-SHA-256&authSource=admin&tls=true&tlsInsecure=true",
+		"mongodb://unresolved.invalid:27028/?authMechanism=SCRAM-SHA-256&authSource=admin&tls=FALSE",
+		"mongodb://unresolved.invalid:27028/?authMechanism=SCRAM-SHA-256&authSource=admin&tls=0",
+		"mongodb://unresolved.invalid:27028/?authMechanism=SCRAM-SHA-256&authSource=admin&tls=true&tls=false",
+		"mongodb://unresolved.invalid:27028/?authMechanism=SCRAM-SHA-256&authSource=admin&tls=false&tls=true",
+		"mongodb://unresolved.invalid:27028/?authMechanism=SCRAM-SHA-256&authSource=admin&ssl=false",
+		"mongodb://unresolved.invalid:27028/?authMechanism=SCRAM-SHA-256&authSource=admin&tls=false&tlsInsecure=true",
 		"mongodb://unresolved.invalid:27028/?authMechanism=SCRAM-SHA-256&authSource=admin&tls=true&tlsCAFile=",
 		"mongodb://unresolved.invalid:27028/?authMechanism=SCRAM-SHA-256&authSource=admin&tls=true&tlsCAFile=private-sentinel%0Apath",
 		secure.URI + "&tlsCAFile=" + strings.Repeat("a", 2049),
@@ -153,6 +165,29 @@ func TestMongoDriverAuthenticationOptions(t *testing.T) {
 	}
 	if opts.TLSConfig == nil || opts.TLSConfig.InsecureSkipVerify || opts.TLSConfig.ServerName != "" {
 		t.Fatal("driver must verify each member's own certificate")
+	}
+}
+
+// tls=false keeps SCRAM authentication and configures no TLS at all.
+func TestMongoDriverPlaintextAuthenticationOptions(t *testing.T) {
+	cfg := Config{
+		URI:      "mongodb://unresolved.invalid:27028/?authMechanism=SCRAM-SHA-256&authSource=admin&tls=false&directConnection=true",
+		Username: "user",
+		Password: "password",
+	}
+	uri, err := parseConfig(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	opts, err := connectionOptions(cfg, uri)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if opts.Auth == nil || opts.Auth.AuthMechanism != "SCRAM-SHA-256" || opts.Auth.AuthSource != "admin" || !opts.Auth.PasswordSet {
+		t.Fatal("tls=false must keep SCRAM authentication")
+	}
+	if opts.TLSConfig != nil {
+		t.Fatal("tls=false must not configure TLS")
 	}
 }
 

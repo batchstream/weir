@@ -62,9 +62,10 @@ func parseURI(raw string) (*connstring.ConnString, error) {
 	} else if len(uri.Hosts) != 1 || uri.DirectConnectionSet && !uri.DirectConnection {
 		return nil, errors.New("MongoDB discovery requires an explicit replica-set name")
 	}
-	// Authentication must state tls. tls=false sends SCRAM-SHA-256, which never
-	// reveals the password, and all data unencrypted, so it belongs only on a
-	// network that only the backend and its clients can reach.
+	// Authentication must state tls. With tls=false the SCRAM handshake and all
+	// commands are plaintext: anyone on the path can read and change them, guess
+	// the password offline from the handshake, or take over the authenticated
+	// connection. It suits only a trusted network path to every member.
 	if uri.AuthMechanism != "" || uri.AuthSourceSet || uri.SSLSet {
 		if uri.AuthMechanism != "SCRAM-SHA-256" || !uri.AuthSourceSet || !validDatabaseName(uri.AuthSource) || !uri.SSLSet {
 			return nil, errors.New("MongoDB URI authentication requires explicit SCRAM-SHA-256, authSource, and tls")

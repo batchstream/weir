@@ -87,12 +87,16 @@ secondary routing and other options are unsupported. A query requires the `/`
 separator before `?`. Accepted options are `replicaSet`, `directConnection`,
 `authSource`, `authMechanism=SCRAM-SHA-256` and `tls`. Authentication requires the
 `authentication` block, explicit SCRAM-SHA-256, `authSource` and an explicit
-`tls`; `tls` requires credentials. Use `tls=true` unless the backend has no TLS:
-`tls=false` still authenticates with SCRAM-SHA-256, which never sends the
-password, but sends all data unencrypted, so use it only on a network that only
-the backend and its clients can reach, such as a cluster namespace guarded by a
-NetworkPolicy. Custom CAs belong in `tls.ca_file`, not in the URI, and require
-`tls=true`.
+`tls`; `tls` requires credentials. Use `tls=true` unless the backend has no TLS.
+With `tls=false` Weir still authenticates with SCRAM-SHA-256, but the handshake
+and every command travel in plaintext with nothing binding them together.
+Anyone who can see the traffic can read and change commands, guess the password
+offline from a captured handshake, or relay the handshake and then use the
+authenticated connection with Weir's privileges. Use it only when the network
+path to every replica-set member, including members Weir discovers, is trusted,
+and give the user a long random password. A NetworkPolicy limits which Pods can
+connect, but does not hide traffic from anyone with node or host-network access.
+Custom CAs belong in `tls.ca_file`, not in the URI, and require `tls=true`.
 Verification uses each actual member's hostname/IP, not the seed's name. OCSP
 follows the MongoDB driver: a stapled or responder answer of revoked fails the
 connection, while an unreachable responder does not. All
