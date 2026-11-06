@@ -74,18 +74,26 @@ jobs:
         with:
           go-version-file: go.mod
       - name: Build archives
+        env:
+          TAG: ${{ github.event.release.tag_name }}
         run: |
           dist=$RUNNER_TEMP/dist
           for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64; do
             name=weir-${target%/*}-${target#*/}
             mkdir -p "$dist/$name/config"
             CGO_ENABLED=0 GOOS=${target%/*} GOARCH=${target#*/} go build -trimpath -buildvcs=false \
-              -ldflags "-buildid= -X main.revision=$GITHUB_SHA -X main.version=$GITHUB_REF_NAME" -o "$dist/$name/weir" ./cmd/weir
+              -ldflags "-buildid= -X main.revision=$GITHUB_SHA -X main.version=$TAG" -o "$dist/$name/weir" ./cmd/weir
             cp README.md LICENSE "$dist/$name/"
             cp config/weir.reference.yaml "$dist/$name/config/"
             cp -R docs "$dist/$name/docs"
             tar -czf "$dist/$name.tar.gz" --owner=0 --group=0 --numeric-owner -C "$dist/$name" weir README.md LICENSE config docs
           done
+          # The linker ignores a mistyped -X symbol, so check the identity a
+          # packaged binary reports.
+          identity=$("$dist/weir-linux-amd64/weir" version)
+          echo "$identity"
+          test "$(jq -r .version <<<"$identity")" = "$TAG"
+          test "$(jq -r .revision <<<"$identity")" = "$GITHUB_SHA"
           cd "$dist" && sha256sum weir-*.tar.gz > SHA256SUMS
       - name: Attach archives to the release
         env:

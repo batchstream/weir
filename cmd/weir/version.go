@@ -33,8 +33,9 @@ func printVersion(output io.Writer) error {
 	}
 
 	if info, ok := debug.ReadBuildInfo(); ok {
-		// go build records module and VCS details when available; an injected revision wins.
-		if version == "" && info.Main.Version != "" && info.Main.Version != "(devel)" {
+		// go build records module and VCS details when available; an injected
+		// revision or version wins.
+		if info.Main.Version != "" && info.Main.Version != "(devel)" {
 			identity.Version = info.Main.Version
 		}
 		for _, setting := range info.Settings {
