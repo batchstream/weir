@@ -123,10 +123,12 @@ Store's execution slots; each creates its own VM, globals, library tables and
 string metatable.
 
 Each process compiles a distinct source once and reuses the compiled program
-for later evaluations, keeping up to 256 sources and 4 MiB of source text. A
-compiled program takes about five times its source in memory. A source over
-4 MiB is compiled on every evaluation. Reuse does not carry state: top-level code,
-globals and upvalues start fresh in every evaluation.
+for later evaluations, keeping up to 256 sources and 1 MiB of source text. A
+compiled program usually takes about five times its source in memory and up to
+about twenty times for code made of many small functions, so the cache holds at
+most about 20 MiB. A source over 1 MiB is compiled on every evaluation. Reuse
+does not carry state: top-level code, globals and upvalues start fresh in every
+evaluation.
 
 Lua has no per-evaluation memory limit. A transform can run and allocate as much
 as its caller's deadline allows, so only deploy trusted transforms and give

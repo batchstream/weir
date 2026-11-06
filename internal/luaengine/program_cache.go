@@ -8,12 +8,13 @@ import (
 )
 
 // Callers send the same few transforms with every record, so compiling once
-// per distinct source removes most of an evaluation's CPU. A prototype holds
-// about five times its source in memory, so the cache bounds source bytes as
-// well as the number of programs.
+// per distinct source removes most of an evaluation's CPU. A prototype usually
+// holds about five times its source in memory and up to about twenty times for
+// code made of many small functions, so the cache bounds source bytes as well
+// as the number of programs.
 const (
 	maxCachedPrograms    = 256
-	maxCachedSourceBytes = 4 << 20
+	maxCachedSourceBytes = 1 << 20
 )
 
 var compiledPrograms = newProgramCache(maxCachedPrograms, maxCachedSourceBytes)
