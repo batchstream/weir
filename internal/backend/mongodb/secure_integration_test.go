@@ -14,6 +14,7 @@ import (
 	"github.com/batchstream/weir/internal/execution"
 	"github.com/batchstream/weir/internal/testutil/testmongo"
 	"go.mongodb.org/mongo-driver/v2/bson"
+	"go.mongodb.org/mongo-driver/v2/mongo"
 )
 
 func TestMongoSCRAMTLSProductionOpen(t *testing.T) {
@@ -80,6 +81,121 @@ func TestMongoSCRAMTLSProductionOpen(t *testing.T) {
 			}
 		})
 	}
+}
+
+// plaintextConfig turns a fixture configuration into SCRAM over tls=false.
+func plaintextConfig(t *testing.T, cfg Config) Config {
+	t.Helper()
+	parsed, err := url.Parse(cfg.URI)
+	if err != nil {
+		t.Fatal("invalid owned MongoDB fixture URI")
+	}
+	query := parsed.Query()
+	query.Set("tls", "false")
+	parsed.RawQuery = query.Encode()
+	cfg.URI = parsed.String()
+	cfg.CAFile = ""
+	return cfg
+}
+
+// With an explicit tls=false, SCRAM-SHA-256 authenticates over plaintext:
+// writes and reads work without a TLS handshake, and a wrong password still
+// fails authentication.
+func TestMongoSCRAMWithoutTLSOpen(t *testing.T) {
+	fixture := testmongo.OpenSecureAllowingPlaintext(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)
+	defer cancel()
+	cfg := Config{URI: fixture.URI, Store: "mongo"}
+	cfg = plaintextConfig(t, mongoFixtureConfig(t, cfg))
+	before := settledTransportCounts(t, fixture.Admin)
+	adapter, err := Open(ctx, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer adapter.Close(context.Background())
+	doc := bson.D{{Key: "_id", Value: "plaintext"}, {Key: "n", Value: int64(7)}}
+	raw, _ := bson.Marshal(doc)
+	document := &pb.Document{ContentType: "application/bson", Data: raw}
+	put := &pb.MutateRequest_Put{Put: document}
+	request := &pb.MutateRequest{Resource: fixture.DB + "/records/s:plaintext", Action: put}
+	operation := &pb.Command_Mutate{Mutate: request}
+	command := &pb.Command{Operation: operation}
+	op := &pb.ExecuteRequest{Index: 1, Command: command}
+	plan, failure := prepareTestRecord(adapter, op)
+	if failure != nil {
+		t.Fatal(failure)
+	}
+	result := adapter.ExecuteRecords(ctx, []*execution.Plan{plan})
+	if result[0].GetMutationResult().GetOutcome() != pb.MutationOutcome_APPLIED {
+		t.Fatal(result)
+	}
+	read := prepareCounter(t, adapter, fixture.DB+"/records/s:plaintext")
+	result = adapter.ExecuteRecords(ctx, []*execution.Plan{read})
+	if result[0].GetReadResult().GetDocument() == nil {
+		t.Fatal(result)
+	}
+	after := transportCounts(t, fixture.Admin)
+	if after.connections <= before.connections || after.handshakes != before.handshakes {
+		t.Fatalf("tls=false must connect without TLS: connections %d->%d, TLS handshakes %d->%d",
+			before.connections, after.connections, before.handshakes, after.handshakes)
+	}
+	badConfig := Config{URI: fixture.BadPassURI, Store: "mongo"}
+	badConfig = plaintextConfig(t, mongoFixtureConfig(t, badConfig))
+	badContext, badCancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer badCancel()
+	bad, err := Open(badContext, badConfig)
+	if err == nil {
+		bad.Close(context.Background())
+		t.Fatal("wrong password authenticated over plaintext")
+	}
+	if !strings.Contains(err.Error(), "MongoDB code 18") {
+		t.Fatal("wrong password over plaintext did not fail authentication", err)
+	}
+}
+
+type transportCount struct {
+	connections int64
+	handshakes  int64
+}
+
+// settledTransportCounts waits until the fixture's own clients stop opening
+// monitoring connections, so later changes belong to the code under test.
+func settledTransportCounts(t *testing.T, client *mongo.Client) transportCount {
+	t.Helper()
+	previous := transportCounts(t, client)
+	for range 20 {
+		time.Sleep(250 * time.Millisecond)
+		current := transportCounts(t, client)
+		if current == previous {
+			return current
+		}
+		previous = current
+	}
+	t.Fatal("fixture connections did not settle")
+	return previous
+}
+
+// transportCounts reads how many connections the server has accepted and how
+// many of them negotiated TLS.
+func transportCounts(t *testing.T, client *mongo.Client) transportCount {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	command := bson.D{{Key: "serverStatus", Value: 1}}
+	var status struct {
+		Connections struct {
+			TotalCreated int64 `bson:"totalCreated"`
+		} `bson:"connections"`
+		TransportSecurity map[string]int64 `bson:"transportSecurity"`
+	}
+	if err := client.Database("admin").RunCommand(ctx, command).Decode(&status); err != nil {
+		t.Fatal(err)
+	}
+	count := transportCount{connections: status.Connections.TotalCreated}
+	for _, handshakes := range status.TransportSecurity {
+		count.handshakes += handshakes
+	}
+	return count
 }
 
 func TestMongoSCRAMTLSRepeatedFailureAndClose(t *testing.T) {

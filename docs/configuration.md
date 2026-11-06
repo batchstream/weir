@@ -85,9 +85,18 @@ A seed without a port uses 27017. IPv6 seeds use brackets, such as
 URI userinfo, database paths, fragments, SRV, mongos/sharding, load balancing,
 secondary routing and other options are unsupported. A query requires the `/`
 separator before `?`. Accepted options are `replicaSet`, `directConnection`,
-`authSource`, `authMechanism=SCRAM-SHA-256` and `tls=true`. Authentication requires the
-`authentication` block, explicit SCRAM-SHA-256, `authSource` and TLS; TLS options
-require credentials. Custom CAs belong in `tls.ca_file`, not in the URI.
+`authSource`, `authMechanism=SCRAM-SHA-256` and `tls`. Authentication requires the
+`authentication` block, explicit SCRAM-SHA-256, `authSource` and an explicit
+`tls`; `tls` requires credentials. Use `tls=true` unless the backend has no TLS.
+With `tls=false` Weir still authenticates with SCRAM-SHA-256, but the handshake
+and every command travel in plaintext with nothing binding them together.
+Anyone who can see the traffic can read and change commands, guess the password
+offline from a captured handshake, or relay the handshake and then use the
+authenticated connection with Weir's privileges. Use it only when the network
+path to every replica-set member, including members Weir discovers, is trusted,
+and give the user a long random password. A NetworkPolicy limits which Pods can
+connect, but does not hide traffic from anyone with node or host-network access.
+Custom CAs belong in `tls.ca_file`, not in the URI, and require `tls=true`.
 Verification uses each actual member's hostname/IP, not the seed's name. OCSP
 follows the MongoDB driver: a stapled or responder answer of revoked fails the
 connection, while an unreachable responder does not. All
@@ -121,7 +130,8 @@ out first. The halves run one after another, and the Lua of a record in a batch 
 
 Each username and password comes from exactly one explicit value or file; URI
 userinfo is rejected. Files contain UTF-8 text and allow one final LF/CRLF.
-Authentication requires TLS to the backend. A custom `tls.ca_file` replaces the
+Search authentication requires HTTPS, and MongoDB authentication an explicit
+`tls` option (see [MongoDB](#mongodb)). A custom `tls.ca_file` replaces the
 system roots while retaining hostname verification.
 
 Backend identity and configuration stay local to each process. The application

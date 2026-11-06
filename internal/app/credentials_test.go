@@ -273,9 +273,9 @@ func TestMongoCredentialMappingAndProfile(t *testing.T) {
 	if err := cfg.Validate(); err == nil || strings.Contains(err.Error(), "sentinel") {
 		t.Fatal("URI userinfo must be rejected without credential leakage", err)
 	}
-	m.URI = "mongodb://unresolved.invalid:27017/?authSource=admin&authMechanism=SCRAM-SHA-256&tls=false"
+	m.URI = "mongodb://unresolved.invalid:27017/?authSource=admin&authMechanism=SCRAM-SHA-256"
 	if err := cfg.Validate(); err == nil || strings.Contains(err.Error(), "sentinel") {
-		t.Fatal("separate credentials must still enforce the audited SCRAM/TLS profile", err)
+		t.Fatal("separate credentials must still enforce the audited SCRAM profile with explicit tls", err)
 	}
 }
 
