@@ -91,7 +91,8 @@ Every push to `main` publishes the image `ghcr.io/batchstream/weir:<commit SHA>`
 for Linux amd64 and arm64. Publishing a GitHub release `vMAJOR.MINOR.PATCH` also
 publishes `ghcr.io/batchstream/weir:vMAJOR.MINOR.PATCH` and attaches Linux and
 macOS amd64/arm64 archives with their `SHA256SUMS`. `weir version` reports the
-source commit as `revision`. Build the image locally with:
+source commit as `revision`. Release images and archives report the release tag
+as `version`; images from `main` report `dev`. Build the image locally with:
 
 ```sh
 docker buildx build --build-arg REVISION=$(git rev-parse HEAD) --load -t weir .

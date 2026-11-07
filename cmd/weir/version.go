@@ -11,6 +11,10 @@ import (
 // -X main.revision; other builds report the revision go build records.
 var revision string
 
+// version is the release tag. Release builds set it with -X main.version;
+// other builds report the module version go build records, or "dev".
+var version string
+
 type versionIdentity struct {
 	Product  string `json:"product"`
 	Version  string `json:"version"`
@@ -29,7 +33,8 @@ func printVersion(output io.Writer) error {
 	}
 
 	if info, ok := debug.ReadBuildInfo(); ok {
-		// go build records module and VCS details when available; an injected revision wins.
+		// go build records module and VCS details when available; an injected
+		// revision or version wins.
 		if info.Main.Version != "" && info.Main.Version != "(devel)" {
 			identity.Version = info.Main.Version
 		}
@@ -40,5 +45,8 @@ func printVersion(output io.Writer) error {
 		}
 	}
 
+	if version != "" {
+		identity.Version = version
+	}
 	return json.NewEncoder(output).Encode(identity)
 }

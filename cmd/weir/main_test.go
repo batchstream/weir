@@ -51,6 +51,25 @@ func TestVersionReportsInjectedRevision(t *testing.T) {
 	}
 }
 
+func TestVersionReportsInjectedVersion(t *testing.T) {
+	previous := version
+	version = "v9.8.7"
+	t.Cleanup(func() { version = previous })
+
+	var output bytes.Buffer
+	if err := run([]string{"version"}, &output); err != nil {
+		t.Fatal(err)
+	}
+
+	var identity map[string]string
+	if err := json.Unmarshal(output.Bytes(), &identity); err != nil {
+		t.Fatal(err)
+	}
+	if identity["version"] != "v9.8.7" {
+		t.Fatal(identity)
+	}
+}
+
 func TestCheckConfigWithCredentialFilesWithoutBackendOrCAAccess(t *testing.T) {
 	directory := t.TempDir()
 	configDirectory := filepath.Join(directory, "nested")
