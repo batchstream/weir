@@ -373,8 +373,9 @@ func (a *Adapter) executeWrites(ctx context.Context, plans []*execution.Plan) []
 			reply = protocol.Mutation(pb.MutationOutcome_UNKNOWN, protocol.Fail(pb.FailureCode_UNAVAILABLE, "write acknowledgement unavailable or incomplete"))
 		}
 		members := stands[i]
-		if members != nil && reply.Outcome == pb.MutationOutcome_NOT_APPLIED {
-			// Nothing of the chain applied, so each write runs alone.
+		if members != nil && reply.Outcome == pb.MutationOutcome_NOT_APPLIED && reply.GetFailure().GetCode() == pb.FailureCode_PRECONDITION_FAILED {
+			// MongoDB rejected the document the chain left, and nothing of
+			// the chain applied, so each write runs alone.
 			for _, position := range members {
 				single := []*execution.Plan{plans[position]}
 				results[position] = a.executeWrites(base, single)[0]

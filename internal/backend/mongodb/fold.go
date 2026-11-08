@@ -18,8 +18,11 @@ type programFolds struct {
 	chains map[*execution.Plan][]*execution.Plan
 	// own holds, from a chain's last evaluation, the result of each program
 	// that did not take part in its write, and nil for those that did.
-	own map[*execution.Plan][]*pb.MutationResult
-	// unfold marks chains whose write MongoDB rejected; none of their
+	// dependent lists the programs rejected on a document that only that
+	// write makes real.
+	own       map[*execution.Plan][]*pb.MutationResult
+	dependent map[*execution.Plan][]int
+	// unfold marks chains whose document MongoDB rejected; none of their
 	// programs applied, so they run again one at a time.
 	unfold   map[*execution.Plan]bool
 	releases []func()
@@ -30,6 +33,21 @@ func (f *programFolds) chain(stand *execution.Plan) []*execution.Plan {
 		return nil
 	}
 	return f.chains[stand]
+}
+
+// departed reports whether a program whose effect a chain's write carries
+// has lost its caller since the chain was evaluated.
+func (f *programFolds) departed(ctx context.Context, stand *execution.Plan) bool {
+	if f == nil {
+		return false
+	}
+	own := f.own[stand]
+	for i, work := range f.chains[stand] {
+		if own[i] == nil && work.Ended(ctx) != nil {
+			return true
+		}
+	}
+	return false
 }
 
 func (f *programFolds) release() {
@@ -54,9 +72,10 @@ func foldPrograms(plans []*execution.Plan) ([]*execution.Plan, *programFolds) {
 		return plans, nil
 	}
 	folds := &programFolds{
-		chains: make(map[*execution.Plan][]*execution.Plan),
-		own:    make(map[*execution.Plan][]*pb.MutationResult),
-		unfold: make(map[*execution.Plan]bool),
+		chains:    make(map[*execution.Plan][]*execution.Plan),
+		own:       make(map[*execution.Plan][]*pb.MutationResult),
+		dependent: make(map[*execution.Plan][]int),
+		unfold:    make(map[*execution.Plan]bool),
 	}
 	stands := make([]*execution.Plan, 0, len(order))
 	for _, key := range order {
@@ -119,6 +138,7 @@ func (a *Adapter) transformChain(batch context.Context, folds *programFolds, sta
 	chain := folds.chains[stand]
 	own := make([]*pb.MutationResult, len(chain))
 	folds.own[stand] = own
+	var dependent []int
 	state := raw
 	for i, work := range chain {
 		write, result := a.transformProgram(batch, work, state)
@@ -129,12 +149,16 @@ func (a *Adapter) transformChain(batch context.Context, folds *programFolds, sta
 			state = write.Backend.(*plan).document
 		case result.Outcome != pb.MutationOutcome_APPLIED || result.Failure != nil:
 			own[i] = result
+			if work.Ended(batch) == nil && !sameDocument(raw, state) {
+				dependent = append(dependent, i)
+			}
 		}
 	}
+	folds.dependent[stand] = dependent
 	native := stand.Backend.(*plan)
 	prepared := &plan{target: native.target, id: native.id}
 	switch {
-	case raw == nil && state == nil, raw != nil && state != nil && bytes.Equal(raw, state):
+	case sameDocument(raw, state):
 		unchanged := protocol.Mutation(pb.MutationOutcome_APPLIED, nil)
 		return nil, unchanged
 	case state == nil:
@@ -146,6 +170,13 @@ func (a *Adapter) transformChain(batch context.Context, folds *programFolds, sta
 	}
 	write := &execution.Plan{Command: stand.Command, Backend: prepared}
 	return write, nil
+}
+
+// sameDocument reports whether two documents, nil for a missing one, are
+// the same.
+func sameDocument(a, b bson.Raw) bool {
+	same := a == nil && b == nil || a != nil && b != nil && bytes.Equal(a, b)
+	return same
 }
 
 // unfoldPrograms runs each program of a rejected chain alone, in queue order.

@@ -61,6 +61,13 @@ func (a *Adapter) executePrograms(ctx context.Context, plans []*execution.Plan) 
 				}
 				byPlan[work] = result
 			}
+			// A chain whose write did not apply also fails the programs
+			// rejected on the document it would have made real.
+			if outcome := batch.results[i].GetOutcome(); outcome != pb.MutationOutcome_APPLIED {
+				for _, j := range folds.dependent[stand] {
+					byPlan[chain[j]] = protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, batch.results[i].GetFailure())
+				}
+			}
 		}
 	}
 	results := make([]*pb.Event, len(plans))
@@ -267,7 +274,8 @@ func (a *Adapter) runProgramAttempt(ctx context.Context, state *programAttempt) 
 			for i, reply := range replies {
 				if reply != nil && reply.Outcome == pb.MutationOutcome_NOT_APPLIED {
 					batch.results[writePositions[i]] = reply
-					if stand := batch.plans[writePositions[i]]; batch.folds.chain(stand) != nil {
+					stand := batch.plans[writePositions[i]]
+					if batch.folds.chain(stand) != nil && reply.GetFailure().GetCode() == pb.FailureCode_PRECONDITION_FAILED {
 						batch.folds.unfold[stand] = true
 					}
 				}
@@ -438,25 +446,46 @@ func (a *Adapter) readPrograms(ctx context.Context, plans []*execution.Plan) ([]
 }
 
 func (a *Adapter) transformPrograms(ctx context.Context, batch *programBatch, positions []int, documents []bson.Raw) ([]*execution.Plan, []int) {
-	writes := make([]*execution.Plan, 0, len(positions))
-	writePositions := make([]int, 0, len(positions))
+	writes := make([]*execution.Plan, len(positions))
 	for i, position := range positions {
-		work := batch.plans[position]
-		var write *execution.Plan
-		var result *pb.MutationResult
-		if batch.folds.chain(work) != nil {
-			write, result = a.transformChain(ctx, batch.folds, work, documents[i])
-		} else {
-			write, result = a.transformProgram(ctx, work, documents[i])
-		}
-		if result != nil {
-			batch.results[position] = result
-		} else {
-			writes = append(writes, write)
-			writePositions = append(writePositions, position)
+		writes[i] = a.transformAt(ctx, batch, position, documents[i])
+	}
+	// A chain whose write carries the effect of a program whose caller left
+	// while others were evaluated is evaluated again without it, on the same
+	// document. Each pass leaves out at least one program.
+	for departed := true; departed; {
+		departed = false
+		for i, position := range positions {
+			if writes[i] != nil && batch.folds.departed(ctx, batch.plans[position]) {
+				departed = true
+				writes[i] = a.transformAt(ctx, batch, position, documents[i])
+			}
 		}
 	}
-	return writes, writePositions
+	kept := make([]*execution.Plan, 0, len(writes))
+	writePositions := make([]int, 0, len(writes))
+	for i, write := range writes {
+		if write != nil {
+			kept = append(kept, write)
+			writePositions = append(writePositions, positions[i])
+		}
+	}
+	return kept, writePositions
+}
+
+// transformAt evaluates the program or chain at a batch position on its
+// document. It returns the write, or records the result when there is none.
+func (a *Adapter) transformAt(ctx context.Context, batch *programBatch, position int, document bson.Raw) *execution.Plan {
+	work := batch.plans[position]
+	var write *execution.Plan
+	var result *pb.MutationResult
+	if batch.folds.chain(work) != nil {
+		write, result = a.transformChain(ctx, batch.folds, work, document)
+	} else {
+		write, result = a.transformProgram(ctx, work, document)
+	}
+	batch.results[position] = result
+	return write
 }
 
 // transformProgram evaluates one program under its caller's context, which ends
