@@ -111,15 +111,21 @@ func chainContext(chain []*execution.Plan) (context.Context, func()) {
 		ctx, cancel = context.WithDeadline(context.Background(), latest)
 	}
 	var live atomic.Int64
-	live.Store(int64(len(chain)))
 	stops := make([]func() bool, 0, len(chain))
 	for _, work := range chain {
+		if work.Context.Err() != nil {
+			continue
+		}
+		live.Add(1)
 		stop := context.AfterFunc(work.Context, func() {
 			if live.Add(-1) == 0 {
 				cancel()
 			}
 		})
 		stops = append(stops, stop)
+	}
+	if len(stops) == 0 {
+		cancel()
 	}
 	release := func() {
 		for _, stop := range stops {

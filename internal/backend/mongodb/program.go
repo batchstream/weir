@@ -36,13 +36,22 @@ type programBatch struct {
 // order, and one write. Caller contexts govern evaluation; the batch context
 // governs I/O.
 func (a *Adapter) executePrograms(ctx context.Context, plans []*execution.Plan) []*pb.Event {
-	stands, folds := foldPrograms(plans)
+	// A program whose caller already left neither starts nor joins a chain.
+	byPlan := make(map[*execution.Plan]*pb.MutationResult, len(plans))
+	live := make([]*execution.Plan, 0, len(plans))
+	for _, work := range plans {
+		if failure := work.Ended(ctx); failure != nil {
+			byPlan[work] = protocol.Mutation(pb.MutationOutcome_NOT_STARTED, failure)
+			continue
+		}
+		live = append(live, work)
+	}
+	stands, folds := foldPrograms(live)
 	if folds != nil {
 		defer folds.release()
 	}
 	batch := &programBatch{plans: stands, results: make([]*pb.MutationResult, len(stands)), folds: folds}
 	a.runPrograms(ctx, batch)
-	byPlan := make(map[*execution.Plan]*pb.MutationResult, len(plans))
 	for i, stand := range stands {
 		chain := folds.chain(stand)
 		switch {

@@ -142,3 +142,54 @@ func TestMongoAChainWhoseProgramLeftDuringEvaluationRunsAgainWithoutIt(t *testin
 		t.Fatal("chain results", own)
 	}
 }
+
+func TestMongoProgramsWhoseCallersLeftBeforeTheBatchDoNotStart(t *testing.T) {
+	document := bson.D{{Key: "_id", Value: "x"}, {Key: "n", Value: int32(0)}}
+	cursor := bson.D{{Key: "id", Value: int64(0)}, {Key: "ns", Value: "db.records"}, {Key: "firstBatch", Value: bson.A{document}}}
+	item := bson.D{{Key: "ok", Value: 1}, {Key: "idx", Value: 0}, {Key: "n", Value: 1}, {Key: "nModified", Value: 1}}
+	items := bson.A{item}
+	success := bson.D{{Key: "ok", Value: 1}}
+	responses := []bson.D{collectionQualificationResponse("db", "records"), readCursorResponse(cursor), programBulkResponse(items, 1), success}
+	var commands []string
+	monitor := &event.CommandMonitor{Started: func(_ context.Context, e *event.CommandStartedEvent) {
+		commands = append(commands, e.CommandName)
+	}}
+	adapter := batchMockAdapter(t, responses, monitor)
+	programs := [][2]string{{"x", setOneProgram}, {"x", setOneProgram}, {"y", setOneProgram}, {"y", setOneProgram}}
+	plans := mockPrograms(t, adapter, programs)
+	left, cancel := context.WithCancel(t.Context())
+	cancel()
+	// Every caller of y left, and one of x.
+	plans[0].Context, plans[2].Context, plans[3].Context = left, left, left
+	results := adapter.executePrograms(t.Context(), plans)
+	for _, i := range []int{0, 2, 3} {
+		result := results[i].GetMutationResult()
+		if result.GetOutcome() != pb.MutationOutcome_NOT_STARTED || result.GetFailure().GetCode() != pb.FailureCode_CANCELLED {
+			t.Fatal("program", i, result)
+		}
+	}
+	if result := results[1].GetMutationResult(); result.GetOutcome() != pb.MutationOutcome_APPLIED {
+		t.Fatal("the remaining program", result)
+	}
+	// Only x is read: y has no caller left.
+	finds := 0
+	for _, name := range commands {
+		if name == "find" {
+			finds++
+		}
+	}
+	if finds != 1 {
+		t.Fatal("the departed chain reached MongoDB", commands)
+	}
+}
+
+func TestAChainWhoseCallersAllLeftEndsAtOnce(t *testing.T) {
+	left, cancel := context.WithCancel(t.Context())
+	cancel()
+	chain := []*execution.Plan{{Context: left}, {Context: left}}
+	ctx, release := chainContext(chain)
+	defer release()
+	if ctx.Err() == nil {
+		t.Fatal("a chain without a remaining caller is live")
+	}
+}

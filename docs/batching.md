@@ -180,7 +180,7 @@ Same-resource mutations within a stream preserve input order. Different streams
 retain backend concurrency semantics. A batch holds one mutation per resource,
 except where the adapter folds the mutations of one record: those queued from
 one or several streams share a batch in queue order, the adapter applies them in
-that order and sends one write, and each mutation keeps its own result. The
+that order in one write request, and each mutation keeps its own result. The
 backend validates only the documents the write sends: where a later mutation
 replaced a document before the write, the backend never checks it, and the
 mutation that produced it reports APPLIED. Later mutations of a resource do not join a batch
