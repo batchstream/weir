@@ -391,9 +391,9 @@ type group struct {
 	items []*Ticket
 	bytes int
 	full  bool
-	// resources records each mutated resource and whether its mutations so
-	// far all fold. Mutations of one resource share a batch only when they
-	// all fold.
+	// resources records each mutated resource and whether a later mutation of
+	// it may still join: only while its mutations so far all fold and none
+	// was left out.
 	resources map[string]bool
 	folded    folds
 }
@@ -467,8 +467,11 @@ func (r *Runtime) selectLocked(now time.Time) ([]*Ticket, time.Time) {
 			}
 		}
 		g := s.group(key)
-		folds, mutated := g.resources[plan.Key]
-		if mutation && mutated && (!folds || !plan.Folds) {
+		foldable, mutated := g.resources[plan.Key]
+		if mutation && mutated && (!foldable || !plan.Folds) {
+			// Later mutations of the resource, from any session, do not
+			// pass this one.
+			g.resources[plan.Key] = false
 			if ordered {
 				s.ordered[resource] = nil
 			}
@@ -476,6 +479,9 @@ func (r *Runtime) selectLocked(now time.Time) ([]*Ticket, time.Time) {
 		}
 		if len(g.items) >= r.limits.BatchOperations || len(g.items) > 0 && plan.Bytes > r.limits.BatchBytes-g.bytes {
 			g.full = true
+			if mutation && mutated {
+				g.resources[plan.Key] = false
+			}
 			if ordered {
 				s.ordered[resource] = nil
 			}

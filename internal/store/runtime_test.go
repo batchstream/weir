@@ -625,6 +625,50 @@ func TestAnotherSessionsMutationDoesNotWaitOrFoldWithARunningOne(t *testing.T) {
 	}
 }
 
+func TestAFoldedBatchTeachesTheLimitAsItsUnfoldedSize(t *testing.T) {
+	adapter := &fakeAdapter{}
+	runtime := open(t, adapter, limits(func(l *Limits) { l.BatchWait = 50 * time.Millisecond }))
+	var tickets []*Ticket
+	for range 8 {
+		tickets = append(tickets, submit(t, runtime, foldingPlan("x"), nil))
+	}
+	for _, ticket := range tickets {
+		wait(t, ticket)
+	}
+	if got := adapter.executed(); len(got) != 1 {
+		t.Fatal("the folding mutations did not share one batch", got)
+	}
+	runtime.mu.Lock()
+	defer runtime.mu.Unlock()
+	key := groupKey{batch: "records"}
+	generations := runtime.limit[operationMutate].fastest[key]
+	// Seven of the eight fold into the first, so the batch is a batch of one.
+	if generations == nil || generations[0][0] == 0 || generations[0][sizeClass(8, 0)] != 0 {
+		t.Fatal("folded mutations counted toward the batch size", generations)
+	}
+}
+
+func TestALeftOutMutationIsNotPassedByLaterOnesOfItsResource(t *testing.T) {
+	adapter, runtime, finish := queueBehindBlocker(t, nil)
+	session := runtime.NewSession()
+	tickets := []*Ticket{
+		submit(t, runtime, foldingPlan("x"), session),
+		submit(t, runtime, mutationPlan("x"), runtime.NewSession()),
+		submit(t, runtime, foldingPlan("x"), session),
+	}
+	finish()
+	for _, ticket := range tickets {
+		wait(t, ticket)
+	}
+	want := [][]string{{"blocker"}, {"x"}, {"x"}, {"x"}}
+	if got := adapter.executed(); !slices.EqualFunc(got, want, slices.Equal) {
+		t.Fatal("a later mutation passed the one left out", got)
+	}
+	if adapter.batch(2)[0].Folds {
+		t.Fatal("the session's second mutation passed the other session's earlier one")
+	}
+}
+
 func TestCanceledQueuedMutationKeepsSessionOrder(t *testing.T) {
 	adapter := &fakeAdapter{started: make(chan []*execution.Plan, 8)}
 	release := make(chan struct{})

@@ -44,6 +44,9 @@ func (b *recordBatch) mutateChain(head int, current *getReply) {
 	if current != nil {
 		found, source = *current.Found, current.Source
 	}
+	// changed reports whether the state may differ from the record as read;
+	// without a read it is not known.
+	changed := current == nil
 	var applied, dependent []int
 	for _, i := range b.chains[head] {
 		work := b.works[i]
@@ -89,11 +92,21 @@ func (b *recordBatch) mutateChain(head int, current *getReply) {
 		}
 		if rejected != nil {
 			b.fail(i, rejected.Outcome, rejected.Failure)
-			if len(applied) != 0 {
+			if changed {
 				dependent = append(dependent, i)
 			}
 			continue
 		}
+		if !changed && found == *current.Found && (!found || bytes.Equal(source, current.Source)) {
+			// Decided on the record as read and left it unchanged, so the
+			// result does not depend on the chain's write.
+			b.fail(i, pb.MutationOutcome_APPLIED, nil)
+			if step.waitUntilVisible {
+				b.queueVisibilityBarrier(step.index, i)
+			}
+			continue
+		}
+		changed = true
 		applied = append(applied, i)
 	}
 	if len(applied) == 0 {

@@ -33,15 +33,18 @@ type memorySearch struct {
 	refreshes []string
 	barriers  int
 	// changeBeforeWrite rewrites a stored record before the next bulk applies,
-	// as a concurrent writer would, or before every bulk with keepChanging.
+	// as a concurrent writer would, or before every bulk with keepChanging,
+	// once skipBulks bulks have passed.
 	changeBeforeWrite []string
 	keepChanging      bool
+	skipBulks         int
 	reject            func(source string) bool
-	// onRead runs with the IDs of each real-time read, and bulkStatus, when
-	// set, answers every bulk with that status and bulkBody.
-	onRead     func(ids []string)
-	bulkStatus int
-	bulkBody   string
+	// onRead runs with the IDs of each real-time read, and bulkStatus and
+	// refreshStatus, when set, answer every bulk or refresh with that status.
+	onRead        func(ids []string)
+	bulkStatus    int
+	bulkBody      string
+	refreshStatus int
 }
 
 func (m *memorySearch) handle(w http.ResponseWriter, r *http.Request) {
@@ -69,6 +72,11 @@ func (m *memorySearch) handle(w http.ResponseWriter, r *http.Request) {
 		_, _ = io.WriteString(w, `{"docs":[`+strings.Join(docs, ",")+`]}`)
 	case "/records/_refresh":
 		m.barriers++
+		if m.refreshStatus != 0 {
+			w.WriteHeader(m.refreshStatus)
+			_, _ = io.WriteString(w, `{}`)
+			return
+		}
 		_, _ = io.WriteString(w, `{"_shards":{"total":1,"successful":1,"failed":0}}`)
 	case "/_bulk":
 		raw, _ := io.ReadAll(r.Body)
@@ -79,12 +87,16 @@ func (m *memorySearch) handle(w http.ResponseWriter, r *http.Request) {
 			_, _ = io.WriteString(w, m.bulkBody)
 			return
 		}
-		for _, id := range m.changeBeforeWrite {
-			m.seq++
-			m.docs[id] = storedSource{source: `{"n":100}`, seq: m.seq}
-		}
-		if !m.keepChanging {
-			m.changeBeforeWrite = nil
+		if m.skipBulks > 0 {
+			m.skipBulks--
+		} else {
+			for _, id := range m.changeBeforeWrite {
+				m.seq++
+				m.docs[id] = storedSource{source: `{"n":100}`, seq: m.seq}
+			}
+			if !m.keepChanging {
+				m.changeBeforeWrite = nil
+			}
 		}
 		items, failed := m.apply(string(raw))
 		_, _ = fmt.Fprintf(w, `{"errors":%t,"took":1,"items":[%s]}`, failed, strings.Join(items, ","))
@@ -395,16 +407,18 @@ func cancelOnRead(t *testing.T, memory *memorySearch, id string) context.Context
 }
 
 // onePreReadPerRound makes each round of a batch read at most one record, so
-// a later round can run between a chain's evaluation and its write.
-func onePreReadPerRound(adapter *Adapter) {
+// a later round can run between a chain's evaluation and its write, and
+// allows attempts transforms of a record.
+func onePreReadPerRound(adapter *Adapter, attempts int) {
 	settings := backend.DefaultOptions()
 	settings.BatchBytes = settings.ExchangeBytes
+	settings.RetryAttempts = attempts
 	adapter.config.Options = &settings
 }
 
 func TestAChainWhoseMemberLeftBeforeItsWriteRunsAgainWithoutIt(t *testing.T) {
 	memory, adapter := newMemorySearch(t, map[string]string{"y": `{"n":1}`})
-	onePreReadPerRound(adapter)
+	onePreReadPerRound(adapter, backend.DefaultOptions().RetryAttempts)
 	x := recordMutations{t: t, adapter: adapter, resource: "records/s:x"}
 	y := recordMutations{t: t, adapter: adapter, resource: "records/s:y"}
 	works := []*execution.Plan{
@@ -531,5 +545,81 @@ func TestAFoldedDeleteOfAMissingRecordWaitsForARefresh(t *testing.T) {
 	checkResults(t, results, want)
 	if len(memory.bulks) != 1 || !strings.Contains(memory.bulks[0], `"delete"`) || memory.barriers != 1 {
 		t.Fatal("bulks", memory.bulks, "refresh barriers", memory.barriers)
+	}
+}
+
+func TestALeavingCallerDoesNotUseUpAConflictAttempt(t *testing.T) {
+	memory, adapter := newMemorySearch(t, map[string]string{"x": `{"n":1}`, "y": `{"n":1}`})
+	// The write of x, after y's, meets a concurrent change.
+	memory.changeBeforeWrite, memory.skipBulks = []string{"x"}, 1
+	onePreReadPerRound(adapter, 2)
+	x := recordMutations{t: t, adapter: adapter, resource: "records/s:x"}
+	y := recordMutations{t: t, adapter: adapter, resource: "records/s:y"}
+	works := []*execution.Plan{
+		x.prepare("add", `{"by":1}`),
+		x.prepare("add", `{"by":10}`),
+		y.prepare("add", `{"by":1}`),
+	}
+	works[0].Context = cancelOnRead(t, memory, "y")
+	results := adapter.ExecuteRecords(t.Context(), works)
+	canceled := expected{outcome: pb.MutationOutcome_NOT_APPLIED, code: pb.FailureCode_CANCELLED}
+	want := []expected{canceled, appliedResult, appliedResult}
+	checkResults(t, results, want)
+	if got := memory.source("x"); got != `{"n":110}` || len(memory.bulks) != 3 {
+		t.Fatal("source", got, "bulks", len(memory.bulks))
+	}
+}
+
+func TestOneChainConflictsWhileAnotherApplies(t *testing.T) {
+	memory, adapter := newMemorySearch(t, map[string]string{"x": `{"n":1}`, "y": `{"n":1}`})
+	memory.changeBeforeWrite = []string{"x"}
+	x := recordMutations{t: t, adapter: adapter, resource: "records/s:x"}
+	y := recordMutations{t: t, adapter: adapter, resource: "records/s:y"}
+	works := []*execution.Plan{
+		x.prepare("add", `{"by":1}`),
+		y.prepare("add", `{"by":1}`),
+		x.prepare("add", `{"by":1}`),
+		y.prepare("add", `{"by":1}`),
+	}
+	results := adapter.ExecuteRecords(t.Context(), works)
+	want := []expected{appliedResult, appliedResult, appliedResult, appliedResult}
+	checkResults(t, results, want)
+	if memory.source("x") != `{"n":102}` || memory.source("y") != `{"n":3}` || len(memory.bulks) != 2 {
+		t.Fatal("x", memory.source("x"), "y", memory.source("y"), "bulks", len(memory.bulks))
+	}
+}
+
+func TestANoopOnTheRecordAsReadKeepsItsResultWhateverTheWrite(t *testing.T) {
+	memory, adapter := newMemorySearch(t, map[string]string{"x": `{"n":1}`})
+	memory.bulkStatus, memory.bulkBody = http.StatusInternalServerError, `{}`
+	x := recordMutations{t: t, adapter: adapter, resource: "records/s:x"}
+	works := []*execution.Plan{
+		x.prepare("keep", `{}`),
+		x.prepare("create", `{"n":3}`),
+		x.prepare("replace", `{"n":2}`),
+	}
+	results := adapter.ExecuteRecords(t.Context(), works)
+	// The keep and the create were decided on the record as read, whatever
+	// the write did.
+	exists := expected{outcome: pb.MutationOutcome_NOT_APPLIED, code: pb.FailureCode_PRECONDITION_FAILED}
+	unknown := expected{outcome: pb.MutationOutcome_UNKNOWN, code: pb.FailureCode_UNAVAILABLE}
+	want := []expected{appliedResult, exists, unknown}
+	checkResults(t, results, want)
+}
+
+func TestAFailedRefreshAfterAFoldedWriteFailsEveryMutationItCarried(t *testing.T) {
+	memory, adapter := newMemorySearch(t, nil)
+	memory.refreshStatus = http.StatusInternalServerError
+	x := recordMutations{t: t, adapter: adapter, resource: "records/s:x", visible: true}
+	works := []*execution.Plan{
+		x.prepare("put", `{"n":1}`),
+		x.prepare("delete", ``),
+	}
+	results := adapter.ExecuteRecords(t.Context(), works)
+	for i, result := range results {
+		mutation := result.GetMutationResult()
+		if mutation.GetOutcome() != pb.MutationOutcome_APPLIED || mutation.GetFailure() == nil {
+			t.Fatal("mutation", i, mutation)
+		}
 	}
 }

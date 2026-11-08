@@ -180,13 +180,17 @@ Same-resource mutations within a stream preserve input order. Different streams
 retain backend concurrency semantics. A batch holds one mutation per resource,
 except where the adapter folds the mutations of one record: those queued from
 one or several streams share a batch in queue order, the adapter applies them in
-that order and sends one write, and each mutation keeps its own result. A
-mutation whose caller leaves before the write goes out is left out, and the rest
-are evaluated again without it. A conflict evaluates them again from a fresh
+that order and sends one write, and each mutation keeps its own result. The
+backend validates only the document the write sends: a document that a later
+mutation replaced before the write is never checked, and the mutation that
+produced it reports APPLIED. Later mutations of a resource do not join a batch
+that left out an earlier one. A mutation whose caller leaves before the write
+goes out is left out, and the rest are evaluated again without it. A conflict evaluates them again from a fresh
 read. A rejection of the combined document runs the mutations again one at a
 time, since none applied. Any other failed or unknown write gives its result to
 every mutation it carried, and fails, as not applied, every mutation rejected on
-a state that only that write would have made real.
+a state that only that write would have made real. A mutation decided on the
+record as read that leaves it unchanged is applied whatever the write's result.
 `weir_store_folded_mutations_total` counts mutations that followed an earlier
 one of the same resource in their batch.
 
