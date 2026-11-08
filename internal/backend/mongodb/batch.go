@@ -3,6 +3,7 @@ package mongodb
 import (
 	"context"
 	"errors"
+	"slices"
 	"strconv"
 
 	"github.com/batchstream/weir-protocol/api/protocol"
@@ -268,6 +269,7 @@ func rawRecordID(raw bson.RawValue) (any, bool) {
 }
 
 func (a *Adapter) executeWrites(ctx context.Context, plans []*execution.Plan) []*pb.Event {
+	base := ctx
 	results := make([]*pb.Event, len(plans))
 	active := make([]*execution.Plan, 0, len(plans))
 	positions := make([]int, 0, len(plans))
@@ -295,6 +297,8 @@ func (a *Adapter) executeWrites(ctx context.Context, plans []*execution.Plan) []
 	if len(active) == 0 {
 		return results
 	}
+	live, livePositions := slices.Clone(active), slices.Clone(positions)
+	active, positions, writes, stands := foldWrites(active, positions, writes)
 
 	encoded := encodeBulkWrite(writes, namespaces)
 	if len(plans) > 1 && len(encoded) > a.commandBytes() {
@@ -330,10 +334,10 @@ func (a *Adapter) executeWrites(ctx context.Context, plans []*execution.Plan) []
 		// operation. Only this definite initial rejection permits isolation.
 		groups := make([][]*execution.Plan, len(namespaces))
 		groupPositions := make([][]int, len(namespaces))
-		for i, p := range active {
+		for i, p := range live {
 			index := namespaceIndexes[p.Backend.(*plan).target]
 			groups[index] = append(groups[index], p)
-			groupPositions[index] = append(groupPositions[index], positions[i])
+			groupPositions[index] = append(groupPositions[index], livePositions[i])
 		}
 		for i, group := range groups {
 			if len(group) == 0 {
@@ -368,9 +372,23 @@ func (a *Adapter) executeWrites(ctx context.Context, plans []*execution.Plan) []
 		if reply == nil {
 			reply = protocol.Mutation(pb.MutationOutcome_UNKNOWN, protocol.Fail(pb.FailureCode_UNAVAILABLE, "write acknowledgement unavailable or incomplete"))
 		}
-		value := &pb.Event_MutationResult{MutationResult: reply}
-		event := &pb.Event{Value: value}
-		results[positions[i]] = event
+		members := stands[i]
+		if members != nil && reply.Outcome == pb.MutationOutcome_NOT_APPLIED {
+			// Nothing of the chain applied, so each write runs alone.
+			for _, position := range members {
+				single := []*execution.Plan{plans[position]}
+				results[position] = a.executeWrites(base, single)[0]
+			}
+			continue
+		}
+		if members == nil {
+			members = positions[i : i+1]
+		}
+		for _, position := range members {
+			value := &pb.Event_MutationResult{MutationResult: reply}
+			event := &pb.Event{Value: value}
+			results[position] = event
+		}
 	}
 	return results
 }

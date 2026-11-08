@@ -28,17 +28,44 @@ type programBatch struct {
 	// attempted records that a transaction exchange has run, so members that
 	// end later report NOT_APPLIED rather than NOT_STARTED.
 	attempted bool
+	folds     *programFolds
 }
 
-// Programs of a batch name one collection and distinct records, so they share a
-// snapshot transaction. Caller contexts govern evaluation; the batch context
+// Programs of a batch name one collection and share a snapshot transaction.
+// Programs of one record run as one chain: one read, evaluated in queue
+// order, and one write. Caller contexts govern evaluation; the batch context
 // governs I/O.
 func (a *Adapter) executePrograms(ctx context.Context, plans []*execution.Plan) []*pb.Event {
-	batch := &programBatch{plans: plans, results: make([]*pb.MutationResult, len(plans))}
+	stands, folds := foldPrograms(plans)
+	if folds != nil {
+		defer folds.release()
+	}
+	batch := &programBatch{plans: stands, results: make([]*pb.MutationResult, len(stands)), folds: folds}
 	a.runPrograms(ctx, batch)
+	byPlan := make(map[*execution.Plan]*pb.MutationResult, len(plans))
+	for i, stand := range stands {
+		chain := folds.chain(stand)
+		switch {
+		case chain == nil:
+			byPlan[stand] = batch.results[i]
+		case folds.unfold[stand]:
+			for j, result := range a.unfoldPrograms(ctx, chain) {
+				byPlan[chain[j]] = result
+			}
+		default:
+			own := folds.own[stand]
+			for j, work := range chain {
+				result := chainResult(work, batch.results[i])
+				if own != nil && own[j] != nil {
+					result = own[j]
+				}
+				byPlan[work] = result
+			}
+		}
+	}
 	results := make([]*pb.Event, len(plans))
-	for i, result := range batch.results {
-		value := &pb.Event_MutationResult{MutationResult: result}
+	for i, work := range plans {
+		value := &pb.Event_MutationResult{MutationResult: byPlan[work]}
 		event := &pb.Event{Value: value}
 		results[i] = event
 	}
@@ -240,6 +267,9 @@ func (a *Adapter) runProgramAttempt(ctx context.Context, state *programAttempt) 
 			for i, reply := range replies {
 				if reply != nil && reply.Outcome == pb.MutationOutcome_NOT_APPLIED {
 					batch.results[writePositions[i]] = reply
+					if stand := batch.plans[writePositions[i]]; batch.folds.chain(stand) != nil {
+						batch.folds.unfold[stand] = true
+					}
 				}
 			}
 			if len(batch.active()) == len(active) {
@@ -324,7 +354,7 @@ func (a *Adapter) splitPrograms(ctx context.Context, batch *programBatch, positi
 		for i, position := range part {
 			plans[i] = batch.plans[position]
 		}
-		child := &programBatch{plans: plans, results: make([]*pb.MutationResult, len(plans)), attempted: batch.attempted}
+		child := &programBatch{plans: plans, results: make([]*pb.MutationResult, len(plans)), attempted: batch.attempted, folds: batch.folds}
 		a.runPrograms(ctx, child)
 		for i, position := range part {
 			batch.results[position] = child.results[i]
@@ -412,7 +442,13 @@ func (a *Adapter) transformPrograms(ctx context.Context, batch *programBatch, po
 	writePositions := make([]int, 0, len(positions))
 	for i, position := range positions {
 		work := batch.plans[position]
-		write, result := a.transformProgram(ctx, work, documents[i])
+		var write *execution.Plan
+		var result *pb.MutationResult
+		if batch.folds.chain(work) != nil {
+			write, result = a.transformChain(ctx, batch.folds, work, documents[i])
+		} else {
+			write, result = a.transformProgram(ctx, work, documents[i])
+		}
 		if result != nil {
 			batch.results[position] = result
 		} else {

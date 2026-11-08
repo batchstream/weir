@@ -200,6 +200,12 @@ first mutation whose caller remains is a put or delete. Query-visible mutations
 wait for one refresh, or each for its own when they run one at a time. One whose
 precondition fails or whose Lua rejects leaves the state to the next.
 
+MongoDB folds puts, deletes and Lua programs. A record's puts and deletes become
+the last of them, which leaves the record as the whole run would. Its Lua
+programs evaluate in order on the transaction's one read of the record, each on
+the document the programs before it left, and the transaction writes the result
+once. Creates, replaces and backend expressions do not fold.
+
 Grouping is not an application transaction:
 a MongoDB Lua transaction may include records from several RPCs, and its physical
 membership varies with arrivals and available capacity.
