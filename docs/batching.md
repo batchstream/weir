@@ -180,10 +180,10 @@ Same-resource mutations within a stream preserve input order. Different streams
 retain backend concurrency semantics. A batch holds one mutation per resource,
 except where the adapter folds the mutations of one record: those queued from
 one or several streams share a batch in queue order, the adapter applies them in
-that order and sends one write, and each mutation keeps its own result. The
-backend validates only the document the write sends: a document that a later
-mutation replaced before the write is never checked, and the mutation that
-produced it reports APPLIED. Later mutations of a resource do not join a batch
+that order in one write request, and each mutation keeps its own result. The
+backend validates only the documents the write sends: where a later mutation
+replaced a document before the write, the backend never checks it, and the
+mutation that produced it reports APPLIED. Later mutations of a resource do not join a batch
 that left out an earlier one. A mutation whose caller leaves before the write
 goes out is left out, and the rest are evaluated again without it. A conflict evaluates them again from a fresh
 read. A rejection of the combined document runs the mutations again one at a
@@ -199,6 +199,15 @@ the record's state. The write is conditional on a real-time read unless the
 first mutation whose caller remains is a put or delete. Query-visible mutations
 wait for one refresh, or each for its own when they run one at a time. One whose
 precondition fails or whose Lua rejects leaves the state to the next.
+
+MongoDB folds puts, deletes and Lua programs. A record's puts and deletes become
+the last of them, which leaves the record as the whole run would; only that
+last document is validated. Its Lua programs evaluate in order on the
+transaction's one read of the record, each on the document the programs before
+it left, and the transaction writes each program's document in order, so
+MongoDB checks every one as it would one program at a time, and one commit
+covers them all. A chain whose documents exceed one command runs one program
+at a time. Creates, replaces and backend expressions do not fold.
 
 Grouping is not an application transaction:
 a MongoDB Lua transaction may include records from several RPCs, and its physical

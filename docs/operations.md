@@ -254,8 +254,8 @@ they form larger batches, and more Weir replicas add no capacity. The ratio is 0
 when `min_in_flight` equals `max_in_flight`, and it keeps its last value while a
 Store is idle. Free slots mean records wait for earlier
 mutations of the same resource: one stream's mutations of a resource run one at
-a time unless the adapter folds them, as Search does for all but backend
-expressions, so a client that keeps rewriting the same records queues behind
+a time unless the adapter [folds](batching.md) them, so a client that keeps
+rewriting the same records with mutations that do not fold queues behind
 itself.
 
 ### WeirWatchdogExpirations

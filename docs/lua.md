@@ -140,6 +140,10 @@ final process boundary.
 Confirmed MongoDB transaction and Search compare-and-swap conflicts can trigger
 a bounded fresh read and reevaluation. Search evaluates the queued mutations of
 one record in queue order on one read and writes once, so each Lua callback sees
-the result of the mutations before it, and a conflict reevaluates them all. Ambiguous write or commit outcomes never
+the result of the mutations before it, and a conflict reevaluates them all.
+MongoDB evaluates the Lua programs of one record the same way in its
+transaction and writes each changed document in one ordered bulkWrite and one
+commit.
+Ambiguous write or commit outcomes never
 replay the business callback. A callback error or invalid document does not
 write.

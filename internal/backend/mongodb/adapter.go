@@ -214,9 +214,14 @@ func (a *Adapter) PrepareRecord(ctx context.Context, record *execution.Record) (
 		return work, nil
 	}
 	work.BatchKey = "records"
+	// Puts and deletes of one record fold into the last, which leaves it as
+	// they all would; Lua programs of one record fold into one transaction
+	// write. Creates, replaces and expressions depend on a state no write of
+	// this batch reads.
 	switch action := mutation.Action.(type) {
 	case *pb.MutateRequest_Put:
 		native.action = "put"
+		work.Folds = true
 		return work, native.setDocument(action.Put)
 	case *pb.MutateRequest_Create:
 		native.action = "create"
@@ -226,12 +231,14 @@ func (a *Adapter) PrepareRecord(ctx context.Context, record *execution.Record) (
 		return work, native.setDocument(action.Replace)
 	case *pb.MutateRequest_Delete:
 		native.action = "delete"
+		work.Folds = true
 		return work, nil
 	case *pb.MutateRequest_AtomicTransform:
 		if program := action.AtomicTransform.GetLua(); program != nil {
 			native.action = "program"
 			native.program = &luaengine.Program{Source: string(program.Source), ObservedAt: time.Now()}
 			work.BatchKey = target.String() + "/lua"
+			work.Folds = true
 			return work, validateProgramInput(ctx, program.Input)
 		}
 		expression := action.AtomicTransform.GetBackendExpression()
