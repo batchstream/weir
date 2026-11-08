@@ -131,16 +131,20 @@ func chainContext(chain []*execution.Plan) (context.Context, func()) {
 }
 
 // transformChain evaluates a chain's programs in queue order, each on the
-// document the programs before it left, and returns one write from the read
-// document to the last. A program that does not change the document, or that
-// fails, leaves it to the next.
-func (a *Adapter) transformChain(batch context.Context, folds *programFolds, stand *execution.Plan, raw bson.Raw) (*execution.Plan, *pb.MutationResult) {
+// document the programs before it left, and returns a write for each program
+// that changes the document. The transaction sends them in order, so MongoDB
+// checks every document the chain passes through, as it would one program at
+// a time. A program that does not change the document, or that fails, leaves
+// it to the next.
+func (a *Adapter) transformChain(batch context.Context, folds *programFolds, stand *execution.Plan, raw bson.Raw) ([]*execution.Plan, *pb.MutationResult) {
 	chain := folds.chains[stand]
 	own := make([]*pb.MutationResult, len(chain))
 	folds.own[stand] = own
 	var dependent []int
+	var writes []*execution.Plan
 	state, changed := raw, false
 	for i, work := range chain {
+		previous := state
 		write, result := a.transformProgram(batch, work, state)
 		switch {
 		case result == nil && write.Backend.(*plan).action == "delete":
@@ -159,23 +163,33 @@ func (a *Adapter) transformChain(batch context.Context, folds *programFolds, sta
 			own[i] = protocol.Mutation(pb.MutationOutcome_APPLIED, nil)
 		}
 		changed = changed || !sameDocument(raw, state)
+		if !sameDocument(previous, state) {
+			writes = append(writes, chainWrite(stand, previous, state))
+		}
 	}
 	folds.dependent[stand] = dependent
+	if len(writes) == 0 {
+		unchanged := protocol.Mutation(pb.MutationOutcome_APPLIED, nil)
+		return nil, unchanged
+	}
+	return writes, nil
+}
+
+// chainWrite is the write that takes a chain's record from one document to
+// the next, nil for a missing record.
+func chainWrite(stand *execution.Plan, from, to bson.Raw) *execution.Plan {
 	native := stand.Backend.(*plan)
 	prepared := &plan{target: native.target, id: native.id}
 	switch {
-	case sameDocument(raw, state):
-		unchanged := protocol.Mutation(pb.MutationOutcome_APPLIED, nil)
-		return nil, unchanged
-	case state == nil:
+	case to == nil:
 		prepared.action = "delete"
-	case raw == nil:
-		prepared.action, prepared.document = "create", state
+	case from == nil:
+		prepared.action, prepared.document = "create", to
 	default:
-		prepared.action, prepared.document = "replace", state
+		prepared.action, prepared.document = "replace", to
 	}
 	write := &execution.Plan{Command: stand.Command, Backend: prepared}
-	return write, nil
+	return write
 }
 
 // sameDocument reports whether two documents, nil for a missing one, are
@@ -186,11 +200,13 @@ func sameDocument(a, b bson.Raw) bool {
 }
 
 // unfoldPrograms runs each program of a rejected chain alone, in queue order.
+// The chain's transaction already ran, so a program whose caller left since is
+// NOT_APPLIED rather than NOT_STARTED.
 func (a *Adapter) unfoldPrograms(ctx context.Context, chain []*execution.Plan) []*pb.MutationResult {
 	results := make([]*pb.MutationResult, len(chain))
 	for i, work := range chain {
 		single := []*execution.Plan{work}
-		batch := &programBatch{plans: single, results: make([]*pb.MutationResult, 1)}
+		batch := &programBatch{plans: single, results: make([]*pb.MutationResult, 1), attempted: true}
 		a.runPrograms(ctx, batch)
 		results[i] = batch.results[0]
 	}

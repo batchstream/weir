@@ -4,6 +4,7 @@ package mongodb
 
 import (
 	"context"
+	"strings"
 	"sync/atomic"
 	"testing"
 
@@ -95,7 +96,7 @@ func storedN(t *testing.T, collection *mongo.Collection, id string) (int64, bool
 	return document.N, true
 }
 
-func TestMongoLuaProgramsOfOneRecordFoldIntoOneTransactionWrite(t *testing.T) {
+func TestMongoLuaProgramsOfOneRecordFoldIntoOneTransaction(t *testing.T) {
 	fixture := testmongo.Open(t)
 	collection := fixture.Admin.Database(fixture.DB).Collection("records")
 	for _, id := range []string{"a", "gone"} {
@@ -122,7 +123,8 @@ func TestMongoLuaProgramsOfOneRecordFoldIntoOneTransactionWrite(t *testing.T) {
 	applied, rejected := pb.MutationOutcome_APPLIED, pb.MutationOutcome_NOT_APPLIED
 	want := []pb.MutationOutcome{applied, applied, applied, applied, rejected, applied, applied, applied}
 	checkOutcomes(t, results, want)
-	if commands.finds.Load() != 1 || commands.writes.Load() != 1 || commands.ops.Load() != 3 || commands.commits.Load() != 1 {
+	// One op for each program that changed its record, in one ordered write.
+	if commands.finds.Load() != 1 || commands.writes.Load() != 1 || commands.ops.Load() != 7 || commands.commits.Load() != 1 {
 		t.Fatal("finds", commands.finds.Load(), "writes", commands.writes.Load(), "ops", commands.ops.Load(), "commits", commands.commits.Load())
 	}
 	if n, found := storedN(t, collection, "a"); !found || n != 4 {
@@ -216,5 +218,130 @@ func TestMongoRejectedFoldedPutsRunOneAtATime(t *testing.T) {
 	checkOutcomes(t, results, want)
 	if n, found := storedN(t, database.Collection("validated"), "v"); !found || n != 1 {
 		t.Fatal("the put before the rejected one did not apply alone", n, found)
+	}
+}
+
+// validatedCollection creates a collection whose documents must keep n at
+// most 10.
+func validatedCollection(t *testing.T, fixture *testmongo.Fixture) *mongo.Collection {
+	t.Helper()
+	database := fixture.Admin.Database(fixture.DB)
+	validator := bson.D{{Key: "n", Value: bson.D{{Key: "$lte", Value: 10}}}}
+	create := options.CreateCollection().SetValidator(validator)
+	if err := database.CreateCollection(t.Context(), "validated", create); err != nil {
+		t.Fatal(err)
+	}
+	collection := database.Collection("validated")
+	return collection
+}
+
+// cancelOnFirstWrite returns a caller context that ends once the first
+// bulkWrite has been answered, and a monitor that ends it.
+func cancelOnFirstWrite(t *testing.T) (context.Context, *event.CommandMonitor) {
+	caller, cancel := context.WithCancel(t.Context())
+	t.Cleanup(cancel)
+	monitor := &event.CommandMonitor{Succeeded: func(_ context.Context, e *event.CommandSucceededEvent) {
+		if e.CommandName == "bulkWrite" {
+			cancel()
+		}
+	}}
+	return caller, monitor
+}
+
+func TestMongoFoldedProgramsMeetEveryCheckAProgramAloneWould(t *testing.T) {
+	fixture := testmongo.Open(t)
+	collection := validatedCollection(t, fixture)
+	document := bson.D{{Key: "_id", Value: "v"}, {Key: "n", Value: int64(1)}}
+	if _, err := collection.InsertOne(t.Context(), document); err != nil {
+		t.Fatal(err)
+	}
+	adapterOpts := adapterTestOptions{fixture: fixture}
+	adapter := testAdapter(t, adapterOpts)
+	records := recordWrites{t: t, adapter: adapter, prefix: fixture.DB + "/validated/s:"}
+	plans := []*execution.Plan{
+		records.program("v", setProgram("50")),
+		records.program("v", `return function(current, incoming) if current.n > 10 then current.n = current.n - 45 end; return current end`),
+	}
+	results := adapter.executePrograms(t.Context(), plans)
+	// Alone, the first program is rejected and the second finds n at 1.
+	want := []pb.MutationOutcome{pb.MutationOutcome_NOT_APPLIED, pb.MutationOutcome_APPLIED}
+	checkOutcomes(t, results, want)
+	if n, found := storedN(t, collection, "v"); !found || n != 1 {
+		t.Fatal("the second program ran on a document MongoDB rejected", n, found)
+	}
+}
+
+func TestMongoAFoldedPutReplacedBeforeTheWriteIsNotChecked(t *testing.T) {
+	fixture := testmongo.Open(t)
+	collection := validatedCollection(t, fixture)
+	adapterOpts := adapterTestOptions{fixture: fixture}
+	adapter := testAdapter(t, adapterOpts)
+	records := recordWrites{t: t, adapter: adapter, prefix: fixture.DB + "/validated/s:"}
+	plans := []*execution.Plan{
+		records.write("v", "put", 50),
+		records.write("v", "put", 1),
+	}
+	// Only the last put reaches MongoDB, so both report APPLIED, as
+	// docs/batching.md states, and the record holds the last.
+	results := adapter.ExecuteRecords(t.Context(), plans)
+	want := []pb.MutationOutcome{pb.MutationOutcome_APPLIED, pb.MutationOutcome_APPLIED}
+	checkOutcomes(t, results, want)
+	if n, found := storedN(t, collection, "v"); !found || n != 1 {
+		t.Fatal("folded puts", n, found)
+	}
+}
+
+func TestMongoAMutationWhoseCallerLeftBeforeItsChainRanAgainIsNotApplied(t *testing.T) {
+	for _, kind := range []string{"put", "program"} {
+		t.Run(kind, func(t *testing.T) {
+			fixture := testmongo.Open(t)
+			validatedCollection(t, fixture)
+			caller, monitor := cancelOnFirstWrite(t)
+			adapterOpts := adapterTestOptions{fixture: fixture, monitor: monitor}
+			adapter := testAdapter(t, adapterOpts)
+			records := recordWrites{t: t, adapter: adapter, prefix: fixture.DB + "/validated/s:"}
+			plans := []*execution.Plan{records.write("v", "put", 1), records.write("v", "put", 50)}
+			execute := adapter.ExecuteRecords
+			if kind == "program" {
+				plans = []*execution.Plan{records.program("v", setProgram("1")), records.program("v", setProgram("50"))}
+				execute = adapter.executePrograms
+			}
+			// The chain is rejected and runs again one at a time, after the
+			// first caller left.
+			plans[0].Context = caller
+			results := execute(t.Context(), plans)
+			want := []pb.MutationOutcome{pb.MutationOutcome_NOT_APPLIED, pb.MutationOutcome_NOT_APPLIED}
+			checkOutcomes(t, results, want)
+			if code := results[0].GetMutationResult().GetFailure().GetCode(); code != pb.FailureCode_CANCELLED {
+				t.Fatal("the departed caller's cause", code)
+			}
+		})
+	}
+}
+
+func TestMongoAChainTooLargeForOneCommandRunsOneAtATime(t *testing.T) {
+	fixture := testmongo.Open(t)
+	collection := fixture.Admin.Database(fixture.DB).Collection("records")
+	commands := &foldCommands{}
+	adapterOpts := adapterTestOptions{fixture: fixture, monitor: commands.monitor()}
+	adapter := testAdapter(t, adapterOpts)
+	settings := adapter.options()
+	settings.ExchangeBytes = 4096
+	adapter.config.Options = &settings
+	padding := strings.Repeat("x", 3000)
+	program := func(n string) string {
+		source := `return function(current, incoming) return {n = ` + n + `, pad = "` + padding + `"} end`
+		return source
+	}
+	records := recordWrites{t: t, adapter: adapter, prefix: fixture.DB + "/records/s:"}
+	plans := []*execution.Plan{
+		records.program("big", program("1")),
+		records.program("big", program("2")),
+	}
+	results := adapter.executePrograms(t.Context(), plans)
+	want := []pb.MutationOutcome{pb.MutationOutcome_APPLIED, pb.MutationOutcome_APPLIED}
+	checkOutcomes(t, results, want)
+	if n, found := storedN(t, collection, "big"); !found || n != 2 || commands.commits.Load() != 2 {
+		t.Fatal("stored", n, found, "commits", commands.commits.Load())
 	}
 }
