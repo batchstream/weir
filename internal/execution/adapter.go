@@ -23,6 +23,10 @@ type Plan struct {
 	// than the backend's work on it, such as a scheduled refresh. Its time
 	// does not show how loaded the backend is.
 	Waits bool
+	// Folds marks a mutation the adapter can combine with other folding
+	// mutations of the same resource in one batch. Such a batch holds them in
+	// queue order, and the adapter applies them as if one after another.
+	Folds bool
 	// Context carries this caller's cancellation and deadline inside a shared
 	// batch. The Store runtime replaces the one PrepareRecord set.
 	Context context.Context
@@ -55,7 +59,9 @@ type Adapter interface {
 	PrepareRecord(context.Context, *Record) (*Plan, *pb.Failure)
 	// ExecuteRecords runs one batch and returns exactly one result event per
 	// plan, in order. Every plan of a batch shares its BatchKey and is either a
-	// read or a mutation, and mutations of a batch name distinct resources.
+	// read or a mutation. Mutations of a batch name distinct resources, except
+	// that folding mutations of one resource may appear together, in queue
+	// order.
 	ExecuteRecords(context.Context, []*Plan) []*pb.Event
 	// ExecuteNative streams the response head and chunks through Emit and
 	// returns the terminal NativeEnd. It performs no backend I/O afterwards.

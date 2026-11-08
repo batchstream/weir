@@ -55,6 +55,9 @@ type plan struct {
 	program          *luaengine.Program
 	input            *pb.Document
 	waitUntilVisible bool
+	// conditional marks a write framed from a read, which a concurrent
+	// change turns into a conflict that permits evaluating it again.
+	conditional bool
 }
 
 type capabilities struct {
@@ -261,6 +264,9 @@ func (a *Adapter) PrepareRecord(ctx context.Context, record *execution.Record) (
 		native.waitUntilVisible, work.Waits = true, true
 		work.BatchKey += "|visible"
 	}
+	// Every action but a backend expression can be applied to a known source,
+	// so mutations of one record fold into one write.
+	work.Folds = true
 	switch action := mutation.Action.(type) {
 	case *pb.MutateRequest_Put:
 		native.action = "index"
@@ -287,6 +293,7 @@ func (a *Adapter) PrepareRecord(ctx context.Context, record *execution.Record) (
 		expression := action.AtomicTransform.GetBackendExpression()
 		native.action = "expression"
 		native.source = expression.Data
+		work.Folds = false
 		return work, validateExpression(expression)
 	}
 	return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "mutation unsupported")

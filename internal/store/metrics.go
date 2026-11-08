@@ -8,6 +8,7 @@ import (
 type runtimeMetrics struct {
 	records, failures, nativeCompletions, rejections *prometheus.CounterVec
 	queueWait, duration, batch, native               prometheus.Histogram
+	folded                                           prometheus.Counter
 }
 
 func newRuntimeMetrics() runtimeMetrics {
@@ -18,6 +19,7 @@ func newRuntimeMetrics() runtimeMetrics {
 	queueOptions := prometheus.HistogramOpts{Name: "weir_store_queue_wait_seconds", Help: "Record time from queueing to dispatch.", Buckets: []float64{.001, .01, .1, 1, 10}}
 	durationOptions := prometheus.HistogramOpts{Name: "weir_store_execution_seconds", Help: "Record batch execution time.", Buckets: []float64{.001, .01, .1, 1, 10}}
 	nativeDurationOptions := prometheus.HistogramOpts{Name: "weir_store_native_seconds", Help: "Native call time, including sending the response on the RPC stream.", Buckets: []float64{.001, .01, .1, 1, 10}}
+	foldedOptions := prometheus.CounterOpts{Name: "weir_store_folded_mutations_total", Help: "Mutations dispatched in a batch after an earlier mutation of the same resource, for the adapter to fold into one write."}
 	batchOptions := prometheus.HistogramOpts{Name: "weir_store_batch_operations", Help: "Records per record batch.", Buckets: prometheus.ExponentialBuckets(1, 2, 11)}
 	metrics := runtimeMetrics{
 		records:           prometheus.NewCounterVec(recordOptions, []string{"operation", "outcome"}),
@@ -28,6 +30,7 @@ func newRuntimeMetrics() runtimeMetrics {
 		duration:          prometheus.NewHistogram(durationOptions),
 		batch:             prometheus.NewHistogram(batchOptions),
 		native:            prometheus.NewHistogram(nativeDurationOptions),
+		folded:            prometheus.NewCounter(foldedOptions),
 	}
 	for _, outcome := range []string{"applied", "not_applied", "not_started", "unknown"} {
 		metrics.records.WithLabelValues("mutate", outcome)
@@ -132,7 +135,7 @@ func (r *Runtime) Collect(ch chan<- prometheus.Metric) {
 	if collector, ok := r.adapter.(prometheus.Collector); ok {
 		collector.Collect(ch)
 	}
-	collectors := []prometheus.Collector{r.metrics.records, r.metrics.failures, r.metrics.nativeCompletions, r.metrics.rejections, r.metrics.queueWait, r.metrics.duration, r.metrics.batch, r.metrics.native}
+	collectors := []prometheus.Collector{r.metrics.records, r.metrics.failures, r.metrics.nativeCompletions, r.metrics.rejections, r.metrics.queueWait, r.metrics.duration, r.metrics.batch, r.metrics.native, r.metrics.folded}
 	for _, collector := range collectors {
 		collector.Collect(ch)
 	}

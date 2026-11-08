@@ -48,10 +48,10 @@ func TestDiagnosticsMaximumStaticSeries(t *testing.T) {
 			delete(families, name)
 		}
 	}
-	// 16 Mongo Stores (62 runtime series each), plus the business transport
+	// 16 Mongo Stores (63 runtime series each), plus the business transport
 	// (11), Node readiness (1) and the memory guard (3). Histograms count
 	// every bucket, sum and count.
-	const maximumSeries = 16*62 + 11 + 1 + 3
+	const maximumSeries = 16*63 + 11 + 1 + 3
 	if got := testmetrics.Series(families); got != maximumSeries {
 		t.Fatal("maximum static series changed", got)
 	}

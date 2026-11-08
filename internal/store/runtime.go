@@ -69,8 +69,9 @@ type Runtime struct {
 	limit  [2]executionLimit
 	probes probes
 	// probeNext and fullNext describe the batch about to launch: the limit's
-	// probe, or one that is full.
+	// probe, or one that is full. foldedNext counts its folded mutations.
 	probeNext, fullNext          bool
+	foldedNext                   folds
 	draining, closed, overloaded bool
 	// space and nativeSpace are closed and replaced whenever a waiting record
 	// or Native submitter may proceed.
@@ -85,7 +86,7 @@ type Runtime struct {
 }
 
 // Session identifies one record stream. Its mutations of one resource execute
-// one at a time, in submission order.
+// in submission order: one at a time, or together in one batch when they fold.
 type Session struct {
 	runtime *Runtime
 	// results, when set, receives each record's final event as it completes.
@@ -125,6 +126,14 @@ type batch struct {
 	// probe marks the limit's probe, full a batch of max_operations records or
 	// max_bytes, and partial one the adaptive limit counts.
 	probe, full, partial bool
+	folded               folds
+}
+
+// folds counts the mutations of a batch that follow an earlier one of the
+// same resource, and their bytes. The adapter folds them into that earlier
+// one's write, so they do not make the batch's execution longer.
+type folds struct {
+	count, bytes int
 }
 
 func New(adapter execution.Adapter, limits Limits) (*Runtime, error) {
@@ -382,15 +391,21 @@ type group struct {
 	items []*Ticket
 	bytes int
 	full  bool
-	// Mutations of one resource never share a batch.
-	resources map[string]struct{}
+	// resources records each mutated resource and whether a later mutation of
+	// it may still join: only while its mutations so far all fold and none
+	// was left out.
+	resources map[string]bool
+	folded    folds
 }
 
 type selection struct {
-	groups  []*group
-	used    int
-	byKey   map[groupKey]*group
-	ordered map[resourceKey]struct{}
+	groups []*group
+	used   int
+	byKey  map[groupKey]*group
+	// ordered maps a session's resource to the group its last scanned
+	// mutation joined, or to nil once a mutation was held back, which holds
+	// back its later ones too.
+	ordered map[resourceKey]*group
 }
 
 // reset empties the scratch state after a scan so it retains no tickets; it
@@ -399,7 +414,7 @@ func (s *selection) reset() {
 	for _, g := range s.groups[:s.used] {
 		clear(g.items)
 		g.items = g.items[:0]
-		g.bytes, g.full = 0, false
+		g.bytes, g.full, g.folded = 0, false, folds{}
 		clear(g.resources)
 	}
 	s.used = 0
@@ -431,37 +446,61 @@ func (r *Runtime) selectLocked(now time.Time) ([]*Ticket, time.Time) {
 	s := &r.selection
 	if s.byKey == nil {
 		s.byKey = make(map[groupKey]*group)
-		s.ordered = make(map[resourceKey]struct{})
+		s.ordered = make(map[resourceKey]*group)
 	}
 	defer s.reset()
 	for _, t := range r.queue {
 		plan := t.plan
 		mutation := plan.Command.GetMutate() != nil
-		if t.session != nil && mutation {
+		key := groupKey{batch: plan.BatchKey, read: plan.Command.GetRead() != nil}
+		ordered := t.session != nil && mutation
+		var resource resourceKey
+		if ordered {
 			// The oldest queued mutation of a session's resource runs first,
-			// and only after the previous one finished.
-			key := resourceKey{session: t.session, resource: plan.Key}
-			if _, waiting := s.ordered[key]; waiting || r.keys[key] != nil {
+			// and only after the previous one finished. Later ones join its
+			// batch while each folds with those before it.
+			resource = resourceKey{session: t.session, resource: plan.Key}
+			last, scanned := s.ordered[resource]
+			if r.keys[resource] != nil || scanned && (last == nil || s.byKey[key] != last) {
+				s.ordered[resource] = nil
 				continue
 			}
-			s.ordered[key] = struct{}{}
 		}
-		key := groupKey{batch: plan.BatchKey, read: plan.Command.GetRead() != nil}
 		g := s.group(key)
-		if _, duplicate := g.resources[plan.Key]; mutation && duplicate {
+		foldable, mutated := g.resources[plan.Key]
+		if mutation && mutated && (!foldable || !plan.Folds) {
+			// Later mutations of the resource, from any session, do not
+			// pass this one.
+			g.resources[plan.Key] = false
+			if ordered {
+				s.ordered[resource] = nil
+			}
 			continue
 		}
 		if len(g.items) >= r.limits.BatchOperations || len(g.items) > 0 && plan.Bytes > r.limits.BatchBytes-g.bytes {
 			g.full = true
+			if mutation && mutated {
+				g.resources[plan.Key] = false
+			}
+			if ordered {
+				s.ordered[resource] = nil
+			}
 			continue
 		}
 		g.items = append(g.items, t)
 		g.bytes += plan.Bytes
 		if mutation {
 			if g.resources == nil {
-				g.resources = make(map[string]struct{})
+				g.resources = make(map[string]bool)
 			}
-			g.resources[plan.Key] = struct{}{}
+			g.resources[plan.Key] = plan.Folds
+			if mutated {
+				g.folded.count++
+				g.folded.bytes += plan.Bytes
+			}
+		}
+		if ordered {
+			s.ordered[resource] = g
 		}
 	}
 	for _, g := range s.groups[:s.used] {
@@ -479,6 +518,7 @@ func (r *Runtime) selectLocked(now time.Time) ([]*Ticket, time.Time) {
 			// The batch owns the returned slice.
 			items := g.items
 			r.fullNext = r.isFull(g)
+			r.foldedNext = g.folded
 			g.items = nil
 			var ready time.Time
 			return items, ready
@@ -575,8 +615,11 @@ func (r *Runtime) launchLocked(items []*Ticket) *batch {
 		t.stop()
 	}
 	b := newBatch(items)
-	b.probe, b.full = r.probeNext, r.fullNext
-	r.probeNext, r.fullNext = false, false
+	b.probe, b.full, b.folded = r.probeNext, r.fullNext, r.foldedNext
+	if b.folded.count > 0 {
+		r.metrics.folded.Add(float64(b.folded.count))
+	}
+	r.probeNext, r.fullNext, r.foldedNext = false, false, folds{}
 	r.batches[b] = struct{}{}
 	if b.native() {
 		r.natives++
@@ -698,7 +741,10 @@ func (r *Runtime) execute(b *batch) {
 			for _, t := range b.items {
 				bytes += t.plan.Bytes
 			}
-			done := finishedBatch{started: started, finished: finished, key: key, size: len(b.items), bytes: bytes, full: b.full, probe: b.probe}
+			// Folded mutations add no backend work of their own, so a batch
+			// counts as the size it would be without them.
+			size, bytes := len(b.items)-b.folded.count, bytes-b.folded.bytes
+			done := finishedBatch{started: started, finished: finished, key: key, size: size, bytes: bytes, full: b.full, probe: b.probe}
 			r.limit[op].observe(done)
 		}
 		if r.adaptive && r.running[op] == 0 && !r.queuesLocked(op) {

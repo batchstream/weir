@@ -41,6 +41,7 @@ func (a *Adapter) evaluateProgram(work *execution.Plan, current *getReply) (*pla
 		return nil, execution.LuaFailure(ctx, err)
 	}
 	next := *native
+	next.conditional = true
 	switch transformed.Action {
 	case "keep":
 		return nil, protocol.Mutation(pb.MutationOutcome_APPLIED, nil)

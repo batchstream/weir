@@ -11,9 +11,15 @@ import (
 	"github.com/batchstream/weir/internal/execution"
 )
 
+// queueVisibilityBarrier queues a barrier for a work, or for every mutation a
+// framed chain's write carries.
 func (b *recordBatch) queueVisibilityBarrier(index string, position int) {
 	if b.barriers == nil {
 		b.barriers = make(map[string][]int)
+	}
+	if members := b.applied[position]; members != nil {
+		b.barriers[index] = append(b.barriers[index], members...)
+		return
 	}
 	b.barriers[index] = append(b.barriers[index], position)
 }
