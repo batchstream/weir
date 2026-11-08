@@ -97,6 +97,7 @@ of improved capacity.
 | `weir_store_native_completions_total` | Final Native forwarding terminal evidence (`not_started`, `response_complete`, `response_incomplete`), not backend business success, RPC status, or client receipt |
 | `weir_store_rejections_total` | Preparation, draining and overload denials, not completed records |
 | `weir_store_batch_operations`, `weir_store_queue_wait_seconds`, `weir_store_execution_seconds` | Record batch sizes, queue wait and record batch execution time; Natives are excluded |
+| `weir_store_folded_mutations_total` | Mutations dispatched in a batch after an earlier mutation of the same resource, which the adapter [folds](batching.md) into one write |
 | `weir_lua_evaluation_seconds` | Lua evaluation time by `outcome` (`success`, `error`, `timeout`, `canceled`), for both backends |
 | `weir_ingress_sessions`, `weir_rpc_completions_total`, `weir_admission_rejections_total` | Active RPCs, completed RPCs by `status` and RPCs refused at admission |
 | `weir_watchdog_expirations_total` | RPCs ended by the input or output stall timeout |
@@ -253,7 +254,9 @@ they form larger batches, and more Weir replicas add no capacity. The ratio is 0
 when `min_in_flight` equals `max_in_flight`, and it keeps its last value while a
 Store is idle. Free slots mean records wait for earlier
 mutations of the same resource: one stream's mutations of a resource run one at
-a time, so a client that keeps rewriting the same records queues behind itself.
+a time unless the adapter folds them, as Search does for all but backend
+expressions, so a client that keeps rewriting the same records queues behind
+itself.
 
 ### WeirWatchdogExpirations
 

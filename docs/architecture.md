@@ -48,7 +48,8 @@ not full run below an adaptive limit that halves when executions queue at the
 backend, so records wait in Weir and form larger batches instead. See
 [batching](batching.md) for grouping, the adaptive limit and backpressure.
 
-Same-resource mutations within a stream execute in input order. Each plan keeps
+Same-resource mutations within a stream execute in input order: one at a time,
+or together in one batch where the adapter folds them. Each plan keeps
 its own record context, bounded by the record's timeout, its stream and any
 cancel request naming it, and each result returns to the stream that submitted
 it under its ordinal, so equal ordinals in different RPCs cannot collide. A

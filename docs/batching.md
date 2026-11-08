@@ -177,7 +177,18 @@ target. One larger legal item proceeds alone. Full-source
 Lua replacements can generate much more traffic than small incoming patches.
 
 Same-resource mutations within a stream preserve input order. Different streams
-retain backend concurrency semantics. Grouping is not an application transaction:
+retain backend concurrency semantics. A batch holds one mutation per resource,
+except that Search folds the mutations of one record, apart from backend
+expressions: those queued from one or several streams share a batch in queue
+order, and Search applies them in that order to the record's state and sends one
+write. The write is conditional on a real-time read unless the first mutation is
+a put or delete, and query-visible mutations wait for one refresh. Each mutation
+keeps its own result. One whose precondition fails or whose Lua rejects leaves
+the state to the next. A conflict evaluates the chain again from a fresh read.
+Any other rejection of the combined write runs the mutations again one at a
+time, since none applied; an unknown write leaves every mutation it carried
+unknown. `weir_store_folded_mutations_total` counts mutations that followed an
+earlier one of the same resource in their batch. Grouping is not an application transaction:
 a MongoDB Lua transaction may include records from several RPCs, and its physical
 membership varies with arrivals and available capacity.
 

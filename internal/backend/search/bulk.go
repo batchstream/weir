@@ -126,11 +126,11 @@ func (a *Adapter) bulkResults(works []*execution.Plan, status int, raw []byte, e
 	for i, work := range works {
 		native := work.Backend.(*plan)
 		item := &reply.items[i]
-		transformed := native.program != nil || native.action == "expression"
+		transformed := native.conditional || native.action == "expression"
 		acknowledgement := "write"
 		if transformed {
 			acknowledgement = "update"
-			if native.program != nil {
+			if native.conditional {
 				acknowledgement = "conditional write"
 			}
 			failure := protocol.Fail(pb.FailureCode_UNAVAILABLE, acknowledgement+" acknowledgement unavailable or incomplete")
@@ -145,7 +145,7 @@ func (a *Adapter) bulkResults(works []*execution.Plan, status int, raw []byte, e
 			if status < 400 || failure == nil || item.result != "" || item.version.set || item.seq.set || item.term.set || item.hasShards {
 				continue
 			}
-			if native.action == "create" && native.program == nil && failure.Code == pb.FailureCode_CONFLICT {
+			if native.action == "create" && !native.conditional && failure.Code == pb.FailureCode_CONFLICT {
 				failure = protocol.Fail(pb.FailureCode_PRECONDITION_FAILED, "record already exists")
 			}
 			results[i] = execution.FailedEvent(work.Command, pb.MutationOutcome_NOT_APPLIED, failure)
@@ -157,12 +157,12 @@ func (a *Adapter) bulkResults(works []*execution.Plan, status int, raw []byte, e
 			valid = item.status == 201 && item.result == "created"
 		case "index":
 			valid = item.status == 200 && item.result == "updated" ||
-				native.program == nil && item.status == 201 && item.result == "created"
+				!native.conditional && item.status == 201 && item.result == "created"
 		case "replace":
 			valid = item.status == 200 && item.result == "updated"
 		case "delete":
 			valid = item.status == 200 && item.result == "deleted" ||
-				native.program == nil && item.status == 404 && item.result == "not_found"
+				!native.conditional && item.status == 404 && item.result == "not_found"
 		case "expression":
 			valid = item.status == 200 && (item.result == "updated" || item.result == "noop")
 		}

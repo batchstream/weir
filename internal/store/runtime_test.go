@@ -13,6 +13,7 @@ import (
 	"github.com/batchstream/weir-protocol/api/protocol"
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 	"github.com/batchstream/weir/internal/execution"
+	"github.com/batchstream/weir/internal/testutil/testmetrics"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -128,6 +129,13 @@ func mutationPlan(resource string) *execution.Plan {
 	value := &pb.Command_Mutate{Mutate: mutate}
 	command := &pb.Command{Operation: value}
 	plan := &execution.Plan{Command: command, Key: resource, BatchKey: "records", Bytes: proto.Size(command)}
+	return plan
+}
+
+// foldingPlan is a mutation the adapter can fold with others of its resource.
+func foldingPlan(resource string) *execution.Plan {
+	plan := mutationPlan(resource)
+	plan.Folds = true
 	return plan
 }
 
@@ -424,6 +432,141 @@ func TestSameResourceMutationsNeverShareABatch(t *testing.T) {
 	want := [][]string{{"blocker"}, {"x"}, {"x"}, {"r", "r"}}
 	if got := adapter.executed(); !slices.EqualFunc(got, want, slices.Equal) {
 		t.Fatal("same-resource mutations shared a batch or reads were split", got)
+	}
+}
+
+// queueBehindBlocker holds the only execution slot with a running batch, so
+// that the plans submitted next queue together; release lets them run.
+func queueBehindBlocker(t *testing.T, change func(*Limits)) (*fakeAdapter, *Runtime, func()) {
+	t.Helper()
+	adapter := &fakeAdapter{}
+	release := make(chan struct{})
+	runtime := open(t, adapter, limits(func(l *Limits) {
+		l.MaxInFlight = 1
+		if change != nil {
+			change(l)
+		}
+	}))
+	adapter.records = blockUntil(release)
+	blocker := submit(t, runtime, mutationPlan("blocker"), nil)
+	time.Sleep(20 * time.Millisecond)
+	finish := func() {
+		close(release)
+		wait(t, blocker)
+	}
+	return adapter, runtime, finish
+}
+
+func TestFoldingMutationsOfOneResourceShareABatchInQueueOrder(t *testing.T) {
+	adapter, runtime, finish := queueBehindBlocker(t, nil)
+	session, other := runtime.NewSession(), runtime.NewSession()
+	first, second, third := foldingPlan("x"), foldingPlan("x"), foldingPlan("x")
+	tickets := []*Ticket{
+		submit(t, runtime, first, session),
+		submit(t, runtime, foldingPlan("y"), session),
+		submit(t, runtime, second, other),
+		submit(t, runtime, third, session),
+	}
+	finish()
+	for _, ticket := range tickets {
+		wait(t, ticket)
+	}
+	want := [][]string{{"blocker"}, {"x", "y", "x", "x"}}
+	if got := adapter.executed(); !slices.EqualFunc(got, want, slices.Equal) {
+		t.Fatal("folding mutations did not share one batch", got)
+	}
+	batch := adapter.batches[1]
+	if batch[0] != first || batch[2] != second || batch[3] != third {
+		t.Fatal("folding mutations lost their queue order")
+	}
+	families := testmetrics.Gather(t, runtime)
+	if got := counter(families, "weir_store_folded_mutations_total", nil); got != 2 {
+		t.Fatal("folded mutations counted", got)
+	}
+}
+
+func TestAMutationThatDoesNotFoldEndsItsResourceChain(t *testing.T) {
+	adapter, runtime, finish := queueBehindBlocker(t, nil)
+	session := runtime.NewSession()
+	tickets := []*Ticket{
+		submit(t, runtime, foldingPlan("x"), session),
+		submit(t, runtime, mutationPlan("x"), session),
+		submit(t, runtime, foldingPlan("x"), session),
+		submit(t, runtime, foldingPlan("y"), runtime.NewSession()),
+	}
+	finish()
+	for _, ticket := range tickets {
+		wait(t, ticket)
+	}
+	want := [][]string{{"blocker"}, {"x", "y"}, {"x"}, {"x"}}
+	if got := adapter.executed(); !slices.EqualFunc(got, want, slices.Equal) {
+		t.Fatal("a mutation that does not fold joined or was passed", got)
+	}
+	if adapter.batches[2][0].Folds {
+		t.Fatal("the folding mutation passed the one before it")
+	}
+}
+
+func TestSessionChainsStayInTheirGroup(t *testing.T) {
+	adapter, runtime, finish := queueBehindBlocker(t, nil)
+	session := runtime.NewSession()
+	visible := foldingPlan("x")
+	visible.BatchKey = "visible"
+	tickets := []*Ticket{
+		submit(t, runtime, foldingPlan("x"), session),
+		submit(t, runtime, visible, session),
+		submit(t, runtime, foldingPlan("x"), session),
+	}
+	finish()
+	for _, ticket := range tickets {
+		wait(t, ticket)
+	}
+	want := [][]string{{"blocker"}, {"x"}, {"x"}, {"x"}}
+	if got := adapter.executed(); !slices.EqualFunc(got, want, slices.Equal) {
+		t.Fatal("a session chain crossed batch keys", got)
+	}
+	if adapter.batches[2][0] != visible {
+		t.Fatal("session order changed across batch keys")
+	}
+}
+
+func TestFullBatchesEndSessionChains(t *testing.T) {
+	adapter, runtime, finish := queueBehindBlocker(t, func(l *Limits) { l.BatchOperations = 2 })
+	session := runtime.NewSession()
+	var tickets []*Ticket
+	for _, key := range []string{"a", "x", "x", "x"} {
+		tickets = append(tickets, submit(t, runtime, foldingPlan(key), session))
+	}
+	finish()
+	for _, ticket := range tickets {
+		wait(t, ticket)
+	}
+	want := [][]string{{"blocker"}, {"a", "x"}, {"x", "x"}}
+	if got := adapter.executed(); !slices.EqualFunc(got, want, slices.Equal) {
+		t.Fatal("full batches reordered a session chain", got)
+	}
+}
+
+func TestFoldingMutationsWaitForTheirRunningPredecessor(t *testing.T) {
+	adapter := &fakeAdapter{started: make(chan []*execution.Plan, 8)}
+	release := make(chan struct{})
+	runtime := open(t, adapter, limits(nil))
+	settle(runtime)
+	adapter.records = blockUntil(release)
+	session := runtime.NewSession()
+	first := submit(t, runtime, foldingPlan("x"), session)
+	if keys := started(t, adapter); !slices.Equal(keys, []string{"x"}) {
+		t.Fatal(keys)
+	}
+	second := submit(t, runtime, foldingPlan("x"), session)
+	third := submit(t, runtime, foldingPlan("x"), session)
+	notStarted(t, adapter)
+	close(release)
+	if keys := started(t, adapter); !slices.Equal(keys, []string{"x", "x"}) {
+		t.Fatal("queued folding mutations did not follow their predecessor together", keys)
+	}
+	for _, ticket := range []*Ticket{first, second, third} {
+		wait(t, ticket)
 	}
 }
 

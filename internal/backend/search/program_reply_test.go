@@ -36,7 +36,7 @@ func TestProgramWriteReplyRecognizesRejectionEnvelopes(t *testing.T) {
 		t.Run(tc.product+"/"+tc.kind, func(t *testing.T) {
 			a := &Adapter{dialect: tc.product}
 			program := &luaengine.Program{}
-			native := &plan{index: "records", id: "item", action: "index", program: program}
+			native := &plan{index: "records", id: "item", action: "index", program: program, conditional: true}
 			raw := fmt.Sprintf(`{"_index":"records","_id":"item","error":{"type":%q},"status":%d}`, tc.kind, tc.status)
 			result := testBulkMutationReply(a, native, raw)
 			if result.GetOutcome() != pb.MutationOutcome_NOT_APPLIED || result.GetFailure().GetCode() != tc.failure {
@@ -47,7 +47,7 @@ func TestProgramWriteReplyRecognizesRejectionEnvelopes(t *testing.T) {
 	// Lua create conflicts must retain CONFLICT so the caller can reevaluate.
 	a := &Adapter{dialect: ElasticsearchProduct}
 	program := &luaengine.Program{}
-	native := &plan{index: "records", id: "item", action: "create", program: program}
+	native := &plan{index: "records", id: "item", action: "create", program: program, conditional: true}
 	raw := `{"_index":"records","_id":"item","error":{"type":"version_conflict_engine_exception"},"status":409}`
 	result := testBulkMutationReply(a, native, raw)
 	if result.GetOutcome() != pb.MutationOutcome_NOT_APPLIED || result.GetFailure().GetCode() != pb.FailureCode_CONFLICT {
@@ -68,7 +68,7 @@ func TestProgramWriteReplyRequiresCompleteSuccessEvidence(t *testing.T) {
 	}
 	for _, tc := range cases {
 		program := &luaengine.Program{}
-		native := &plan{index: "records", id: "item", action: tc.operation, program: program}
+		native := &plan{index: "records", id: "item", action: tc.operation, program: program, conditional: true}
 		raw := strings.Replace(success, `"updated"`, fmt.Sprintf("%q", tc.result), 1)
 		raw = strings.Replace(raw, `"status":200`, fmt.Sprintf(`"status":%d`, tc.status), 1)
 		result := testBulkMutationReply(a, native, raw)
@@ -95,7 +95,7 @@ func TestProgramWriteReplyRequiresCompleteSuccessEvidence(t *testing.T) {
 		`{"_index":"records","_id":"item","error":{"type":"mapper_parsing_exception"},"status":200,"result":"updated"}`,
 	}
 	program := &luaengine.Program{}
-	native := &plan{index: "records", id: "item", action: "index", program: program}
+	native := &plan{index: "records", id: "item", action: "index", program: program, conditional: true}
 	for _, raw := range invalid {
 		result := testBulkMutationReply(a, native, raw)
 		if result.GetOutcome() != pb.MutationOutcome_UNKNOWN {
@@ -112,7 +112,7 @@ func TestProgramWriteReplyRequiresCompleteSuccessEvidence(t *testing.T) {
 func TestProgramWriteReplyRejectsContradictoryErrorEvidence(t *testing.T) {
 	a := &Adapter{dialect: ElasticsearchProduct}
 	program := &luaengine.Program{}
-	native := &plan{index: "records", id: "item", action: "index", program: program}
+	native := &plan{index: "records", id: "item", action: "index", program: program, conditional: true}
 	for _, field := range []string{`"result":"updated"`, `"_version":1`, `"_seq_no":1`, `"_primary_term":1`, `"_shards":{}`} {
 		raw := fmt.Sprintf(`{"_index":"records","_id":"item","error":{"type":"mapper_parsing_exception"},"status":400,%s}`, field)
 		result := testBulkMutationReply(a, native, raw)
@@ -161,7 +161,7 @@ func TestBulkValidatesAllItemsBeforeAcknowledgingAny(t *testing.T) {
 	a := &Adapter{dialect: ElasticsearchProduct}
 	ordinary := &plan{index: "records", id: "item", action: "index"}
 	program := &luaengine.Program{}
-	native := &plan{index: "records", id: "item", action: "index", program: program}
+	native := &plan{index: "records", id: "item", action: "index", program: program, conditional: true}
 	ordinaryWork := &execution.Plan{Backend: ordinary}
 	programWork := &execution.Plan{Backend: native}
 	success := `{"_index":"records","_id":"item","status":200,"_version":1,"_seq_no":0,"_primary_term":1,"result":"updated","_shards":{"total":1,"successful":1,"failed":0}}`

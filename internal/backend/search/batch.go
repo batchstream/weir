@@ -180,6 +180,14 @@ type recordBatch struct {
 	pending  []recordWrite
 	retry    []int
 	barriers map[string][]int
+	// chains maps the first position of each chain of folding mutations of
+	// one record to all its positions, in queue order. applied maps a chain
+	// whose write is framed to the positions whose effects that write
+	// carries. unfold lists chains whose write was rejected: nothing of them
+	// applied, so their mutations run again one at a time.
+	chains  map[int][]int
+	applied map[int][]int
+	unfold  []int
 }
 
 // fail records a final result for one work.
@@ -192,6 +200,11 @@ func (b *recordBatch) fail(position int, outcome pb.MutationOutcome, failure *pb
 func (b *recordBatch) appendWrite(work *execution.Plan, position int, current *getReply) {
 	entry, err := appendBulkEntry(b.entry[:0], work.Backend.(*plan), current)
 	if err != nil {
+		if b.applied[position] != nil {
+			delete(b.applied, position)
+			b.unfold = append(b.unfold, position)
+			return
+		}
 		b.fail(position, pb.MutationOutcome_NOT_APPLIED, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "Search source cannot be framed as one NDJSON line"))
 		return
 	}
@@ -265,7 +278,13 @@ func (b *recordBatch) flush() {
 	works := make([]*execution.Plan, 0, len(b.pending))
 	positions := make([]int, 0, len(b.pending))
 	for _, item := range b.pending {
-		if failure := item.work.Ended(b.ctx); failure != nil {
+		if members := b.applied[item.position]; members != nil {
+			// A chain's write goes out while any of its callers remains.
+			if b.endChain(members) {
+				delete(b.applied, item.position)
+				continue
+			}
+		} else if failure := item.work.Ended(b.ctx); failure != nil {
 			b.fail(item.position, pb.MutationOutcome_NOT_APPLIED, failure)
 			continue
 		}
@@ -289,10 +308,14 @@ func (b *recordBatch) flush() {
 			b.queueBulkVisibilityBarriers(works, positions, replies, items)
 		}
 		for i, position := range positions {
+			if b.applied[position] != nil {
+				b.settleChain(position, replies[i])
+				continue
+			}
 			b.results[position] = replies[i]
-			program := works[i].Backend.(*plan).program
+			conditional := works[i].Backend.(*plan).conditional
 			mutation := replies[i].GetMutationResult()
-			if program == nil || mutation.GetOutcome() != pb.MutationOutcome_NOT_APPLIED || mutation.GetFailure().GetCode() != pb.FailureCode_CONFLICT {
+			if !conditional || mutation.GetOutcome() != pb.MutationOutcome_NOT_APPLIED || mutation.GetFailure().GetCode() != pb.FailureCode_CONFLICT {
 				continue
 			}
 			if b.attempts[position] < b.adapter.options().RetryAttempts {
@@ -398,15 +421,17 @@ func (b *recordBatch) read(positions []int) {
 
 // mutate frames each work's write, pre-reading the records its action depends
 // on, and sends conflicting transforms around again from a fresh read.
+// Folding mutations of one record become one write.
 func (b *recordBatch) mutate(positions []int) {
 	settings := b.adapter.options()
 	// At most this many pre-read sources are retained while Lua runs.
 	retained := max(1, settings.ExchangeBytes/settings.BatchBytes)
+	positions = b.chain(positions)
 	for len(positions) != 0 {
 		for start := 0; start < len(positions); {
 			end, reads := start, 0
-			for end < len(positions) && (reads < retained || !b.works[positions[end]].Backend.(*plan).preReads()) {
-				if b.works[positions[end]].Backend.(*plan).preReads() {
+			for end < len(positions) && (reads < retained || !b.preReads(positions[end])) {
+				if b.preReads(positions[end]) {
 					reads++
 				}
 				end++
@@ -419,9 +444,78 @@ func (b *recordBatch) mutate(positions []int) {
 		positions = b.retry
 		b.retry = nil
 		for _, i := range positions {
-			b.results[i] = nil
+			b.clear(i)
 		}
 	}
+	for len(b.unfold) != 0 {
+		head := b.unfold[0]
+		b.unfold = b.unfold[1:]
+		members := b.chains[head]
+		delete(b.chains, head)
+		for _, i := range members {
+			b.results[i] = nil
+			b.attempts[i] = 0
+		}
+		for _, i := range members {
+			single := []int{i}
+			b.mutate(single)
+		}
+	}
+}
+
+// chain links folding mutations of one record into chains and returns the
+// positions of the other mutations and of each chain's first mutation.
+func (b *recordBatch) chain(positions []int) []int {
+	starts := make([]int, 0, len(positions))
+	first := make(map[string]int, len(positions))
+	for _, i := range positions {
+		work := b.works[i]
+		head, linked := first[work.Key]
+		if !work.Folds || !linked {
+			if work.Folds {
+				first[work.Key] = i
+			}
+			starts = append(starts, i)
+			continue
+		}
+		if b.chains == nil {
+			b.chains = make(map[int][]int)
+		}
+		if b.chains[head] == nil {
+			b.chains[head] = []int{head}
+		}
+		b.chains[head] = append(b.chains[head], i)
+	}
+	return starts
+}
+
+// clear forgets the results of a work, or of every work of its chain.
+func (b *recordBatch) clear(i int) {
+	members := b.chains[i]
+	if members == nil {
+		b.results[i] = nil
+		return
+	}
+	for _, member := range members {
+		b.results[member] = nil
+	}
+}
+
+// preReads reports whether a work, or a chain starting at it, depends on the
+// record's current state. A chain does unless its first live mutation
+// replaces or deletes the record whatever it holds.
+func (b *recordBatch) preReads(i int) bool {
+	members := b.chains[i]
+	if members == nil {
+		return b.works[i].Backend.(*plan).preReads()
+	}
+	for _, member := range members {
+		if b.works[member].Ended(b.ctx) == nil {
+			action := b.works[member].Backend.(*plan).action
+			return action != "index" && action != "delete"
+		}
+	}
+	return false
 }
 
 // preReads reports whether a mutation depends on the record's current state.
@@ -432,8 +526,22 @@ func (native *plan) preReads() bool {
 func (b *recordBatch) mutateChunk(chunk []int) {
 	var readWorks []*execution.Plan
 	var readPositions []int
+	// readChains holds the chains that asked for a read; one without its
+	// read has failed or waits for the next round.
+	var readChains map[int]bool
 	for _, i := range chunk {
 		work := b.works[i]
+		if b.chains[i] != nil {
+			if b.preReads(i) {
+				if readChains == nil {
+					readChains = make(map[int]bool)
+				}
+				readChains[i] = true
+				readWorks = append(readWorks, b.reader(i))
+				readPositions = append(readPositions, i)
+			}
+			continue
+		}
 		if denied := work.Ended(b.ctx); denied != nil {
 			b.fail(i, pb.MutationOutcome_NOT_APPLIED, denied)
 			continue
@@ -445,14 +553,35 @@ func (b *recordBatch) mutateChunk(chunk []int) {
 	}
 	current := make(map[int]*getReply, len(readWorks))
 	for offset, record := range b.adapter.mget(b.ctx, readWorks) {
-		if record.failure != nil {
-			b.fail(readPositions[offset], pb.MutationOutcome_NOT_APPLIED, record.failure)
-		} else {
-			current[readPositions[offset]] = record.reply
+		position := readPositions[offset]
+		switch {
+		case record.failure == nil:
+			current[position] = record.reply
+		case b.chains[position] != nil && readWorks[offset].Context.Err() != nil && b.live(position):
+			// The reading caller left; another one reads in the next round.
+			b.retry = append(b.retry, position)
+		case b.chains[position] != nil:
+			for _, member := range b.chains[position] {
+				failure := record.failure
+				if denied := b.works[member].Ended(b.ctx); denied != nil {
+					failure = denied
+				}
+				b.fail(member, pb.MutationOutcome_NOT_APPLIED, failure)
+			}
+		default:
+			b.fail(position, pb.MutationOutcome_NOT_APPLIED, record.failure)
 		}
 	}
 	for _, i := range chunk {
 		if b.results[i] != nil {
+			continue
+		}
+		if b.chains[i] != nil {
+			if readChains[i] && current[i] == nil {
+				continue
+			}
+			b.mutateChain(i, current[i])
+			delete(current, i)
 			continue
 		}
 		if denied := b.works[i].Ended(b.ctx); denied != nil {
