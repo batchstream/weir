@@ -139,7 +139,7 @@ func (a *Adapter) transformChain(batch context.Context, folds *programFolds, sta
 	own := make([]*pb.MutationResult, len(chain))
 	folds.own[stand] = own
 	var dependent []int
-	state := raw
+	state, changed := raw, false
 	for i, work := range chain {
 		write, result := a.transformProgram(batch, work, state)
 		switch {
@@ -153,6 +153,12 @@ func (a *Adapter) transformChain(batch context.Context, folds *programFolds, sta
 				dependent = append(dependent, i)
 			}
 		}
+		if own[i] == nil && !changed && sameDocument(raw, state) {
+			// Decided on the document as read and left it unchanged, so the
+			// result does not depend on the chain's write.
+			own[i] = protocol.Mutation(pb.MutationOutcome_APPLIED, nil)
+		}
+		changed = changed || !sameDocument(raw, state)
 	}
 	folds.dependent[stand] = dependent
 	native := stand.Backend.(*plan)

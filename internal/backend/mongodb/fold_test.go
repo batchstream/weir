@@ -73,7 +73,7 @@ func TestMongoFoldedPutsRejectedForAnotherReasonDoNotRunAlone(t *testing.T) {
 	}
 }
 
-func TestMongoAnAmbiguousChainCommitFailsItsDependentPrograms(t *testing.T) {
+func TestMongoAnAmbiguousChainCommitFailsItsDependentProgramsOnly(t *testing.T) {
 	ambiguousLabels := bson.A{"UnknownTransactionCommitResult"}
 	ambiguous := programCommitError(ambiguousLabels)
 	document := bson.D{{Key: "_id", Value: "x"}, {Key: "n", Value: int32(0)}}
@@ -84,9 +84,14 @@ func TestMongoAnAmbiguousChainCommitFailsItsDependentPrograms(t *testing.T) {
 		responses = append(responses, ambiguous)
 	}
 	adapter := batchMockAdapter(t, responses, nil)
-	programs := [][2]string{{"x", setOneProgram}, {"x", rejectSetProgram}}
+	keep := `return function(current, incoming) return weir.keep() end`
+	programs := [][2]string{{"x", keep}, {"x", setOneProgram}, {"x", rejectSetProgram}}
 	results := adapter.executePrograms(t.Context(), mockPrograms(t, adapter, programs))
-	first, second := results[0].GetMutationResult(), results[1].GetMutationResult()
+	// The keep was decided on the document as read, whatever the commit did.
+	if kept := results[0].GetMutationResult(); kept.GetOutcome() != pb.MutationOutcome_APPLIED || kept.GetFailure() != nil {
+		t.Fatal("the keep took the commit's result", kept)
+	}
+	first, second := results[1].GetMutationResult(), results[2].GetMutationResult()
 	if first.GetOutcome() != pb.MutationOutcome_UNKNOWN || first.GetFailure().GetCode() != pb.FailureCode_UNAVAILABLE {
 		t.Fatal("the program the write carried", first)
 	}
