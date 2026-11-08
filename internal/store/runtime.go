@@ -69,10 +69,9 @@ type Runtime struct {
 	limit  [2]executionLimit
 	probes probes
 	// probeNext and fullNext describe the batch about to launch: the limit's
-	// probe, or one that is full. foldedNext counts its mutations that follow
-	// an earlier one of the same resource.
+	// probe, or one that is full. foldedNext counts its folded mutations.
 	probeNext, fullNext          bool
-	foldedNext                   int
+	foldedNext                   folds
 	draining, closed, overloaded bool
 	// space and nativeSpace are closed and replaced whenever a waiting record
 	// or Native submitter may proceed.
@@ -127,6 +126,14 @@ type batch struct {
 	// probe marks the limit's probe, full a batch of max_operations records or
 	// max_bytes, and partial one the adaptive limit counts.
 	probe, full, partial bool
+	folded               folds
+}
+
+// folds counts the mutations of a batch that follow an earlier one of the
+// same resource, and their bytes. The adapter folds them into that earlier
+// one's write, so they do not make the batch's execution longer.
+type folds struct {
+	count, bytes int
 }
 
 func New(adapter execution.Adapter, limits Limits) (*Runtime, error) {
@@ -388,7 +395,7 @@ type group struct {
 	// far all fold. Mutations of one resource share a batch only when they
 	// all fold.
 	resources map[string]bool
-	folded    int
+	folded    folds
 }
 
 type selection struct {
@@ -407,7 +414,7 @@ func (s *selection) reset() {
 	for _, g := range s.groups[:s.used] {
 		clear(g.items)
 		g.items = g.items[:0]
-		g.bytes, g.full, g.folded = 0, false, 0
+		g.bytes, g.full, g.folded = 0, false, folds{}
 		clear(g.resources)
 	}
 	s.used = 0
@@ -482,7 +489,8 @@ func (r *Runtime) selectLocked(now time.Time) ([]*Ticket, time.Time) {
 			}
 			g.resources[plan.Key] = plan.Folds
 			if mutated {
-				g.folded++
+				g.folded.count++
+				g.folded.bytes += plan.Bytes
 			}
 		}
 		if ordered {
@@ -601,11 +609,11 @@ func (r *Runtime) launchLocked(items []*Ticket) *batch {
 		t.stop()
 	}
 	b := newBatch(items)
-	b.probe, b.full = r.probeNext, r.fullNext
-	if r.foldedNext > 0 {
-		r.metrics.folded.Add(float64(r.foldedNext))
+	b.probe, b.full, b.folded = r.probeNext, r.fullNext, r.foldedNext
+	if b.folded.count > 0 {
+		r.metrics.folded.Add(float64(b.folded.count))
 	}
-	r.probeNext, r.fullNext, r.foldedNext = false, false, 0
+	r.probeNext, r.fullNext, r.foldedNext = false, false, folds{}
 	r.batches[b] = struct{}{}
 	if b.native() {
 		r.natives++
@@ -727,7 +735,10 @@ func (r *Runtime) execute(b *batch) {
 			for _, t := range b.items {
 				bytes += t.plan.Bytes
 			}
-			done := finishedBatch{started: started, finished: finished, key: key, size: len(b.items), bytes: bytes, full: b.full, probe: b.probe}
+			// Folded mutations add no backend work of their own, so a batch
+			// counts as the size it would be without them.
+			size, bytes := len(b.items)-b.folded.count, bytes-b.folded.bytes
+			done := finishedBatch{started: started, finished: finished, key: key, size: size, bytes: bytes, full: b.full, probe: b.probe}
 			r.limit[op].observe(done)
 		}
 		if r.adaptive && r.running[op] == 0 && !r.queuesLocked(op) {

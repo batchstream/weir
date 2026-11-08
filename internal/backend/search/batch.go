@@ -183,11 +183,14 @@ type recordBatch struct {
 	// chains maps the first position of each chain of folding mutations of
 	// one record to all its positions, in queue order. applied maps a chain
 	// whose write is framed to the positions whose effects that write
-	// carries. unfold lists chains whose write was rejected: nothing of them
-	// applied, so their mutations run again one at a time.
-	chains  map[int][]int
-	applied map[int][]int
-	unfold  []int
+	// carries, and dependent to those rejected on a state that only that
+	// write makes real. unfold lists chains whose combined document was
+	// rejected: nothing of them applied, so their mutations run again one at
+	// a time.
+	chains    map[int][]int
+	applied   map[int][]int
+	dependent map[int][]int
+	unfold    []int
 }
 
 // fail records a final result for one work.
@@ -202,6 +205,7 @@ func (b *recordBatch) appendWrite(work *execution.Plan, position int, current *g
 	if err != nil {
 		if b.applied[position] != nil {
 			delete(b.applied, position)
+			delete(b.dependent, position)
 			b.unfold = append(b.unfold, position)
 			return
 		}
@@ -279,9 +283,14 @@ func (b *recordBatch) flush() {
 	positions := make([]int, 0, len(b.pending))
 	for _, item := range b.pending {
 		if members := b.applied[item.position]; members != nil {
-			// A chain's write goes out while any of its callers remains.
-			if b.endChain(members) {
+			if b.departed(members) {
+				// The write carries the effect of a mutation whose caller
+				// left, so the chain is evaluated again without it. That is
+				// not a conflict attempt.
 				delete(b.applied, item.position)
+				delete(b.dependent, item.position)
+				b.attempts[item.position]--
+				b.retry = append(b.retry, item.position)
 				continue
 			}
 		} else if failure := item.work.Ended(b.ctx); failure != nil {
@@ -502,8 +511,8 @@ func (b *recordBatch) clear(i int) {
 }
 
 // preReads reports whether a work, or a chain starting at it, depends on the
-// record's current state. A chain does unless its first live mutation
-// replaces or deletes the record whatever it holds.
+// record's current state. A chain does unless its first live mutation is a put
+// or delete, which sets the record without reading it.
 func (b *recordBatch) preReads(i int) bool {
 	members := b.chains[i]
 	if members == nil {

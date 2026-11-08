@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
+	"github.com/batchstream/weir/internal/backend"
 	"github.com/batchstream/weir/internal/execution"
 )
 
@@ -32,9 +33,15 @@ type memorySearch struct {
 	refreshes []string
 	barriers  int
 	// changeBeforeWrite rewrites a stored record before the next bulk applies,
-	// as a concurrent writer would.
+	// as a concurrent writer would, or before every bulk with keepChanging.
 	changeBeforeWrite []string
+	keepChanging      bool
 	reject            func(source string) bool
+	// onRead runs with the IDs of each real-time read, and bulkStatus, when
+	// set, answers every bulk with that status and bulkBody.
+	onRead     func(ids []string)
+	bulkStatus int
+	bulkBody   string
 }
 
 func (m *memorySearch) handle(w http.ResponseWriter, r *http.Request) {
@@ -47,6 +54,9 @@ func (m *memorySearch) handle(w http.ResponseWriter, r *http.Request) {
 		m.reads++
 		var request struct{ IDs []string }
 		_ = json.NewDecoder(r.Body).Decode(&request)
+		if m.onRead != nil {
+			m.onRead(request.IDs)
+		}
 		docs := make([]string, len(request.IDs))
 		for i, id := range request.IDs {
 			doc, found := m.docs[id]
@@ -64,11 +74,18 @@ func (m *memorySearch) handle(w http.ResponseWriter, r *http.Request) {
 		raw, _ := io.ReadAll(r.Body)
 		m.bulks = append(m.bulks, string(raw))
 		m.refreshes = append(m.refreshes, r.URL.Query().Get("refresh"))
+		if m.bulkStatus != 0 {
+			w.WriteHeader(m.bulkStatus)
+			_, _ = io.WriteString(w, m.bulkBody)
+			return
+		}
 		for _, id := range m.changeBeforeWrite {
 			m.seq++
 			m.docs[id] = storedSource{source: `{"n":100}`, seq: m.seq}
 		}
-		m.changeBeforeWrite = nil
+		if !m.keepChanging {
+			m.changeBeforeWrite = nil
+		}
 		items, failed := m.apply(string(raw))
 		_, _ = fmt.Fprintf(w, `{"errors":%t,"took":1,"items":[%s]}`, failed, strings.Join(items, ","))
 	default:
@@ -354,11 +371,165 @@ func TestBackendExpressionsDoNotFold(t *testing.T) {
 		t.Fatal("a backend expression cannot be applied to a known source")
 	}
 	for _, action := range []string{"put", "create", "replace", "delete", "program"} {
-		if work := batchTestPlan(t, adapter, action, "records/s:x"); !work.Folds {
+		work := batchTestPlan(t, adapter, action, "records/s:x")
+		if !work.Folds {
 			t.Fatal(action, "does not fold")
 		}
 	}
-	if read := batchTestPlan(t, adapter, "read", "records/s:x"); read.Folds || !slices.Contains([]string{"records"}, read.BatchKey) {
+	read := batchTestPlan(t, adapter, "read", "records/s:x")
+	if read.Folds || read.BatchKey != "records" {
 		t.Fatal("a read folds")
+	}
+}
+
+// cancelOnRead returns a caller context that ends when a read of id begins.
+func cancelOnRead(t *testing.T, memory *memorySearch, id string) context.Context {
+	caller, cancel := context.WithCancel(t.Context())
+	t.Cleanup(cancel)
+	memory.onRead = func(ids []string) {
+		if slices.Contains(ids, id) {
+			cancel()
+		}
+	}
+	return caller
+}
+
+// onePreReadPerRound makes each round of a batch read at most one record, so
+// a later round can run between a chain's evaluation and its write.
+func onePreReadPerRound(adapter *Adapter) {
+	settings := backend.DefaultOptions()
+	settings.BatchBytes = settings.ExchangeBytes
+	adapter.config.Options = &settings
+}
+
+func TestAChainWhoseMemberLeftBeforeItsWriteRunsAgainWithoutIt(t *testing.T) {
+	memory, adapter := newMemorySearch(t, map[string]string{"y": `{"n":1}`})
+	onePreReadPerRound(adapter)
+	x := recordMutations{t: t, adapter: adapter, resource: "records/s:x"}
+	y := recordMutations{t: t, adapter: adapter, resource: "records/s:y"}
+	works := []*execution.Plan{
+		x.prepare("add", `{"by":1}`),
+		x.prepare("create", `{"n":50}`),
+		y.prepare("add", `{"by":1}`),
+	}
+	// The first caller leaves once its chain is evaluated, before the write.
+	works[0].Context = cancelOnRead(t, memory, "y")
+	results := adapter.ExecuteRecords(t.Context(), works)
+	// The create was rejected on the state the departed add left; without it,
+	// the create applies.
+	canceled := expected{outcome: pb.MutationOutcome_NOT_APPLIED, code: pb.FailureCode_CANCELLED}
+	want := []expected{canceled, appliedResult, appliedResult}
+	checkResults(t, results, want)
+	if got := memory.source("x"); got != `{"n":50}` {
+		t.Fatal("the departed mutation's effect was written", got)
+	}
+}
+
+func TestAChainWhoseReaderLeftReadsAgainForTheOthers(t *testing.T) {
+	memory, adapter := newMemorySearch(t, map[string]string{"x": `{"n":1}`})
+	x := recordMutations{t: t, adapter: adapter, resource: "records/s:x"}
+	works := []*execution.Plan{
+		x.prepare("add", `{"by":1}`),
+		x.prepare("add", `{"by":10}`),
+	}
+	works[0].Context = cancelOnRead(t, memory, "x")
+	results := adapter.ExecuteRecords(t.Context(), works)
+	canceled := expected{outcome: pb.MutationOutcome_NOT_APPLIED, code: pb.FailureCode_CANCELLED}
+	want := []expected{canceled, appliedResult}
+	checkResults(t, results, want)
+	if got := memory.source("x"); got != `{"n":11}` || memory.reads != 2 {
+		t.Fatal("source", got, "reads", memory.reads)
+	}
+}
+
+func TestAChainWhoseLeadingPutLeftReadsTheRecord(t *testing.T) {
+	memory, adapter := newMemorySearch(t, map[string]string{"x": `{"n":1}`, "y": `{"n":1}`})
+	x := recordMutations{t: t, adapter: adapter, resource: "records/s:x"}
+	y := recordMutations{t: t, adapter: adapter, resource: "records/s:y"}
+	works := []*execution.Plan{
+		x.prepare("put", `{"n":5}`),
+		x.prepare("add", `{"by":10}`),
+		y.prepare("add", `{"by":1}`),
+	}
+	// The put made x's read unnecessary until its caller left.
+	works[0].Context = cancelOnRead(t, memory, "y")
+	results := adapter.ExecuteRecords(t.Context(), works)
+	canceled := expected{outcome: pb.MutationOutcome_NOT_APPLIED, code: pb.FailureCode_CANCELLED}
+	want := []expected{canceled, appliedResult, appliedResult}
+	checkResults(t, results, want)
+	if got := memory.source("x"); got != `{"n":11}` {
+		t.Fatal("the transform did not apply to the stored record", got)
+	}
+}
+
+func TestAFoldedWriteThatKeepsConflictingFailsEveryMutationItStoodFor(t *testing.T) {
+	memory, adapter := newMemorySearch(t, nil)
+	memory.changeBeforeWrite, memory.keepChanging = []string{"x"}, true
+	settings := backend.DefaultOptions()
+	settings.RetryAttempts = 2
+	adapter.config.Options = &settings
+	x := recordMutations{t: t, adapter: adapter, resource: "records/s:x"}
+	works := []*execution.Plan{
+		x.prepare("add", `{"by":1}`),
+		x.prepare("create", `{"n":9}`),
+	}
+	results := adapter.ExecuteRecords(t.Context(), works)
+	// The create was rejected on a state no write made real.
+	conflict := expected{outcome: pb.MutationOutcome_NOT_APPLIED, code: pb.FailureCode_CONFLICT}
+	want := []expected{conflict, conflict}
+	checkResults(t, results, want)
+	if len(memory.bulks) != 2 {
+		t.Fatal("bulks", len(memory.bulks))
+	}
+}
+
+func TestAnUnknownFoldedWriteLeavesItsDependentsNotApplied(t *testing.T) {
+	memory, adapter := newMemorySearch(t, nil)
+	memory.bulkStatus, memory.bulkBody = http.StatusInternalServerError, `{}`
+	x := recordMutations{t: t, adapter: adapter, resource: "records/s:x"}
+	works := []*execution.Plan{
+		x.prepare("add", `{"by":1}`),
+		x.prepare("create", `{"n":9}`),
+	}
+	results := adapter.ExecuteRecords(t.Context(), works)
+	unknown := expected{outcome: pb.MutationOutcome_UNKNOWN, code: pb.FailureCode_UNAVAILABLE}
+	notApplied := expected{outcome: pb.MutationOutcome_NOT_APPLIED, code: pb.FailureCode_UNAVAILABLE}
+	want := []expected{unknown, notApplied}
+	checkResults(t, results, want)
+}
+
+func TestACapacityRejectionOfAFoldedWriteDoesNotRunItsMutationsAlone(t *testing.T) {
+	memory, adapter := newMemorySearch(t, map[string]string{"x": `{"n":1}`, "y": `{"n":1}`})
+	memory.bulkStatus = http.StatusTooManyRequests
+	memory.bulkBody = `{"error":{"type":"es_rejected_execution_exception"},"status":429}`
+	x := recordMutations{t: t, adapter: adapter, resource: "records/s:x"}
+	y := recordMutations{t: t, adapter: adapter, resource: "records/s:y"}
+	works := []*execution.Plan{
+		x.prepare("add", `{"by":1}`),
+		y.prepare("add", `{"by":1}`),
+		x.prepare("add", `{"by":1}`),
+		y.prepare("add", `{"by":1}`),
+	}
+	results := adapter.ExecuteRecords(t.Context(), works)
+	unavailable := expected{outcome: pb.MutationOutcome_NOT_APPLIED, code: pb.FailureCode_UNAVAILABLE}
+	want := []expected{unavailable, unavailable, unavailable, unavailable}
+	checkResults(t, results, want)
+	if memory.reads != 1 || len(memory.bulks) != 1 {
+		t.Fatal("reads", memory.reads, "bulks", len(memory.bulks))
+	}
+}
+
+func TestAFoldedDeleteOfAMissingRecordWaitsForARefresh(t *testing.T) {
+	memory, adapter := newMemorySearch(t, nil)
+	x := recordMutations{t: t, adapter: adapter, resource: "records/s:x", visible: true}
+	works := []*execution.Plan{
+		x.prepare("put", `{"n":1}`),
+		x.prepare("delete", ``),
+	}
+	results := adapter.ExecuteRecords(t.Context(), works)
+	want := []expected{appliedResult, appliedResult}
+	checkResults(t, results, want)
+	if len(memory.bulks) != 1 || !strings.Contains(memory.bulks[0], `"delete"`) || memory.barriers != 1 {
+		t.Fatal("bulks", memory.bulks, "refresh barriers", memory.barriers)
 	}
 }

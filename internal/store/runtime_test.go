@@ -73,6 +73,12 @@ func (a *fakeAdapter) Close(ctx context.Context) error {
 	return a.closeErr
 }
 
+func (a *fakeAdapter) batch(i int) []*execution.Plan {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.batches[i]
+}
+
 func (a *fakeAdapter) executed() [][]string {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -564,6 +570,55 @@ func TestFoldingMutationsWaitForTheirRunningPredecessor(t *testing.T) {
 	close(release)
 	if keys := started(t, adapter); !slices.Equal(keys, []string{"x", "x"}) {
 		t.Fatal("queued folding mutations did not follow their predecessor together", keys)
+	}
+	for _, ticket := range []*Ticket{first, second, third} {
+		wait(t, ticket)
+	}
+}
+
+func TestMutationsWithoutASessionFoldWhenTheyAllFold(t *testing.T) {
+	adapter, runtime, finish := queueBehindBlocker(t, nil)
+	tickets := []*Ticket{
+		submit(t, runtime, foldingPlan("x"), nil),
+		submit(t, runtime, mutationPlan("y"), nil),
+		submit(t, runtime, foldingPlan("x"), nil),
+		submit(t, runtime, mutationPlan("y"), nil),
+	}
+	finish()
+	for _, ticket := range tickets {
+		wait(t, ticket)
+	}
+	want := [][]string{{"blocker"}, {"x", "y", "x"}, {"y"}}
+	if got := adapter.executed(); !slices.EqualFunc(got, want, slices.Equal) {
+		t.Fatal("mutations without a session folded wrongly", got)
+	}
+	families := testmetrics.Gather(t, runtime)
+	if got := counter(families, "weir_store_folded_mutations_total", nil); got != 1 {
+		t.Fatal("only the folding duplicate counts", got)
+	}
+}
+
+func TestAnotherSessionsMutationDoesNotWaitOrFoldWithARunningOne(t *testing.T) {
+	adapter := &fakeAdapter{started: make(chan []*execution.Plan, 8)}
+	release := make(chan struct{})
+	runtime := open(t, adapter, limits(nil))
+	settle(runtime)
+	adapter.records = blockUntil(release)
+	session, other := runtime.NewSession(), runtime.NewSession()
+	first := submit(t, runtime, foldingPlan("x"), session)
+	if keys := started(t, adapter); !slices.Equal(keys, []string{"x"}) {
+		t.Fatal(keys)
+	}
+	second := submit(t, runtime, foldingPlan("x"), session)
+	// The other session's mutation does not wait for the first session's.
+	third := submit(t, runtime, foldingPlan("x"), other)
+	if keys := started(t, adapter); !slices.Equal(keys, []string{"x"}) || adapter.batch(1)[0] != third.plan {
+		t.Fatal("the other session's mutation waited or took the queued one along", keys)
+	}
+	notStarted(t, adapter)
+	close(release)
+	if keys := started(t, adapter); !slices.Equal(keys, []string{"x"}) || adapter.batch(2)[0] != second.plan {
+		t.Fatal("the session's queued mutation did not follow its predecessor", keys)
 	}
 	for _, ticket := range []*Ticket{first, second, third} {
 		wait(t, ticket)

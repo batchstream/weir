@@ -130,6 +130,10 @@ func incrementScenarioRecords(t *testing.T, node *routeAcceptanceNode, records [
 	return results
 }
 
+// verifyScenarioRecord checks a record's counter and untouched fields after
+// increments applied ones. Search folds increments of one record that share a
+// batch into one write, so each write raises the version once for one or more
+// of them.
 func verifyScenarioRecord(t *testing.T, fixture *testsearch.Backend, record scenarioRecord, increments int) {
 	t.Helper()
 	code, raw := fixture.Do(t, http.MethodGet, "/"+record.index+"/_doc/"+record.id, "")
@@ -142,7 +146,8 @@ func verifyScenarioRecord(t *testing.T, fixture *testsearch.Backend, record scen
 	}
 	wantPadding, _ := json.Marshal(strings.Repeat("x", record.padding))
 	wantMarker, _ := json.Marshal(record.id)
-	if reply.Version != increments+1 || string(reply.Source["n"]) != fmt.Sprint(increments) || !bytes.Equal(reply.Source["pad"], wantPadding) || !bytes.Equal(reply.Source["marker"], wantMarker) {
+	writes := reply.Version - 1
+	if writes > increments || writes < min(increments, 1) || string(reply.Source["n"]) != fmt.Sprint(increments) || !bytes.Equal(reply.Source["pad"], wantPadding) || !bytes.Equal(reply.Source["marker"], wantMarker) {
 		t.Fatal("persisted version, counter or untouched fields differ", record.id, reply.Version, increments)
 	}
 }
@@ -235,5 +240,5 @@ func TestRouteSearchBoundedCollectionPreservesHotKeyIncrements(t *testing.T) {
 		t.Fatal("no shared-key write applied")
 	}
 	verifyScenarioRecord(t, fixture, hot, applied)
-	t.Logf("10%% shared-key increments, 4 execution slots and 20ms collection: %d/8 shared mutations applied; persisted counter and version match exactly", applied)
+	t.Logf("10%% shared-key increments, 4 execution slots and 20ms collection: %d/8 shared mutations applied; persisted counter matches exactly and the version counts at most one write per increment", applied)
 }

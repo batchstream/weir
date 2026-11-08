@@ -31,8 +31,8 @@ func (b *recordBatch) live(head int) bool {
 
 // mutateChain applies a chain's mutations in queue order to the record's
 // state and frames one write that takes the record from the state it read, or
-// from any state when the first mutation replaces or deletes it regardless,
-// to the last. A mutation that is rejected leaves the state to the next one.
+// from any state when the first mutation is a put or delete, to the last. A
+// mutation that is rejected leaves the state to the next one.
 func (b *recordBatch) mutateChain(head int, current *getReply) {
 	if current == nil && b.preReads(head) {
 		// The mutation that made the read unnecessary lost its caller.
@@ -44,7 +44,7 @@ func (b *recordBatch) mutateChain(head int, current *getReply) {
 	if current != nil {
 		found, source = *current.Found, current.Source
 	}
-	var applied []int
+	var applied, dependent []int
 	for _, i := range b.chains[head] {
 		work := b.works[i]
 		if denied := work.Ended(b.ctx); denied != nil {
@@ -75,7 +75,8 @@ func (b *recordBatch) mutateChain(head int, current *getReply) {
 			state := &getReply{Found: &present, Source: source}
 			next, mutation := b.adapter.evaluateProgram(work, state)
 			if denied := work.Ended(b.ctx); denied != nil {
-				mutation = protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, denied)
+				b.fail(i, pb.MutationOutcome_NOT_APPLIED, denied)
+				continue
 			}
 			switch {
 			case mutation == nil && next.action == "delete":
@@ -88,6 +89,9 @@ func (b *recordBatch) mutateChain(head int, current *getReply) {
 		}
 		if rejected != nil {
 			b.fail(i, rejected.Outcome, rejected.Failure)
+			if len(applied) != 0 {
+				dependent = append(dependent, i)
+			}
 			continue
 		}
 		applied = append(applied, i)
@@ -126,48 +130,55 @@ func (b *recordBatch) mutateChain(head int, current *getReply) {
 	framed.Backend = write
 	if b.applied == nil {
 		b.applied = make(map[int][]int)
+		b.dependent = make(map[int][]int)
 	}
 	b.applied[head] = applied
+	b.dependent[head] = dependent
 	b.appendWrite(&framed, head, current)
 }
 
-// endChain fails a framed chain whose callers all left and reports whether
-// it did.
-func (b *recordBatch) endChain(members []int) bool {
+// departed reports whether a mutation whose effect a framed chain's write
+// carries has lost its caller.
+func (b *recordBatch) departed(members []int) bool {
 	for _, i := range members {
-		if b.works[i].Ended(b.ctx) == nil {
-			return false
+		if b.works[i].Ended(b.ctx) != nil {
+			return true
 		}
 	}
-	for _, i := range members {
-		b.fail(i, pb.MutationOutcome_NOT_APPLIED, b.works[i].Ended(b.ctx))
-	}
-	return true
+	return false
 }
 
 // settleChain gives a chain's write result to each mutation the write
-// carried. A conflict evaluates the chain again from a fresh read, and any
-// other rejection runs its mutations one at a time, since none applied.
+// carried. A conflict evaluates the chain again from a fresh read, and a
+// rejected document runs its mutations one at a time, since none applied. A
+// write that did not apply also fails the mutations rejected on the state it
+// would have made real.
 func (b *recordBatch) settleChain(head int, reply *pb.Event) {
-	members := b.applied[head]
+	members, dependent := b.applied[head], b.dependent[head]
 	delete(b.applied, head)
+	delete(b.dependent, head)
 	mutation := reply.GetMutationResult()
-	if mutation.GetOutcome() == pb.MutationOutcome_NOT_APPLIED {
-		if mutation.GetFailure().GetCode() != pb.FailureCode_CONFLICT {
+	outcome, failure := mutation.GetOutcome(), mutation.GetFailure()
+	if outcome == pb.MutationOutcome_NOT_APPLIED {
+		switch failure.GetCode() {
+		case pb.FailureCode_PRECONDITION_FAILED:
 			b.unfold = append(b.unfold, head)
 			return
+		case pb.FailureCode_CONFLICT:
+			if b.attempts[head] < b.adapter.options().RetryAttempts {
+				b.retry = append(b.retry, head)
+				return
+			}
+			failure = protocol.Fail(pb.FailureCode_CONFLICT, "Search record changed during every transform attempt")
 		}
-		if b.attempts[head] < b.adapter.options().RetryAttempts {
-			b.retry = append(b.retry, head)
-			return
-		}
-		failure := protocol.Fail(pb.FailureCode_CONFLICT, "Search record changed during every transform attempt")
-		for _, i := range members {
-			b.fail(i, pb.MutationOutcome_NOT_APPLIED, failure)
-		}
-		return
 	}
 	for _, i := range members {
-		b.fail(i, mutation.GetOutcome(), mutation.GetFailure())
+		b.fail(i, outcome, failure)
+	}
+	if outcome == pb.MutationOutcome_APPLIED {
+		return
+	}
+	for _, i := range dependent {
+		b.fail(i, pb.MutationOutcome_NOT_APPLIED, failure)
 	}
 }

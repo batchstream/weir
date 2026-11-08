@@ -97,7 +97,7 @@ of improved capacity.
 | `weir_store_native_completions_total` | Final Native forwarding terminal evidence (`not_started`, `response_complete`, `response_incomplete`), not backend business success, RPC status, or client receipt |
 | `weir_store_rejections_total` | Preparation, draining and overload denials, not completed records |
 | `weir_store_batch_operations`, `weir_store_queue_wait_seconds`, `weir_store_execution_seconds` | Record batch sizes, queue wait and record batch execution time; Natives are excluded |
-| `weir_store_folded_mutations_total` | Mutations dispatched in a batch after an earlier mutation of the same resource, which the adapter [folds](batching.md) into one write |
+| `weir_store_folded_mutations_total` | Mutations dispatched in a batch after an earlier mutation of the same resource, for the adapter to [fold](batching.md) into one write; counted at dispatch, including those the adapter later runs one at a time or that lost their caller |
 | `weir_lua_evaluation_seconds` | Lua evaluation time by `outcome` (`success`, `error`, `timeout`, `canceled`), for both backends |
 | `weir_ingress_sessions`, `weir_rpc_completions_total`, `weir_admission_rejections_total` | Active RPCs, completed RPCs by `status` and RPCs refused at admission |
 | `weir_watchdog_expirations_total` | RPCs ended by the input or output stall timeout |
