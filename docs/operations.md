@@ -234,10 +234,11 @@ the backend was unreachable or dropped the connection, a deadline or
 cancellation ended the call before or during the response, or the client
 stopped reading. Such a command may have taken effect. Check backend health and
 network paths first, then client deadlines. A Search Native that failed before
-its response head says where in its `UNAVAILABLE` failure: while connecting,
-during the TLS handshake, while sending the request or while waiting for the
-response head, with `refused`, `reset`, `closed` or `timeout` when known. Each
-Search Native opens its own backend connection.
+its response head says where in its `UNAVAILABLE` failure: while connecting
+(which includes the DNS lookup), during the TLS handshake, while sending the
+request, while waiting for the response head or while reading it, with
+`refused`, `reset`, `closed` or `timeout` when known. Each Search Native opens
+its own backend connection.
 
 `not_started` calls ended before Weir sent them, so the backend never saw them.
 The request was malformed (an invalid HTTP/1.1 head or Content-Length, invalid

@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"crypto/tls"
 	"errors"
 	"fmt"
 	"io"
@@ -123,12 +122,12 @@ func (a *Adapter) ExecuteNative(ctx context.Context, command *pb.Command, emit e
 	if len(nativeBody) != 0 {
 		body = bytes.NewReader(nativeBody)
 	}
-	request, err := http.NewRequestWithContext(ctx, d.Method, endpoint, body)
+	var phase exchangePhase
+	traced := httptrace.WithClientTrace(ctx, phase.trace())
+	request, err := http.NewRequestWithContext(traced, d.Method, endpoint, body)
 	if err != nil {
 		return protocol.NativeFailure(false, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid HTTP request"))
 	}
-	var phase exchangePhase
-	request = request.WithContext(httptrace.WithClientTrace(request.Context(), phase.trace()))
 	a.configureRequest(request)
 
 	for name, values := range d.Header {
@@ -235,6 +234,7 @@ const (
 	phaseHandshake
 	phaseSending
 	phaseWaiting
+	phaseReading
 )
 
 var exchangePhases = [...]string{
@@ -242,32 +242,28 @@ var exchangePhases = [...]string{
 	phaseHandshake:  "during the TLS handshake",
 	phaseSending:    "while sending the request",
 	phaseWaiting:    "while waiting for the response head",
+	phaseReading:    "while reading the response head",
 }
 
 // exchangePhase records how far a Native HTTP exchange got, so that a failure
-// before the response head can say where it happened. The transport reports
-// phases from its own goroutines.
+// before the response head can say where it happened. Only hooks that run in
+// exchange order are used: a losing parallel dial can report its connect
+// after the winner's TLS handshake has begun, and net/http reports a failed
+// request write too.
 type exchangePhase struct {
 	reached atomic.Int32
 }
 
 func (p *exchangePhase) trace() *httptrace.ClientTrace {
 	trace := &httptrace.ClientTrace{
-		ConnectDone: func(_, _ string, err error) {
-			if err == nil {
-				p.reached.Store(phaseSending)
-			}
-		},
 		TLSHandshakeStart: func() { p.reached.Store(phaseHandshake) },
-		TLSHandshakeDone: func(_ tls.ConnectionState, err error) {
-			if err == nil {
-				p.reached.Store(phaseSending)
+		GotConn:           func(httptrace.GotConnInfo) { p.reached.Store(phaseSending) },
+		WroteRequest: func(info httptrace.WroteRequestInfo) {
+			if info.Err == nil {
+				p.reached.Store(phaseWaiting)
 			}
 		},
-		GotConn: func(httptrace.GotConnInfo) { p.reached.Store(phaseSending) },
-		WroteRequest: func(httptrace.WroteRequestInfo) {
-			p.reached.Store(phaseWaiting)
-		},
+		GotFirstResponseByte: func() { p.reached.Store(phaseReading) },
 	}
 	return trace
 }
@@ -276,13 +272,17 @@ func (p *exchangePhase) trace() *httptrace.ClientTrace {
 // It never quotes err, which carries the backend URL.
 func (p *exchangePhase) describe(err error) string {
 	where := exchangePhases[p.reached.Load()]
+	var request *url.Error
+	if errors.As(err, &request) {
+		err = request.Err
+	}
 	var network net.Error
 	switch {
 	case errors.Is(err, syscall.ECONNREFUSED):
 		return where + " (refused)"
 	case errors.Is(err, syscall.ECONNRESET):
 		return where + " (reset)"
-	case errors.Is(err, io.EOF), errors.Is(err, io.ErrUnexpectedEOF):
+	case errors.Is(err, io.EOF), errors.Is(err, io.ErrUnexpectedEOF), errors.Is(err, syscall.EPIPE):
 		return where + " (closed)"
 	case errors.As(err, &network) && network.Timeout():
 		return where + " (timeout)"
