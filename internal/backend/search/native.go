@@ -4,14 +4,20 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/tls"
+	"errors"
 	"fmt"
 	"io"
 	"mime"
+	"net"
 	"net/http"
+	"net/http/httptrace"
 	"net/url"
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
+	"syscall"
 
 	"github.com/batchstream/weir-protocol/api/protocol"
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
@@ -121,6 +127,8 @@ func (a *Adapter) ExecuteNative(ctx context.Context, command *pb.Command, emit e
 	if err != nil {
 		return protocol.NativeFailure(false, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid HTTP request"))
 	}
+	var phase exchangePhase
+	request = request.WithContext(httptrace.WithClientTrace(request.Context(), phase.trace()))
 	a.configureRequest(request)
 
 	for name, values := range d.Header {
@@ -138,7 +146,7 @@ func (a *Adapter) ExecuteNative(ctx context.Context, command *pb.Command, emit e
 	}
 	response, err := a.nativeClient.Do(request)
 	if err != nil {
-		return protocol.NativeFailure(true, nativeExchangeFailure(ctx, "Native HTTP exchange incomplete"))
+		return protocol.NativeFailure(true, nativeExchangeFailure(ctx, "Native HTTP exchange incomplete "+phase.describe(err)))
 	}
 	defer response.Body.Close()
 	if response.StatusCode < 100 || response.StatusCode > 599 {
@@ -219,6 +227,68 @@ func (b *nativeHTTPBody) Close() error {
 	b.closed = true
 	b.Reader = nil
 	return nil
+}
+
+// Phases of a Native HTTP exchange before its response head arrives.
+const (
+	phaseConnecting int32 = iota
+	phaseHandshake
+	phaseSending
+	phaseWaiting
+)
+
+var exchangePhases = [...]string{
+	phaseConnecting: "while connecting",
+	phaseHandshake:  "during the TLS handshake",
+	phaseSending:    "while sending the request",
+	phaseWaiting:    "while waiting for the response head",
+}
+
+// exchangePhase records how far a Native HTTP exchange got, so that a failure
+// before the response head can say where it happened. The transport reports
+// phases from its own goroutines.
+type exchangePhase struct {
+	reached atomic.Int32
+}
+
+func (p *exchangePhase) trace() *httptrace.ClientTrace {
+	trace := &httptrace.ClientTrace{
+		ConnectDone: func(_, _ string, err error) {
+			if err == nil {
+				p.reached.Store(phaseSending)
+			}
+		},
+		TLSHandshakeStart: func() { p.reached.Store(phaseHandshake) },
+		TLSHandshakeDone: func(_ tls.ConnectionState, err error) {
+			if err == nil {
+				p.reached.Store(phaseSending)
+			}
+		},
+		GotConn: func(httptrace.GotConnInfo) { p.reached.Store(phaseSending) },
+		WroteRequest: func(httptrace.WroteRequestInfo) {
+			p.reached.Store(phaseWaiting)
+		},
+	}
+	return trace
+}
+
+// describe names where and how the exchange failed from a fixed vocabulary.
+// It never quotes err, which carries the backend URL.
+func (p *exchangePhase) describe(err error) string {
+	where := exchangePhases[p.reached.Load()]
+	var network net.Error
+	switch {
+	case errors.Is(err, syscall.ECONNREFUSED):
+		return where + " (refused)"
+	case errors.Is(err, syscall.ECONNRESET):
+		return where + " (reset)"
+	case errors.Is(err, io.EOF), errors.Is(err, io.ErrUnexpectedEOF):
+		return where + " (closed)"
+	case errors.As(err, &network) && network.Timeout():
+		return where + " (timeout)"
+	default:
+		return where
+	}
 }
 
 func nativeExchangeFailure(ctx context.Context, message string) *pb.Failure {
