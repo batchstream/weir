@@ -145,7 +145,15 @@ func (a *Adapter) ExecuteNative(ctx context.Context, command *pb.Command, emit e
 	}
 	response, err := a.nativeClient.Do(request)
 	if err != nil {
-		return protocol.NativeFailure(true, nativeExchangeFailure(ctx, "Native HTTP exchange incomplete "+phase.describe(err)))
+		// Without a connection nothing was written, so the backend never saw
+		// the request and a client may send it again, whatever its method.
+		connected := phase.connected()
+		message := "Native HTTP exchange not started "
+		if connected {
+			message = "Native HTTP exchange incomplete "
+		}
+		failure := nativeExchangeFailure(ctx, message+phase.describe(err))
+		return protocol.NativeFailure(connected, failure)
 	}
 	defer response.Body.Close()
 	if response.StatusCode < 100 || response.StatusCode > 599 {
@@ -266,6 +274,12 @@ func (p *exchangePhase) trace() *httptrace.ClientTrace {
 		GotFirstResponseByte: func() { p.reached.Store(phaseReading) },
 	}
 	return trace
+}
+
+// connected reports whether the transport handed the exchange a connection,
+// the point after which request bytes may have reached the backend.
+func (p *exchangePhase) connected() bool {
+	return p.reached.Load() >= phaseSending
 }
 
 // describe names where and how the exchange failed from a fixed vocabulary.

@@ -26,12 +26,12 @@ func nativeAdapter(t *testing.T, url string, timeout time.Duration) *Adapter {
 	return adapter
 }
 
-func requireExchangeFailure(t *testing.T, adapter *Adapter, want string) {
+func requireExchangeFailure(t *testing.T, adapter *Adapter, completion pb.NativeCompletion, want string) {
 	t.Helper()
 	request := nativeRequest(t, "records", "GET", "/_search")
 	end, capture := runNative(t, adapter, request, nil)
-	if end.Completion != pb.NativeCompletion_RESPONSE_INCOMPLETE || capture.head != nil {
-		t.Fatal("failed exchange published output", end)
+	if end.Completion != completion || capture.head != nil {
+		t.Fatalf("completion %s, want %s without output", end.Completion, completion)
 	}
 	failure := end.GetFailure()
 	if failure.GetCode() != pb.FailureCode_UNAVAILABLE || failure.GetMessage() != want {
@@ -47,7 +47,7 @@ func TestNativeExchangeFailureNamesARefusedConnection(t *testing.T) {
 	address := listener.Addr().String()
 	listener.Close()
 	adapter := nativeAdapter(t, "http://"+address, time.Second)
-	requireExchangeFailure(t, adapter, "Native HTTP exchange incomplete while connecting (refused)")
+	requireExchangeFailure(t, adapter, pb.NativeCompletion_NATIVE_NOT_STARTED, "Native HTTP exchange not started while connecting (refused)")
 }
 
 func TestNativeExchangeFailureNamesATLSHandshakeTimeout(t *testing.T) {
@@ -71,7 +71,7 @@ func TestNativeExchangeFailureNamesATLSHandshakeTimeout(t *testing.T) {
 		}
 	}()
 	adapter := nativeAdapter(t, "https://"+listener.Addr().String(), 200*time.Millisecond)
-	requireExchangeFailure(t, adapter, "Native HTTP exchange incomplete during the TLS handshake (timeout)")
+	requireExchangeFailure(t, adapter, pb.NativeCompletion_NATIVE_NOT_STARTED, "Native HTTP exchange not started during the TLS handshake (timeout)")
 }
 
 func TestNativeExchangeFailureNamesAConnectionClosedBeforeTheResponse(t *testing.T) {
@@ -86,7 +86,7 @@ func TestNativeExchangeFailureNamesAConnectionClosedBeforeTheResponse(t *testing
 	backend := httptest.NewServer(handler)
 	t.Cleanup(backend.Close)
 	adapter := nativeAdapter(t, backend.URL, time.Second)
-	requireExchangeFailure(t, adapter, "Native HTTP exchange incomplete while waiting for the response head (closed)")
+	requireExchangeFailure(t, adapter, pb.NativeCompletion_RESPONSE_INCOMPLETE, "Native HTTP exchange incomplete while waiting for the response head (closed)")
 }
 
 func TestNativeExchangeFailureNamesARequestCutOffWhileSending(t *testing.T) {
