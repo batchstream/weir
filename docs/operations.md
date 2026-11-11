@@ -231,25 +231,27 @@ here, whatever its HTTP status, because Weir does not interpret Native results.
 
 `response_incomplete` calls started but did not receive a complete response:
 the backend dropped the connection, a deadline or cancellation ended the call
-before or during the response, or the client stopped reading. Such a command
-may have taken effect. Check backend health and network paths first, then
-client deadlines. A Search Native that failed after it had a backend connection
-but before its response head says where in its `UNAVAILABLE` failure: while
-sending the request, while waiting for the response head or while reading it,
-with `refused`, `reset`, `closed` or `timeout` when known. Each Search Native
-opens its own backend connection.
+after it was sent, or the client stopped reading. Such a command may have taken
+effect. Check backend health and network paths first, then client deadlines. A
+Search Native that failed after it had a backend connection but before its
+response head says where in its `UNAVAILABLE` failure: while sending the
+request, while waiting for the response head or while reading it, with `reset`,
+`closed` or `timeout` when known. Each Search Native opens its own backend
+connection.
 
 `not_started` calls ended before Weir sent them, so the backend never saw them.
 The request was malformed (an invalid HTTP/1.1 head or Content-Length, invalid
-BSON or a missing `$db`), a Search Native got no backend connection, or, rarely,
-a cancellation, deadline or shutdown landed just as the call was dispatched. A
-Search Native without a connection fails `UNAVAILABLE` while connecting (which
-includes the DNS lookup) or during the TLS handshake, with the same `refused`,
-`reset`, `closed` or `timeout` words; the SDK sends such a Native again, since
-it took no effect. A Native whose caller gives up while waiting for a free
-Native slot is not counted. A lasting `not_started` rate means clients send
-invalid Natives or the backend is unreachable; read the failure messages in
-client logs.
+BSON or a missing `$db`), a Search Native got no backend connection, or a
+cancellation, deadline or shutdown ended the call before it was sent, which for
+a Search Native includes the time spent connecting. A Search Native without a
+connection fails `UNAVAILABLE` while connecting (which includes the DNS lookup)
+or during the TLS handshake, with `refused`, `reset`, `closed` or `timeout`
+when known; the SDK sends such a Native again within its resend budget, since
+it took no effect. Lasting causes, such as an unknown host name or an untrusted
+certificate, fail the same way on every send. A Native whose caller gives up
+while waiting for a free Native slot is not counted. A lasting `not_started`
+rate means clients send invalid Natives or the backend is unreachable; read the
+failure messages in client logs.
 
 ### WeirQueueWaitHigh
 

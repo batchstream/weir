@@ -145,14 +145,18 @@ func (a *Adapter) ExecuteNative(ctx context.Context, command *pb.Command, emit e
 	}
 	response, err := a.nativeClient.Do(request)
 	if err != nil {
-		// Without a connection nothing was written, so the backend never saw
-		// the request and a client may send it again, whatever its method.
-		connected := phase.connected()
+		// Nothing is written before the transport hands over a connection, so
+		// without one the backend never saw the request and a client may send
+		// it again, whatever its method. This holds because the Native
+		// transport never reuses a connection (Open sets DisableKeepAlives):
+		// net/http replays requests only on reused connections.
+		reached := phase.reached.Load()
+		connected := reached >= phaseSending
 		message := "Native HTTP exchange not started "
 		if connected {
 			message = "Native HTTP exchange incomplete "
 		}
-		failure := nativeExchangeFailure(ctx, message+phase.describe(err))
+		failure := nativeExchangeFailure(ctx, message+describeExchange(reached, err))
 		return protocol.NativeFailure(connected, failure)
 	}
 	defer response.Body.Close()
@@ -254,38 +258,43 @@ var exchangePhases = [...]string{
 }
 
 // exchangePhase records how far a Native HTTP exchange got, so that a failure
-// before the response head can say where it happened. Only hooks that run in
-// exchange order are used: a losing parallel dial can report its connect
-// after the winner's TLS handshake has begun, and net/http reports a failed
-// request write too.
+// before the response head can say where it happened and whether request bytes
+// may have reached the backend. The phase only advances: a dial that net/http
+// abandoned can still start its TLS handshake after the exchange went on.
+// Only hooks that run in exchange order are used, since a losing parallel dial
+// can report its connect late and net/http reports a failed write too.
 type exchangePhase struct {
 	reached atomic.Int32
 }
 
+func (p *exchangePhase) advance(phase int32) {
+	for {
+		current := p.reached.Load()
+		if current >= phase || p.reached.CompareAndSwap(current, phase) {
+			return
+		}
+	}
+}
+
 func (p *exchangePhase) trace() *httptrace.ClientTrace {
 	trace := &httptrace.ClientTrace{
-		TLSHandshakeStart: func() { p.reached.Store(phaseHandshake) },
-		GotConn:           func(httptrace.GotConnInfo) { p.reached.Store(phaseSending) },
+		TLSHandshakeStart: func() { p.advance(phaseHandshake) },
+		GotConn:           func(httptrace.GotConnInfo) { p.advance(phaseSending) },
 		WroteRequest: func(info httptrace.WroteRequestInfo) {
 			if info.Err == nil {
-				p.reached.Store(phaseWaiting)
+				p.advance(phaseWaiting)
 			}
 		},
-		GotFirstResponseByte: func() { p.reached.Store(phaseReading) },
+		GotFirstResponseByte: func() { p.advance(phaseReading) },
 	}
 	return trace
 }
 
-// connected reports whether the transport handed the exchange a connection,
-// the point after which request bytes may have reached the backend.
-func (p *exchangePhase) connected() bool {
-	return p.reached.Load() >= phaseSending
-}
-
-// describe names where and how the exchange failed from a fixed vocabulary.
-// It never quotes err, which carries the backend URL.
-func (p *exchangePhase) describe(err error) string {
-	where := exchangePhases[p.reached.Load()]
+// describeExchange names where and how an exchange that reached the given
+// phase failed, from a fixed vocabulary. It never quotes err, which carries the
+// backend URL.
+func describeExchange(reached int32, err error) string {
+	where := exchangePhases[reached]
 	var request *url.Error
 	if errors.As(err, &request) {
 		err = request.Err
