@@ -98,6 +98,8 @@ func Open(ctx context.Context, cfg Config) (*Adapter, error) {
 	client := &http.Client{Transport: transport, CheckRedirect: noRedirect}
 	nativeTransport := newTransport(settings.ConnectTimeout, settings.IdleTimeout)
 	nativeTransport.TLSClientConfig = tlsConfig
+	// A Native that failed before getting a connection ends NOT_STARTED,
+	// which is true only while net/http cannot reuse and replay (native.go).
 	nativeTransport.DisableKeepAlives = true
 	nativeClient := &http.Client{Transport: nativeTransport, CheckRedirect: noRedirect}
 	a := &Adapter{
