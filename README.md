@@ -57,7 +57,7 @@ See [Performance](docs/performance.md) for the full results.
 
 | Item | Requirement |
 | --- | --- |
-| Go | 1.27.3, to build from source |
+| Go | 1.27.4, to build from source |
 | Operating system | Linux or macOS, amd64 or arm64 |
 | MongoDB | A nonsharded replica set with the client `bulkWrite` command (MongoDB 8.0 or later). Tested with 8.0.32. Lua transforms also require transactions. |
 | Search | Tested with Elasticsearch 8.19.22, OpenSearch 3.3.0, and OpenSearch 2.17.1 with `compatibility.override_main_response_version` |
